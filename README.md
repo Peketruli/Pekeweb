@@ -1,7 +1,4 @@
-<!DOCTYPE html>
-<html lang="es">
 <head>
-    <meta charset="UTF-8">
     <title>Rebeldía IN.AR</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js"></script>
@@ -255,4 +252,3 @@ function downloadPDF() {
 }
 </script>
 </body>
-</html>
