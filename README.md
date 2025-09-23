@@ -148,14 +148,6 @@
         </table>
     </div>
 
- <div id="clearButtonContainer">
-    <button id="clearLocalStorageButton" onclick="borrarLocalStorage()" style="display:none;">Borrar TODO el localStorage</button>
-</div>
-
-    <div id="pdfButtonContainer">
-        <button id="downloadButton" onclick="downloadPDF()">Descargar PDF de Registros</button>
-    </div>
-
     <div class="nav-container">
         <button class="nav-button" onclick="window.location.href='blog.html'">Blog</button>
         <button class="nav-button" onclick="window.location.href='chats.html'">Chat</button>
