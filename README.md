@@ -158,7 +158,7 @@
 
     <div class="nav-container">
         <button class="nav-button" onclick="window.location.href='blog.html'">Blog</button>
-        <button class="nav-button" onclick="window.location.href='chats.html'">Chat (En proceso)</button>
+        <button class="nav-button" onclick="window.location.href='chats.html'">Chat</button>
         <button class="nav-button" onclick="window.location.href='calendario.html'">Calendario</button>
         <button class="nav-button" onclick="window.location.href='juegos.html'">Juegos</button>
         <button class="nav-button" onclick="window.location.href='encuestas.html'">Encuesta mejoras</button>
