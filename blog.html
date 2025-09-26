@@ -133,20 +133,28 @@ function showNewBlogForm() { if(!isUserLoggedIn()){alert("Debes iniciar sesión 
 function hideNewBlogForm() { document.getElementById("newBlogForm").classList.add("hidden"); }
 
 async function loadBlogs() {
-  const { data, error } = await supabase.from("blog").select("*").order("created_at",{ascending:false});
+  const { data, error } = await supabase.from("blog").select("*").order("created_at", { ascending: false });
   if(error){ console.error(error); return; }
+
   const blogsList = document.getElementById("blogsList");
   blogsList.innerHTML = "";
+
   data.forEach(blog => {
     const div = document.createElement("div");
     div.className = "blog-post";
+
     div.innerHTML = `
       <h3>${blog.title}</h3>
       <p style="font-size:0.9em;color:gray;">Autor: ${blog.author || "Anónimo"}</p>
       <p>❤️ <span id="likeCount-${blog.id}">${blog.likes || 0}</span></p>
-      <button class="like-btn" onclick="toggleLike(event, '${blog.id}')">❤️</button>
+      <button class="like-btn">❤️</button>
     `;
+
+    const likeBtn = div.querySelector(".like-btn");
+    likeBtn.addEventListener("click", (e) => toggleLike(e, blog.id));
+
     div.addEventListener("click", () => openBlog(blog));
+
     blogsList.appendChild(div);
   });
 }
@@ -164,24 +172,50 @@ async function toggleLike(event, blogId){
 async function publishBlog() {
   const user = getCurrentUser();
   if(!user){ alert("Debes iniciar sesión"); return; }
+
   const title = document.getElementById("newTitle").value.trim();
   const content = document.getElementById("newContent").value.trim();
   const mediaInput = document.getElementById("newMedia");
-  let mediaUrl = "";
+  let mediaUrl = null;
 
   if(mediaInput.files.length > 0){
     const file = mediaInput.files[0];
     const fileExt = file.name.split('.').pop();
     const fileName = `${Date.now()}.${fileExt}`;
-    const { data, error } = await supabase.storage.from('blog-media').upload(fileName, file);
-    if(error){ console.error(error); alert("Error subiendo archivo"); return; }
-    const { data: publicData } = supabase.storage.from('blog-media').getPublicUrl(fileName);
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('blog-media')
+      .upload(fileName, file);
+
+    if(uploadError){
+      console.error(uploadError);
+      alert("Error subiendo archivo");
+      return;
+    }
+
+    const { data: publicData } = supabase.storage
+      .from('blog-media')
+      .getPublicUrl(fileName);
+
     mediaUrl = publicData.publicUrl;
   }
 
   if(!title || !content){ alert("Completa todos los campos"); return; }
-  const { error } = await supabase.from("blog").insert([{ title, content, author:user.username, media_url:mediaUrl, likes:0 }]);
-  if(error){ console.error(error); alert("Error al publicar"); return; }
+
+  const { error } = await supabase.from("blog").insert([{
+    title,
+    content,
+    author: user.username,
+    media_url: mediaUrl,
+    likes: 0
+  }]);
+
+  if(error){
+    console.error(error);
+    alert("Error al publicar blog");
+    return;
+  }
+
   hideNewBlogForm();
   loadBlogs();
 }
