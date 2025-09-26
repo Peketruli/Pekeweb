@@ -96,12 +96,21 @@
 
   <script>
     const { createClient } = supabase;
-    const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+    const SUPABASE_URL = "https://TU_PROYECTO.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
     const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
     function getCurrentUser() { return JSON.parse(localStorage.getItem("currentUser")) || null; }
     function isUserLoggedIn() { return !!getCurrentUser(); }
+
+    function getDeviceId() {
+      let id = localStorage.getItem("device_id");
+      if (!id) {
+        id = crypto.randomUUID();
+        localStorage.setItem("device_id", id);
+      }
+      return id;
+    }
 
     function loadUserInfo() {
       const user = getCurrentUser();
@@ -134,42 +143,51 @@
     function hideNewBlogForm() { document.getElementById("newBlogForm").classList.add("hidden"); }
 
     async function loadBlogs() {
-      const { data, error } = await db.from("blog").select("*").order("created_at",{ascending:false});
+      const { data: blogs, error } = await db.from("blog").select("*").order("created_at",{ascending:false});
       if(error){ console.error(error); return; }
       const blogsList = document.getElementById("blogsList");
       blogsList.innerHTML = "";
-      data.forEach(blog => {
+      for(const blog of blogs) {
+        // contar likes de este blog
+        const { count } = await db.from("likes").select("*", { count: "exact", head: true }).eq("blog_id", blog.id);
         const div = document.createElement("div");
         div.className = "blog-post";
-        div.onclick = () => openBlog(blog);
-
         div.innerHTML = `
           <h3>${blog.title}</h3> 
           <p style="font-size:0.9em;color:gray;">Autor: ${blog.author || "Anónimo"}</p>
-          <p>❤️ <span id="likeCount-${blog.id}">${blog.likes || 0}</span></p>
+          <p>❤️ <span id="likeCount-${blog.id}">${count || 0}</span></p>
+          <button class="like-btn" onclick="event.stopPropagation(); toggleLike('${blog.id}')">❤️</button>
         `;
-
-        // botón de like que no abre el blog
-        const likeBtn = document.createElement("button");
-        likeBtn.className = "like-btn";
-        likeBtn.textContent = "❤️";
-        likeBtn.onclick = (e) => {
-          e.stopPropagation();
-          toggleLike(blog.id);
-        };
-
-        div.appendChild(likeBtn);
+        div.onclick = () => openBlog(blog);
         blogsList.appendChild(div);
-      });
+      }
     }
 
     async function toggleLike(blogId){
-      if(!isUserLoggedIn()){ alert("Inicia sesión para dar like"); return; }
+      const user = getCurrentUser();
+      let userId = user ? user.username : null;
+      let deviceId = user ? null : getDeviceId();
+
+      // comprobar si ya existe el like
+      let query = db.from("likes").select("*").eq("blog_id", blogId);
+      if(userId) query = query.eq("user_id", userId);
+      else query = query.eq("device_id", deviceId);
+
+      const { data: existingLike, error: checkError } = await query.maybeSingle();
+      if (checkError) { console.error(checkError); return; }
+
       const likeEl = document.getElementById(`likeCount-${blogId}`);
-      let count = parseInt(likeEl.textContent) || 0;
-      count++;
-      likeEl.textContent = count;
-      await db.from("blog").update({likes:count}).eq("id",blogId);
+      let currentLikes = parseInt(likeEl.textContent);
+
+      if (existingLike) {
+        // quitar like
+        await db.from("likes").delete().eq("id", existingLike.id);
+        likeEl.textContent = currentLikes - 1;
+      } else {
+        // añadir like
+        await db.from("likes").insert([{ blog_id: blogId, user_id: userId, device_id: deviceId }]);
+        likeEl.textContent = currentLikes + 1;
+      }
     }
 
     async function publishBlog() {
@@ -184,14 +202,14 @@
         const file = mediaInput.files[0];
         const fileExt = file.name.split('.').pop();
         const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await db.storage.from("blog-media").upload(fileName, file);
+        const { error: uploadError } = await db.storage.from('blog-media').upload(fileName, file);
         if(uploadError){ console.error(uploadError); alert("Error subiendo archivo"); return; }
-        const { data: publicData } = db.storage.from("blog-media").getPublicUrl(fileName);
+        const { data: publicData } = db.storage.from('blog-media').getPublicUrl(fileName);
         mediaUrl = publicData.publicUrl;
       }
 
       if(!title || !content){ alert("Completa todos los campos"); return; }
-      const { error } = await db.from("blog").insert([{ title, content, author:user.username, media_url:mediaUrl, likes:0 }]);
+      const { error } = await db.from("blog").insert([{ title, content, author:user.username, media_url:mediaUrl }]);
       if(error){ console.error(error); alert("Error al publicar"); return; }
       hideNewBlogForm();
       loadBlogs();
