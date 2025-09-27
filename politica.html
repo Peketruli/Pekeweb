@@ -16,11 +16,42 @@
     .partido img { width: 100px; height: 100px; object-fit: cover; border-radius: 6px; margin-bottom: 8px; }
     .partido h3 { margin: 8px 0; }
     .unirseBtn { background: #28a745; color: white; }
+
+    /* Notificaciones */
+    #notificaciones {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .notificacion {
+      padding: 12px 16px;
+      border-radius: 6px;
+      color: white;
+      font-weight: bold;
+      box-shadow: 0px 2px 6px rgba(0,0,0,0.2);
+      opacity: 0;
+      transform: translateX(100%);
+      animation: aparecer 0.3s forwards;
+    }
+    .notificacion.exito { background: #28a745; }
+    .notificacion.error { background: #dc3545; }
+    @keyframes aparecer {
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes desaparecer {
+      to { opacity: 0; transform: translateX(100%); }
+    }
   </style>
 </head>
 <body>
 
   <h1>Política</h1>
+
+  <div id="notificaciones"></div>
 
   <button id="btnCrearPartido">Crear Partido Político</button>
 
@@ -46,9 +77,24 @@
     const crearPartidoForm = document.getElementById('crearPartidoForm');
     const guardarPartido = document.getElementById('guardarPartido');
     const listaPartidos = document.getElementById('listaPartidos');
+    const notificaciones = document.getElementById('notificaciones');
 
     let usuarioActual = { id: "uuid-del-usuario" }; 
     // 👆 Aquí deberías poner el id del usuario logueado con Supabase Auth
+
+    // Función para mostrar notificaciones
+    function mostrarNotificacion(mensaje, tipo = "exito") {
+      const div = document.createElement("div");
+      div.className = `notificacion ${tipo}`;
+      div.innerText = mensaje;
+      notificaciones.appendChild(div);
+
+      // Quitar notificación a los 3 segundos
+      setTimeout(() => {
+        div.style.animation = "desaparecer 0.5s forwards";
+        setTimeout(() => div.remove(), 500);
+      }, 3000);
+    }
 
     // Mostrar / ocultar formulario
     btnCrearPartido.addEventListener('click', () => {
@@ -59,6 +105,7 @@
     async function cargarPartidos() {
       const { data: partidos, error } = await supabaseClient.from('partidos_politicos').select('*');
       if (error) {
+        mostrarNotificacion("Error al cargar partidos", "error");
         console.error(error);
         return;
       }
@@ -79,44 +126,74 @@
 
     // Crear partido
     guardarPartido.addEventListener('click', async () => {
-      const nombre = document.getElementById('nombrePartido').value;
+      const nombre = document.getElementById('nombrePartido').value.trim();
       const color = document.getElementById('colorPartido').value;
       const logoFile = document.getElementById('logoPartido').files[0];
-      const descripcion = document.getElementById('descripcionPartido').value;
+      const descripcion = document.getElementById('descripcionPartido').value.trim();
 
-      let logoUrl = '';
-      if(logoFile){
-        const { data, error } = await supabaseClient.storage.from('logos').upload(`logos/${Date.now()}_${logoFile.name}`, logoFile);
-        if(error){ console.error(error); return; }
-        logoUrl = supabaseClient.storage.from('logos').getPublicUrl(data.path).publicURL;
+      if(!nombre){
+        mostrarNotificacion("Debes poner un nombre al partido", "error");
+        return;
       }
 
-      const { error } = await supabaseClient.from('partidos_politicos').insert([{
-        nombre, color, logo: logoUrl, descripcion, creador_id: usuarioActual.id
-      }]);
-      if (error) { console.error(error); return; }
+      let logoUrl = '';
 
-      crearPartidoForm.style.display = 'none';
+      if(logoFile){
+        const filePath = `logos/${Date.now()}_${logoFile.name}`;
+        const { data, error: uploadError } = await supabaseClient
+          .storage
+          .from('logos')
+          .upload(filePath, logoFile);
+
+        if(uploadError){
+          mostrarNotificacion("No se pudo subir el logo", "error");
+          console.error(uploadError);
+          return;
+        }
+
+        logoUrl = supabaseClient
+          .storage
+          .from('logos')
+          .getPublicUrl(data.path).publicURL;
+      }
+
+      const { error: insertError } = await supabaseClient
+        .from('partidos_politicos')
+        .insert([{
+          nombre,
+          color,
+          logo: logoUrl,
+          descripcion,
+          creador_id: usuarioActual.id
+        }]);
+
+      if(insertError){
+        mostrarNotificacion("Error al crear el partido", "error");
+        console.error(insertError);
+        return;
+      }
+
+      mostrarNotificacion("¡Partido creado con éxito!");
       cargarPartidos();
+      crearPartidoForm.style.display = 'none';
     });
 
     // Unirse a un partido
     async function unirsePartido(partidoId){
-      const { error } = await supabaseClient.from('usuarios').update({
-        partido_id: partidoId
-      }).eq('id', usuarioActual.id);
+      const { error } = await supabaseClient.from('usuarios')
+        .update({ partido_id: partidoId })
+        .eq('id', usuarioActual.id);
 
       if(error){
+        mostrarNotificacion("Error al unirse al partido", "error");
         console.error(error);
       } else {
-        alert("¡Te has unido al partido!");
+        mostrarNotificacion("¡Te has unido al partido!");
       }
     }
 
-    // Cargar al inicio
+    // Cargar partidos al inicio
     cargarPartidos();
-
-    // Hacer función accesible desde HTML
     window.unirsePartido = unirsePartido;
   </script>
 </body>
