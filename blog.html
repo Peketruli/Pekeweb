@@ -191,29 +191,61 @@
     }
 
     async function publishBlog() {
-      const user = getCurrentUser();
-      if(!user){ alert("Debes iniciar sesión"); return; }
-      const title = document.getElementById("newTitle").value.trim();
-      const content = document.getElementById("newContent").value.trim();
-      const mediaInput = document.getElementById("newMedia");
-      let mediaUrl = "";
-      
-      if(mediaInput.files.length > 0){
-        const file = mediaInput.files[0];
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}.${fileExt}`;
-        const { error: uploadError } = await db.storage.from('blog-media').upload(fileName, file);
-        if(uploadError){ console.error(uploadError); alert("Error subiendo archivo"); return; }
-        const { data: publicData } = db.storage.from('blog-media').getPublicUrl(fileName);
-        mediaUrl = publicData.publicUrl;
-      }
+  const user = getCurrentUser();
+  if (!user) { alert("Debes iniciar sesión"); return; }
 
-      if(!title || !content){ alert("Completa todos los campos"); return; }
-      const { error } = await db.from("blog").insert([{ title, content, author:user.username, media_url:mediaUrl }]);
-      if(error){ console.error(error); alert("Error al publicar"); return; }
-      hideNewBlogForm();
-      loadBlogs();
+  const title = document.getElementById("newTitle").value.trim();
+  const content = document.getElementById("newContent").value.trim();
+  const mediaInput = document.getElementById("newMedia");
+  let mediaUrl = "";
+
+  if (mediaInput.files.length > 0) {
+    const file = mediaInput.files[0];
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${Date.now()}.${fileExt}`;
+
+    // Subir archivo al bucket blog-media
+    const { error: uploadError } = await db
+      .storage
+      .from("blog-media")
+      .upload(fileName, file);
+
+    if (uploadError) {
+      console.error(uploadError);
+      alert("Error subiendo archivo");
+      return;
     }
+
+    // Obtener URL pública
+    const { data } = db
+      .storage
+      .from("blog-media")
+      .getPublicUrl(fileName);
+
+    mediaUrl = data.publicUrl;
+  }
+
+  if (!title || !content) {
+    alert("Completa todos los campos");
+    return;
+  }
+
+  const { error } = await db.from("blog").insert([{
+    title,
+    content,
+    author: user.username,
+    media_url: mediaUrl
+  }]);
+
+  if (error) {
+    console.error(error);
+    alert("Error al publicar");
+    return;
+  }
+
+  hideNewBlogForm();
+  loadBlogs();
+}
 
     function openBlog(blog){
       document.getElementById("blogTitleDetail").textContent = blog.title;
