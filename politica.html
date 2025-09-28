@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Política</title>
   <script src="https://unpkg.com/@supabase/supabase-js"></script>
   <style>
@@ -9,7 +9,7 @@
     h1, h2 { text-align: center; }
     button { padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; margin-top: 8px; }
     #btnCrearPartido { background: #007bff; color: #fff; display: block; margin: 10px auto; }
-    #crearPartidoForm { margin: 16px auto; padding: 16px; border: 2px solid #ccc; border-radius: 8px; max-width: 400px; background: #fff; }
+    #crearPartidoForm { margin: 16px auto; padding: 16px; border: 2px solid #ccc; border-radius: 8px; max-width: 420px; background: #fff; }
     #crearPartidoForm input, #crearPartidoForm textarea { width: 100%; padding: 8px; margin: 6px 0; border-radius: 4px; border: 1px solid #ccc; }
     #listaPartidos { display: flex; flex-wrap: wrap; justify-content: center; }
     .partido { border: 2px solid #ccc; border-radius: 8px; padding: 16px; margin: 12px; background: #fff; width: 220px; text-align: center; box-shadow: 0px 2px 6px rgba(0,0,0,0.1); }
@@ -39,23 +39,21 @@
     }
     .notificacion.exito { background: #28a745; }
     .notificacion.error { background: #dc3545; }
+    .notificacion.info { background: #007bff; }
     @keyframes aparecer { to { opacity: 1; transform: translateX(0); } }
     @keyframes desaparecer { to { opacity: 0; transform: translateX(100%); } }
   </style>
 </head>
 <body>
-
   <h1>Política</h1>
-
   <div id="notificaciones"></div>
-
   <button id="btnCrearPartido">Crear Partido Político</button>
 
   <div id="crearPartidoForm" style="display:none;">
     <h3>Crear Partido</h3>
     <input type="text" id="nombrePartido" placeholder="Nombre del partido">
     <input type="color" id="colorPartido" value="#ff0000">
-    <input type="file" id="logoPartido">
+    <input type="file" id="logoPartido" accept="image/*">
     <textarea id="descripcionPartido" placeholder="Breve descripción"></textarea>
     <button id="guardarPartido">Guardar Partido</button>
   </div>
@@ -64,9 +62,9 @@
   <div id="listaPartidos"></div>
 
   <script>
-    // Conexión a Supabase
-    const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-    const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+    // CONFIGURA ESTO:
+    const supabaseUrl = "TU_SUPABASE_URL";
+    const supabaseKey = "TU_SUPABASE_ANON_KEY";
     const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
     const btnCrearPartido = document.getElementById('btnCrearPartido');
@@ -75,11 +73,23 @@
     const listaPartidos = document.getElementById('listaPartidos');
     const notificaciones = document.getElementById('notificaciones');
 
-    // UUID de usuario de prueba (debe existir en tabla usuarios)
-    let usuarioActual = { id: "a1b2c3d4-e5f6-7890-1234-56789abcdef0" };
+    // Intenta obtener el id del usuario logueado de diferentes maneras:
+    function getLoggedUserId(){
+      // 1) Si tu servidor inyecta una variable global window.USUARIO_ID, la toma:
+      if(window.USUARIO_ID) return window.USUARIO_ID + "";
 
-    // Función de notificaciones
-    function mostrarNotificacion(mensaje, tipo = "exito") {
+      // 2) Si guardas user id en localStorage con la llave 'usuario_id'
+      const fromLocal = localStorage.getItem('usuario_id');
+      if(fromLocal) return fromLocal + "";
+
+      // 3) Si guardas en cookie 'usuario_id'
+      const match = document.cookie.match(new RegExp('(^| )usuario_id=([^;]+)'));
+      if(match) return decodeURIComponent(match[2]);
+
+      return null;
+    }
+
+    function mostrarNotificacion(mensaje, tipo = "info") {
       const div = document.createElement("div");
       div.className = `notificacion ${tipo}`;
       div.innerText = mensaje;
@@ -87,34 +97,47 @@
       setTimeout(() => {
         div.style.animation = "desaparecer 0.5s forwards";
         setTimeout(() => div.remove(), 500);
-      }, 3000);
+      }, 3500);
     }
 
-    // Mostrar / ocultar formulario
     btnCrearPartido.addEventListener('click', () => {
       crearPartidoForm.style.display = crearPartidoForm.style.display === 'none' ? 'block' : 'none';
     });
 
     // Cargar partidos
     async function cargarPartidos() {
-      const { data: partidos, error } = await supabaseClient.from('partidos_politicos').select('*');
+      const { data: partidos, error } = await supabaseClient.from('partidos_politicos').select('*').order('creado_en', { ascending: false });
       if (error) {
-        mostrarNotificacion("Error al cargar partidos: " + error.message, "error");
+        mostrarNotificacion("Error al cargar partidos: " + (error.message || error), "error");
+        console.error(error);
         return;
       }
       listaPartidos.innerHTML = '';
       partidos.forEach(p => {
         const div = document.createElement('div');
         div.className = 'partido';
-        div.style.borderColor = p.color;
+        div.style.borderColor = p.color || '#ccc';
         div.innerHTML = `
           <h3>${p.nombre}</h3>
-          ${p.logo ? `<img src="${p.logo}" alt="Logo">` : `<div style="width:100px;height:100px;background:${p.color};margin:0 auto;border-radius:6px;"></div>`}
+          ${p.logo ? `<img src="${p.logo}" alt="Logo">` : `<div style="width:100px;height:100px;background:${p.color || '#999'};margin:0 auto;border-radius:6px;"></div>`}
           <p>${p.descripcion || "Sin descripción"}</p>
           <button class="unirseBtn" onclick="unirsePartido('${p.id}')">Unirse</button>
         `;
         listaPartidos.appendChild(div);
       });
+    }
+
+    // Subir logo (opcional)
+    async function subirLogo(logoFile){
+      if(!logoFile) return '';
+      const filePath = `logos/${Date.now()}_${logoFile.name.replace(/\s+/g,'_')}`;
+      const { data, error } = await supabaseClient.storage.from('logos').upload(filePath, logoFile, { upsert: true });
+      if(error){
+        console.warn("Error al subir logo:", error);
+        return ''; // fallback vacío (se usa color)
+      }
+      const { data: publicUrl } = supabaseClient.storage.from('logos').getPublicUrl(data.path);
+      return publicUrl.publicUrl || '';
     }
 
     // Crear partido
@@ -129,25 +152,17 @@
         return;
       }
 
-      let logoUrl = '';
-
-      if(logoFile){
-        const filePath = `logos/${Date.now()}_${logoFile.name}`;
-        const { data, error: uploadError } = await supabaseClient
-          .storage
-          .from('logos')
-          .upload(filePath, logoFile);
-        if(uploadError){
-          console.warn("No se pudo subir el logo, se usará un color por defecto", uploadError);
-        } else {
-          logoUrl = supabaseClient
-            .storage
-            .from('logos')
-            .getPublicUrl(data.path).publicURL;
-        }
+      // Obtener el usuario logueado (desde tu sistema de sesión)
+      const usuarioId = getLoggedUserId();
+      if(!usuarioId){
+        mostrarNotificacion("No se detecta tu sesión. Inyecta el id del usuario en window.USUARIO_ID o en localStorage('usuario_id')", "error");
+        return;
       }
 
-      // Intentar insertar partido
+      // Subir logo (opcional)
+      const logoUrl = await subirLogo(logoFile);
+
+      // Insertar partido con creador_id = usuarioId (que apunta a tu tabla usuarios)
       const { data: insertData, error: insertError } = await supabaseClient
         .from('partidos_politicos')
         .insert([{
@@ -155,38 +170,41 @@
           color,
           logo: logoUrl,
           descripcion,
-          creador_id: usuarioActual.id
+          creador_id: usuarioId
         }])
         .select();
 
       if(insertError){
-        mostrarNotificacion("Error al crear partido: " + insertError.message, "error");
+        mostrarNotificacion("Error al crear partido: " + (insertError.message || JSON.stringify(insertError)), "error");
         console.error("Error insertando partido:", insertError);
         return;
       }
 
-      mostrarNotificacion("¡Partido creado con éxito!");
+      mostrarNotificacion("¡Partido creado con éxito!", "exito");
       cargarPartidos();
       crearPartidoForm.style.display = 'none';
     });
 
-    // Unirse a un partido
+    // Unirse a un partido (usa la misma lógica para usuario logueado)
     async function unirsePartido(partidoId){
-      const { error } = await supabaseClient.from('usuarios')
-        .update({ partido_id: partidoId })
-        .eq('id', usuarioActual.id);
+      const usuarioId = getLoggedUserId();
+      if(!usuarioId){
+        mostrarNotificacion("No se detecta tu sesión. Inyecta el id del usuario en window.USUARIO_ID o en localStorage('usuario_id')", "error");
+        return;
+      }
 
+      const { error } = await supabaseClient.from('usuarios').update({ partido_id: partidoId }).eq('id', usuarioId);
       if(error){
-        mostrarNotificacion("Error al unirse al partido: " + error.message, "error");
+        mostrarNotificacion("Error al unirse al partido: " + (error.message || JSON.stringify(error)), "error");
         console.error(error);
       } else {
-        mostrarNotificacion("¡Te has unido al partido!");
+        mostrarNotificacion("¡Te has unido al partido!", "exito");
       }
     }
-
-    // Cargar partidos al inicio
-    cargarPartidos();
     window.unirsePartido = unirsePartido;
+
+    // Inicio
+    cargarPartidos();
   </script>
 </body>
 </html>
