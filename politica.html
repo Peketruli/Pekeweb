@@ -39,12 +39,8 @@
     }
     .notificacion.exito { background: #28a745; }
     .notificacion.error { background: #dc3545; }
-    @keyframes aparecer {
-      to { opacity: 1; transform: translateX(0); }
-    }
-    @keyframes desaparecer {
-      to { opacity: 0; transform: translateX(100%); }
-    }
+    @keyframes aparecer { to { opacity: 1; transform: translateX(0); } }
+    @keyframes desaparecer { to { opacity: 0; transform: translateX(100%); } }
   </style>
 </head>
 <body>
@@ -69,8 +65,8 @@
 
   <script>
     // Conexión a Supabase
-    const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co"; // <- pon tu URL de Supabase
-    const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // <- pon tu clave pública
+    const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+    const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
     const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
 
     const btnCrearPartido = document.getElementById('btnCrearPartido');
@@ -79,17 +75,15 @@
     const listaPartidos = document.getElementById('listaPartidos');
     const notificaciones = document.getElementById('notificaciones');
 
-    let usuarioActual = { id: "uuid-del-usuario" }; 
-    // 👆 Aquí deberías poner el id del usuario logueado con Supabase Auth
+    // UUID de usuario de prueba (debe existir en tabla usuarios)
+    let usuarioActual = { id: "a1b2c3d4-e5f6-7890-1234-56789abcdef0" };
 
-    // Función para mostrar notificaciones
+    // Función de notificaciones
     function mostrarNotificacion(mensaje, tipo = "exito") {
       const div = document.createElement("div");
       div.className = `notificacion ${tipo}`;
       div.innerText = mensaje;
       notificaciones.appendChild(div);
-
-      // Quitar notificación a los 3 segundos
       setTimeout(() => {
         div.style.animation = "desaparecer 0.5s forwards";
         setTimeout(() => div.remove(), 500);
@@ -104,10 +98,10 @@
     // Cargar partidos
     async function cargarPartidos() {
       const { data: partidos, error } = await supabaseClient.from('partidos_politicos').select('*');
-      if(uploadError){
-  console.warn("No se pudo subir el logo, se usará un color por defecto:", uploadError);
-  logoUrl = ''; // fallback sin imagen
-}
+      if (error) {
+        mostrarNotificacion("Error al cargar partidos: " + error.message, "error");
+        return;
+      }
       listaPartidos.innerHTML = '';
       partidos.forEach(p => {
         const div = document.createElement('div');
@@ -143,20 +137,18 @@
           .storage
           .from('logos')
           .upload(filePath, logoFile);
-
         if(uploadError){
-          mostrarNotificacion("No se pudo subir el logo", "error");
-          console.error(uploadError);
-          return;
+          console.warn("No se pudo subir el logo, se usará un color por defecto", uploadError);
+        } else {
+          logoUrl = supabaseClient
+            .storage
+            .from('logos')
+            .getPublicUrl(data.path).publicURL;
         }
-
-        logoUrl = supabaseClient
-          .storage
-          .from('logos')
-          .getPublicUrl(data.path).publicURL;
       }
 
-      const { error: insertError } = await supabaseClient
+      // Intentar insertar partido
+      const { data: insertData, error: insertError } = await supabaseClient
         .from('partidos_politicos')
         .insert([{
           nombre,
@@ -164,11 +156,12 @@
           logo: logoUrl,
           descripcion,
           creador_id: usuarioActual.id
-        }]);
+        }])
+        .select();
 
       if(insertError){
-        mostrarNotificacion("Error al crear el partido", "error");
-        console.error(insertError);
+        mostrarNotificacion("Error al crear partido: " + insertError.message, "error");
+        console.error("Error insertando partido:", insertError);
         return;
       }
 
@@ -184,7 +177,7 @@
         .eq('id', usuarioActual.id);
 
       if(error){
-        mostrarNotificacion("Error al unirse al partido", "error");
+        mostrarNotificacion("Error al unirse al partido: " + error.message, "error");
         console.error(error);
       } else {
         mostrarNotificacion("¡Te has unido al partido!");
