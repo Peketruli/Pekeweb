@@ -2,132 +2,183 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Partidos Políticos</title>
-<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crear Partido Político</title>
 <style>
-body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
-h1,h2 { text-align: center; }
-#formPartido { max-width: 400px; margin: 0 auto 20px auto; padding: 15px; background: #fff; border-radius: 8px; border: 1px solid #ccc; }
-#formPartido input, #formPartido textarea { width: 100%; margin-bottom: 10px; padding: 8px; border-radius: 4px; border: 1px solid #ccc; }
-#listaPartidos { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-.partido { width: 220px; background: #fff; border-radius: 8px; border: 2px solid #ccc; padding: 10px; text-align: center; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
-.partido img { width: 100px; height: 100px; object-fit: cover; border-radius: 6px; margin-bottom: 8px; }
-.notificacion { position: fixed; top: 20px; right: 20px; padding: 12px 16px; border-radius: 6px; color: white; font-weight: bold; box-shadow: 0 2px 6px rgba(0,0,0,0.2); opacity: 0; transform: translateX(100%); animation: aparecer 0.3s forwards; }
-.notificacion.exito { background: #28a745; }
-.notificacion.error { background: #dc3545; }
-@keyframes aparecer { to { opacity:1; transform: translateX(0);} }
-@keyframes desaparecer { to { opacity:0; transform: translateX(100%);} }
+  body {
+    font-family: Arial, sans-serif;
+    background: #f5f5f5;
+    margin: 0;
+    padding: 0;
+  }
+  .container {
+    max-width: 600px;
+    margin: 40px auto;
+    padding: 20px;
+    background: #fff;
+    border-radius: 10px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  }
+  h1 { text-align: center; }
+  label { display: block; margin-top: 15px; font-weight: bold; }
+  input[type="text"], textarea, input[type="file"] {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+    border-radius: 5px;
+    border: 1px solid #ccc;
+    box-sizing: border-box;
+  }
+  button {
+    margin-top: 20px;
+    padding: 10px 20px;
+    background: #0077ff;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  button:hover { background: #0055aa; }
+  .candidate-inputs { margin-top: 10px; }
+  .candidate-inputs input { margin-top: 5px; }
 </style>
 </head>
 <body>
 
-<h1>Partidos Políticos</h1>
+<div class="container">
+  <h1>Crear Partido Político</h1>
+  <form id="partyForm">
+    <label>Nombre del Partido</label>
+    <input type="text" id="partyName" required>
 
-<div id="notificaciones"></div>
+    <label>Descripción</label>
+    <textarea id="partyDescription" rows="4" required></textarea>
 
-<form id="formPartido">
-  <h3>Crear un Partido</h3>
-  <input type="text" id="nombre" placeholder="Nombre del partido" required>
-  <input type="color" id="color" value="#ff0000">
-  <textarea id="descripcion" placeholder="Breve descripción"></textarea>
-  <input type="file" id="logo" accept="image/*">
-  <button type="submit">Guardar Partido</button>
-</form>
+    <label>Logo</label>
+    <input type="file" id="partyLogo" accept="image/*">
 
-<h2>Partidos Existentes</h2>
-<div id="listaPartidos"></div>
+    <label>Programa / Manifesto (un punto por línea)</label>
+    <textarea id="partyManifesto" rows="4"></textarea>
 
-<script>
-const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co"; // tu URL
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // tu clave pública
-const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+    <label>Candidatos</label>
+    <div class="candidate-inputs" id="candidateInputs">
+      <input type="text" placeholder="Nombre candidato" class="candidateName">
+    </div>
+    <button type="button" id="addCandidate">+ Añadir otro candidato</button>
 
-const listaPartidos = document.getElementById("listaPartidos");
-const notificaciones = document.getElementById("notificaciones");
+    <button type="submit">Crear Partido</button>
+  </form>
+  <p id="status"></p>
+</div>
 
-// UUID del usuario logueado, desde tu tabla usuarios
-const usuarios_id = localStorage.getItem("usuarios_id");
-if(!usuarios_id){
-  alert("No se detecta tu sesión. Guarda el id del usuario en localStorage('usuarios_id')");
-}
+<script type="module">
+  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
-function mostrarNotificacion(mensaje, tipo="exito"){
-  const div = document.createElement("div");
-  div.className = `notificacion ${tipo}`;
-  div.innerText = mensaje;
-  notificaciones.appendChild(div);
-  setTimeout(()=>{
-    div.style.animation="desaparecer 0.5s forwards";
-    setTimeout(()=> div.remove(),500);
-  },3000);
-}
+  // Inicializa Supabase
+  const SUPABASE_URL = 'TU_SUPABASE_URL';
+  const SUPABASE_KEY = 'TU_SUPABASE_ANON_KEY';
+  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-async function cargarPartidos(){
-  const { data, error } = await supabase.from("partidos_politicos").select("*");
-  if(error){
-    mostrarNotificacion("Error cargando partidos: " + error.message, "error");
-    return;
-  }
+  const partyForm = document.getElementById('partyForm');
+  const candidateInputs = document.getElementById('candidateInputs');
+  const addCandidateBtn = document.getElementById('addCandidate');
+  const statusText = document.getElementById('status');
 
-  listaPartidos.innerHTML = "";
-  if(!data || data.length === 0){
-    listaPartidos.innerHTML = "<p>No hay partidos aún.</p>";
-    return;
-  }
-
-  data.forEach(p=>{
-    const div = document.createElement("div");
-    div.className = "partido";
-    div.style.borderColor = p.color;
-    div.innerHTML = `
-      <h3>${p.nombre}</h3>
-      ${p.logo ? `<img src="${p.logo}" alt="Logo">` : `<div style="width:100px;height:100px;background:${p.color};margin:0 auto;border-radius:6px;"></div>`}
-      <p>${p.descripcion||""}</p>
-      <small>Creado por: ${p.usuarios_id}</small>
-    `;
-    listaPartidos.appendChild(div);
+  addCandidateBtn.addEventListener('click', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = 'Nombre candidato';
+    input.className = 'candidateName';
+    candidateInputs.appendChild(input);
   });
-}
 
-document.getElementById("formPartido").addEventListener("submit", async (e)=>{
-  e.preventDefault();
-  if(!usuarios_id){
-    mostrarNotificacion("No se puede crear el partido sin usuario.", "error");
-    return;
+  function slugify(text) {
+    return text.toString().toLowerCase()
+      .replace(/\s+/g,'-')
+      .replace(/[^\w\-]+/g,'')
+      .replace(/\-\-+/g,'-')
+      .replace(/^-+|-+$/g,'');
   }
 
-  const nombre = document.getElementById("nombre").value.trim();
-  const color = document.getElementById("color").value;
-  const descripcion = document.getElementById("descripcion").value.trim();
-  const logoFile = document.getElementById("logo").files[0];
+  async function cryptoRandomUUID() {
+    return (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Math.random().toString(36).slice(2,10));
+  }
 
-  let logoUrl = null;
+  partyForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    statusText.textContent = 'Creando partido...';
 
-  if(logoFile){
-    const filePath = `partidos/${Date.now()}_${logoFile.name}`;
-    const { data: uploadData, error: uploadError } = await supabase.storage.from("partidos").upload(filePath, logoFile);
-    if(uploadError){
-      mostrarNotificacion("Error al subir logo: "+uploadError.message, "error");
+    const userRes = await supabase.auth.getUser();
+    const user = userRes.data.user;
+    if (!user) {
+      statusText.textContent = 'Debes iniciar sesión primero.';
       return;
     }
-    logoUrl = supabase.storage.from("partidos").getPublicUrl(filePath).publicURL;
-  }
 
-  const { error } = await supabase.from("partidos_politicos").insert([{
-    nombre, color, descripcion, logo: logoUrl, usuarios_id
-  }]);
+    const name = document.getElementById('partyName').value;
+    const description = document.getElementById('partyDescription').value;
+    const manifestoText = document.getElementById('partyManifesto').value;
+    const manifestoArray = manifestoText.split('\n').filter(l => l.trim() !== '');
+    const logoFile = document.getElementById('partyLogo').files[0];
 
-  if(error){
-    mostrarNotificacion("Error al crear partido: "+error.message, "error");
-  } else {
-    mostrarNotificacion("Partido creado con éxito!");
-    document.getElementById("formPartido").reset();
-    cargarPartidos();
-  }
-});
+    const slug = `${slugify(name)}-${Math.random().toString(36).slice(2,6)}`;
+    let logo_path = null;
 
-// Cargar al inicio
-cargarPartidos();
+    if (logoFile) {
+      const fileExt = logoFile.name.split('.').pop();
+      const fileName = await cryptoRandomUUID() + '.' + fileExt;
+      const path = `parties/logos/${fileName}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from('public') // tu bucket
+        .upload(path, logoFile, { cacheControl: '3600', upsert: false });
+      if (uploadError) {
+        statusText.textContent = 'Error al subir el logo: ' + uploadError.message;
+        return;
+      }
+      logo_path = uploadData.path;
+    }
+
+    try {
+      const { data: party, error: partyError } = await supabase
+        .from('parties')
+        .insert([{
+          name, slug, description, manifesto: manifestoArray, logo_path, creator_id: user.id
+        }])
+        .select()
+        .single();
+
+      if (partyError) throw partyError;
+
+      // Candidatos
+      const candidateElements = document.querySelectorAll('.candidateName');
+      const candidates = Array.from(candidateElements)
+        .map(c => c.value.trim())
+        .filter(c => c !== '');
+      if (candidates.length > 0) {
+        const candidatesToInsert = candidates.map((c, i) => ({
+          party_id: party.id,
+          name: c,
+          order_index: i
+        }));
+        const { error: candError } = await supabase.from('party_candidates').insert(candidatesToInsert);
+        if (candError) console.error('Error candidatos', candError);
+      }
+
+      // Agregar creador como miembro
+      await supabase.from('party_members').insert([{
+        party_id: party.id,
+        user_id: user.id,
+        role: 'creator'
+      }]);
+
+      statusText.textContent = '¡Partido creado exitosamente!';
+      partyForm.reset();
+      candidateInputs.innerHTML = '<input type="text" placeholder="Nombre candidato" class="candidateName">';
+    } catch (err) {
+      console.error(err);
+      statusText.textContent = 'Error al crear el partido: ' + err.message;
+    }
+  });
 </script>
 
 </body>
