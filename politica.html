@@ -207,53 +207,115 @@ window.joinParty = async function(partyId){
   showParty(partyId);
 }
 
-// Mostrar partido
+// ==========================
+// FUNCION PARA MOSTRAR PARTIDO
+// ==========================
 async function showParty(partyId){
-  const { data: party } = await supabase.from("parties")
-    .select("id,name,description,logo_path,manifesto")
-    .eq("id", partyId).single();
-  if(!party) return;
-
-  // Ocultar vista principal y mostrar la del partido
   mainContainer.style.display = "none";
   partyView.style.display = "block";
 
-  // Datos del partido
+  // Traer datos del partido
+  const { data: party, error: partyError } = await supabase
+    .from("parties")
+    .select("id,name,description,logo_path,manifesto")
+    .eq("id", partyId)
+    .single();
+
+  if(partyError || !party){
+    console.error("Error cargando partido:", partyError);
+    alert("No se pudo cargar el partido.");
+    return;
+  }
+
   partyNameView.textContent = party.name;
   partyDescriptionView.textContent = party.description;
-
+  
   if(party.logo_path){
     partyLogoView.src = supabase.storage.from("logos").getPublicUrl(party.logo_path).data.publicUrl;
-    partyLogoView.style.display="block";
-  } else { partyLogoView.style.display="none"; }
+    partyLogoView.style.display = "block";
+  } else {
+    partyLogoView.style.display = "none";
+  }
 
-  manifestoList.innerHTML = party.manifesto?.map(l=>`<li>${l}</li>`).join("") || "<li>No hay manifesto</li>";
+  manifestoList.innerHTML = party.manifesto?.map(line => `<li>${line}</li>`).join("") || "<li>No hay manifesto</li>";
 
-const { data: members, error: membersError } = await supabase
-  .from("party_members")
-  .select("usuarios(id,nombre)")
-  .eq("party_id", partyId);
+  // Traer miembros del partido con relación correcta a tabla "usuarios"
+  const { data: members, error: membersError } = await supabase
+    .from("party_members")
+    .select("usuarios_id, usuarios(nombre)")
+    .eq("party_id", partyId);
 
-if(membersError){
-  console.error("Error cargando miembros:", membersError);
-  partyMembersList.innerHTML = "<li>Error cargando miembros</li>";
-} else {
-  partyMembersList.innerHTML = members.length > 0 
-    ? members.map(m => `<li>${m.usuarios.nombre}</li>`).join("")
-    : "<li>No hay miembros</li>";
-}
+  if(membersError){
+    console.error("Error cargando miembros:", membersError);
+    partyMembersList.innerHTML = "<li>Error cargando miembros</li>";
+  } else {
+    partyMembersList.innerHTML = members.length > 0
+      ? members.map(m => `<li>${m.usuarios?.nombre || "Anon"}</li>`).join("")
+      : "<li>No hay miembros</li>";
+  }
 
-
-  // Mostrar nombres de los miembros
-  partyMembersList.innerHTML = users.map(u => `<li>${u.nombre}</li>`).join("") || "<li>No hay miembros</li>";
-
-  // Cargar mensajes
   await loadMessages(partyId);
-
-  // Guardar partido en localStorage
   localStorage.setItem("currentPartyId", partyId);
 }
 
+// ==========================
+// FUNCION PARA UNIRSE AL PARTIDO
+// ==========================
+window.joinParty = async function(partyId){
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  if(!user){ alert("Debes iniciar sesión"); return; }
+
+  // Comprobar si ya está en un partido
+  const { data: existing } = await supabase.from("party_members")
+    .select("party_id")
+    .eq("usuarios_id", user.id);
+
+  if(existing && existing.length > 0){
+    showParty(existing[0].party_id);
+    return;
+  }
+
+  // Insertar al usuario en el partido
+  const { error } = await supabase.from("party_members")
+    .insert([{ party_id: partyId, usuarios_id: user.id, role: "member" }]);
+
+  if(error){ alert("No se pudo unir: "+error.message); return; }
+
+  showParty(partyId);
+}
+
+// ==========================
+// SALIR DEL PARTIDO
+// ==========================
+leaveBtn.addEventListener("click", async ()=>{
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  const partyId = localStorage.getItem("currentPartyId");
+  if(!user || !partyId) return;
+
+  const { error } = await supabase.from("party_members")
+    .delete()
+    .eq("party_id", partyId)
+    .eq("usuarios_id", user.id);
+
+  if(error){
+    console.error("Error saliendo del partido:", error);
+    alert("No se pudo salir del partido");
+    return;
+  }
+
+  localStorage.removeItem("currentPartyId");
+  partyView.style.display = "none";
+  mainContainer.style.display = "block";
+  loadParties();
+});
+
+// ==========================
+// BOTON VOLVER AL HUB
+// ==========================
+hubBtn.addEventListener("click", ()=>{
+  localStorage.removeItem("currentPartyId"); // opcional, si quieres limpiar
+  window.location.href = "Hub.html";
+});
 
 // Mensajes
 async function loadMessages(partyId){
