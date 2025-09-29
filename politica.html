@@ -214,9 +214,11 @@ async function showParty(partyId){
     .eq("id", partyId).single();
   if(!party) return;
 
+  // Ocultar vista principal y mostrar la del partido
   mainContainer.style.display = "none";
   partyView.style.display = "block";
 
+  // Datos del partido
   partyNameView.textContent = party.name;
   partyDescriptionView.textContent = party.description;
 
@@ -227,27 +229,32 @@ async function showParty(partyId){
 
   manifestoList.innerHTML = party.manifesto?.map(l=>`<li>${l}</li>`).join("") || "<li>No hay manifesto</li>";
 
-  const { data: members } = await supabase.from("party_members").select("usuarios(nombre)").eq("party_id", partyId);
-  partyMembersList.innerHTML = members.map(m=>`<li>${m.usuarios?.nombre||'Anon'}</li>`).join("");
+  // ====== TRAER MIEMBROS Y SUS NOMBRES ======
+  const { data: members } = await supabase
+    .from("party_members")
+    .select("usuarios_id")
+    .eq("party_id", partyId);
 
+  const userIds = members.map(m => m.usuarios_id);
+  let users = [];
+  if(userIds.length > 0){
+    const { data } = await supabase
+      .from("usuarios")
+      .select("id,nombre")
+      .in("id", userIds);
+    users = data || [];
+  }
+
+  // Mostrar nombres de los miembros
+  partyMembersList.innerHTML = users.map(u => `<li>${u.nombre}</li>`).join("") || "<li>No hay miembros</li>";
+
+  // Cargar mensajes
   await loadMessages(partyId);
+
+  // Guardar partido en localStorage
+  localStorage.setItem("currentPartyId", partyId);
 }
 
-// Salir del partido
-leaveBtn.addEventListener("click", async ()=>{
-  const user = JSON.parse(localStorage.getItem("currentUser"));
-  const partyId = localStorage.getItem("currentPartyId");
-  if(!user || !partyId) return;
-
-  await supabase.from("party_members").delete().eq("party_id",partyId).eq("usuarios_id",user.id);
-  localStorage.removeItem("currentPartyId");
-  partyView.style.display="none";
-  mainContainer.style.display="block";
-  loadParties();
-});
-
-// Volver al hub
-hubBtn.addEventListener("click", ()=>window.location.href="Hub.html");
 
 // Mensajes
 async function loadMessages(partyId){
