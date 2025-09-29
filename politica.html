@@ -86,6 +86,8 @@ button:hover { background:#0055aa; }
     <textarea id="editPartyDescription" rows="3"></textarea>
     <label>Manifesto</label>
     <textarea id="editPartyManifesto" rows="4"></textarea>
+    <label>Nuevo Logo (opcional)</label>
+    <input type="file" id="editPartyLogo" accept="image/*">
     <button id="saveEditBtn">💾 Guardar Cambios</button>
     <button id="cancelEditBtn" type="button">Cancelar</button>
   </div>
@@ -294,15 +296,31 @@ async function showParty(partyId){
     const newName = document.getElementById("editPartyName").value;
     const newDesc = document.getElementById("editPartyDescription").value;
     const newManifesto = document.getElementById("editPartyManifesto").value.split("\n").filter(l => l.trim() !== "");
+    const newLogoFile = document.getElementById("editPartyLogo").files[0];
+
+    let newLogoPath = null;
+
+    if (newLogoFile) {
+      const fileExt = newLogoFile.name.split('.').pop();
+      const fileName = await cryptoRandomUUID() + '.' + fileExt;
+      newLogoPath = `parties/logos/${fileName}`;
+      const { error: uploadError } = await supabase.storage
+        .from('logos')
+        .upload(newLogoPath, newLogoFile, { upsert: true });
+      if (uploadError) { alert("❌ Error subiendo nuevo logo: " + uploadError.message); return; }
+    }
+
+    const updateData = { name: newName, description: newDesc, manifesto: newManifesto };
+    if(newLogoPath) updateData.logo_path = newLogoPath;
 
     const { error: updateError } = await supabase
       .from("parties")
-      .update({ name: newName, description: newDesc, manifesto: newManifesto })
+      .update(updateData)
       .eq("id", partyId);
 
-    if(updateError){ alert("Error actualizando partido: "+updateError.message); return; }
+    if(updateError){ alert("❌ Error actualizando partido: " + updateError.message); return; }
 
-    alert("Partido actualizado con éxito ✅");
+    alert("✅ Partido actualizado con éxito");
     editForm.style.display = "none";
     showParty(partyId);
   };
