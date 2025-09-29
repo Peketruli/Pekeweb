@@ -9,7 +9,7 @@ body { font-family: Arial, sans-serif; background:#f5f5f5; margin:0; padding:0; 
 .container { max-width:800px; margin:40px auto; padding:20px; background:#fff; border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.1);}
 h1,h2 { text-align:center; }
 label { display:block; margin-top:15px; font-weight:bold; }
-input[type="text"], textarea, input[type="file"] { width:100%; padding:8px; margin-top:5px; border-radius:5px; border:1px solid #ccc; box-sizing:border-box; }
+input[type="text"], textarea, input[type="file"], input[type="color"] { width:100%; padding:8px; margin-top:5px; border-radius:5px; border:1px solid #ccc; box-sizing:border-box; }
 button { margin-top:20px; padding:10px 20px; background:#0077ff; color:white; border:none; border-radius:5px; cursor:pointer; }
 button:hover { background:#0055aa; }
 .candidate-inputs input { margin-top:5px; }
@@ -17,7 +17,7 @@ button:hover { background:#0055aa; }
 #backBtn:hover { background:#333; }
 
 #partiesList { margin-top:30px; display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:15px; }
-.party-card { border:1px solid #ddd; border-radius:10px; padding:15px; background:#fafafa; display:flex; flex-direction:column; align-items:center; }
+.party-card { border:1px solid #ddd; border-radius:10px; padding:15px; display:flex; flex-direction:column; align-items:center; }
 .party-card img { max-width:80px; max-height:80px; margin-bottom:10px; }
 .party-card h3 { margin:5px 0; text-align:center; }
 .party-card p { text-align:center; }
@@ -49,6 +49,9 @@ button:hover { background:#0055aa; }
 
     <label>Logo</label>
     <input type="file" id="partyLogo" accept="image/*">
+
+    <label>Color del Partido</label>
+    <input type="color" id="partyColor" value="#0077ff">
 
     <label>Programa / Manifesto (un punto por línea)</label>
     <textarea id="partyManifesto" rows="4"></textarea>
@@ -84,6 +87,8 @@ button:hover { background:#0055aa; }
     <input type="text" id="editPartyName">
     <label>Descripción</label>
     <textarea id="editPartyDescription" rows="3"></textarea>
+    <label>Color del Partido</label>
+    <input type="color" id="editPartyColor" value="#0077ff">
     <label>Manifesto</label>
     <textarea id="editPartyManifesto" rows="4"></textarea>
     <label>Nuevo Logo (opcional)</label>
@@ -104,7 +109,7 @@ button:hover { background:#0055aa; }
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
 const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+const SUPABASE_KEY = 'YOUR_KEY_HERE';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const partyForm = document.getElementById('partyForm');
@@ -123,7 +128,6 @@ const leaveBtn = document.getElementById('leaveBtn');
 const hubBtn = document.getElementById('hubBtn');
 const partyLogoView = document.getElementById('partyLogoView');
 const manifestoList = document.querySelector("#partyManifestoView ul");
-
 const editBtn = document.getElementById("editPartyBtn");
 const editForm = document.getElementById("editPartyForm");
 const saveEditBtn = document.getElementById("saveEditBtn");
@@ -132,21 +136,17 @@ const cancelEditBtn = document.getElementById("cancelEditBtn");
 let chatInterval;
 
 // ====================
-// FUNCIONES AUXILIARES
+// AUX
 // ====================
-function slugify(text) {
-  return text.toString().toLowerCase().replace(/\s+/g,'-').replace(/[^\w\-]+/g,'').replace(/\-\-+/g,'-').replace(/^-+|-+$/g,'');
-}
-async function cryptoRandomUUID() {
-  return (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Math.random().toString(36).slice(2,10));
-}
+function slugify(text){ return text.toString().toLowerCase().replace(/\s+/g,'-').replace(/[^\w\-]+/g,'').replace(/\-\-+/g,'-').replace(/^-+|-+$/g,''); }
+async function cryptoRandomUUID(){ return (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Math.random().toString(36).slice(2,10)); }
 
 // ====================
 // CARGAR PARTIDOS
 // ====================
-async function loadParties() {
+async function loadParties(){
   partiesList.innerHTML = "Cargando partidos...";
-  const { data, error } = await supabase.from("parties").select("id, name, description, logo_path");
+  const { data, error } = await supabase.from("parties").select("id, name, description, logo_path, color");
   if(error){ partiesList.innerHTML = "Error cargando partidos"; console.error(error); return; }
   if(!data || data.length===0){ partiesList.innerHTML="<p>No hay partidos creados aún.</p>"; return; }
 
@@ -154,6 +154,7 @@ async function loadParties() {
   data.forEach(party=>{
     const div=document.createElement("div");
     div.className="party-card";
+    div.style.backgroundColor = party.color || "#fafafa";
     let logoHtml="";
     if(party.logo_path){
       const logoUrl = supabase.storage.from("logos").getPublicUrl(party.logo_path).data.publicUrl;
@@ -178,6 +179,7 @@ partyForm.addEventListener('submit', async e=>{
   const description = document.getElementById('partyDescription').value;
   const manifestoArray = document.getElementById('partyManifesto').value.split('\n').filter(l=>l.trim()!=='');
   const logoFile = document.getElementById('partyLogo').files[0];
+  const color = document.getElementById('partyColor').value;
   const slug = `${slugify(name)}-${Math.random().toString(36).slice(2,6)}`;
   let logo_path = null;
   if(logoFile){
@@ -190,7 +192,7 @@ partyForm.addEventListener('submit', async e=>{
 
   try{
     const { data: party, error: partyError } = await supabase.from('parties')
-      .insert([{ name, slug, description, manifesto: manifestoArray, logo_path, creator_id: user.id }])
+      .insert([{ name, slug, description, manifesto: manifestoArray, logo_path, color, creator_id: user.id }])
       .select().single();
     if(partyError) throw partyError;
 
