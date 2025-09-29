@@ -338,9 +338,22 @@ async function showParty(partyId){
 // CHAT
 // ====================
 async function loadMessages(partyId){
-  const { data } = await supabase.from("party_messages")
-    .select("message,usuarios(username)").eq("party_id",partyId).order("created_at",{ascending:true});
-  document.getElementById("partyChat").innerHTML = data?.map(m=>`<p><b>${m.usuarios?.username||'Anon'}:</b> ${m.message}</p>`).join("") || "";
+  const { data, error } = await supabase
+    .from("party_messages")
+    .select("id, message, created_at, usuarios:usuarios_id ( username )")
+    .eq("party_id", partyId)
+    .order("created_at", { ascending:true });
+
+  if(error){ 
+    console.error("Error cargando mensajes:", error.message); 
+    return; 
+  }
+
+  document.getElementById("partyChat").innerHTML = data?.map(m => 
+    `<p><b>${m.usuarios?.username || 'Anon'}:</b> ${m.message}</p>`).join("") || "";
+  // Auto-scroll al final
+  const chatDiv = document.getElementById("partyChat");
+  chatDiv.scrollTop = chatDiv.scrollHeight;
 }
 
 function startChatPolling(partyId){
@@ -349,8 +362,10 @@ function startChatPolling(partyId){
   chatInterval = setInterval(()=>loadMessages(partyId), 3000);
 }
 
-chatInput.addEventListener("keypress", async (e)=>{
+// Enviar mensaje con Enter
+chatInput.addEventListener("keydown", async (e)=>{
   if(e.key === "Enter" && chatInput.value.trim() !== ""){
+    e.preventDefault(); // evita salto de línea
     const user = JSON.parse(localStorage.getItem("currentUser"));
     const partyId = localStorage.getItem("currentPartyId");
     if(!user || !partyId) return;
@@ -366,6 +381,7 @@ chatInput.addEventListener("keypress", async (e)=>{
     loadMessages(partyId);
   }
 });
+
 
 // ====================
 // SALIR DEL PARTIDO
