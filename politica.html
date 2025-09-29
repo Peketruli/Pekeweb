@@ -32,6 +32,8 @@ button:hover { background:#0055aa; }
 #hubBtn { background:#555; }
 #leaveBtn:hover { background:#cc4444; }
 #hubBtn:hover { background:#333; }
+#editPartyBtn { background:#ffaa00; margin-top:10px; }
+#editPartyBtn:hover { background:#cc8800; }
 </style>
 </head>
 <body>
@@ -74,6 +76,20 @@ button:hover { background:#0055aa; }
   <img id="partyLogoView" style="max-width:120px; display:block; margin:0 auto 10px;">
   <h2 id="partyNameView"></h2>
   <p id="partyDescriptionView"></p>
+  
+  <!-- Botón y formulario de edición -->
+  <button id="editPartyBtn" style="display:none;">✏️ Editar Partido</button>
+  <div id="editPartyForm" style="display:none; margin-top:15px; padding:10px; border:1px solid #ccc; border-radius:8px;">
+    <label>Nombre del Partido</label>
+    <input type="text" id="editPartyName">
+    <label>Descripción</label>
+    <textarea id="editPartyDescription" rows="3"></textarea>
+    <label>Manifesto</label>
+    <textarea id="editPartyManifesto" rows="4"></textarea>
+    <button id="saveEditBtn">💾 Guardar Cambios</button>
+    <button id="cancelEditBtn" type="button">Cancelar</button>
+  </div>
+
   <div id="partyManifestoView"><h3>Manifesto / Programa</h3><ul></ul></div>
   <h3>Miembros</h3>
   <ul id="partyMembers"></ul>
@@ -105,16 +121,14 @@ const hubBtn = document.getElementById('hubBtn');
 const partyLogoView = document.getElementById('partyLogoView');
 const manifestoList = document.querySelector("#partyManifestoView ul");
 
-// Añadir candidatos dinámicamente
-addCandidateBtn.addEventListener('click', () => {
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = 'Nombre candidato';
-  input.className = 'candidateName';
-  candidateInputs.appendChild(input);
-});
+const editBtn = document.getElementById("editPartyBtn");
+const editForm = document.getElementById("editPartyForm");
+const saveEditBtn = document.getElementById("saveEditBtn");
+const cancelEditBtn = document.getElementById("cancelEditBtn");
 
-// Utilidades
+// ====================
+// FUNCIONES AUXILIARES
+// ====================
 function slugify(text) {
   return text.toString().toLowerCase().replace(/\s+/g,'-').replace(/[^\w\-]+/g,'').replace(/\-\-+/g,'-').replace(/^-+|-+$/g,'');
 }
@@ -122,7 +136,9 @@ async function cryptoRandomUUID() {
   return (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Math.random().toString(36).slice(2,10));
 }
 
-// Cargar partidos
+// ====================
+// CARGAR PARTIDOS
+// ====================
 async function loadParties() {
   partiesList.innerHTML = "Cargando partidos...";
   const { data, error } = await supabase.from("parties").select("id, name, description, logo_path");
@@ -144,7 +160,9 @@ async function loadParties() {
 }
 loadParties();
 
-// Crear partido
+// ====================
+// CREAR PARTIDO
+// ====================
 partyForm.addEventListener('submit', async e=>{
   e.preventDefault();
   statusText.textContent = 'Creando partido...';
@@ -184,9 +202,9 @@ partyForm.addEventListener('submit', async e=>{
   }catch(err){ console.error(err); alert("Error creando partido: "+err.message);}
 });
 
-// =======================
-// Función unirse / mostrar partido
-// =======================
+// ====================
+// UNIRSE A PARTIDO
+// ====================
 window.joinParty = async function(partyId){
   const user = JSON.parse(localStorage.getItem("currentUser"));
   if(!user){ alert("Debes iniciar sesión"); return; }
@@ -207,17 +225,18 @@ window.joinParty = async function(partyId){
   showParty(partyId);
 }
 
-// ==========================
-// FUNCION PARA MOSTRAR PARTIDO
-// ==========================
+// ====================
+// MOSTRAR PARTIDO
+// ====================
 async function showParty(partyId){
   mainContainer.style.display = "none";
   partyView.style.display = "block";
 
-  // Traer datos del partido
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+
   const { data: party, error: partyError } = await supabase
     .from("parties")
-    .select("id,name,description,logo_path,manifesto")
+    .select("id,name,description,logo_path,manifesto,creator_id")
     .eq("id", partyId)
     .single();
 
@@ -229,7 +248,8 @@ async function showParty(partyId){
 
   partyNameView.textContent = party.name;
   partyDescriptionView.textContent = party.description;
-  
+  manifestoList.innerHTML = party.manifesto?.map(line => `<li>${line}</li>`).join("") || "<li>No hay manifesto</li>";
+
   if(party.logo_path){
     partyLogoView.src = supabase.storage.from("logos").getPublicUrl(party.logo_path).data.publicUrl;
     partyLogoView.style.display = "block";
@@ -237,62 +257,60 @@ async function showParty(partyId){
     partyLogoView.style.display = "none";
   }
 
-  manifestoList.innerHTML = party.manifesto?.map(line => `<li>${line}</li>`).join("") || "<li>No hay manifesto</li>";
+  // 🔹 Solo el creador puede editar
+  if(user && user.id === party.creator_id){
+    editBtn.style.display = "inline-block";
+  } else {
+    editBtn.style.display = "none";
+  }
 
-// Traer miembros del partido con relación correcta a tabla "usuarios"
-const { data: members, error: membersError } = await supabase
-  .from("party_members")
-  .select(`
-    usuarios_id,
-    usuarios:usuarios_id ( username )
-  `)
-  .eq("party_id", partyId);
+  // Cargar miembros
+  const { data: members, error: membersError } = await supabase
+    .from("party_members")
+    .select("usuarios_id, usuarios:usuarios_id ( username )")
+    .eq("party_id", partyId);
 
-
-if (membersError) {
-  console.error("Error cargando miembros:", membersError);
-  partyMembersList.innerHTML = `<li>Error cargando miembros: ${membersError.message}</li>`;
-} else {
-  partyMembersList.innerHTML = members.length > 0
-    ? members.map(m => `<li>${m.usuarios?.username || "Anon"}</li>`).join("")
-    : "<li>No hay miembros</li>";
-}
-
-
+  if (membersError) {
+    console.error("Error cargando miembros:", membersError);
+    partyMembersList.innerHTML = `<li>Error cargando miembros: ${membersError.message}</li>`;
+  } else {
+    partyMembersList.innerHTML = members.length > 0
+      ? members.map(m => `<li>${m.usuarios?.username || "Anon"}</li>`).join("")
+      : "<li>No hay miembros</li>";
+  }
 
   await loadMessages(partyId);
   localStorage.setItem("currentPartyId", partyId);
+
+  // Eventos edición
+  editBtn.onclick = () => {
+    document.getElementById("editPartyName").value = party.name;
+    document.getElementById("editPartyDescription").value = party.description;
+    document.getElementById("editPartyManifesto").value = party.manifesto?.join("\n") || "";
+    editForm.style.display = "block";
+  };
+  cancelEditBtn.onclick = () => { editForm.style.display = "none"; };
+  saveEditBtn.onclick = async () => {
+    const newName = document.getElementById("editPartyName").value;
+    const newDesc = document.getElementById("editPartyDescription").value;
+    const newManifesto = document.getElementById("editPartyManifesto").value.split("\n").filter(l => l.trim() !== "");
+
+    const { error: updateError } = await supabase
+      .from("parties")
+      .update({ name: newName, description: newDesc, manifesto: newManifesto })
+      .eq("id", partyId);
+
+    if(updateError){ alert("Error actualizando partido: "+updateError.message); return; }
+
+    alert("Partido actualizado con éxito ✅");
+    editForm.style.display = "none";
+    showParty(partyId);
+  };
 }
 
-// ==========================
-// FUNCION PARA UNIRSE AL PARTIDO
-// ==========================
-window.joinParty = async function(partyId){
-  const user = JSON.parse(localStorage.getItem("currentUser"));
-  if(!user){ alert("Debes iniciar sesión"); return; }
-
-  // Comprobar si ya está en un partido
-  const { data: existing } = await supabase.from("party_members")
-    .select("party_id")
-    .eq("usuarios_id", user.id);
-
-  if(existing && existing.length > 0){
-    showParty(existing[0].party_id);
-    return;
-  }
-
-  // Insertar al usuario en el partido
-  const { error } = await supabase.from("party_members")
-    .insert([{ party_id: partyId, usuarios_id: user.id, role: "member" }]);
-
-  if(error){ alert("No se pudo unir: "+error.message); return; }
-
-  showParty(partyId);
-}
-
-// ==========================
+// ====================
 // SALIR DEL PARTIDO
-// ==========================
+// ====================
 leaveBtn.addEventListener("click", async ()=>{
   const user = JSON.parse(localStorage.getItem("currentUser"));
   const partyId = localStorage.getItem("currentPartyId");
@@ -315,22 +333,26 @@ leaveBtn.addEventListener("click", async ()=>{
   loadParties();
 });
 
-// ==========================
-// BOTON VOLVER AL HUB
-// ==========================
+// ====================
+// VOLVER AL HUB
+// ====================
 hubBtn.addEventListener("click", ()=>{
-  localStorage.removeItem("currentPartyId"); // opcional, si quieres limpiar
+  localStorage.removeItem("currentPartyId");
   window.location.href = "Hub.html";
 });
 
-// Mensajes
+// ====================
+// CHAT
+// ====================
 async function loadMessages(partyId){
   const { data } = await supabase.from("party_messages")
-    .select("message,usuarios(nombre)").eq("party_id",partyId).order("created_at",{ascending:true});
-  document.getElementById("partyChat").innerHTML = data.map(m=>`<p><b>${m.usuarios?.nombre||'Anon'}:</b> ${m.message}</p>`).join("");
+    .select("message,usuarios(username)").eq("party_id",partyId).order("created_at",{ascending:true});
+  document.getElementById("partyChat").innerHTML = data?.map(m=>`<p><b>${m.usuarios?.username||'Anon'}:</b> ${m.message}</p>`).join("") || "";
 }
 
-// Detectar si ya pertenece a un partido al cargar
+// ====================
+// DETECTAR SI YA ESTÁ EN UN PARTIDO
+// ====================
 window.addEventListener("DOMContentLoaded", async ()=>{
   const user = JSON.parse(localStorage.getItem("currentUser"));
   const savedPartyId = localStorage.getItem("currentPartyId");
