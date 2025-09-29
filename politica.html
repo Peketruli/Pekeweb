@@ -288,36 +288,47 @@ window.joinParty = async function(partyId) {
   openPartyBox(partyId);
 }
 
-// =======================
-// Modal info partido y miembros
-// =======================
-window.openPartyBox = async function(partyId) {
-  const { data: party } = await supabase.from("parties").select("id,name,description").eq("id",partyId).single();
-  document.getElementById("partyBoxName").textContent = party.name;
-  document.getElementById("partyBoxDescription").textContent = party.description;
-
-  const { data: members } = await supabase.from("party_members").select("user_id,role,usuarios(nombre)").eq("party_id",partyId);
-  const membersList = document.getElementById("partyBoxMembers");
-  membersList.innerHTML = "";
-  members.forEach(m => { 
-    const li = document.createElement("li");
-    li.textContent = `${m.usuarios?.nombre || "Usuario"} (${m.role})`;
-    membersList.appendChild(li);
-  });
-
-  partyBox.style.display = "flex";
-  loadMessages(partyId);
-
-  // Enviar mensaje con Enter
-  chatInput.onkeypress = async (e) => {
-    if (e.key === "Enter") {
-      const msg = chatInput.value.trim();
-      if (msg) {
-        await supabase.from("party_messages").insert([{ party_id: partyId, user_id: user.id, message: msg }]);
-        chatInput.value = "";
-      }
-    }
+window.joinParty = async function(partyId) {
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  if (!user) { 
+    alert("Debes iniciar sesión"); 
+    return; 
   }
+
+  // Verificar si ya pertenece a otro partido
+  const { data: existing, error: existingErr } = await supabase
+    .from("party_members")
+    .select("party_id")
+    .eq("usuarios_id", user.id); // <-- asegúrate de usar el nombre correcto del campo
+
+  if (existingErr) {
+    console.error("Error verificando miembros:", existingErr);
+    alert("❌ Error al verificar si ya perteneces a un partido.");
+    return;
+  }
+
+  if (existing && existing.length > 0) {
+    alert("Ya perteneces a un partido.");
+    return;
+  }
+
+  // Insertar al usuario en party_members
+  const { data, error } = await supabase
+    .from("party_members")
+    .insert([{
+      party_id: partyId,
+      usuarios_id: user.id, // <-- usa el campo correcto
+      role: "member"
+    }]);
+
+  if (error) {
+    console.error("Error uniéndose al partido:", error);
+    alert("❌ No se pudo unir al partido: " + error.message);
+    return;
+  }
+
+  alert("✅ Te has unido al partido.");
+  openPartyBox(partyId);
 }
 
 function closePartyBox() { partyBox.style.display="none"; }
