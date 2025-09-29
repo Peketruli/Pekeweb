@@ -82,9 +82,8 @@
 <script type="module">
   import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
-  // Inicializa Supabase
   const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+  const SUPABASE_KEY = 'TU_API_KEY_AQUI';
   const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
   const partyForm = document.getElementById('partyForm');
@@ -116,13 +115,14 @@
     e.preventDefault();
     statusText.textContent = 'Creando partido...';
 
-const user = JSON.parse(localStorage.getItem("currentUser"));
-if (!user) {
-  alert("⚠️ Debes iniciar sesión primero.");
-  statusText.textContent = 'Debes iniciar sesión primero.';
-  return;
-}
+    const user = JSON.parse(localStorage.getItem("currentUser"));
+    if (!user) {
+      alert("⚠️ Debes iniciar sesión primero.");
+      statusText.textContent = 'Debes iniciar sesión primero.';
+      return;
+    }
 
+    alert("🟢 Usuario detectado: " + JSON.stringify(user)); // para debug
 
     const name = document.getElementById('partyName').value;
     const description = document.getElementById('partyDescription').value;
@@ -133,38 +133,37 @@ if (!user) {
     const slug = `${slugify(name)}-${Math.random().toString(36).slice(2,6)}`;
     let logo_path = null;
 
+    // Si hay logo, súbelo al storage
     if (logoFile) {
       const fileExt = logoFile.name.split('.').pop();
       const fileName = await cryptoRandomUUID() + '.' + fileExt;
-      const path = `parties/logos/${fileName}`;
-      const { data: party, error: partyError } = await supabase
-  .from('parties')
-  .insert([{
-    name,
-    slug,
-    description,
-    manifesto: manifestoArray,
-    logo_path,
-    creator_id: user.id 
-  }])
-  .select()
-  .single();
-
+      logo_path = `parties/logos/${fileName}`;
+      const { error: uploadError } = await supabase.storage.from('logos').upload(logo_path, logoFile);
+      if (uploadError) {
+        alert("❌ Error subiendo logo: " + uploadError.message);
+        return;
+      }
+    }
 
     try {
+      // Crear partido
       const { data: party, error: partyError } = await supabase
         .from('parties')
         .insert([{
-          name, slug, description, manifesto: manifestoArray, logo_path, usuarios_id: user.id
+          name,
+          slug,
+          description,
+          manifesto: manifestoArray,
+          logo_path,
+          creator_id: user.id || user.user?.id // <-- Ajusta según cómo se guarde el usuario
         }])
         .select()
         .single();
 
       if (partyError) throw partyError;
 
-      // Candidatos
-      const candidateElements = document.querySelectorAll('.candidateName');
-      const candidates = Array.from(candidateElements)
+      // Insertar candidatos
+      const candidates = Array.from(document.querySelectorAll('.candidateName'))
         .map(c => c.value.trim())
         .filter(c => c !== '');
       if (candidates.length > 0) {
@@ -177,10 +176,10 @@ if (!user) {
         if (candError) console.error('Error candidatos', candError);
       }
 
-      // Agregar creador como miembro
+      // Insertar miembro creador
       await supabase.from('party_members').insert([{
         party_id: party.id,
-        user_id: user.id,
+        user_id: user.id || user.user?.id,
         role: 'creator'
       }]);
 
@@ -195,6 +194,5 @@ if (!user) {
     }
   });
 </script>
-
 </body>
 </html>
