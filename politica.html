@@ -48,6 +48,25 @@
   #backBtn:hover {
     background: #333;
   }
+  /* Lista de partidos */
+  #partiesList {
+    margin-top: 30px;
+  }
+  .party-card {
+    border: 1px solid #ddd;
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 15px;
+    background: #fafafa;
+  }
+  .party-card img {
+    max-width: 80px;
+    display: block;
+    margin-bottom: 10px;
+  }
+  .party-card h3 {
+    margin: 0 0 10px 0;
+  }
 </style>
 </head>
 <body>
@@ -77,6 +96,9 @@
   </form>
   <button id="backBtn" onclick="window.location.href='Hub.html'">⬅ Volver al Hub</button>
   <p id="status"></p>
+
+  <h2>📌 Partidos Creados</h2>
+  <div id="partiesList"></div>
 </div>
 
 <script type="module">
@@ -90,6 +112,7 @@
   const candidateInputs = document.getElementById('candidateInputs');
   const addCandidateBtn = document.getElementById('addCandidate');
   const statusText = document.getElementById('status');
+  const partiesList = document.getElementById('partiesList');
 
   addCandidateBtn.addEventListener('click', () => {
     const input = document.createElement('input');
@@ -111,6 +134,53 @@
     return (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Math.random().toString(36).slice(2,10));
   }
 
+  async function loadParties() {
+    partiesList.innerHTML = "Cargando partidos...";
+    const { data, error } = await supabase
+      .from("parties")
+      .select("id, name, description, logo_path, manifesto");
+
+    if (error) {
+      partiesList.innerHTML = "❌ Error cargando partidos.";
+      console.error(error);
+      return;
+    }
+
+    if (data.length === 0) {
+      partiesList.innerHTML = "<p>No hay partidos creados aún.</p>";
+      return;
+    }
+
+    partiesList.innerHTML = "";
+    data.forEach(party => {
+      const div = document.createElement("div");
+      div.className = "party-card";
+
+      let logoHtml = "";
+      if (party.logo_path) {
+        const logoUrl = supabase.storage.from("logos").getPublicUrl(party.logo_path).data.publicUrl;
+        logoHtml = `<img src="${logoUrl}" alt="Logo">`;
+      }
+
+      const manifestoHtml = party.manifesto && party.manifesto.length > 0
+        ? `<ul>${party.manifesto.map(m => `<li>${m}</li>`).join("")}</ul>`
+        : "<p><em>Sin programa definido</em></p>";
+
+      div.innerHTML = `
+        ${logoHtml}
+        <h3>${party.name}</h3>
+        <p>${party.description}</p>
+        <h4>Programa:</h4>
+        ${manifestoHtml}
+      `;
+      partiesList.appendChild(div);
+    });
+  }
+
+  // Cargar partidos al entrar
+  loadParties();
+
+  // Evento crear partido
   partyForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     statusText.textContent = 'Creando partido...';
@@ -122,8 +192,6 @@
       return;
     }
 
-    alert("🟢 Usuario detectado: " + JSON.stringify(user)); // para debug
-
     const name = document.getElementById('partyName').value;
     const description = document.getElementById('partyDescription').value;
     const manifestoText = document.getElementById('partyManifesto').value;
@@ -133,7 +201,6 @@
     const slug = `${slugify(name)}-${Math.random().toString(36).slice(2,6)}`;
     let logo_path = null;
 
-    // Si hay logo, súbelo al storage
     if (logoFile) {
       const fileExt = logoFile.name.split('.').pop();
       const fileName = await cryptoRandomUUID() + '.' + fileExt;
@@ -146,7 +213,6 @@
     }
 
     try {
-      // Crear partido
       const { data: party, error: partyError } = await supabase
         .from('parties')
         .insert([{
@@ -155,25 +221,25 @@
           description,
           manifesto: manifestoArray,
           logo_path,
-          creator_id: user.id || user.user?.id // <-- Ajusta según cómo se guarde el usuario
+          creator_id: user.id || user.user?.id
         }])
         .select()
         .single();
 
       if (partyError) throw partyError;
 
-      // Insertar candidatos
+      // Candidatos
       const candidates = Array.from(document.querySelectorAll('.candidateName'))
         .map(c => c.value.trim())
         .filter(c => c !== '');
       if (candidates.length > 0) {
-        const candidatesToInsert = candidates.map((c, i) => ({
-          party_id: party.id,
-          name: c,
-          order_index: i
-        }));
-        const { error: candError } = await supabase.from('party_candidates').insert(candidatesToInsert);
-        if (candError) console.error('Error candidatos', candError);
+        await supabase.from('party_candidates').insert(
+          candidates.map((c, i) => ({
+            party_id: party.id,
+            name: c,
+            order_index: i
+          }))
+        );
       }
 
       // Insertar miembro creador
@@ -187,6 +253,9 @@
       statusText.textContent = '¡Partido creado exitosamente!';
       partyForm.reset();
       candidateInputs.innerHTML = '<input type="text" placeholder="Nombre candidato" class="candidateName">';
+      
+      // Recargar lista
+      loadParties();
     } catch (err) {
       console.error(err);
       alert("❌ Error al crear el partido: " + err.message);
