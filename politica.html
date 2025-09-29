@@ -207,6 +207,35 @@ window.joinParty = async function(partyId){
   showParty(partyId);
 }
 
+window.joinParty = async function(partyId){
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  if(!user){ alert("Debes iniciar sesión"); return; }
+
+  const { data: existing } = await supabase.from("party_members")
+    .select("party_id").eq("usuarios_id", user.id);
+
+  if(existing && existing.length > 0){
+    alert("Ya perteneces a un partido");
+    showParty(existing[0].party_id);
+    return;
+  }
+
+  // Insertar al usuario
+  const { error } = await supabase.from("party_members")
+    .insert([{ party_id:partyId, usuarios_id:user.id, role:"member" }]);
+
+  if(error){ alert("No se pudo unir: "+error.message); return; }
+
+  alert("✅ Te has unido al partido.");
+
+  // Ocultar inmediatamente la vista principal antes de mostrar el partido
+  mainContainer.style.display = "none";
+  partyView.style.display = "block";
+
+  // Mostrar datos del partido
+  await showParty(partyId);
+}
+
 // Mostrar partido
 async function showParty(partyId){
   const { data: party } = await supabase.from("parties")
@@ -218,8 +247,11 @@ async function showParty(partyId){
   partyDescriptionView.textContent = party.description;
 
   if(party.logo_path){
-    partyLogoView.src = supabase.storage.from("logos").getPublicUrl(party.logo_path).data.publicUrl;
+    const logoUrl = supabase.storage.from("logos").getPublicUrl(party.logo_path).data.publicUrl;
+    partyLogoView.src = logoUrl;
     partyLogoView.style.display="block";
+  } else {
+    partyLogoView.style.display="none";
   }
 
   manifestoList.innerHTML = party.manifesto?.map(line=>`<li>${line}</li>`).join("") || "<li>No hay manifesto</li>";
@@ -228,13 +260,11 @@ async function showParty(partyId){
     .select("usuarios(nombre)").eq("party_id", partyId);
   partyMembersList.innerHTML = members.map(m=>`<li>${m.usuarios?.nombre||'Anon'}</li>`).join("");
 
-  mainContainer.style.display="none";
-  partyView.style.display="block";
+  await loadMessages(partyId);
 
   localStorage.setItem("currentPartyId", partyId);
-
-  await loadMessages(partyId);
 }
+
 
 // Salir del partido
 leaveBtn.addEventListener("click", async ()=>{
