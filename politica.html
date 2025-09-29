@@ -121,9 +121,7 @@ async function cryptoRandomUUID() {
   return (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Math.random().toString(36).slice(2,10));
 }
 
-// =======================
 // Cargar partidos
-// =======================
 async function loadParties() {
   partiesList.innerHTML = "Cargando partidos...";
   const { data, error } = await supabase.from("parties").select("id, name, description, logo_path");
@@ -145,9 +143,7 @@ async function loadParties() {
 }
 loadParties();
 
-// =======================
 // Crear partido
-// =======================
 partyForm.addEventListener('submit', async e=>{
   e.preventDefault();
   statusText.textContent = 'Creando partido...';
@@ -188,9 +184,7 @@ partyForm.addEventListener('submit', async e=>{
   }catch(err){ console.error(err); alert("Error creando partido: "+err.message);}
 });
 
-// =======================
 // Unirse a partido
-// =======================
 window.joinParty = async function(partyId){
   const user = JSON.parse(localStorage.getItem("currentUser"));
   if(!user){ alert("Debes iniciar sesión"); return; }
@@ -213,9 +207,7 @@ window.joinParty = async function(partyId){
   showParty(partyId);
 }
 
-// =======================
-// Mostrar partido completo
-// =======================
+// Mostrar partido
 async function showParty(partyId){
   const { data: party } = await supabase.from("parties")
     .select("id,name,description,logo_path,manifesto")
@@ -225,31 +217,26 @@ async function showParty(partyId){
   partyNameView.textContent = party.name;
   partyDescriptionView.textContent = party.description;
 
-  // Logo
   if(party.logo_path){
     partyLogoView.src = supabase.storage.from("logos").getPublicUrl(party.logo_path).data.publicUrl;
     partyLogoView.style.display="block";
   }
 
-  // Manifesto
   manifestoList.innerHTML = party.manifesto?.map(line=>`<li>${line}</li>`).join("") || "<li>No hay manifesto</li>";
 
-  // Miembros
   const { data: members } = await supabase.from("party_members")
     .select("usuarios(nombre)").eq("party_id", partyId);
   partyMembersList.innerHTML = members.map(m=>`<li>${m.usuarios?.nombre||'Anon'}</li>`).join("");
-
-  await loadMessages(partyId);
 
   mainContainer.style.display="none";
   partyView.style.display="block";
 
   localStorage.setItem("currentPartyId", partyId);
+
+  await loadMessages(partyId);
 }
 
-// =======================
 // Salir del partido
-// =======================
 leaveBtn.addEventListener("click", async ()=>{
   const user = JSON.parse(localStorage.getItem("currentUser"));
   const partyId = localStorage.getItem("currentPartyId");
@@ -261,14 +248,10 @@ leaveBtn.addEventListener("click", async ()=>{
   loadParties();
 });
 
-// =======================
 // Volver al hub
-// =======================
 hubBtn.addEventListener("click", ()=>window.location.href="Hub.html");
 
-// =======================
 // Mensajes
-// =======================
 async function loadMessages(partyId){
   const { data } = await supabase.from("party_messages")
     .select("message,usuarios(nombre)").eq("party_id",partyId).order("created_at",{ascending:true});
@@ -281,15 +264,16 @@ supabase.channel('party-messages')
     payload=>{ loadMessages(payload.new.party_id); })
   .subscribe();
 
-// =======================
 // Detección automática al cargar
-// =======================
 window.addEventListener("DOMContentLoaded", async ()=>{
   const user = JSON.parse(localStorage.getItem("currentUser"));
   if(!user) return;
-  const { data: existing } = await supabase.from("party_members").select("party_id").eq("usuarios_id", user.id);
-  if(existing && existing.length > 0){
-    showParty(existing[0].party_id);
+
+  const { data: membership } = await supabase.from("party_members")
+      .select("party_id").eq("usuarios_id", user.id);
+
+  if(membership && membership.length > 0){
+      showParty(membership[0].party_id);
   }
 });
 </script>
