@@ -184,24 +184,57 @@ partyForm.addEventListener('submit', async e=>{
 });
 
 // =======================
+// =======================
 // Unirse a partido
 // =======================
 window.joinParty = async function(partyId){
   const user = JSON.parse(localStorage.getItem("currentUser"));
   if(!user){ alert("Debes iniciar sesión"); return; }
 
-  const { data: existing } = await supabase.from("party_members").select("party_id").eq("usuarios_id",user.id).single();
-  if(existing?.party_id){ alert("Ya perteneces a un partido"); showParty(existing.party_id); return; }
+  // Revisar si pertenece a algún partido
+  const { data: existing, error: err } = await supabase
+    .from("party_members")
+    .select("party_id")
+    .eq("usuarios_id", user.id);
 
-  const { error } = await supabase.from("party_members").insert([{ party_id:partyId, usuarios_id:user.id, role:"member" }]);
-  if(error){ alert("No se pudo unir: "+error.message); console.error(error); return; }
+  if(err){ console.error(err); alert("Error verificando tu membresía"); return; }
 
-  showParty(partyId);
+  if(existing && existing.length > 0){
+    alert("Ya perteneces a un partido");
+    showParty(existing[0].party_id);
+    return;
+  }
+
+  // Insertar al usuario en party_members
+  const { error } = await supabase
+    .from("party_members")
+    .insert([{ party_id: partyId, usuarios_id: user.id, role: "member" }]);
+
+  if(error){ console.error(error); alert("No se pudo unir: " + error.message); return; }
+
+  alert("✅ Te has unido al partido.");
+  showParty(partyId); // abrir la vista del partido
 }
 
 // =======================
-// Mostrar partido
+// Detección automática al cargar
 // =======================
+window.addEventListener("DOMContentLoaded", async ()=>{
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  if(!user) return;
+
+  const { data: existing, error } = await supabase
+    .from("party_members")
+    .select("party_id")
+    .eq("usuarios_id", user.id);
+
+  if(error){ console.error(error); return; }
+
+  if(existing && existing.length > 0){
+    showParty(existing[0].party_id); // abrir automáticamente el partido
+  }
+});
+
 async function showParty(partyId){
   const { data: party } = await supabase.from("parties").select("id,name,description").eq("id",partyId).single();
   partyNameView.textContent = party.name;
