@@ -272,21 +272,33 @@ partyForm.addEventListener('submit', async (e) => {
     loadParties();
   } catch(err) { console.error(err); alert("❌ Error al crear el partido: " + err.message); }
 });
+  
+async function openPartyBox(partyId) {
+  // Traer info del partido
+  const { data: party } = await supabase
+    .from("parties")
+    .select("id,name,description,logo_path")
+    .eq("id", partyId)
+    .single();
 
-// =======================
-// Unirse a partido
-// =======================
-window.joinParty = async function(partyId) {
-  const user = JSON.parse(localStorage.getItem("currentUser"));
-  if (!user) { alert("Debes iniciar sesión"); return; }
+  document.getElementById("partyBoxName").textContent = party.name;
+  document.getElementById("partyBoxDescription").textContent = party.description;
 
-  // Verificar si ya pertenece a otro partido
-  const { data: existing } = await supabase.from("party_members").select("party_id").eq("user_id", user.id);
-  if (existing && existing.length>0) { alert("Ya perteneces a un partido."); return; }
+  // Traer miembros
+  const { data: members } = await supabase
+    .from("party_members")
+    .select("usuarios(nombre)")
+    .eq("party_id", partyId);
 
-  await supabase.from("party_members").insert([{ party_id: partyId, user_id: user.id, role:"member" }]);
-  openPartyBox(partyId);
+  const membersList = document.getElementById("partyBoxMembers");
+  membersList.innerHTML = members.map(m => `<li>${m.usuarios?.nombre||"Anon"}</li>`).join("");
+
+  // Traer mensajes
+  await loadMessages(partyId);
+
+  partyBox.style.display = "flex";
 }
+
 
 window.joinParty = async function(partyId) {
   const user = JSON.parse(localStorage.getItem("currentUser"));
@@ -299,7 +311,7 @@ window.joinParty = async function(partyId) {
   const { data: existing, error: existingErr } = await supabase
     .from("party_members")
     .select("party_id")
-    .eq("usuarios_id", user.id); // <-- asegúrate de usar el nombre correcto del campo
+    .eq("usuarios_id", user.id); // campo correcto en tu tabla
 
   if (existingErr) {
     console.error("Error verificando miembros:", existingErr);
@@ -317,7 +329,7 @@ window.joinParty = async function(partyId) {
     .from("party_members")
     .insert([{
       party_id: partyId,
-      usuarios_id: user.id, // <-- usa el campo correcto
+      usuarios_id: user.id,
       role: "member"
     }]);
 
@@ -328,10 +340,13 @@ window.joinParty = async function(partyId) {
   }
 
   alert("✅ Te has unido al partido.");
-  openPartyBox(partyId);
+  openPartyBox(partyId); // <-- abrir modal
 }
 
-function closePartyBox() { partyBox.style.display="none"; }
+
+function closePartyBox() {
+  partyBox.style.display = "none";
+}
 
 async function loadMessages(partyId) {
   const { data } = await supabase.from("party_messages").select("message,usuarios(nombre)").eq("party_id",partyId).order("created_at",{ascending:true});
