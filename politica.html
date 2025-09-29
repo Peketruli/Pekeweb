@@ -25,7 +25,7 @@ button:hover { background:#0055aa; }
 /* Vista del partido */
 #partyView { display:none; padding:20px; max-width:800px; margin:40px auto; background:#fff; border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.1);}
 #partyMembers { list-style:none; padding:0; }
-#partyChat { margin-top:15px; border-top:1px solid #ddd; padding-top:10px; max-height:200px; overflow-y:auto; }
+#partyChat { margin-top:15px; border-top:1px solid #ddd; padding-top:10px; max-height:200px; overflow-y:auto; background:#f0f0f0; padding:10px; border-radius:8px;}
 #chatInput { width:100%; padding:8px; margin-top:5px; box-sizing:border-box; }
 #leaveBtn, #hubBtn { margin-top:10px; margin-right:5px; }
 #leaveBtn { background:#ff5555; }
@@ -95,6 +95,7 @@ button:hover { background:#0055aa; }
   <div id="partyManifestoView"><h3>Manifesto / Programa</h3><ul></ul></div>
   <h3>Miembros</h3>
   <ul id="partyMembers"></ul>
+  <h3>Chat del Partido</h3>
   <div id="partyChat"></div>
   <input type="text" id="chatInput" placeholder="Escribe un mensaje y presiona Enter">
 </div>
@@ -127,6 +128,8 @@ const editBtn = document.getElementById("editPartyBtn");
 const editForm = document.getElementById("editPartyForm");
 const saveEditBtn = document.getElementById("saveEditBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
+
+let chatInterval;
 
 // ====================
 // FUNCIONES AUXILIARES
@@ -227,7 +230,6 @@ window.joinParty = async function(partyId){
     .insert([{ party_id:partyId, usuarios_id:user.id, role:"member" }]);
   if(error){ alert("No se pudo unir: "+error.message); return; }
 
-  // Actualiza currentPartyId solo para mostrar la vista del partido
   localStorage.setItem("currentPartyId", partyId);
   showParty(partyId);
 }
@@ -264,7 +266,6 @@ async function showParty(partyId){
     partyLogoView.style.display = "none";
   }
 
-  // 🔹 Solo el creador puede editar
   if(user && user.id === party.creator_id){
     editBtn.style.display = "inline-block";
   } else {
@@ -286,10 +287,12 @@ async function showParty(partyId){
       : "<li>No hay miembros</li>";
   }
 
-  await loadMessages(partyId);
+  // Iniciar chat
+  startChatPolling(partyId);
+
   localStorage.setItem("currentPartyId", partyId);
 
-  // Eventos edición
+  // Edición
   editBtn.onclick = () => {
     document.getElementById("editPartyName").value = party.name;
     document.getElementById("editPartyDescription").value = party.description;
@@ -323,7 +326,7 @@ async function showParty(partyId){
       .update(updateData)
       .eq("id", partyId);
 
-    if(updateError){ alert("❌ Error actualizando partido: " + updateError.message); return; }
+    if(updateError){ alert("❌ Error actualizando partido: " +updateError.message); return; }
 
     alert("✅ Partido actualizado con éxito");
     editForm.style.display = "none";
@@ -332,12 +335,47 @@ async function showParty(partyId){
 }
 
 // ====================
+// CHAT
+// ====================
+async function loadMessages(partyId){
+  const { data } = await supabase.from("party_messages")
+    .select("message,usuarios(username)").eq("party_id",partyId).order("created_at",{ascending:true});
+  document.getElementById("partyChat").innerHTML = data?.map(m=>`<p><b>${m.usuarios?.username||'Anon'}:</b> ${m.message}</p>`).join("") || "";
+}
+
+function startChatPolling(partyId){
+  clearInterval(chatInterval);
+  loadMessages(partyId);
+  chatInterval = setInterval(()=>loadMessages(partyId), 3000);
+}
+
+chatInput.addEventListener("keypress", async (e)=>{
+  if(e.key === "Enter" && chatInput.value.trim() !== ""){
+    const user = JSON.parse(localStorage.getItem("currentUser"));
+    const partyId = localStorage.getItem("currentPartyId");
+    if(!user || !partyId) return;
+
+    const message = chatInput.value.trim();
+    chatInput.value = "";
+
+    const { error } = await supabase.from("party_messages")
+      .insert([{ party_id: partyId, usuarios_id: user.id, message }]);
+
+    if(error){ console.error("Error enviando mensaje:", error.message); return; }
+
+    loadMessages(partyId);
+  }
+});
+
+// ====================
 // SALIR DEL PARTIDO
 // ====================
 leaveBtn.addEventListener("click", async ()=>{
   const user = JSON.parse(localStorage.getItem("currentUser"));
   const partyId = localStorage.getItem("currentPartyId");
   if(!user || !partyId) return;
+
+    if(!user || !partyId) return;
 
   const { error } = await supabase.from("party_members")
     .delete()
@@ -351,6 +389,7 @@ leaveBtn.addEventListener("click", async ()=>{
   }
 
   localStorage.removeItem("currentPartyId");
+  clearInterval(chatInterval); // Detener el polling del chat
   partyView.style.display = "none";
   mainContainer.style.display = "block";
   loadParties();
@@ -361,17 +400,9 @@ leaveBtn.addEventListener("click", async ()=>{
 // ====================
 hubBtn.addEventListener("click", ()=>{
   localStorage.removeItem("currentPartyId");
+  clearInterval(chatInterval); // Detener el polling del chat
   window.location.href = "Hub.html";
 });
-
-// ====================
-// CHAT
-// ====================
-async function loadMessages(partyId){
-  const { data } = await supabase.from("party_messages")
-    .select("message,usuarios(username)").eq("party_id",partyId).order("created_at",{ascending:true});
-  document.getElementById("partyChat").innerHTML = data?.map(m=>`<p><b>${m.usuarios?.username||'Anon'}:</b> ${m.message}</p>`).join("") || "";
-}
 
 // ====================
 // DETECTAR SI YA ESTÁ EN UN PARTIDO
