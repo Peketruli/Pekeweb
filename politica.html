@@ -169,13 +169,15 @@ async function cryptoRandomUUID(){
 // ====================
 async function loadParties(){
   partiesList.innerHTML = "Cargando partidos...";
+
   const { data, error } = await supabase
     .from("parties")
     .select("id, name, description, manifesto, logo_path, color");
 
   if(error){
     partiesList.innerHTML = "❌ Error cargando partidos";
-    showError("❌ " + (error.message || error));
+    console.error(error);
+    showError("❌ " + (error.message || JSON.stringify(error)));
     return;
   }
 
@@ -185,29 +187,39 @@ async function loadParties(){
   }
 
   partiesList.innerHTML = "";
+
   data.forEach(party => {
     const div = document.createElement("div");
     div.className = "party-card";
     div.style.backgroundColor = party.color || "#fafafa";
 
+    // Logo
     let logoHtml = "";
     if(party.logo_path){
-      const { data: { publicUrl } } = supabase.storage.from("logos").getPublicUrl(party.logo_path);
+      const urlData = supabase.storage.from("logos").getPublicUrl(party.logo_path);
+      const publicUrl = urlData?.data?.publicUrl;
       if(publicUrl) logoHtml = `<img src="${publicUrl}" alt="Logo">`;
     }
 
+    // Manifesto
     let manifestoHtml = "";
-    if(party.manifesto && party.manifesto.length > 0){
-      manifestoHtml = `<ul>${party.manifesto.map(line => `<li>${line}</li>`).join('')}</ul>`;
+    let manifestoArray = [];
+    if(party.manifesto){
+      // Supabase devuelve jsonb como objeto JS, aseguramos array
+      manifestoArray = Array.isArray(party.manifesto) ? party.manifesto : Object.values(party.manifesto);
+      if(manifestoArray.length > 0){
+        manifestoHtml = `<ul>${manifestoArray.map(line => `<li>${line}</li>`).join('')}</ul>`;
+      }
     }
 
     div.innerHTML = `
       ${logoHtml}
-      <h3>${party.name}</h3>
-      <p>${party.description}</p>
+      <h3>${party.name || "Sin nombre"}</h3>
+      <p>${party.description || "Sin descripción"}</p>
       ${manifestoHtml}
       <button onclick="joinParty('${party.id}')">Unirse</button>
     `;
+
     partiesList.appendChild(div);
   });
 }
