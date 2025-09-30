@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Casino - Blackjack</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<style>
+  body {
+    background-color: #1c1c1c;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 20px;
+  }
+
+  .auth-container, .user-info {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .auth-button {
+    padding: 10px 20px;
+    font-size: 1em;
+    color: white;
+    background-color: #333;
+    border: none;
+    cursor: pointer;
+    border-radius: 5px;
+  }
+
+  .user-info {
+    display: none;
+    cursor: pointer;
+  }
+
+  #userLogo { width: 40px; height: 40px; border-radius: 50%; }
+  #userName { font-weight: bold; }
+
+  #pekePuntos { margin: 20px 0; font-size: 1.2em; }
+
+  /* Blackjack Table */
+  #blackjack-table {
+    background-color: #2e3b4e;
+    border-radius: 10px;
+    padding: 20px;
+    margin: 20px auto;
+    width: 320px;
+  }
+
+  #player-hand, #dealer-hand { margin-bottom: 15px; }
+  .cards { display: flex; gap: 5px; justify-content: center; margin-top: 5px; }
+
+  button {
+    padding: 10px;
+    margin: 5px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+  }
+
+  #hit-button { background-color: #4CAF50; color: white; }
+  #stand-button { background-color: #f39c12; color: white; }
+  #restart-button { background-color: #dc3545; color: white; }
+
+  #game-message { margin-top: 10px; font-size: 1.1em; font-weight: bold; }
+
+  /* Top 5 */
+  #top5 {
+    background-color: #333;
+    border-radius: 10px;
+    padding: 10px;
+    margin: 20px auto;
+    width: 320px;
+    text-align: left;
+  }
+</style>
+</head>
+<body>
+
+<div class="auth-container" id="authContainer">
+  <button class="auth-button" onclick="window.location.href='login.html'">Iniciar sesión</button>
+</div>
+
+<div class="user-info" id="userInfo">
+  <h3 id="userName"></h3>
+  <img id="userLogo" src="logoDefault.png" alt="Logo">
+</div>
+
+<div id="pekePuntos">PekePuntos: <span id="points">0</span></div>
+
+<div id="top5">
+  <h3>Top 5 Jugadores</h3>
+  <ol id="top5-list"></ol>
+</div>
+
+<div id="blackjack-table">
+  <div id="player-hand">
+    <h3>Tu Mano</h3>
+    <div class="cards" id="player-cards"></div>
+    <p>Puntuación: <span id="player-score">0</span></p>
+  </div>
+
+  <div id="dealer-hand">
+    <h3>Mano del Crupier</h3>
+    <div class="cards" id="dealer-cards"></div>
+    <p>Puntuación: <span id="dealer-score">0</span></p>
+  </div>
+
+  <div id="controls">
+    <button id="hit-button">Pedir Carta</button>
+    <button id="stand-button">Plantarse</button>
+    <button id="restart-button">Reiniciar</button>
+  </div>
+
+  <div id="game-message"></div>
+</div>
+
+<script>
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// Sesión de usuario
+function loadUserInfo() {
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  const authContainer = document.getElementById("authContainer");
+  const userInfo = document.getElementById("userInfo");
+
+  if(user){
+    userInfo.style.display = "flex";
+    authContainer.style.display = "none";
+    document.getElementById("userName").textContent = user.username;
+    document.getElementById("userLogo").src = user.logo || "logoDefault.png";
+    loadPekePuntos(user.username);
+  } else {
+    userInfo.style.display = "none";
+    authContainer.style.display = "flex";
+  }
+}
+
+// Cargar PekePuntos
+async function loadPekePuntos(username){
+  let { data, error } = await supabase.from('usuarios').select('pekePuntos').eq('username', username).single();
+  if(data){
+    document.getElementById("points").textContent = data.pekePuntos;
+  }
+}
+
+// Top 5 jugadores
+async function loadTop5(){
+  let { data, error } = await supabase.from('usuarios').select('username, pekePuntos').order('pekePuntos', {ascending:false}).limit(5);
+  const topList = document.getElementById('top5-list');
+  topList.innerHTML = '';
+  data.forEach(u => {
+    let li = document.createElement('li');
+    li.textContent = `${u.username}: ${u.pekePuntos}`;
+    topList.appendChild(li);
+  });
+}
+
+// --- Blackjack ---
+let deck=[], playerHand=[], dealerHand=[];
+const suits = ['♠','♥','♦','♣'], values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+
+function createDeck(){
+  deck=[];
+  suits.forEach(s => values.forEach(v=>deck.push({value:v,suit:s})));
+}
+
+function shuffleDeck(){
+  for(let i=deck.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [deck[i], deck[j]]=[deck[j], deck[i]];
+  }
+}
+
+function dealCard(hand){
+  hand.push(deck.pop());
+}
+
+function calculateScore(hand){
+  let score=0, ace=0;
+  hand.forEach(c=>{
+    if(['J','Q','K'].includes(c.value)) score+=10;
+    else if(c.value==='A'){score+=11; ace++;}
+    else score+=parseInt(c.value);
+  });
+  while(score>21 && ace>0){score-=10; ace--;}
+  return score;
+}
+
+function updateUI(){
+  const playerCards = document.getElementById("player-cards");
+  const dealerCards = document.getElementById("dealer-cards");
+  playerCards.innerHTML = ''; dealerCards.innerHTML = '';
+  playerHand.forEach(c=>playerCards.innerHTML+=`<span>${c.value}${c.suit}</span>`);
+  dealerHand.forEach(c=>dealerCards.innerHTML+=`<span>${c.value}${c.suit}</span>`);
+  document.getElementById("player-score").textContent = calculateScore(playerHand);
+  document.getElementById("dealer-score").textContent = calculateScore(dealerHand);
+}
+
+function checkResult(){
+  const playerScore = calculateScore(playerHand);
+  const dealerScore = calculateScore(dealerHand);
+  const msg = document.getElementById("game-message");
+
+  if(playerScore>21) msg.textContent="¡Te pasaste! Pierdes.";
+  else if(dealerScore>21) msg.textContent="¡Crupier se pasó! Ganaste.";
+  else if(playerScore===21) msg.textContent="¡Blackjack! Ganaste.";
+  else msg.textContent="";
+}
+
+function dealerTurn(){
+  while(calculateScore(dealerHand)<17){
+    dealCard(dealerHand);
+  }
+  const playerScore = calculateScore(playerHand);
+  const dealerScore = calculateScore(dealerHand);
+  const msg = document.getElementById("game-message");
+
+  if(dealerScore>21) msg.textContent="¡Crupier se pasó! Ganaste.";
+  else if(dealerScore>playerScore) msg.textContent="¡Crupier gana!";
+  else if(dealerScore<playerScore) msg.textContent="¡Ganaste!";
+  else msg.textContent="Empate.";
+  updateUI();
+}
+
+function startGame(){
+  createDeck();
+  shuffleDeck();
+  playerHand=[]; dealerHand=[];
+  dealCard(playerHand); dealCard(playerHand);
+  dealCard(dealerHand); dealCard(dealerHand);
+  updateUI();
+  document.getElementById("game-message").textContent="";
+}
+
+document.getElementById("hit-button").addEventListener("click", ()=>{
+  dealCard(playerHand);
+  updateUI();
+  checkResult();
+});
+
+document.getElementById("stand-button").addEventListener("click", ()=>{
+  dealerTurn();
+});
+
+document.getElementById("restart-button").addEventListener("click", ()=>{
+  startGame();
+});
+
+// Inicialización
+loadUserInfo();
+loadTop5();
+startGame();
+</script>
+
+</body>
+</html>
