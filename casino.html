@@ -53,16 +53,21 @@
     li {
       margin: 0.5rem 0;
     }
+    #mensajesError {
+      background:#800; 
+      color:#fff; 
+      padding:0.5rem; 
+      display:none;
+    }
   </style>
 </head>
 <body>
-  <!-- Cabecera con contador de Pekepuntos -->
   <header>
     <span>🎰 Casino de Pekepuntos</span>
     <span id="misPekepuntos">Pekepuntos: 0</span>
   </header>
 
-  <div id="mensajesError" style="background:#800; color:#fff; padding:0.5rem; display:none;"></div>
+  <div id="mensajesError"></div>
 
   <nav>
     <button onclick="showSection('ranking')">🏆 Top 5</button>
@@ -70,20 +75,17 @@
     <button onclick="showSection('canjear')">🎁 Canjear</button>
   </nav>
 
-  <!-- Ranking -->
   <section id="ranking" class="section active">
     <h2>🏆 Top 5 Jugadores</h2>
     <ul id="top5"></ul>
   </section>
 
-  <!-- Jugar -->
   <section id="jugar" class="section">
     <h2>🎲 Minijuego: Tirar el dado</h2>
     <button onclick="jugarDado()">Tirar dado</button>
     <p id="resultadoDado"></p>
   </section>
 
-  <!-- Canjear -->
   <section id="canjear" class="section">
     <h2>🎁 Canjea tus Pekepuntos</h2>
     <ul id="premios"></ul>
@@ -99,50 +101,46 @@
 
     let usuarioId;
 
-    // ===============================
-    // Cambiar sección
-    // ===============================
     function showSection(id) {
       document.querySelectorAll('.section').forEach(sec => sec.classList.remove('active'));
       document.getElementById(id).classList.add('active');
     }
 
     function mostrarError(mensaje) {
-  const div = document.getElementById("mensajesError");
-  div.style.display = "block";
-  div.textContent = mensaje;
-}
+      const div = document.getElementById("mensajesError");
+      div.style.display = "block";
+      div.textContent = mensaje;
+    }
 
     // ===============================
-    // Registrar usuario al entrar al casino
+    // Registrar usuario al entrar
     // ===============================
     async function registrarUsuario(nombre) {
       let { data: usuario, error } = await supabase
         .from('usuarios_casino')
         .select('*')
         .eq('nombre', nombre)
-        .single();
+        .maybeSingle(); // <-- evita error si no existe
 
-      if (error && error.code !== 'PGRST116') { 
+      if (error) {
         mostrarError(error.message || JSON.stringify(error));
         return null;
       }
 
-     if (!usuario) {
-  const { data, error: insertError } = await supabase
-    .from('usuarios_casino')
-    .insert({ nombre })
-    .select()
-    .single();
+      if (!usuario) {
+        const { data, error: insertError } = await supabase
+          .from('usuarios_casino')
+          .insert({ nombre })
+          .select()
+          .maybeSingle();
 
-  if (insertError) {
-    mostrarError(insertError.message || JSON.stringify(insertError));
-    return null;
-  }
+        if (insertError) {
+          mostrarError(insertError.message || JSON.stringify(insertError));
+          return null;
+        }
 
-  usuario = data;
-}
-
+        usuario = data;
+      }
 
       usuarioId = usuario.id;
       actualizarPekepuntos();
@@ -175,14 +173,14 @@
     }
 
     // ===============================
-    // Mostrar Pekepuntos actuales
+    // Mostrar Pekepuntos
     // ===============================
     async function actualizarPekepuntos() {
       const { data, error } = await supabase
         .from('usuarios_casino')
         .select('pekepuntos')
         .eq('id', usuarioId)
-        .single();
+        .maybeSingle();
 
       if (error) {
         mostrarError(error.message || JSON.stringify(error));
@@ -197,27 +195,19 @@
     // ===============================
     async function jugarDado() {
       const dado = Math.floor(Math.random() * 6) + 1;
-      let puntos = 0;
+      let puntos = (dado === 6) ? 100 : -20;
 
-      if (dado === 6) {
-        puntos = 100;
-        document.getElementById("resultadoDado").textContent =
-          `¡Sacaste un ${dado}! Ganaste ${puntos} Pekepuntos 🎉`;
-      } else {
-        puntos = -20;
-        document.getElementById("resultadoDado").textContent =
-          `Sacaste un ${dado}. Pierdes ${Math.abs(puntos)} Pekepuntos 😢`;
-      }
+      document.getElementById("resultadoDado").textContent =
+        (dado === 6)
+        ? `¡Sacaste un ${dado}! Ganaste ${puntos} Pekepuntos 🎉`
+        : `Sacaste un ${dado}. Pierdes ${Math.abs(puntos)} Pekepuntos 😢`;
 
-      // Registrar la partida en "juegos"
       await supabase.from('juegos').insert([
         { usuario_id: usuarioId, juego: 'dado', resultado: { dado }, puntos_ganados: puntos }
       ]);
 
-      // Actualizar Pekepuntos del usuario
       await supabase.rpc('modificar_pekepuntos', { p_usuario: usuarioId, p_puntos: puntos });
 
-      // Actualizar ranking y contador
       cargarTop5();
       actualizarPekepuntos();
     }
