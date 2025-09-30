@@ -95,6 +95,7 @@
     const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
     const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
+    let usuarioId; // Guardaremos el ID del usuario actual
 
     // ===============================
     // Cambiar sección
@@ -105,11 +106,47 @@
     }
 
     // ===============================
+    // Registrar usuario al entrar al casino
+    // ===============================
+    async function registrarUsuario(nombre) {
+      let { data: usuario, error } = await supabase
+        .from('usuarios_casino')
+        .select('*')
+        .eq('nombre', nombre)
+        .single();
+
+      if (error && error.code !== 'PGRST116') { 
+        console.error(error);
+        return null;
+      }
+
+      if (!usuario) {
+        const { data, error: insertError } = await supabase
+          .from('usuarios_casino')
+          .insert({ nombre })
+          .select()
+          .single();
+
+        if (insertError) {
+          console.error(insertError);
+          return null;
+        }
+
+        usuario = data;
+      }
+
+      usuarioId = usuario.id;
+      actualizarPekepuntos();
+      cargarTop5();
+      cargarPremios();
+    }
+
+    // ===============================
     // Cargar Top 5
     // ===============================
     async function cargarTop5() {
       const { data, error } = await supabase
-        .from('usuarios') // 👈 nombre real de tu tabla
+        .from('usuarios_casino')
         .select('id, nombre, pekepuntos')
         .order('pekepuntos', { ascending: false })
         .limit(5);
@@ -133,7 +170,7 @@
     // ===============================
     async function actualizarPekepuntos() {
       const { data, error } = await supabase
-        .from('usuarios') // 👈 tu tabla real
+        .from('usuarios_casino')
         .select('pekepuntos')
         .eq('id', usuarioId)
         .single();
@@ -195,9 +232,12 @@
     // ===============================
     // Al cargar la página
     // ===============================
-    cargarTop5();
-    cargarPremios();
-    actualizarPekepuntos();
+    let nombreUsuario = prompt("Ingresa tu nombre de usuario para el casino:");
+    if (nombreUsuario) {
+      registrarUsuario(nombreUsuario);
+    } else {
+      alert("Debes ingresar un nombre para jugar.");
+    }
   </script>
 </body>
 </html>
