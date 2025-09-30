@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Casino - Blackjack</title>
+<title>Casino - Blackjack Mejorado</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
   body {
@@ -32,11 +32,7 @@
     border-radius: 5px;
   }
 
-  .user-info {
-    display: none;
-    cursor: pointer;
-  }
-
+  .user-info { display: none; cursor: pointer; }
   #userLogo { width: 40px; height: 40px; border-radius: 50%; }
   #userName { font-weight: bold; }
 
@@ -48,11 +44,24 @@
     border-radius: 10px;
     padding: 20px;
     margin: 20px auto;
-    width: 320px;
+    width: 340px;
   }
 
   #player-hand, #dealer-hand { margin-bottom: 15px; }
   .cards { display: flex; gap: 5px; justify-content: center; margin-top: 5px; }
+  .card {
+    background-color: white;
+    color: black;
+    width: 40px;
+    height: 60px;
+    border-radius: 5px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    font-weight: bold;
+    font-size: 18px;
+  }
+  .hidden { background-color: #444; color: #444; }
 
   button {
     padding: 10px;
@@ -75,7 +84,7 @@
     border-radius: 10px;
     padding: 10px;
     margin: 20px auto;
-    width: 320px;
+    width: 340px;
     text-align: left;
   }
 </style>
@@ -108,7 +117,7 @@
   <div id="dealer-hand">
     <h3>Mano del Crupier</h3>
     <div class="cards" id="dealer-cards"></div>
-    <p>Puntuación: <span id="dealer-score">0</span></p>
+    <p>Puntuación: <span id="dealer-score">?</span></p>
   </div>
 
   <div id="controls">
@@ -125,6 +134,9 @@ const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let deck=[], playerHand=[], dealerHand=[], hideDealer=true;
+const suits = ['♠','♥','♦','♣'], values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
 
 // Sesión de usuario
 function loadUserInfo() {
@@ -144,53 +156,25 @@ function loadUserInfo() {
   }
 }
 
-// Cargar PekePuntos
 async function loadPekePuntos(username){
-  let { data, error } = await supabase.from('usuarios').select('pekePuntos').eq('username', username).single();
-  if(data){
-    document.getElementById("points").textContent = data.pekePuntos;
-  }
+  let { data } = await supabase.from('usuarios').select('pekePuntos').eq('username', username).single();
+  if(data) document.getElementById("points").textContent = data.pekePuntos;
 }
 
-// Top 5 jugadores
 async function loadTop5(){
-  let { data, error } = await supabase.from('usuarios').select('username, pekePuntos').order('pekePuntos', {ascending:false}).limit(5);
+  let { data } = await supabase.from('usuarios').select('username, pekePuntos').order('pekePuntos',{ascending:false}).limit(5);
   const topList = document.getElementById('top5-list');
   topList.innerHTML = '';
-  data.forEach(u => {
-    let li = document.createElement('li');
-    li.textContent = `${u.username}: ${u.pekePuntos}`;
-    topList.appendChild(li);
-  });
+  data.forEach(u => { let li = document.createElement('li'); li.textContent = `${u.username}: ${u.pekePuntos}`; topList.appendChild(li); });
 }
 
 // --- Blackjack ---
-let deck=[], playerHand=[], dealerHand=[];
-const suits = ['♠','♥','♦','♣'], values = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
-
-function createDeck(){
-  deck=[];
-  suits.forEach(s => values.forEach(v=>deck.push({value:v,suit:s})));
-}
-
-function shuffleDeck(){
-  for(let i=deck.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [deck[i], deck[j]]=[deck[j], deck[i]];
-  }
-}
-
-function dealCard(hand){
-  hand.push(deck.pop());
-}
-
-function calculateScore(hand){
+function createDeck(){ deck=[]; suits.forEach(s=>values.forEach(v=>deck.push({value:v,suit:s}))); }
+function shuffleDeck(){ for(let i=deck.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [deck[i],deck[j]]=[deck[j],deck[i]]; } }
+function dealCard(hand){ hand.push(deck.pop()); }
+function calculateScore(hand){ 
   let score=0, ace=0;
-  hand.forEach(c=>{
-    if(['J','Q','K'].includes(c.value)) score+=10;
-    else if(c.value==='A'){score+=11; ace++;}
-    else score+=parseInt(c.value);
-  });
+  hand.forEach(c=>{ if(['J','Q','K'].includes(c.value)) score+=10; else if(c.value==='A'){score+=11; ace++;} else score+=parseInt(c.value); });
   while(score>21 && ace>0){score-=10; ace--;}
   return score;
 }
@@ -198,62 +182,60 @@ function calculateScore(hand){
 function updateUI(){
   const playerCards = document.getElementById("player-cards");
   const dealerCards = document.getElementById("dealer-cards");
-  playerCards.innerHTML = ''; dealerCards.innerHTML = '';
-  playerHand.forEach(c=>playerCards.innerHTML+=`<span>${c.value}${c.suit}</span>`);
-  dealerHand.forEach(c=>dealerCards.innerHTML+=`<span>${c.value}${c.suit}</span>`);
+  playerCards.innerHTML=''; dealerCards.innerHTML='';
+  playerHand.forEach(c=>playerCards.innerHTML+=`<div class="card">${c.value}${c.suit}</div>`);
+  dealerHand.forEach((c,i)=> {
+    if(hideDealer && i===1) dealerCards.innerHTML+=`<div class="card hidden">?</div>`;
+    else dealerCards.innerHTML+=`<div class="card">${c.value}${c.suit}</div>`;
+  });
   document.getElementById("player-score").textContent = calculateScore(playerHand);
-  document.getElementById("dealer-score").textContent = calculateScore(dealerHand);
+  document.getElementById("dealer-score").textContent = hideDealer ? "?" : calculateScore(dealerHand);
 }
 
-function checkResult(){
-  const playerScore = calculateScore(playerHand);
-  const dealerScore = calculateScore(dealerHand);
-  const msg = document.getElementById("game-message");
-
-  if(playerScore>21) msg.textContent="¡Te pasaste! Pierdes.";
-  else if(dealerScore>21) msg.textContent="¡Crupier se pasó! Ganaste.";
-  else if(playerScore===21) msg.textContent="¡Blackjack! Ganaste.";
-  else msg.textContent="";
+function endGame(message){
+  document.getElementById("game-message").textContent=message;
+  document.getElementById("hit-button").disabled=true;
+  document.getElementById("stand-button").disabled=true;
+  hideDealer=false;
+  updateUI();
 }
 
 function dealerTurn(){
-  while(calculateScore(dealerHand)<17){
-    dealCard(dealerHand);
-  }
+  hideDealer=false;
+  updateUI();
+  while(calculateScore(dealerHand)<17) dealCard(dealerHand);
   const playerScore = calculateScore(playerHand);
   const dealerScore = calculateScore(dealerHand);
-  const msg = document.getElementById("game-message");
-
-  if(dealerScore>21) msg.textContent="¡Crupier se pasó! Ganaste.";
-  else if(dealerScore>playerScore) msg.textContent="¡Crupier gana!";
-  else if(dealerScore<playerScore) msg.textContent="¡Ganaste!";
-  else msg.textContent="Empate.";
-  updateUI();
+  if(dealerScore>21) endGame("¡Crupier se pasó! Ganaste.");
+  else if(dealerScore>playerScore) endGame("¡Crupier gana!");
+  else if(dealerScore<playerScore) endGame("¡Ganaste!");
+  else endGame("Empate.");
 }
 
+function checkPlayerBust(){
+  if(calculateScore(playerHand)>21) endGame("¡Te pasaste! Pierdes.");
+}
+
+// Start game
 function startGame(){
-  createDeck();
-  shuffleDeck();
-  playerHand=[]; dealerHand=[];
+  createDeck(); shuffleDeck();
+  playerHand=[]; dealerHand=[]; hideDealer=true;
   dealCard(playerHand); dealCard(playerHand);
   dealCard(dealerHand); dealCard(dealerHand);
+  document.getElementById("hit-button").disabled=false;
+  document.getElementById("stand-button").disabled=false;
+  document.getElementById("game-message").textContent='';
   updateUI();
-  document.getElementById("game-message").textContent="";
 }
 
 document.getElementById("hit-button").addEventListener("click", ()=>{
   dealCard(playerHand);
   updateUI();
-  checkResult();
+  checkPlayerBust();
 });
 
-document.getElementById("stand-button").addEventListener("click", ()=>{
-  dealerTurn();
-});
-
-document.getElementById("restart-button").addEventListener("click", ()=>{
-  startGame();
-});
+document.getElementById("stand-button").addEventListener("click", dealerTurn);
+document.getElementById("restart-button").addEventListener("click", startGame);
 
 // Inicialización
 loadUserInfo();
