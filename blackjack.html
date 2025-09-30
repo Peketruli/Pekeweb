@@ -2,64 +2,30 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Casino - Blackjack</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blackjack - Casino</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-    body {
-        background-color: #222; 
-        color: white;
-        font-family: Arial, sans-serif;
-        text-align: center;
-        padding: 20px;
-    }
-    #pekePuntos {
-        font-size: 20px;
-        margin-bottom: 15px;
-    }
-    #bet-container {
-        margin-bottom: 20px;
-    }
-    input[type="number"] {
-        padding: 5px;
-        width: 100px;
-        border-radius: 5px;
-        border: none;
-    }
-    button {
-        padding: 10px 20px;
-        border-radius: 8px;
-        border: none;
-        margin: 5px;
-        cursor: pointer;
-        font-size: 16px;
-    }
-    #hit-button, #stand-button {
-        background-color: #007BFF;
-        color: white;
-    }
-    #hit-button:hover, #stand-button:hover {
-        background-color: #0056b3;
-    }
-    #game-message {
-        margin-top: 20px;
-        font-size: 18px;
-        min-height: 24px;
-    }
-    #player-hand, #dealer-hand {
-        margin: 10px;
-        font-size: 18px;
-    }
+    body { background-color: #2c2c2c; color: white; font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+    #pekePuntos { font-size: 2em; margin-bottom: 20px; }
+    #bet-container { margin-bottom: 20px; }
+    input[type="number"] { padding: 5px; width: 120px; border-radius: 5px; border: none; }
+    button { padding: 10px 20px; margin: 5px; border-radius: 8px; border: none; cursor: pointer; font-size: 16px; }
+    #hit-button, #stand-button { background-color: #007BFF; color: white; }
+    #hit-button:hover, #stand-button:hover { background-color: #0056b3; }
+    #game-message { margin-top: 20px; font-size: 18px; min-height: 24px; }
+    #player-hand, #dealer-hand { margin: 10px; font-size: 18px; }
 </style>
 </head>
 <body>
 
-<h1>🎰 Casino - Blackjack 🎰</h1>
-<div id="pekePuntos">PekePuntos: <span id="points">0</span></div>
+<h1>🎰 Blackjack 🎰</h1>
+<div id="pekePuntos">PekePuntos: 0</div>
 
 <div id="bet-container">
-  <label for="bet-amount">Apuesta: </label>
-  <input type="number" id="bet-amount" min="1" placeholder="Ingresa tus PekePuntos">
-  <button id="place-bet-button">Apostar</button>
+    <label for="bet-amount">Apuesta: </label>
+    <input type="number" id="bet-amount" min="1" placeholder="Ingresa tus PekePuntos">
+    <button id="place-bet-button">Apostar</button>
 </div>
 
 <div id="player-hand">Tus cartas: </div>
@@ -80,137 +46,97 @@ let playerHand = [];
 let dealerHand = [];
 let hideDealer = true;
 let currentBet = 0;
+let currentUser = null;
 
-// Cargar PekePuntos del jugador
-document.addEventListener("DOMContentLoaded", function() {
-    const user = JSON.parse(localStorage.getItem("currentUser"));
-    if(user){
-        document.getElementById("points").textContent = user.pekePuntos || 0;
+// Cargar PekePuntos reales
+async function loadPekePuntos() {
+    currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    if(!currentUser) {
+        alert("Debes iniciar sesión para jugar.");
+        window.location.href = "login.html";
+        return;
     }
-});
+    const { data, error } = await supabase.from("usuarios").select("pekepuntos").eq("id", currentUser.id).single();
+    if(error) { console.error(error); return; }
+    currentUser.pekepuntos = data.pekepuntos;
+    document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+}
 
-// Función para actualizar puntos
-async function updatePoints(result){
-    const user = JSON.parse(localStorage.getItem("currentUser"));
-    if(result === "win") user.pekePuntos += currentBet;
-    else if(result === "lose") user.pekePuntos -= currentBet;
+function updatePoints(result) {
+    if(result === "win") currentUser.pekepuntos += currentBet;
+    else if(result === "lose") currentUser.pekepuntos -= currentBet;
 
-    document.getElementById("points").textContent = user.pekePuntos;
-
-    await supabase.from("usuarios").update({pekePuntos: user.pekePuntos}).eq("username", user.username);
-
-    localStorage.setItem("currentUser", JSON.stringify(user));
+    document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
+    supabase.from("usuarios").update({pekepuntos: currentUser.pekepuntos}).eq("id", currentUser.id);
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
     currentBet = 0;
     document.getElementById("bet-amount").disabled = false;
     document.getElementById("place-bet-button").disabled = false;
     document.getElementById("bet-amount").value = '';
 }
 
-// Funciones de Blackjack
+// Blackjack
 function createDeck(){
     const suits = ["♥","♦","♣","♠"];
     const values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
     let deck = [];
-    for(let suit of suits){
-        for(let val of values){
-            deck.push({suit: suit, value: val});
-        }
-    }
-    return deck.sort(()=> Math.random() - 0.5);
+    for(let s of suits){ for(let v of values){ deck.push({suit:s,value:v}); } }
+    return deck.sort(()=> Math.random()-0.5);
 }
-
-function cardValue(card){
-    if(["J","Q","K"].includes(card.value)) return 10;
-    if(card.value === "A") return 11;
-    return parseInt(card.value);
-}
-
-function handValue(hand){
-    let val = hand.reduce((acc, card) => acc + cardValue(card),0);
-    let aces = hand.filter(c => c.value==="A").length;
-    while(val>21 && aces>0){
-        val -= 10;
-        aces--;
-    }
-    return val;
-}
-
+function cardValue(card){ if(["J","Q","K"].includes(card.value)) return 10; if(card.value==="A") return 11; return parseInt(card.value); }
+function handValue(hand){ let val=hand.reduce((acc,c)=>acc+cardValue(c),0); let aces=hand.filter(c=>c.value==="A").length; while(val>21 && aces>0){ val-=10; aces--; } return val; }
 function updateUI(){
-    document.getElementById("player-hand").textContent = "Tus cartas: " + playerHand.map(c=>c.value+c.suit).join(" ");
-    if(hideDealer){
-        document.getElementById("dealer-hand").textContent = "Cartas del crupier: " + dealerHand[0].value + dealerHand[0].suit + " ??";
-    } else {
-        document.getElementById("dealer-hand").textContent = "Cartas del crupier: " + dealerHand.map(c=>c.value+c.suit).join(" ");
-    }
+    document.getElementById("player-hand").textContent = "Tus cartas: "+playerHand.map(c=>c.value+c.suit).join(" ");
+    document.getElementById("dealer-hand").textContent = hideDealer ? "Cartas del crupier: " + dealerHand[0].value + dealerHand[0].suit + " ??" : "Cartas del crupier: "+dealerHand.map(c=>c.value+c.suit).join(" ");
 }
-
-function endGame(message){
-    document.getElementById("game-message").textContent = message;
+function endGame(msg){
+    hideDealer=false; updateUI();
+    document.getElementById("game-message").textContent = msg;
     document.getElementById("hit-button").disabled=true;
     document.getElementById("stand-button").disabled=true;
-    hideDealer=false;
-    updateUI();
-
-    if(message.includes("Ganaste")) updatePoints("win");
-    else if(message.includes("perdiste") || message.includes("Pierdes") || message.includes("Crupier gana")) updatePoints("lose");
+    if(msg.includes("Ganaste")) updatePoints("win");
+    else if(msg.includes("perdiste") || msg.includes("Pierdes") || msg.includes("Crupier gana")) updatePoints("lose");
 }
 
 let deck = [];
 function startGame(){
     deck = createDeck();
-    playerHand = [deck.pop(), deck.pop()];
-    dealerHand = [deck.pop(), deck.pop()];
-    hideDealer = true;
+    playerHand=[deck.pop(),deck.pop()];
+    dealerHand=[deck.pop(),deck.pop()];
+    hideDealer=true;
     updateUI();
-
     document.getElementById("hit-button").disabled=false;
     document.getElementById("stand-button").disabled=false;
-    document.getElementById("game-message").textContent = "";
+    document.getElementById("game-message").textContent="";
 }
 
-document.getElementById("hit-button").addEventListener("click", () => {
-    playerHand.push(deck.pop());
-    updateUI();
+// Eventos
+document.getElementById("hit-button").addEventListener("click",()=>{
+    playerHand.push(deck.pop()); updateUI();
     if(handValue(playerHand)>21) endGame("¡Perdiste! Te pasaste.");
 });
-
-document.getElementById("stand-button").addEventListener("click", () => {
-    hideDealer=false;
-    updateUI();
-    while(handValue(dealerHand)<17){
-        dealerHand.push(deck.pop());
-        updateUI();
-    }
-    const playerVal = handValue(playerHand);
-    const dealerVal = handValue(dealerHand);
-
-    if(dealerVal>21 || playerVal>dealerVal) endGame("¡Ganaste!");
-    else if(playerVal<dealerVal) endGame("Crupier gana. Pierdes.");
+document.getElementById("stand-button").addEventListener("click",()=>{
+    hideDealer=false; updateUI();
+    while(handValue(dealerHand)<17){ dealerHand.push(deck.pop()); updateUI(); }
+    const pVal=handValue(playerHand), dVal=handValue(dealerHand);
+    if(dVal>21 || pVal>dVal) endGame("¡Ganaste!");
+    else if(pVal<dVal) endGame("Crupier gana. Pierdes.");
     else endGame("Empate.");
 });
-
-// Colocar apuesta
-document.getElementById("place-bet-button").addEventListener("click", () => {
-    const betInput = document.getElementById("bet-amount");
-    let bet = parseInt(betInput.value);
-    const user = JSON.parse(localStorage.getItem("currentUser"));
-
-    if(isNaN(bet) || bet <= 0){
-        alert("Introduce una cantidad válida.");
-        return;
-    }
-    if(bet > user.pekePuntos){
-        alert("No tienes suficientes PekePuntos.");
-        return;
-    }
-
-    currentBet = bet;
-    document.getElementById("game-message").textContent = `Apuesta colocada: ${currentBet} PekePuntos`;
-    betInput.disabled = true;
-    document.getElementById("place-bet-button").disabled = true;
-
+document.getElementById("place-bet-button").addEventListener("click",()=>{
+    const bet=parseInt(document.getElementById("bet-amount").value);
+    if(isNaN(bet) || bet<=0){ alert("Introduce una cantidad válida."); return; }
+    if(bet>currentUser.pekepuntos){ alert("No tienes suficientes PekePuntos."); return; }
+    currentBet=bet;
+    document.getElementById("game-message").textContent=`Apuesta colocada: ${currentBet} PekePuntos`;
+    document.getElementById("bet-amount").disabled=true;
+    document.getElementById("place-bet-button").disabled=true;
     startGame();
 });
+
+// Inicializar
+loadPekePuntos();
 </script>
 </body>
 </html>
