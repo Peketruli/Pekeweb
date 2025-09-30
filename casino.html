@@ -113,14 +113,14 @@
     }
 
     // ===============================
-    // Registrar usuario al entrar
+    // Registrar usuario (ya existe en tabla 'usuarios')
     // ===============================
     async function registrarUsuario(nombre) {
       let { data: usuario, error } = await supabase
-        .from('usuarios_casino')
+        .from('usuarios')
         .select('*')
         .eq('nombre', nombre)
-        .maybeSingle(); // <-- evita error si no existe
+        .maybeSingle();
 
       if (error) {
         mostrarError(error.message || JSON.stringify(error));
@@ -128,18 +128,8 @@
       }
 
       if (!usuario) {
-        const { data, error: insertError } = await supabase
-          .from('usuarios_casino')
-          .insert({ nombre })
-          .select()
-          .maybeSingle();
-
-        if (insertError) {
-          mostrarError(insertError.message || JSON.stringify(insertError));
-          return null;
-        }
-
-        usuario = data;
+        mostrarError("El usuario no existe en la tabla usuarios.");
+        return null;
       }
 
       usuarioId = usuario.id;
@@ -153,7 +143,7 @@
     // ===============================
     async function cargarTop5() {
       const { data, error } = await supabase
-        .from('usuarios_casino')
+        .from('usuarios')
         .select('id, nombre, pekepuntos')
         .order('pekepuntos', { ascending: false })
         .limit(5);
@@ -177,7 +167,7 @@
     // ===============================
     async function actualizarPekepuntos() {
       const { data, error } = await supabase
-        .from('usuarios_casino')
+        .from('usuarios')
         .select('pekepuntos')
         .eq('id', usuarioId)
         .maybeSingle();
@@ -202,11 +192,8 @@
         ? `¡Sacaste un ${dado}! Ganaste ${puntos} Pekepuntos 🎉`
         : `Sacaste un ${dado}. Pierdes ${Math.abs(puntos)} Pekepuntos 😢`;
 
-      await supabase.from('juegos').insert([
-        { usuario_id: usuarioId, juego: 'dado', resultado: { dado }, puntos_ganados: puntos }
-      ]);
-
-      await supabase.rpc('modificar_pekepuntos', { p_usuario: usuarioId, p_puntos: puntos });
+      // Actualizar Pekepuntos usando RPC (crea la función en Supabase)
+      await supabase.rpc('modificar_pekepuntos_usuario', { p_usuario: usuarioId, p_puntos: puntos });
 
       cargarTop5();
       actualizarPekepuntos();
