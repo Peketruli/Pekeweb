@@ -132,8 +132,18 @@ const editBtn = document.getElementById("editPartyBtn");
 const editForm = document.getElementById("editPartyForm");
 const saveEditBtn = document.getElementById("saveEditBtn");
 const cancelEditBtn = document.getElementById("cancelEditBtn");
+const editPartyColorInput = document.getElementById('editPartyColor');
 
 let chatInterval;
+
+// añadir candidato dinámicamente (opcional)
+addCandidateBtn.addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Nombre candidato';
+  input.className = 'candidateName';
+  candidateInputs.appendChild(input);
+});
 
 // ====================
 // AUX
@@ -150,30 +160,27 @@ async function loadParties(){
     .from("parties")
     .select("id, name, description, logo_path, color");
 
-  if(error){ 
-    partiesList.innerHTML = "❌ Error cargando partidos"; 
-    console.error(error); 
-    return; 
+  if(error){
+    partiesList.innerHTML = "❌ Error cargando partidos";
+    console.error(error);
+    return;
+  }
+  if(!data || data.length===0){
+    partiesList.innerHTML = "<p>No hay partidos creados aún.</p>";
+    return;
   }
 
-  if(!data || data.length===0){ 
-    partiesList.innerHTML="<p>No hay partidos creados aún.</p>"; 
-    return; 
-  }
-
-  partiesList.innerHTML="";
+  partiesList.innerHTML = "";
   data.forEach(party=>{
-    const div=document.createElement("div");
-    div.className="party-card";
+    const div = document.createElement("div");
+    div.className = "party-card";
+    // aplicar color (si tiene)
     div.style.backgroundColor = party.color || "#fafafa";
-    let logoHtml="";
+    let logoHtml = "";
 
     if (party.logo_path) {
-      const { data: urlData } = supabase
-        .storage
-        .from("logos")
-        .getPublicUrl(party.logo_path);
-
+      // getPublicUrl devuelve { data: { publicUrl } }
+      const { data: urlData } = supabase.storage.from("logos").getPublicUrl(party.logo_path);
       if (urlData?.publicUrl) {
         logoHtml = `<img src="${urlData.publicUrl}" alt="Logo">`;
       }
@@ -188,7 +195,6 @@ async function loadParties(){
     partiesList.appendChild(div);
   });
 }
-
 
 // ====================
 // CREAR PARTIDO
@@ -209,6 +215,7 @@ partyForm.addEventListener('submit', async e=>{
   if(logoFile){
     const fileExt = logoFile.name.split('.').pop();
     const fileName = await cryptoRandomUUID()+'.'+fileExt;
+    // puedes usar solo fileName o carpetas; aquí usamos parties/logos/
     logo_path = `parties/logos/${fileName}`;
     const { error: uploadError } = await supabase.storage.from('logos').upload(logo_path, logoFile);
     if(uploadError){ alert("Error subiendo logo: "+uploadError.message); return; }
@@ -219,6 +226,7 @@ partyForm.addEventListener('submit', async e=>{
       .insert([{ name, slug, description, manifesto: manifestoArray, logo_path, color, creator_id: user.id }])
       .select().single();
     if(partyError) throw partyError;
+
     const candidates = Array.from(document.querySelectorAll('.candidateName')).map(c=>c.value.trim()).filter(c=>c!=='');
     if(candidates.length){
       await supabase.from('party_candidates').insert(candidates.map((c,i)=>({ party_id: party.id, name:c, order_index:i })));
@@ -228,6 +236,7 @@ partyForm.addEventListener('submit', async e=>{
     statusText.textContent = '¡Partido creado!';
     partyForm.reset();
     candidateInputs.innerHTML='<input type="text" placeholder="Nombre candidato" class="candidateName">';
+    // recargar lista
     loadParties();
   }catch(err){ console.error(err); alert("Error creando partido: "+err.message);}
 });
@@ -270,7 +279,7 @@ async function showParty(partyId){
 
   const { data: party, error: partyError } = await supabase
     .from("parties")
-    .select("id,name,description,logo_path,manifesto,creator_id")
+    .select("id,name,description,logo_path,manifesto,creator_id,color")
     .eq("id", partyId)
     .single();
 
@@ -280,13 +289,21 @@ async function showParty(partyId){
     return;
   }
 
+  // Aplicar color a la vista del partido
+  partyView.style.backgroundColor = party.color || "#fff";
+
   partyNameView.textContent = party.name;
   partyDescriptionView.textContent = party.description;
   manifestoList.innerHTML = party.manifesto?.map(line => `<li>${line}</li>`).join("") || "<li>No hay manifesto</li>";
 
   if(party.logo_path){
-    partyLogoView.src = supabase.storage.from("logos").getPublicUrl(party.logo_path).data.publicUrl;
-    partyLogoView.style.display = "block";
+    const { data: urlData } = supabase.storage.from("logos").getPublicUrl(party.logo_path);
+    if(urlData?.publicUrl){
+      partyLogoView.src = urlData.publicUrl;
+      partyLogoView.style.display = "block";
+    } else {
+      partyLogoView.style.display = "none";
+    }
   } else {
     partyLogoView.style.display = "none";
   }
@@ -322,6 +339,8 @@ async function showParty(partyId){
     document.getElementById("editPartyName").value = party.name;
     document.getElementById("editPartyDescription").value = party.description;
     document.getElementById("editPartyManifesto").value = party.manifesto?.join("\n") || "";
+    // prefill color
+    document.getElementById("editPartyColor").value = party.color || "#0077ff";
     editForm.style.display = "block";
   };
   cancelEditBtn.onclick = () => { editForm.style.display = "none"; };
@@ -330,6 +349,7 @@ async function showParty(partyId){
     const newDesc = document.getElementById("editPartyDescription").value;
     const newManifesto = document.getElementById("editPartyManifesto").value.split("\n").filter(l => l.trim() !== "");
     const newLogoFile = document.getElementById("editPartyLogo").files[0];
+    const newColor = document.getElementById("editPartyColor").value;
 
     let newLogoPath = null;
 
@@ -343,7 +363,7 @@ async function showParty(partyId){
       if (uploadError) { alert("❌ Error subiendo nuevo logo: " + uploadError.message); return; }
     }
 
-    const updateData = { name: newName, description: newDesc, manifesto: newManifesto };
+    const updateData = { name: newName, description: newDesc, manifesto: newManifesto, color: newColor };
     if(newLogoPath) updateData.logo_path = newLogoPath;
 
     const { error: updateError } = await supabase
@@ -356,6 +376,8 @@ async function showParty(partyId){
     alert("✅ Partido actualizado con éxito");
     editForm.style.display = "none";
     showParty(partyId);
+    // actualizar lista de partidos para ver color/logo nuevo
+    loadParties();
   };
 }
 
@@ -369,12 +391,12 @@ async function loadMessages(partyId){
     .eq("party_id", partyId)
     .order("created_at", { ascending:true });
 
-  if(error){ 
-    console.error("Error cargando mensajes:", error.message); 
-    return; 
+  if(error){
+    console.error("Error cargando mensajes:", error.message);
+    return;
   }
 
-  document.getElementById("partyChat").innerHTML = data?.map(m => 
+  document.getElementById("partyChat").innerHTML = data?.map(m =>
     `<p><b>${m.usuarios?.username || 'Anon'}:</b> ${m.message}</p>`).join("") || "";
   // Auto-scroll al final
   const chatDiv = document.getElementById("partyChat");
@@ -407,7 +429,6 @@ chatInput.addEventListener("keydown", async (e)=>{
   }
 });
 
-
 // ====================
 // SALIR DEL PARTIDO
 // ====================
@@ -415,8 +436,6 @@ leaveBtn.addEventListener("click", async ()=>{
   const user = JSON.parse(localStorage.getItem("currentUser"));
   const partyId = localStorage.getItem("currentPartyId");
   if(!user || !partyId) return;
-
-    if(!user || !partyId) return;
 
   const { error } = await supabase.from("party_members")
     .delete()
@@ -449,6 +468,10 @@ hubBtn.addEventListener("click", ()=>{
 // DETECTAR SI YA ESTÁ EN UN PARTIDO
 // ====================
 window.addEventListener("DOMContentLoaded", async ()=>{
+  // 1) cargar lista de partidos
+  await loadParties();
+
+  // 2) si hay sesión / party guardado, abrir vista
   const user = JSON.parse(localStorage.getItem("currentUser"));
   const savedPartyId = localStorage.getItem("currentPartyId");
 
