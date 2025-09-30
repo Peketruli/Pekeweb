@@ -1,1 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Casino Pekepuntos</title>
+  <script src="https://unpkg.com/@supabase/supabase-js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #222;
+      color: #f5f5f5;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background: #333;
+      padding: 1rem;
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+    nav {
+      display: flex;
+      justify-content: center;
+      background: #444;
+    }
+    nav button {
+      margin: 0.5rem;
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 5px;
+      background: #666;
+      color: white;
+      cursor: pointer;
+    }
+    nav button:hover {
+      background: #888;
+    }
+    .section {
+      display: none;
+      padding: 1rem;
+    }
+    .active {
+      display: block;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+    }
+    li {
+      margin: 0.5rem 0;
+    }
+  </style>
+</head>
+<body>
+  <header>🎰 Casino de Pekepuntos</header>
 
+  <nav>
+    <button onclick="showSection('ranking')">🏆 Top 5</button>
+    <button onclick="showSection('jugar')">🎲 Jugar</button>
+    <button onclick="showSection('canjear')">🎁 Canjear</button>
+  </nav>
+
+  <!-- Ranking -->
+  <section id="ranking" class="section active">
+    <h2>🏆 Top 5 Jugadores</h2>
+    <ul id="top5"></ul>
+  </section>
+
+  <!-- Jugar -->
+  <section id="jugar" class="section">
+    <h2>🎲 Minijuego: Tirar el dado</h2>
+    <button onclick="jugarDado()">Tirar dado</button>
+    <p id="resultadoDado"></p>
+  </section>
+
+  <!-- Canjear -->
+  <section id="canjear" class="section">
+    <h2>🎁 Canjea tus Pekepuntos</h2>
+    <ul id="premios"></ul>
+  </section>
+
+  <script>
+    // Inicializar Supabase
+    const supabaseUrl = "TU_URL_DE_SUPABASE";
+    const supabaseKey = "TU_API_KEY";
+    const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+
+    // Cambiar sección
+    function showSection(id) {
+      document.querySelectorAll('.section').forEach(sec => sec.classList.remove('active'));
+      document.getElementById(id).classList.add('active');
+    }
+
+    // Cargar top 5
+    async function cargarTop5() {
+      const { data, error } = await supabase
+        .from('usuarios_perfil') -- 👈 usa tu tabla real de usuarios
+        .select('id, nombre, pekepuntos')
+        .order('pekepuntos', { ascending: false })
+        .limit(5);
+
+      if (error) {
+        console.error(error);
+        return;
+      }
+
+      const lista = document.getElementById("top5");
+      lista.innerHTML = "";
+      data.forEach(u => {
+        const li = document.createElement("li");
+        li.textContent = `${u.nombre} - ${u.pekepuntos} Pekepuntos`;
+        lista.appendChild(li);
+      });
+    }
+
+    // Ejemplo minijuego: tirar un dado
+    async function jugarDado() {
+      const dado = Math.floor(Math.random() * 6) + 1;
+      let puntos = 0;
+
+      if (dado === 6) {
+        puntos = 100;
+        document.getElementById("resultadoDado").textContent = 
+          `¡Sacaste un ${dado}! Ganaste ${puntos} Pekepuntos 🎉`;
+      } else {
+        puntos = -20;
+        document.getElementById("resultadoDado").textContent = 
+          `Sacaste un ${dado}. Pierdes ${Math.abs(puntos)} Pekepuntos 😢`;
+      }
+
+      // Registrar en la base de datos (ejemplo: usuario fijo por ahora)
+      const usuarioId = "AQUI_EL_UUID_DEL_USUARIO"; // luego lo haremos dinámico
+      await supabase.from('juegos').insert([
+        { usuario_id: usuarioId, juego: 'dado', resultado: { dado }, puntos_ganados: puntos }
+      ]);
+
+      await supabase.rpc('modificar_pekepuntos', { p_usuario: usuarioId, p_puntos: puntos });
+
+      cargarTop5();
+    }
+
+    // Cargar premios
+    async function cargarPremios() {
+      const { data, error } = await supabase.from('premios').select('*');
+      if (error) { console.error(error); return; }
+
+      const lista = document.getElementById("premios");
+      lista.innerHTML = "";
+      data.forEach(p => {
+        const li = document.createElement("li");
+        li.textContent = `${p.nombre} - cuesta ${p.coste} Pekepuntos`;
+        lista.appendChild(li);
+      });
+    }
+
+    // Al cargar la página
+    cargarTop5();
+    cargarPremios();
+  </script>
+</body>
+</html>
