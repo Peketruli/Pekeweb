@@ -149,22 +149,56 @@ async function loadPekePuntos() {
 }
 
 async function updatePoints(result) {
-    if(result === "win") currentUser.pekepuntos += currentBet * 2;
-    else if(result === "lose") currentUser.pekepuntos -= currentBet;
+// --- Cuando el jugador apuesta ---
+document.getElementById("place-bet-button").addEventListener("click", async ()=>{
+    const bet=parseInt(document.getElementById("bet-amount").value);
+    if(isNaN(bet) || bet<=0){ alert("Introduce una cantidad válida."); return; }
+    if(bet>currentUser.pekepuntos){ alert("No tienes suficientes PekePuntos."); return; }
 
+    currentBet=bet;
+
+    // ⚠️ Restar inmediatamente los puntos en Supabase
+    currentUser.pekepuntos -= currentBet;
     document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
 
-    // Guardar en Supabase y localStorage
-    const { data, error } = await supabase
+    const { error } = await supabase
         .from("usuarios")
         .update({ pekepuntos: currentUser.pekepuntos })
         .eq("id", currentUser.id);
 
-    if(error) {
+    if(error){
+        alert("Error al registrar la apuesta.");
+        console.error(error);
+        return;
+    }
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+
+    document.getElementById("game-message").textContent=`Apuesta colocada: ${currentBet} PekePuntos`;
+    document.getElementById("bet-amount").disabled=true;
+    document.getElementById("place-bet-button").disabled=true;
+
+    startGame();
+});
+
+// --- Al finalizar el juego ---
+async function updatePoints(result) {
+    if(result === "win") {
+        // Gana → devolver apuesta (ya descontada) + premio
+        currentUser.pekepuntos += currentBet * 2; 
+    }
+    // Si pierde → no se devuelve nada (ya descontado al apostar)
+
+    document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
+
+    const { error } = await supabase
+        .from("usuarios")
+        .update({ pekepuntos: currentUser.pekepuntos })
+        .eq("id", currentUser.id);
+
+    if(error){
         console.error("Error al actualizar Pekepuntos:", error);
         alert("No se pudieron guardar tus PekePuntos. Intenta de nuevo.");
     } else {
-        // Actualizamos localStorage solo si se guardó correctamente
         localStorage.setItem("currentUser", JSON.stringify(currentUser));
     }
 
