@@ -3,197 +3,221 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ruleta - Casino</title>
+<title>Ruleta Casino</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #1e272e;
-    color: white;
-    text-align: center;
-  }
-  h1 {
-    margin-top: 20px;
-  }
-  #pekePuntos {
-    font-size: 20px;
-    margin: 15px 0;
-  }
-  #bet-board {
-    display: grid;
-    grid-template-columns: repeat(12, 1fr);
-    gap: 4px;
-    margin: 20px auto;
-    max-width: 700px;
-  }
-  .cell {
-    padding: 10px;
-    text-align: center;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: bold;
-    border: 1px solid #fff;
-  }
-  .cell.red { background:#c0392b; }
-  .cell.black { background:#2c3e50; }
-  .cell.green { background:#27ae60; grid-column: span 2; }
-  .cell:hover { filter: brightness(1.2); }
-  .special-bets {
-    margin-top: 20px;
-  }
-  .special-bets button {
-    margin: 5px;
-    padding: 8px 15px;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: bold;
-  }
-  .special-bets button:hover {
-    filter: brightness(1.2);
-  }
-  .actions {
-    margin-top: 20px;
-  }
-  button {
-    padding: 10px 20px;
-    margin: 8px;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    font-weight: bold;
-  }
-  #place-bet-button { background: #2980b9; color: white; }
-  #spin-button { background: #e67e22; color: white; }
-  #reset-button { background: #95a5a6; color: black; }
-  #result {
-    font-size: 18px;
-    margin-top: 15px;
-  }
+    body {
+        background-color: #1e1e1e;
+        color: white;
+        font-family: 'Arial', sans-serif;
+        text-align: center;
+        padding: 20px;
+    }
+    #pekePuntos { font-size: 1.5em; margin-bottom: 20px; }
+    canvas {
+        background: #0c0c0c;
+        border-radius: 50%;
+        margin-top: 20px;
+    }
+    #result {
+        font-size: 1.3em;
+        margin-top: 15px;
+        color: #ffd700;
+    }
+    button {
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: none;
+        cursor: pointer;
+        margin: 5px;
+        font-size: 16px;
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    button:hover {
+        transform: scale(1.05);
+        box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    }
+    #spin-button { background-color: #28a745; color: white; }
+    #place-bet-button { background-color: #ffc107; color: black; }
 </style>
 </head>
 <body>
-  <h1>🎰 Ruleta</h1>
-  <div id="pekePuntos">Pekepuntos: 100</div>
 
-  <div>
-    <label>Apuesta: </label>
-    <input type="number" id="bet-amount" min="1" value="10">
-  </div>
+<h1>🎡 Ruleta Casino 🎡</h1>
+<div id="pekePuntos">Pekepuntos: 0</div>
 
-  <!-- Tablero de números -->
-  <div id="bet-board"></div>
-
-  <!-- Apuestas especiales -->
-  <div class="special-bets">
-    <button onclick="selectBet('color','rojo')">Rojo 🔴</button>
-    <button onclick="selectBet('color','negro')">Negro ⚫</button>
-    <button onclick="selectBet('paridad','par')">Par</button>
-    <button onclick="selectBet('paridad','impar')">Impar</button>
-  </div>
-
-  <!-- Botones -->
-  <div class="actions">
+<div>
+    <label for="bet-amount">Apuesta: </label>
+    <input type="number" id="bet-amount" min="1" placeholder="Cantidad">
+    <select id="bet-type">
+        <option value="number">Número exacto (0-36)</option>
+        <option value="color">Color (rojo/negro)</option>
+        <option value="paridad">Par/Impar</option>
+    </select>
+    <input type="text" id="bet-choice" placeholder="Ej: 17 / rojo / par">
     <button id="place-bet-button">Apostar</button>
-    <button id="spin-button" disabled>Girar Ruleta</button>
-    <button id="reset-button">Reiniciar</button>
-  </div>
+</div>
 
-  <div id="result"></div>
+<canvas id="roulette" width="400" height="400"></canvas>
+<div id="result"></div>
+<button id="spin-button" disabled>Girar Ruleta</button>
 
 <script>
-let currentUser = { id: 1, pekepuntos: 100 }; // Simulación
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "TU_SUPABASE_KEY_AQUI"; 
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
 let currentBet = 0;
-let betType = null;
-let betChoice = null;
+let betType = "";
+let betChoice = "";
 
-const board = document.getElementById("bet-board");
+// --- Colores de números ---
+const numbers = Array.from({length: 37}, (_, i) => i);
 const redNumbers = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
-
-// Crear casillas del tablero
-for(let i=0;i<=36;i++){
-  const cell = document.createElement("div");
-  cell.textContent = i;
-  cell.classList.add("cell");
-  if(i === 0) cell.classList.add("green");
-  else if(redNumbers.includes(i)) cell.classList.add("red");
-  else cell.classList.add("black");
-
-  cell.addEventListener("click", ()=> {
-    selectBet("number", i);
-  });
-
-  board.appendChild(cell);
+function getColor(num){
+    if(num === 0) return "green";
+    return redNumbers.includes(num) ? "red" : "black";
 }
 
-function selectBet(type, choice){
-  betType = type;
-  betChoice = choice;
-  document.getElementById("result").textContent = `Seleccionado: ${choice} (${type})`;
+// --- Canvas setup ---
+const canvas = document.getElementById("roulette");
+const ctx = canvas.getContext("2d");
+const radius = canvas.width/2;
+let currentAngle = 0;
+let spinning = false;
+let finalNumber = null;
+
+function drawRoulette(){
+    const step = 2 * Math.PI / numbers.length;
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.save();
+    ctx.translate(radius, radius);
+    ctx.rotate(currentAngle);
+
+    numbers.forEach((num, i)=>{
+        const start = i*step;
+        const end = start+step;
+        ctx.beginPath();
+        ctx.moveTo(0,0);
+        ctx.arc(0,0,radius,start,end);
+        ctx.fillStyle = getColor(num);
+        ctx.fill();
+        ctx.strokeStyle = "white";
+        ctx.stroke();
+
+        ctx.save();
+        ctx.fillStyle = "white";
+        ctx.rotate(start + step/2);
+        ctx.textAlign = "right";
+        ctx.font = "14px Arial";
+        ctx.fillText(num.toString(), radius-10,5);
+        ctx.restore();
+    });
+    ctx.restore();
+
+    // Marcador arriba
+    ctx.beginPath();
+    ctx.moveTo(radius-10, 0);
+    ctx.lineTo(radius+10, 0);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "yellow";
+    ctx.stroke();
 }
 
-// Botón apostar
-document.getElementById("place-bet-button").addEventListener("click", ()=>{
-  const bet = parseInt(document.getElementById("bet-amount").value);
-  if(isNaN(bet) || bet<=0){ alert("Introduce una cantidad válida."); return; }
-  if(bet>currentUser.pekepuntos){ alert("No tienes suficientes PekePuntos."); return; }
-  if(!betType || !betChoice){ alert("Debes seleccionar tu apuesta en el tablero."); return; }
+function spinRoulette(){
+    if(spinning) return;
+    spinning = true;
+    let velocity = Math.random()*0.2 + 0.25; // velocidad inicial
+    let deceleration = 0.002 + Math.random()*0.002;
 
-  currentBet = bet;
-  currentUser.pekepuntos -= currentBet;
-  document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
+    function animate(){
+        if(velocity <= 0){
+            spinning = false;
+            // Determinar número ganador
+            const step = 2*Math.PI/numbers.length;
+            let idx = Math.floor(((2*Math.PI - (currentAngle % (2*Math.PI)))/step)) % numbers.length;
+            finalNumber = numbers[idx];
+            const color = getColor(finalNumber);
+            document.getElementById("result").textContent = `Número: ${finalNumber} (${color})`;
+            checkWin(finalNumber,color);
+            return;
+        }
+        currentAngle += velocity;
+        velocity -= deceleration;
+        drawRoulette();
+        requestAnimationFrame(animate);
+    }
+    animate();
+}
 
-  document.getElementById("result").textContent = `Apuesta: ${currentBet} PekePuntos a ${betChoice}`;
-  document.getElementById("place-bet-button").disabled = true;
-  document.getElementById("bet-amount").disabled = true;
-  document.getElementById("spin-button").disabled = false;
+// --- Supabase ---
+async function loadPekePuntos(){
+    currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    if(!currentUser){
+        alert("Debes iniciar sesión.");
+        return;
+    }
+    const { data } = await supabase.from("usuarios").select("pekepuntos").eq("id",currentUser.id).single();
+    if(data){
+        currentUser.pekepuntos = data.pekepuntos;
+        document.getElementById("pekePuntos").textContent = `Pekepuntos: ${data.pekepuntos}`;
+        localStorage.setItem("currentUser",JSON.stringify(currentUser));
+    }
+}
+
+async function updatePoints(multiplier){
+    if(multiplier>0){
+        currentUser.pekepuntos += currentBet*multiplier;
+    }
+    document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
+    await supabase.from("usuarios").update({pekepuntos: currentUser.pekepuntos}).eq("id",currentUser.id);
+    localStorage.setItem("currentUser",JSON.stringify(currentUser));
+    currentBet=0;
+}
+
+// --- Resultado ---
+function checkWin(result,color){
+    let win=false, multiplier=0;
+    if(betType==="number" && parseInt(betChoice)===result){ win=true; multiplier=36; }
+    if(betType==="color" && betChoice.toLowerCase()===color){ win=true; multiplier=2; }
+    if(betType==="paridad"){
+        if(betChoice.toLowerCase()==="par" && result%2===0 && result!==0){ win=true; multiplier=2; }
+        if(betChoice.toLowerCase()==="impar" && result%2===1){ win=true; multiplier=2; }
+    }
+    document.getElementById("result").textContent += win ? " 🎉 Ganaste!" : " ❌ Perdiste.";
+    updatePoints(win?multiplier:0);
+    document.getElementById("spin-button").disabled = true;
+    document.getElementById("place-bet-button").disabled = false;
+}
+
+// --- Eventos ---
+document.getElementById("place-bet-button").addEventListener("click",async()=>{
+    const bet=parseInt(document.getElementById("bet-amount").value);
+    if(isNaN(bet)||bet<=0){ alert("Introduce una cantidad válida."); return; }
+    if(bet>currentUser.pekepuntos){ alert("No tienes suficientes PekePuntos."); return; }
+
+    currentBet=bet;
+    betType=document.getElementById("bet-type").value;
+    betChoice=document.getElementById("bet-choice").value.trim();
+    if(!betChoice){ alert("Debes escribir tu elección."); return; }
+
+    currentUser.pekepuntos-=currentBet;
+    document.getElementById("pekePuntos").textContent=`Pekepuntos: ${currentUser.pekepuntos}`;
+    await supabase.from("usuarios").update({pekepuntos: currentUser.pekepuntos}).eq("id",currentUser.id);
+    localStorage.setItem("currentUser",JSON.stringify(currentUser));
+
+    document.getElementById("result").textContent=`Apuesta: ${currentBet} PekePuntos a ${betChoice}`;
+    document.getElementById("place-bet-button").disabled=true;
+    document.getElementById("spin-button").disabled=false;
 });
 
-// Botón girar
-document.getElementById("spin-button").addEventListener("click", ()=>{
-  const resultNumber = Math.floor(Math.random() * 37);
-  let resultColor = "negro";
-  if(resultNumber === 0) resultColor = "verde";
-  else if(redNumbers.includes(resultNumber)) resultColor = "rojo";
+document.getElementById("spin-button").addEventListener("click",spinRoulette);
 
-  let win = false;
-  let multiplier = 0;
-
-  if(betType === "number" && betChoice == resultNumber){ win = true; multiplier = 35; }
-  else if(betType === "color" && betChoice === resultColor){ win = true; multiplier = 2; }
-  else if(betType === "paridad"){
-    if(betChoice === "par" && resultNumber % 2 === 0 && resultNumber !== 0) { win = true; multiplier = 2; }
-    if(betChoice === "impar" && resultNumber % 2 === 1) { win = true; multiplier = 2; }
-  }
-
-  if(win){
-    const ganancias = currentBet * multiplier;
-    currentUser.pekepuntos += ganancias;
-    document.getElementById("result").textContent = `🎉 Salió ${resultNumber} (${resultColor}) — ¡Ganaste ${ganancias} PekePuntos!`;
-  } else {
-    document.getElementById("result").textContent = `❌ Salió ${resultNumber} (${resultColor}) — Perdiste ${currentBet} PekePuntos.`;
-  }
-
-  document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
-
-  // Reset botones
-  document.getElementById("place-bet-button").disabled = false;
-  document.getElementById("bet-amount").disabled = false;
-  document.getElementById("spin-button").disabled = true;
-  betType = null;
-  betChoice = null;
-});
-
-// Botón reiniciar
-document.getElementById("reset-button").addEventListener("click", ()=>{
-  betType = null;
-  betChoice = null;
-  currentBet = 0;
-  document.getElementById("result").textContent = "Partida reiniciada. Haz tu apuesta.";
-  document.getElementById("place-bet-button").disabled = false;
-  document.getElementById("bet-amount").disabled = false;
-  document.getElementById("spin-button").disabled = true;
-});
+// Inicializar
+drawRoulette();
+loadPekePuntos();
 </script>
 </body>
 </html>
