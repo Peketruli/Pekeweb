@@ -163,6 +163,17 @@
       }
     }
 
+async function isBanned(user) {
+  if (!user) return true; // no logueado = no puede publicar
+  const { data, error } = await db.from("usuarios").select("banned").eq("id", user.id).single();
+  if (error) {
+    console.error("Error comprobando ban:", error.message);
+    return true; // por seguridad, bloquea si hay error
+  }
+  return data.banned;
+}
+
+    
     async function toggleLike(blogId){
       const user = getCurrentUser();
       let userId = user ? user.username : null;
@@ -191,6 +202,20 @@
     }
 
 async function publishBlog() {
+  const user = getCurrentUser();
+  if (!user) { alert("Debes iniciar sesión"); return; }
+
+  if(await isBanned(user)){
+    alert("🚫 Estás baneado y no puedes publicar blogs.");
+    return;
+  }
+
+  const title = document.getElementById("newTitle").value.trim();
+  const content = document.getElementById("newContent").value.trim();
+  const mediaInput = document.getElementById("newMedia");
+  let mediaUrl = "";
+
+
   const user = getCurrentUser();
   if (!user) { alert("Debes iniciar sesión"); return; }
 
@@ -285,7 +310,26 @@ async function publishBlog() {
       });
     }
 
-    async function publishComment(){
+async function publishComment(){
+  const user = getCurrentUser();
+  if (!user) { alert("Debes iniciar sesión"); return; }
+
+  if(await isBanned(user)){
+    alert("🚫 Estás baneado y no puedes comentar en los blogs.");
+    return;
+  }
+
+  const commentText = document.getElementById("newCommentText").value.trim();
+  if(!commentText){ alert("Escribe un comentario"); return; }
+
+  const { error } = await db.from("comments").insert([
+    { blog_id: window.currentBlogId, author: user.username, comment: commentText }
+  ]);
+  if(error){ console.error(error); alert("Error al publicar comentario"); return; }
+
+  document.getElementById("newCommentText").value = "";
+  loadComments(window.currentBlogId);
+
       const user=getCurrentUser();
       if(!user){ alert("Debes iniciar sesión"); return; }
       const commentText=document.getElementById("newCommentText").value.trim();
