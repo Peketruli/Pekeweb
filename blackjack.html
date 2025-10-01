@@ -23,6 +23,7 @@
     #place-bet-button { background-color: #ffc107; color: black; }
     #game-container { background-color: #0b3d0b; border-radius: 15px; padding: 20px; margin: 0 auto; max-width: 600px; }
     #player-hand, #dealer-hand { display: flex; justify-content: center; margin: 20px 0; min-height: 80px; }
+    #player-points, #dealer-points { color: #ffd700; font-weight: bold; margin-bottom: 10px; }
     .card { width: 60px; height: 90px; border-radius: 10px; background-color: white; color: black; display: flex; justify-content: center; align-items: center; margin: 0 5px; font-weight: bold; font-size: 1.2em; box-shadow: 2px 2px 8px rgba(0,0,0,0.5); }
     .card.hidden { background-color: #444; color: #444; }
     #game-message { margin-top: 20px; font-size: 18px; min-height: 24px; color: #ffd700; font-weight: bold; }
@@ -42,7 +43,9 @@
 
 <div id="game-container">
     <div id="dealer-hand"></div>
+    <div id="dealer-points"></div>
     <div id="player-hand"></div>
+    <div id="player-points"></div>
     <div id="game-message"></div>
 </div>
 
@@ -80,14 +83,11 @@ async function loadPekePuntos() {
 
 // --- Actualizar puntos según resultado ---
 async function updatePoints(result) {
-    if(result === "win") currentUser.pekepuntos += currentBet * 2; // gana → recibe apuesta *2
-    else if(result === "tie") currentUser.pekepuntos += currentBet; // empate → devuelve apuesta
-    // si pierde → no se devuelve nada
-
+    if(result === "win") currentUser.pekepuntos += currentBet * 2;
+    else if(result === "tie") currentUser.pekepuntos += currentBet;
     document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
     const { error } = await supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
     if(error) console.error("Error al actualizar Pekepuntos:", error);
-
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
     currentBet = 0;
     document.getElementById("bet-amount").disabled = false;
@@ -127,9 +127,18 @@ function renderHand(containerId, hand, hideSecond=false) {
         container.appendChild(cardDiv);
     });
 }
+
+// --- Actualizar UI y puntos ---
 function updateUI(){
     renderHand('player-hand', playerHand);
     renderHand('dealer-hand', dealerHand, hideDealer);
+
+    // Mostrar puntos
+    const playerPoints = handValue(playerHand);
+    document.getElementById('player-points').textContent = `Suma: ${playerPoints}`;
+
+    const dealerPoints = hideDealer ? '?' : handValue(dealerHand);
+    document.getElementById('dealer-points').textContent = `Suma: ${dealerPoints}`;
 }
 
 // --- Finalizar juego ---
@@ -142,7 +151,7 @@ function endGame(msg){
 
     if(msg.includes("Ganaste")) updatePoints("win");
     else if(msg.includes("Pierdes") || msg.includes("perdiste") || msg.includes("Crupier gana")) updatePoints("lose");
-    else if(msg.includes("Empate")) updatePoints("tie");  // ✅ Empate
+    else if(msg.includes("Empate")) updatePoints("tie");
 
     document.getElementById("reset-button").style.display = "inline-block";
 }
@@ -157,6 +166,8 @@ document.getElementById("reset-button").addEventListener("click", ()=>{
 
     document.getElementById("player-hand").innerHTML = "";
     document.getElementById("dealer-hand").innerHTML = "";
+    document.getElementById("player-points").textContent = "";
+    document.getElementById("dealer-points").textContent = "";
     document.getElementById("game-message").textContent = "";
 
     document.getElementById("bet-amount").disabled = false;
@@ -185,7 +196,7 @@ document.getElementById("place-bet-button").addEventListener("click", async ()=>
     if(bet>currentUser.pekepuntos){ alert("No tienes suficientes PekePuntos."); return; }
 
     currentBet=bet;
-    currentUser.pekepuntos -= currentBet; // descontar apuesta
+    currentUser.pekepuntos -= currentBet;
     document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
 
     const { error } = await supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
