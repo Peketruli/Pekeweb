@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Admin - Usuarios</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<style>
+  body { font-family: Arial, sans-serif; background:#111; color:#eee; padding:20px; }
+  table { width:100%; border-collapse: collapse; margin-top:10px; }
+  th,td { padding:8px; border:1px solid #333; text-align:left; }
+  button { padding:6px 10px; margin:2px; border-radius:6px; cursor:pointer; }
+  .danger { background:#c82333; color:white; border:none; }
+  .ban { background:#555; color:white; border:none; }
+  .ok { background:#28a745; color:white; border:none; }
+  .small { padding:4px 6px; font-size:13px; }
+  #controls { margin-bottom:10px; display:flex; gap:8px; align-items:center; }
+  input[type="number"]{ width:120px; padding:6px; }
+</style>
+</head>
+<body>
+  <h1>Zona de administración</h1>
+  <div id="status">Comprobando usuario...</div>
+
+  <div id="adminArea" style="display:none;">
+    <div id="controls">
+      <button id="refreshBtn">🔄 Actualizar lista</button>
+      <input id="searchInput" placeholder="Buscar por nombre o email..." />
+      <button id="searchBtn">🔎</button>
+    </div>
+
+    <table id="usersTable">
+      <thead>
+        <tr>
+          <th>Id</th>
+          <th>Usuario</th>
+          <th>Email</th>
+          <th>Pekepuntos</th>
+          <th>Banned</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+<script>
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "TU_SUPABASE_KEY_ANON_O_SERVICE"; // usa anon para dev; en prod, mejor función servidor
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentUser = null;
+
+// Comprobar admin
+function isAdmin(user){
+  // Control simple: username == Peketruli. En producción usa auth.uid + tabla admins.
+  return user && user.username === "Peketruli";
+}
+
+async function init(){
+  currentUser = JSON.parse(localStorage.getItem("currentUser"));
+  if(!currentUser){
+    document.getElementById('status').textContent = "No estás logueado. Inicia sesión.";
+    return;
+  }
+  if(!isAdmin(currentUser)){
+    document.getElementById('status').textContent = "Acceso denegado. No eres administrador.";
+    return;
+  }
+  document.getElementById('status').textContent = `Hola ${currentUser.username} — administrador.`;
+  document.getElementById('adminArea').style.display = 'block';
+  await loadUsers();
+}
+
+// Cargar lista de usuarios
+async function loadUsers(filter=""){
+  const tbody = document.querySelector('#usersTable tbody');
+  tbody.innerHTML = 'Cargando...';
+
+  let query = supabase.from('usuarios').select('id,username,email,pekepuntos,banned').order('created_at', { ascending: true });
+  // Búsqueda simple si filter provisto
+  if(filter){
+    // por seguridad la búsqueda se hace en cliente tras traer resultados limitados
+    const { data, error } = await query.limit(500);
+    if(error){ tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`; return; }
+    const filtered = data.filter(u => (u.username||'').toLowerCase().includes(filter.toLowerCase()) || (u.email||'').toLowerCase().includes(filter.toLowerCase()));
+    renderUsers(filtered);
+    return;
+  }
+
+  const { data, error } = await query.limit(500);
+  if(error){ tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`; return; }
+  renderUsers(data || []);
+}
+
+function renderUsers(users){
+  const tbody = document.querySelector('#usersTable tbody');
+  if(!users.length){ tbody.innerHTML = '<tr><td colspan="6">No hay usuarios</td></tr>'; return; }
+  tbody.innerHTML = '';
+  users.forEach(u=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="font-size:12px">${u.id}</td>
+      <td>${escapeHtml(u.username||'')}</td>
+      <td>${escapeHtml(u.email||'')}</td>
+      <td>${u.pekepuntos ?? 0}</td>
+      <td>${u.banned ? 'Sí' : 'No'}</td>
+      <td>
+        <button class="small" onclick="promptAdd(${JSON.stringify(u.id)})">+Puntos</button>
+        <button class="small" onclick="promptRemove(${JSON.stringify(u.id)})">-Puntos</button>
+        <button class="small ban" onclick="toggleBan(${JSON.stringify(u.id)}, ${u.banned})">${u.banned ? 'Desbanear' : 'Banear'}</button>
+        <button class="small danger" onclick="deleteUser(${JSON.stringify(u.id)}, ${JSON.stringify(u.username||'')})">Borrar</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// util escape
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
+
+// Añadir puntos (prompt)
+async function promptAdd(userId){
+  const raw = prompt("¿Cuántos Pekepuntos añadir? (positivo)");
+  const val = parseInt(raw);
+  if(isNaN(val) || val<=0) return alert("Cantidad inválida");
+  await changePoints(userId, val);
+  await loadUsers();
+}
+async function promptRemove(userId){
+  const raw = prompt("¿Cuántos Pekepuntos quitar? (positivo)");
+  const val = parseInt(raw);
+  if(isNaN(val) || val<=0) return alert("Cantidad inválida");
+  await changePoints(userId, -val);
+  await loadUsers();
+}
+
+// Cambiar puntos
+async function changePoints(userId, delta){
+  // Mejor estrategia: obtener los puntos actuales desde DB y hacer update con suma
+  const { data, error } = await supabase.from('usuarios').select('pekepuntos').eq('id', userId).single();
+  if(error) return alert('Error leyendo usuario: '+error.message);
+  const current = BigInt(data.pekepuntos || 0);
+  const newVal = current + BigInt(delta);
+  // evita negativos
+  const finalVal = newVal < 0n ? 0n : newVal;
+  const { error:err2 } = await supabase.from('usuarios').update({ pekepuntos: finalVal.toString() }).eq('id', userId);
+  if(err2) return alert('Error actualizando: '+err2.message);
+  alert('Pekepuntos actualizados');
+}
+
+// Ban / unban
+async function toggleBan(userId, currentlyBanned){
+  const confirmMsg = currentlyBanned ? "¿Desbanear a este usuario?" : "¿Banear a este usuario?";
+  if(!confirm(confirmMsg)) return;
+  const { error } = await supabase.from('usuarios').update({ banned: !currentlyBanned }).eq('id', userId);
+  if(error) return alert('Error: '+error.message);
+  alert(currentlyBanned ? 'Usuario desbaneado' : 'Usuario baneado');
+  await loadUsers();
+}
+
+// Borrar usuario
+async function deleteUser(userId, username){
+  if(!confirm(`Borrar al usuario ${username} (id: ${userId})? Esta acción es irreversible.`)) return;
+  const { error } = await supabase.from('usuarios').delete().eq('id', userId);
+  if(error) return alert('Error borrando: '+error.message);
+  alert('Usuario borrado');
+  await loadUsers();
+}
+
+// Busqueda
+document.getElementById('searchBtn').addEventListener('click', ()=> {
+  const q = document.getElementById('searchInput').value || '';
+  loadUsers(q);
+});
+document.getElementById('refreshBtn').addEventListener('click', ()=> loadUsers());
+
+// Inicializar
+init();
+</script>
+</body>
+</html>
