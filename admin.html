@@ -2,10 +2,11 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Admin - Usuarios</title>
+<title>Admin - Panel</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
   body { font-family: Arial, sans-serif; background:#111; color:#eee; padding:20px; }
+  h1,h2 { margin-top:20px; }
   table { width:100%; border-collapse: collapse; margin-top:10px; }
   th,td { padding:8px; border:1px solid #333; text-align:left; }
   button { padding:6px 10px; margin:2px; border-radius:6px; cursor:pointer; }
@@ -23,12 +24,13 @@
   <div id="status">Comprobando usuario...</div>
 
   <div id="adminArea" style="display:none;">
+    <!-- Usuarios -->
+    <h2>Gestión de Usuarios</h2>
     <div id="controls">
       <button id="refreshBtn">🔄 Actualizar lista</button>
       <input id="searchInput" placeholder="Buscar por nombre" />
       <button id="searchBtn">🔎</button>
     </div>
-
     <table id="usersTable">
       <thead>
         <tr>
@@ -36,6 +38,34 @@
           <th>Usuario</th>
           <th>Pekepuntos</th>
           <th>Banned</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <!-- Blogs -->
+    <h2>Gestión de Blogs</h2>
+    <table id="blogsTable">
+      <thead>
+        <tr>
+          <th>Id</th>
+          <th>Título</th>
+          <th>Autor</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <!-- Chats -->
+    <h2>Gestión de Chats</h2>
+    <table id="chatsTable">
+      <thead>
+        <tr>
+          <th>Id</th>
+          <th>Usuario</th>
+          <th>Mensaje</th>
           <th>Acciones</th>
         </tr>
       </thead>
@@ -53,7 +83,6 @@ let currentUser = null;
 
 // Comprobar admin
 function isAdmin(user){
-  // Control simple: username == Peketruli. En producción usa auth.uid + tabla admins.
   return user && user.username === "Peketruli";
 }
 
@@ -69,28 +98,26 @@ async function init(){
   }
   document.getElementById('status').textContent = `Hola ${currentUser.username} — administrador.`;
   document.getElementById('adminArea').style.display = 'block';
+
   await loadUsers();
+  await loadBlogs();
+  await loadChats();
 }
 
-// Cargar lista de usuarios
+/* ------------------ USUARIOS ------------------ */
 async function loadUsers(filter=""){
   const tbody = document.querySelector('#usersTable tbody');
   tbody.innerHTML = 'Cargando...';
 
   let query = supabase.from('usuarios').select('id,username,pekepuntos,banned').order('created_at', { ascending: true });
-  // Búsqueda simple si filter provisto
-  if(filter){
-    // por seguridad la búsqueda se hace en cliente tras traer resultados limitados
-    const { data, error } = await query.limit(500);
-    if(error){ tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`; return; }
-    const filtered = data.filter(u => (u.username||'').toLowerCase().includes(filter.toLowerCase()) || (u.email||'').toLowerCase().includes(filter.toLowerCase()));
-    renderUsers(filtered);
-    return;
-  }
-
   const { data, error } = await query.limit(500);
   if(error){ tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`; return; }
-  renderUsers(data || []);
+
+  let result = data || [];
+  if(filter){
+    result = result.filter(u => (u.username||'').toLowerCase().includes(filter.toLowerCase()));
+  }
+  renderUsers(result);
 }
 
 function renderUsers(users){
@@ -117,7 +144,6 @@ function renderUsers(users){
     `;
     tbody.appendChild(tr);
 
-    // Event listeners
     tr.querySelector('.addBtn').addEventListener('click', ()=>promptAdd(u.id));
     tr.querySelector('.removeBtn').addEventListener('click', ()=>promptRemove(u.id));
     tr.querySelector('.banBtn').addEventListener('click', ()=>toggleBan(u.id, u.banned));
@@ -125,10 +151,8 @@ function renderUsers(users){
   });
 }
 
-// util escape
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
 
-// Añadir puntos (prompt)
 async function promptAdd(userId){
   const raw = prompt("¿Cuántos Pekepuntos añadir? (positivo)");
   const val = parseInt(raw);
@@ -143,22 +167,16 @@ async function promptRemove(userId){
   await changePoints(userId, -val);
   await loadUsers();
 }
-
-// Cambiar puntos
 async function changePoints(userId, delta){
-  // Mejor estrategia: obtener los puntos actuales desde DB y hacer update con suma
   const { data, error } = await supabase.from('usuarios').select('pekepuntos').eq('id', userId).single();
   if(error) return alert('Error leyendo usuario: '+error.message);
   const current = BigInt(data.pekepuntos || 0);
   const newVal = current + BigInt(delta);
-  // evita negativos
   const finalVal = newVal < 0n ? 0n : newVal;
   const { error:err2 } = await supabase.from('usuarios').update({ pekepuntos: finalVal.toString() }).eq('id', userId);
   if(err2) return alert('Error actualizando: '+err2.message);
   alert('Pekepuntos actualizados');
 }
-
-// Ban / unban
 async function toggleBan(userId, currentlyBanned){
   const confirmMsg = currentlyBanned ? "¿Desbanear a este usuario?" : "¿Banear a este usuario?";
   if(!confirm(confirmMsg)) return;
@@ -167,8 +185,6 @@ async function toggleBan(userId, currentlyBanned){
   alert(currentlyBanned ? 'Usuario desbaneado' : 'Usuario baneado');
   await loadUsers();
 }
-
-// Borrar usuario
 async function deleteUser(userId, username){
   if(!confirm(`Borrar al usuario ${username} (id: ${userId})? Esta acción es irreversible.`)) return;
   const { error } = await supabase.from('usuarios').delete().eq('id', userId);
@@ -177,7 +193,63 @@ async function deleteUser(userId, username){
   await loadUsers();
 }
 
-// Busqueda
+/* ------------------ BLOGS ------------------ */
+async function loadBlogs(){
+  const tbody = document.querySelector('#blogsTable tbody');
+  tbody.innerHTML = 'Cargando...';
+  const { data, error } = await supabase.from('blogs').select('id,title,author').limit(500);
+  if(error){ tbody.innerHTML = `<tr><td colspan="4">Error: ${error.message}</td></tr>`; return; }
+
+  tbody.innerHTML = '';
+  (data||[]).forEach(b=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${b.id}</td>
+      <td>${escapeHtml(b.titulo||'')}</td>
+      <td>${escapeHtml(b.autor||'')}</td>
+      <td><button class="small danger deleteBlogBtn">Borrar</button></td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelector('.deleteBlogBtn').addEventListener('click', ()=>deleteBlog(b.id, b.titulo));
+  });
+}
+async function deleteBlog(id, titulo){
+  if(!confirm(`¿Borrar el blog "${titulo}" (id: ${id})?`)) return;
+  const { error } = await supabase.from('blogs').delete().eq('id', id);
+  if(error) return alert('Error borrando blog: '+error.message);
+  alert('Blog borrado');
+  await loadBlogs();
+}
+
+/* ------------------ CHATS ------------------ */
+async function loadChats(){
+  const tbody = document.querySelector('#chatsTable tbody');
+  tbody.innerHTML = 'Cargando...';
+  const { data, error } = await supabase.from('chats').select('id,nombre,creador').limit(500);
+  if(error){ tbody.innerHTML = `<tr><td colspan="4">Error: ${error.message}</td></tr>`; return; }
+
+  tbody.innerHTML = '';
+  (data||[]).forEach(c=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${c.id}</td>
+      <td>${escapeHtml(c.usuario||'')}</td>
+      <td>${escapeHtml(c.mensaje||'')}</td>
+      <td><button class="small danger deleteChatBtn">Borrar</button></td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelector('.deleteChatBtn').addEventListener('click', ()=>deleteChat(c.id, c.mensaje));
+  });
+}
+async function deleteChat(id, msg){
+  if(!confirm(`¿Borrar el mensaje "${msg}" (id: ${id})?`)) return;
+  const { error } = await supabase.from('chats').delete().eq('id', id);
+  if(error) return alert('Error borrando chat: '+error.message);
+  alert('Mensaje borrado');
+  await loadChats();
+}
+
+/* ------------------ EVENTOS ------------------ */
 document.getElementById('searchBtn').addEventListener('click', ()=> {
   const q = document.getElementById('searchInput').value || '';
   loadUsers(q);
