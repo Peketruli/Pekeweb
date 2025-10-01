@@ -32,7 +32,7 @@
 <body>
 <button class="auth-button" onclick="window.location.href='casino.html'">Volver</button>
 <h1>🎰 Blackjack 🎰</h1>
-<div id="pekePuntos">Pekepuntos: 0</div>
+<div id="pekePuntos">PekePuntos: 0</div>
 
 <div id="bet-container">
     <label for="bet-amount">Apuesta: </label>
@@ -50,12 +50,9 @@
 <button id="stand-button" disabled>Plantarse</button>
 <button id="reset-button" style="display:none; margin-top:15px; background:#007bff; color:white;">🔄 Reiniciar</button>
 
-
-<div id="game-message"></div>
-
 <script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // 👈 pon aquí tu API KEY segura
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -64,8 +61,9 @@ let dealerHand = [];
 let hideDealer = true;
 let currentBet = 0;
 let currentUser = null;
+let deck = [];
 
-// Cargar PekePuntos reales
+// --- Cargar PekePuntos ---
 async function loadPekePuntos() {
     currentUser = JSON.parse(localStorage.getItem("currentUser"));
     if(!currentUser) {
@@ -80,16 +78,15 @@ async function loadPekePuntos() {
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
 }
 
-// --- Al finalizar el juego ---
+// --- Actualizar puntos según resultado ---
 async function updatePoints(result) {
-    if(result === "win") {
-        currentUser.pekepuntos += currentBet * 2; // gana → recibe apuesta *2
-    }
-    // si pierde no se devuelve nada (ya se descontó)
+    if(result === "win") currentUser.pekepuntos += currentBet * 2; // gana → recibe apuesta *2
+    else if(result === "tie") currentUser.pekepuntos += currentBet; // empate → devuelve apuesta
+    // si pierde → no se devuelve nada
 
     document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
     const { error } = await supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
-    if(error){ console.error("Error al actualizar Pekepuntos:", error); }
+    if(error) console.error("Error al actualizar Pekepuntos:", error);
 
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
     currentBet = 0;
@@ -98,7 +95,7 @@ async function updatePoints(result) {
     document.getElementById("bet-amount").value = '';
 }
 
-// Blackjack
+// --- Baraja y valor de cartas ---
 function createDeck(){
     const suits = ["♥","♦","♣","♠"];
     const values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
@@ -106,9 +103,19 @@ function createDeck(){
     for(let s of suits){ for(let v of values){ deck.push({suit:s,value:v}); } }
     return deck.sort(()=> Math.random()-0.5);
 }
-function cardValue(card){ if(["J","Q","K"].includes(card.value)) return 10; if(card.value==="A") return 11; return parseInt(card.value); }
-function handValue(hand){ let val=hand.reduce((acc,c)=>acc+cardValue(c),0); let aces=hand.filter(c=>c.value==="A").length; while(val>21 && aces>0){ val-=10; aces--; } return val; }
+function cardValue(card){ 
+    if(["J","Q","K"].includes(card.value)) return 10; 
+    if(card.value==="A") return 11; 
+    return parseInt(card.value); 
+}
+function handValue(hand){ 
+    let val=hand.reduce((acc,c)=>acc+cardValue(c),0); 
+    let aces=hand.filter(c=>c.value==="A").length; 
+    while(val>21 && aces>0){ val-=10; aces--; } 
+    return val; 
+}
 
+// --- Mostrar cartas ---
 function renderHand(containerId, hand, hideSecond=false) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
@@ -125,6 +132,7 @@ function updateUI(){
     renderHand('dealer-hand', dealerHand, hideDealer);
 }
 
+// --- Finalizar juego ---
 function endGame(msg){
     hideDealer=false; 
     updateUI();
@@ -134,12 +142,12 @@ function endGame(msg){
 
     if(msg.includes("Ganaste")) updatePoints("win");
     else if(msg.includes("Pierdes") || msg.includes("perdiste") || msg.includes("Crupier gana")) updatePoints("lose");
+    else if(msg.includes("Empate")) updatePoints("tie");  // ✅ Empate
 
-    // 👇 Mostrar botón reinicio
     document.getElementById("reset-button").style.display = "inline-block";
 }
 
-// --- Botón Reiniciar ---
+// --- Reiniciar ---
 document.getElementById("reset-button").addEventListener("click", ()=>{
     playerHand = [];
     dealerHand = [];
@@ -151,17 +159,14 @@ document.getElementById("reset-button").addEventListener("click", ()=>{
     document.getElementById("dealer-hand").innerHTML = "";
     document.getElementById("game-message").textContent = "";
 
-    // Habilitar nuevamente inputs
     document.getElementById("bet-amount").disabled = false;
     document.getElementById("place-bet-button").disabled = false;
     document.getElementById("bet-amount").value = "";
 
-    // Ocultar botón reinicio
     document.getElementById("reset-button").style.display = "none";
 });
 
-
-let deck = [];
+// --- Iniciar juego ---
 function startGame(){
     deck = createDeck();
     playerHand=[deck.pop(),deck.pop()];
@@ -173,7 +178,7 @@ function startGame(){
     document.getElementById("game-message").textContent="";
 }
 
-// Eventos
+// --- Eventos ---
 document.getElementById("place-bet-button").addEventListener("click", async ()=>{
     const bet=parseInt(document.getElementById("bet-amount").value);
     if(isNaN(bet) || bet<=0){ alert("Introduce una cantidad válida."); return; }
@@ -197,6 +202,7 @@ document.getElementById("hit-button").addEventListener("click",()=>{
     playerHand.push(deck.pop()); updateUI();
     if(handValue(playerHand)>21) endGame("¡Perdiste! Te pasaste.");
 });
+
 document.getElementById("stand-button").addEventListener("click",()=>{
     hideDealer=false; updateUI();
     while(handValue(dealerHand)<17){ dealerHand.push(deck.pop()); updateUI(); }
@@ -206,7 +212,7 @@ document.getElementById("stand-button").addEventListener("click",()=>{
     else endGame("Empate.");
 });
 
-// Inicializar
+// --- Inicializar ---
 loadPekePuntos();
 </script>
 </body>
