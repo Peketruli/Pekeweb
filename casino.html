@@ -99,6 +99,11 @@
 
 <h1>🎰 Casino 🎰</h1>
 
+    <div class="section" id="rewardsSection">
+    <h2>🎁 Recompensas</h2>
+    <button class="reward-button" id="dailyRewardBtn">Reclamar recompensa diaria (+50 Pekepuntos)</button>
+</div>
+
 <div class="auth-container" id="authContainer">
     <button class="auth-button" onclick="window.location.href='login.html'">Iniciar sesión o registrarse</button>
 </div>
@@ -146,21 +151,25 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+let currentUser = null;
+
 document.addEventListener("DOMContentLoaded", function () {
+    currentUser = JSON.parse(localStorage.getItem("currentUser"));
     loadUserInfo();
     loadTop5();
+
     const userInfo = document.getElementById("userInfo");
     const dropdownMenu = document.getElementById("dropdownMenu");
-
     userInfo.addEventListener("click", function () {
         dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
     });
-
     document.addEventListener("click", function (event) {
         if (!userInfo.contains(event.target) && !dropdownMenu.contains(event.target)) {
             dropdownMenu.style.display = "none";
         }
     });
+
+    document.getElementById("dailyRewardBtn").addEventListener("click", claimDailyReward);
 });
 
 function logout() {
@@ -170,7 +179,7 @@ function logout() {
 }
 
 function loadUserInfo() {
-    const user = JSON.parse(localStorage.getItem("currentUser"));
+    const user = currentUser;
     const authContainer = document.getElementById("authContainer");
     const userInfo = document.getElementById("userInfo");
 
@@ -202,6 +211,41 @@ async function cargarPekepuntos(usuarioId) {
     document.getElementById("pekepuntos").textContent = `Pekepuntos: ${data.pekepuntos}`;
 }
 
+// 🎁 Reclamo diario
+async function claimDailyReward() {
+    if (!currentUser) return alert("Debes iniciar sesión para reclamar la recompensa.");
+
+    const { data, error } = await supabase
+        .from("usuarios")
+        .select("pekepuntos, last_claim")
+        .eq("id", currentUser.id)
+        .single();
+
+    if (error) return alert("Error al verificar: " + error.message);
+
+    const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+    const lastClaim = data.last_claim ? data.last_claim.split("T")[0] : null;
+
+    if (lastClaim === today) {
+        return alert("⏳ Ya has reclamado tu recompensa diaria hoy. Vuelve mañana.");
+    }
+
+    const nuevosPekepuntos = (data.pekepuntos || 0) + 50;
+
+    const { error: updateError } = await supabase
+        .from("usuarios")
+        .update({
+            pekepuntos: nuevosPekepuntos,
+            last_claim: new Date().toISOString()
+        })
+        .eq("id", currentUser.id);
+
+    if (updateError) return alert("Error al actualizar: " + updateError.message);
+
+    alert("🎉 Has reclamado 50 Pekepuntos!");
+    cargarPekepuntos(currentUser.id);
+}
+
 async function loadTop5() {
     const { data, error } = await supabase
         .from('usuarios')
@@ -222,6 +266,7 @@ async function loadTop5() {
         top5List.appendChild(li);
     });
 }
+</script>
 </script>
 </body>
 </html>
