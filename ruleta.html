@@ -104,17 +104,25 @@ async function loadPekePuntos() {
 }
 
 // --- Actualizar Puntos ---
-async function updatePoints(multiplier) {
-    if(multiplier > 0) {
-        currentUser.pekepuntos += currentBet * multiplier;
-    } else {
-        currentUser.pekepuntos -= currentBet;
+    async function updatePoints(result) {
+    if(result === "win"){
+        // gana: recupera la apuesta multiplicada x2
+        currentUser.pekepuntos += currentBet * 2;
+    } else if(result === "draw"){
+        // empate: recupera solo la apuesta
+        currentUser.pekepuntos += currentBet;
     }
-    document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
-    await supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
+    // si pierde no hacemos nada (ya perdió al apostar)
+
+    document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
+    await supabase.from("usuarios")
+        .update({ pekepuntos: currentUser.pekepuntos })
+        .eq("id", currentUser.id);
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
+
     currentBet = 0;
 }
+
 
 // --- Lógica Ruleta ---
 function spinRoulette() {
@@ -139,21 +147,27 @@ function spinRoulette() {
 }
 
 // --- Eventos ---
-document.getElementById("place-bet-button").addEventListener("click", ()=>{
+document.getElementById("place-bet-button").addEventListener("click", async ()=>{
     const bet = parseInt(document.getElementById("bet-amount").value);
     if(isNaN(bet) || bet<=0){ alert("Introduce una cantidad válida."); return; }
     if(bet>currentUser.pekepuntos){ alert("No tienes suficientes PekePuntos."); return; }
 
     currentBet = bet;
-    betType = document.getElementById("bet-type").value;
-    betChoice = document.getElementById("bet-choice").value.trim();
 
-    if(!betChoice){ alert("Debes escribir tu elección."); return; }
+    // 💰 Restar inmediatamente la apuesta
+    currentUser.pekepuntos -= currentBet;
+    document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
+    await supabase.from("usuarios")
+        .update({ pekepuntos: currentUser.pekepuntos })
+        .eq("id", currentUser.id);
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
 
-    document.getElementById("result").textContent = `Apuesta: ${currentBet} PekePuntos a ${betChoice}`;
+    // Iniciar la partida normalmente
+    startGame();
+
+    // Deshabilitar inputs mientras se juega
     document.getElementById("place-bet-button").disabled = true;
     document.getElementById("bet-amount").disabled = true;
-    document.getElementById("spin-button").disabled = false;
 });
 
 document.getElementById("spin-button").addEventListener("click", spinRoulette);
