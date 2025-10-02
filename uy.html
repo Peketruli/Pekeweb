@@ -1,116 +1,316 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <title>Subir Imágenes y Videos</title>
-  <script src="https://unpkg.com/@supabase/supabase-js"></script>
+  <meta charset="UTF-8" />
+  <title>Zona +18 - Subir Imágenes y Vídeos</title>
+
+  <!-- Supabase UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
+
   <style>
-    body { color: white, font-family: Arial, sans-serif; background:black; padding:20px; }
+    :root { --bg:#000; --panel:#111; --accent:#ff3b3b; }
+    body {
+      font-family: Arial, sans-serif;
+      background: var(--bg);
+      color: white;         /* textos en blanco */
+      padding: 20px;
+      margin: 0;
+    }
+
+    .wrap { max-width:1000px; margin: 18px auto; }
+
+    h1,h2 { color: white; margin: 10px 0; }
+    .controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px; }
+
+    input[type="file"] {
+      background:var(--panel); color:white; border:1px solid #333; padding:8px; border-radius:6px;
+    }
+    input[type="text"] {
+      background: #222; color: white; border:1px solid #333; padding:8px; border-radius:6px; width:420px;
+    }
+    button {
+      background: var(--accent); color: white; border: none; padding:10px 14px; border-radius:8px; cursor:pointer;
+    }
+    button.neutral { background:#444; }
+
     .preview { margin-top:20px; display:flex; flex-wrap:wrap; gap:15px; }
-    .preview-item { max-width:300px; }
-    img, video { max-width:100%; border-radius:8px; box-shadow:0 0 5px rgba(0,0,0,0.2); }
-    input, button { margin-top:10px; padding:8px; }
+    .preview-item {
+      width: 300px; background:#0b0b0b; padding:8px; border-radius:8px; border:1px solid #222;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+      display:flex; flex-direction:column; gap:8px;
+    }
+    .preview-item video,
+    .preview-item img,
+    .preview-item iframe { width:100%; border-radius:6px; display:block; }
+
+    .meta { font-size:13px; color:#ccc; display:flex; justify-content:space-between; align-items:center; gap:8px; }
+    .status { font-size:12px; color:#9aa; }
+
+    .note { color:#aaa; font-size:13px; margin-top:6px; }
   </style>
 </head>
 <body>
-  <button class="home-btn" onclick="window.location.href='Hub.html'"> Volver a la Página Principal</button>
-  <h1>Zona +18: Subida de Contenido</h1>
+  <div class="wrap">
+    <h1>Zona +18: Subida de Contenido</h1>
 
-  <!-- Subir archivos desde PC -->
-  <h2>Subir desde tu ordenador</h2>
-  <input type="file" id="fileInput" accept="image/*,video/*" multiple>
+    <div class="controls">
+      <label>
+        <strong style="color:white">Subir desde el ordenador:</strong><br>
+        <input id="fileInput" type="file" accept="image/*,video/*" multiple>
+      </label>
 
-  <!-- Insertar por URL -->
-  <h2>Insertar desde URL</h2>
-  <input type="text" id="urlInput" placeholder="Pega aquí la URL de imagen o video">
-  <button onclick="addFromUrl()">Añadir</button>
+      <div>
+        <strong style="color:white">Insertar desde URL:</strong><br>
+        <input id="urlInput" type="text" placeholder="Pega URL (mp4/jpg/png/gif) o YouTube/Vimeo" />
+        <button id="addUrlBtn">Añadir</button>
+      </div>
 
-  <!-- Previsualización -->
-  <div class="preview" id="preview"></div>
+      <button id="refreshBtn" class="neutral">Recargar guardados</button>
+    </div>
 
-  <script>
-    // ⚡ Configura tu Supabase
-    const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co"; 
-    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; 
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    <div class="note">Soporta archivos locales (imagen/video), URLs directas (mp4/jpg/png...) y YouTube/Vimeo (se incrustan). Asegúrate de que el bucket <code>zona18</code> existe en Supabase.</div>
 
-    const preview = document.getElementById("preview");
+    <div id="preview" class="preview" aria-live="polite"></div>
+  </div>
 
-    // Subida desde el ordenador
-    document.getElementById("fileInput").addEventListener("change", async (event) => {
-      const files = event.target.files;
-      for (let file of files) {
-        const filePath = `${Date.now()}_${file.name}`;
-        
-        // 📤 Subir a Supabase Storage
-        const { data, error } = await supabase.storage
-          .from("zona18")
-          .upload(filePath, file);
+<script>
+  // === CONFIGURA AQUÍ ===
+  const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";    // reemplaza
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";                   // reemplaza (anon/public key)
+  const BUCKET = "zona18";
+  // =======================
 
-        if (error) {
-          console.error("Error al subir archivo:", error.message);
-          alert("Error al subir archivo: " + error.message);
+  // Crear cliente Supabase (UMD export usa "supabase")
+  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const fileInput = document.getElementById("fileInput");
+  const preview = document.getElementById("preview");
+  const urlInput = document.getElementById("urlInput");
+  const addUrlBtn = document.getElementById("addUrlBtn");
+  const refreshBtn = document.getElementById("refreshBtn");
+
+  // UTIL helpers
+  function isImageExt(url) {
+    return /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(url);
+  }
+  function isVideoExt(url) {
+    return /\.(mp4|webm|ogg|mov|mkv)$/i.test(url);
+  }
+  function isYouTube(url) {
+    return /youtube\.com|youtu\.be/i.test(url);
+  }
+  function isVimeo(url) {
+    return /vimeo\.com/i.test(url);
+  }
+  function youtubeEmbedUrl(url) {
+    // extrae id
+    try {
+      if (/youtu\.be/i.test(url)) {
+        const id = url.split('/').pop().split('?')[0];
+        return `https://www.youtube.com/embed/${id}`;
+      }
+      const u = new URL(url);
+      const id = u.searchParams.get('v');
+      return id ? `https://www.youtube.com/embed/${id}` : null;
+    } catch(e){ return null; }
+  }
+  function vimeoEmbedUrl(url) {
+    try {
+      const m = url.match(/vimeo\.com\/(\d+)/);
+      return m ? `https://player.vimeo.com/video/${m[1]}` : null;
+    } catch(e){ return null; }
+  }
+
+  // Render de previsualización (local o remota)
+  function renderMediaBlock({url, tipo, name = '', status = ''}) {
+    const div = document.createElement('div');
+    div.className = 'preview-item';
+
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.innerHTML = `<span>${name || (tipo==='image'?'Imagen':'Vídeo')}</span><span class="status">${status}</span>`;
+
+    if (tipo === 'image') {
+      const img = document.createElement('img');
+      img.src = url;
+      img.alt = name || 'imagen';
+      div.appendChild(img);
+    } else if (tipo === 'video') {
+      const video = document.createElement('video');
+      video.src = url;
+      video.controls = true;
+      video.preload = 'metadata';
+      div.appendChild(video);
+    } else if (tipo === 'youtube' || tipo === 'vimeo') {
+      const iframe = document.createElement('iframe');
+      iframe.src = url;
+      iframe.width = '560';
+      iframe.height = '315';
+      iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture';
+      iframe.allowFullscreen = true;
+      div.appendChild(iframe);
+    } else {
+      const a = document.createElement('a');
+      a.href = url; a.textContent = url; a.target = '_blank';
+      div.appendChild(a);
+    }
+
+    div.appendChild(meta);
+    preview.prepend(div);
+    return div;
+  }
+
+  // Manejo de archivos locales
+  fileInput.addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    for (const file of files) {
+      // mostrar preview temporal local
+      const localUrl = URL.createObjectURL(file);
+      const guessedType = file.type.startsWith('video') ? 'video' : 'image';
+      const block = renderMediaBlock({url: localUrl, tipo: guessedType, name: file.name, status: 'Subiendo...'});
+
+      // Subir a Supabase
+      try {
+        const ext = file.name.split('.').pop();
+        const filePath = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+        const { data: uploadData, error: uploadError } = await supabase
+          .storage
+          .from(BUCKET)
+          .upload(filePath, file, { cacheControl: '3600', upsert: false });
+
+        if (uploadError) throw uploadError;
+
+        // Obtener URL pública o signed URL si no hay publicUrl
+        const { data: publicData, error: publicErr } = await supabase
+          .storage
+          .from(BUCKET)
+          .getPublicUrl(filePath);
+
+        let fileUrl = publicData?.publicUrl || null;
+        if (!fileUrl) {
+          // intenta signed URL (60s)
+          const { data: signedData, error: signedErr } = await supabase
+            .storage
+            .from(BUCKET)
+            .createSignedUrl(filePath, 60 * 60); // 1 hora
+          if (signedErr) throw signedErr;
+          fileUrl = signedData?.signedUrl || null;
+        }
+
+        // Guardar en la tabla 'contenidos'
+        const tipo = guessedType;
+        const { error: insertErr } = await supabase
+          .from('contenidos')
+          .insert([{ url: fileUrl, tipo }]);
+
+        if (insertErr) console.warn('No se pudo guardar en tabla contenidos:', insertErr.message);
+
+        // actualizar preview
+        block.querySelector('.status').textContent = 'Subido';
+        // actualizar media src a la URL pública real (en caso de que se sirva diferente)
+        if (guessedType === 'image' || guessedType === 'video') {
+          // Reemplaza src por la URL real (evitamos CORS de algunos hosts; pero si tu bucket privado, usamos signed URL)
+          const media = block.querySelector(guessedType === 'image' ? 'img' : 'video');
+          if (media) media.src = fileUrl;
+        }
+        URL.revokeObjectURL(localUrl); // liberar
+      } catch (err) {
+        console.error('Error subiendo archivo:', err);
+        block.querySelector('.status').textContent = 'Error';
+        alert('Error al subir ' + file.name + ': ' + (err.message || err));
+      }
+    }
+
+    // limpiar input para poder volver a subir mismos archivos si se desea
+    fileInput.value = '';
+  });
+
+  // Manejo de añadir por URL
+  addUrlBtn.addEventListener('click', async () => {
+    const raw = (urlInput.value || '').trim();
+    if (!raw) return alert('Introduce una URL válida');
+    urlInput.value = '';
+
+    // YouTube/Vimeo
+    if (isYouTube(raw)) {
+      const embed = youtubeEmbedUrl(raw);
+      if (!embed) return alert('No se pudo extraer ID de YouTube');
+      renderMediaBlock({url: embed, tipo: 'youtube', name: 'YouTube', status: 'Guardado (embed)'});
+      // guardar en BD
+      await supabase.from('contenidos').insert([{ url: raw, tipo: 'youtube' }]);
+      return;
+    }
+    if (isVimeo(raw)) {
+      const embed = vimeoEmbedUrl(raw);
+      if (!embed) return alert('No se pudo extraer ID de Vimeo');
+      renderMediaBlock({url: embed, tipo: 'vimeo', name: 'Vimeo', status: 'Guardado (embed)'});
+      await supabase.from('contenidos').insert([{ url: raw, tipo: 'vimeo' }]);
+      return;
+    }
+
+    // directos (imagen/video)
+    if (isImageExt(raw)) {
+      renderMediaBlock({url: raw, tipo: 'image', name: raw, status: 'Guardado'});
+      await supabase.from('contenidos').insert([{ url: raw, tipo: 'image' }]);
+      return;
+    }
+    if (isVideoExt(raw)) {
+      renderMediaBlock({url: raw, tipo: 'video', name: raw, status: 'Guardado'});
+      await supabase.from('contenidos').insert([{ url: raw, tipo: 'video' }]);
+      return;
+    }
+
+    // fallback: intentar insertar y mostrar enlace
+    const block = renderMediaBlock({url: raw, tipo: 'unknown', name: raw, status: 'Guardado (no preview)'});
+    await supabase.from('contenidos').insert([{ url: raw, tipo: 'unknown' }]);
+  });
+
+  // Cargar guardados en DB
+  async function loadSaved() {
+    preview.innerHTML = '';
+    try {
+      const { data, error } = await supabase
+        .from('contenidos')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      if (error) throw error;
+      if (!data || !data.length) return;
+
+      for (const item of data) {
+        const url = item.url;
+        const tipo = item.tipo || guessTypeFromUrl(url);
+        if (tipo === 'youtube') {
+          const embed = youtubeEmbedUrl(url) || url;
+          renderMediaBlock({url: embed, tipo: 'youtube', name: url, status: 'Guardado'});
+        } else if (tipo === 'vimeo') {
+          const embed = vimeoEmbedUrl(url) || url;
+          renderMediaBlock({url: embed, tipo: 'vimeo', name: url, status: 'Guardado'});
         } else {
-          // Obtener URL pública
-          const { data: urlData } = supabase.storage.from("zona18").getPublicUrl(filePath);
-          const fileUrl = urlData.publicUrl;
-
-          // Guardar en base de datos
-          const { error: insertError } = await supabase
-            .from("contenidos")
-            .insert([{ url: fileUrl, tipo: file.type.startsWith("video") ? "video" : "image" }]);
-
-          if (insertError) console.error("Error al guardar en BD:", insertError.message);
-
-          // Render en la página
-          renderMedia(fileUrl, file.type);
+          renderMediaBlock({url, tipo, name: url, status: 'Guardado'});
         }
       }
-    });
-
-    // Subida desde URL externa
-    async function addFromUrl() {
-      const url = document.getElementById("urlInput").value.trim();
-      if (!url) return alert("Introduce una URL válida");
-
-      let tipo = null;
-      if (url.match(/\.(mp4|webm|ogg)$/i)) {
-        tipo = "video";
-      } else if (url.match(/\.(jpeg|jpg|png|gif|webp)$/i)) {
-        tipo = "image";
-      } else {
-        return alert("Formato no soportado");
-      }
-
-      // Guardar en BD
-      const { error } = await supabase.from("contenidos").insert([{ url, tipo }]);
-      if (error) console.error("Error al guardar en BD:", error.message);
-
-      renderMedia(url, tipo);
-      document.getElementById("urlInput").value = "";
+    } catch (err) {
+      console.error('Error cargando contenidos:', err);
+      alert('Error al cargar contenidos: ' + (err.message || err));
     }
+  }
 
-    // Renderizar en pantalla
-    function renderMedia(url, type) {
-      const div = document.createElement("div");
-      div.classList.add("preview-item");
+  function guessTypeFromUrl(url) {
+    if (!url) return 'unknown';
+    if (isYouTube(url)) return 'youtube';
+    if (isVimeo(url)) return 'vimeo';
+    if (isImageExt(url)) return 'image';
+    if (isVideoExt(url)) return 'video';
+    return 'unknown';
+  }
 
-      if (type.startsWith("video") || type === "video") {
-        div.innerHTML = `<video src="${url}" controls></video>`;
-      } else {
-        div.innerHTML = `<img src="${url}" alt="imagen">`;
-      }
+  refreshBtn.addEventListener('click', loadSaved);
 
-      preview.appendChild(div);
-    }
-
-    // 📥 Cargar contenidos guardados al entrar
-    (async function loadContent() {
-      const { data, error } = await supabase.from("contenidos").select("*").order("created_at", { ascending: false });
-      if (!error && data) {
-        data.forEach(item => renderMedia(item.url, item.tipo));
-      }
-    })();
-  </script>
+  // carga inicial
+  loadSaved();
+</script>
 </body>
 </html>
