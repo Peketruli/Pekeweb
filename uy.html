@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <title>Zona +18 - Subir Imágenes y Vídeos (corregido)</title>
+  <title>Zona +18 - Subir Imágenes y Vídeos</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/dist/umd/supabase.min.js"></script>
   <style>
     :root { --bg:#000; --panel:#111; --accent:#ff3b3b; }
@@ -23,202 +23,147 @@
   </style>
 </head>
 <body>
-    <button class="home-btn" onclick="window.location.href='Hub.html'"> Volver a la Página Principal</button>
-  <div class="wrap">
-    <h1>Zona +18: Subida de Contenido (corregido)</h1>
+<div class="wrap">
+  <h1>Zona +18: Subida de Contenido</h1>
 
-    <div class="controls">
-      <label>
-        <strong style="color:white">Subir desde el ordenador:</strong><br>
-        <input id="fileInput" type="file" accept="image/*,video/*" multiple>
-      </label>
+  <div class="controls">
+    <label>
+      <strong>Subir desde el ordenador:</strong><br>
+      <input id="fileInput" type="file" accept="image/*,video/*" multiple>
+    </label>
 
-      <div>
-        <strong style="color:white">Insertar desde URL:</strong><br>
-        <input id="urlInput" type="text" placeholder="Pega URL (mp4/jpg/png/gif) o YouTube/Vimeo">
-        <button id="addUrlBtn">Añadir</button>
-      </div>
-
-      <button id="refreshBtn" class="neutral">Recargar guardados</button>
+    <div>
+      <strong>Insertar desde URL:</strong><br>
+      <input id="urlInput" type="text" placeholder="Pega URL (mp4/jpg/png/gif) o YouTube/Vimeo">
+      <button id="addUrlBtn">Añadir</button>
     </div>
 
-    <div class="note">Asegúrate de que el bucket <code>zona18</code> existe. Si el bucket es privado, se usarán signed URLs temporales.</div>
-
-    <div id="preview" class="preview" aria-live="polite"></div>
+    <button id="refreshBtn" class="neutral">Recargar guardados</button>
   </div>
 
+  <div class="note">Asegúrate de que el bucket <code>zona18</code> existe. Si es privado, se usarán signed URLs.</div>
+  <div id="preview" class="preview"></div>
+</div>
+
 <script>
-  // === CONFIGURACIÓN: reemplaza por tus datos ===
-  const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // no compartas en público si es privado
-  const BUCKET = "zona18";
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const BUCKET = "zona18";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  // Crear cliente correctamente (usar window.supabase.createClient)
-  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const fileInput = document.getElementById('fileInput');
+const preview = document.getElementById('preview');
+const urlInput = document.getElementById('urlInput');
+const addUrlBtn = document.getElementById('addUrlBtn');
+const refreshBtn = document.getElementById('refreshBtn');
 
-  const fileInput = document.getElementById('fileInput');
-  const preview = document.getElementById('preview');
-  const urlInput = document.getElementById('urlInput');
-  const addUrlBtn = document.getElementById('addUrlBtn');
-  const refreshBtn = document.getElementById('refreshBtn');
+function isImageExt(url){ return /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(url); }
+function isVideoExt(url){ return /\.(mp4|webm|ogg|mov|mkv)$/i.test(url); }
+function isYouTube(url){ return /youtube\.com|youtu\.be/i.test(url); }
+function isVimeo(url){ return /vimeo\.com/i.test(url); }
 
-  function isImageExt(url){ return /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(url); }
-  function isVideoExt(url){ return /\.(mp4|webm|ogg|mov|mkv)$/i.test(url); }
-  function isYouTube(url){ return /youtube\.com|youtu\.be/i.test(url); }
-  function isVimeo(url){ return /vimeo\.com/i.test(url); }
+function youtubeEmbedUrl(url){
+  try{
+    if(/youtu\.be/i.test(url)){ const id=url.split('/').pop().split('?')[0]; return `https://www.youtube.com/embed/${id}`; }
+    const u=new URL(url); const id=u.searchParams.get('v'); return id?`https://www.youtube.com/embed/${id}`:null;
+  }catch(e){return null;}
+}
+function vimeoEmbedUrl(url){ try{ const m=url.match(/vimeo\.com\/(\d+)/); return m?`https://player.vimeo.com/video/${m[1]}`:null; }catch(e){return null;} }
 
-  function youtubeEmbedUrl(url){
+function renderMediaBlock({url,tipo,name='',status=''}){
+  const div=document.createElement('div'); div.className='preview-item';
+  const meta=document.createElement('div'); meta.className='meta';
+  meta.innerHTML=`<span>${name || (tipo==='image'?'Imagen':'Vídeo')}</span><span class="status">${status}</span>`;
+  if(tipo==='image'){ const img=document.createElement('img'); img.src=url; img.alt=name||'imagen'; div.appendChild(img); }
+  else if(tipo==='video'){ const video=document.createElement('video'); video.src=url; video.controls=true; video.preload='metadata'; div.appendChild(video); }
+  else if(tipo==='youtube'||tipo==='vimeo'){ const iframe=document.createElement('iframe'); iframe.src=url; iframe.width='560'; iframe.height='315'; iframe.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'; iframe.allowFullscreen=true; div.appendChild(iframe); }
+  else { const a=document.createElement('a'); a.href=url; a.textContent=url; a.target='_blank'; div.appendChild(a); }
+  div.appendChild(meta); preview.prepend(div); return div;
+}
+
+// --- Subida de archivos ---
+fileInput.addEventListener('change', async e=>{
+  const files=Array.from(e.target.files||[]);
+  if(!files.length) return;
+  for(const file of files){
+    const localUrl = URL.createObjectURL(file);
+    const tipo = file.type.startsWith('video')?'video':'image';
+    const block = renderMediaBlock({url:localUrl,tipo,name:file.name,status:'Subiendo...'});
     try{
-      if(/youtu\.be/i.test(url)){ const id = url.split('/').pop().split('?')[0]; return `https://www.youtube.com/embed/${id}`; }
-      const u = new URL(url); const id = u.searchParams.get('v'); return id?`https://www.youtube.com/embed/${id}`:null;
-    }catch(e){return null;}
-  }
-  function vimeoEmbedUrl(url){ try{ const m = url.match(/vimeo\.com\/(\d+)/); return m?`https://player.vimeo.com/video/${m[1]}`:null; }catch(e){return null;} }
+      const ext = (file.name.split('.').pop()||'').split('?')[0];
+      const path = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext|| (tipo==='image'?'jpg':'mp4')}`;
+      const { error: uploadErr } = await sb.storage.from(BUCKET).upload(path,file,{cacheControl:'3600',upsert:false});
+      if(uploadErr) throw uploadErr;
 
-  function renderMediaBlock({url,tipo,name='',status=''}){
-    const div = document.createElement('div'); div.className='preview-item';
-    const meta = document.createElement('div'); meta.className='meta';
-    meta.innerHTML = `<span>${name || (tipo==='image'?'Imagen':'Vídeo')}</span><span class="status">${status}</span>`;
-    if(tipo==='image'){ const img=document.createElement('img'); img.src=url; img.alt=name||'imagen'; div.appendChild(img); }
-    else if(tipo==='video'){ const video=document.createElement('video'); video.src=url; video.controls=true; video.preload='metadata'; div.appendChild(video); }
-    else if(tipo==='youtube'||tipo==='vimeo'){ const iframe=document.createElement('iframe'); iframe.src=url; iframe.width='560'; iframe.height='315'; iframe.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'; iframe.allowFullscreen=true; div.appendChild(iframe); }
-    else { const a=document.createElement('a'); a.href=url; a.textContent=url; a.target='_blank'; div.appendChild(a); }
-    div.appendChild(meta); preview.prepend(div); return div;
-  }
+      const { data: signedData, error: signedErr } = await sb.storage.from(BUCKET).createSignedUrl(path,60*60*24);
+      if(signedErr) throw signedErr;
+      const fileUrl = signedData.signedUrl;
 
-  // --- Subida de archivos locales ---
-  fileInput.addEventListener('change', async (e) => {
-    const files = Array.from(e.target.files||[]);
-    if(!files.length) return;
-    for(const file of files){
-      const localUrl = URL.createObjectURL(file);
-      const guessedType = file.type.startsWith('video') ? 'video' : 'image';
-      const block = renderMediaBlock({url:localUrl,tipo:guessedType,name:file.name,status:'Subiendo...'});
-      try{
-        const ext = (file.name.split('.').pop() || '').split('?')[0];
-        const filePath = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext|| (guessedType==='image'? 'jpg':'mp4')}`;
-        const { data: uploadData, error: uploadError } = await sb.storage.from(BUCKET).upload(filePath, file, { cacheControl:'3600', upsert:false });
-        if(uploadError) throw uploadError;
-        // obtener public url
-        const { data: publicData, error: publicErr } = await sb.storage.from(BUCKET).getPublicUrl(filePath);
-        let fileUrl = publicData?.publicUrl || null;
-        if(!fileUrl){
-          // crear signed URL de 24h
-          const { data: signedData, error: signedErr } = await sb.storage.from(BUCKET).createSignedUrl(filePath, 60*60*24);
-          if(signedErr) throw signedErr;
-          fileUrl = signedData?.signedUrl || fileUrl;
-        }
-        // Guardar en DB: guardamos url + path + name
-        const { error: insertErr } = await sb.from('contenidos').insert([{ url: fileUrl, tipo: guessedType, path: filePath, name: file.name }]);
-        if(insertErr) console.warn('No se pudo guardar en tabla contenidos:', insertErr.message);
-        block.querySelector('.status').textContent = 'Subido';
-        // actualizar media src a la URL real
-        const media = block.querySelector(guessedType==='image'?'img':'video');
-        if(media) media.src = fileUrl;
-        URL.revokeObjectURL(localUrl);
-      }catch(err){
-        console.error('Error subiendo archivo:', err);
-        block.querySelector('.status').textContent = 'Error';
-        alert('Error al subir ' + file.name + ': ' + (err.message||err));
-      }
-    }
-    fileInput.value = '';
-  });
+      // Insertar en DB con created_at para evitar error
+      const { error: insertErr } = await sb.from('contenidos').insert([{
+        url: fileUrl,
+        tipo,
+        path,
+        name: file.name,
+        created_at: new Date().toISOString()
+      }]);
+      if(insertErr) throw insertErr;
 
-  // --- Añadir por URL ---
-  addUrlBtn.addEventListener('click', async () => {
-    const raw = (urlInput.value||'').trim(); if(!raw) return alert('Introduce una URL válida'); urlInput.value='';
-    try{
-      if(isYouTube(raw)){
-        const embed = youtubeEmbedUrl(raw); if(!embed) return alert('No se pudo extraer ID de YouTube');
-        renderMediaBlock({url:embed,tipo:'youtube',name:'YouTube',status:'Guardado (embed)'}); await sb.from('contenidos').insert([{ url: raw, tipo:'youtube', path:null, name:'YouTube' }]); return;
-      }
-      if(isVimeo(raw)){
-        const embed = vimeoEmbedUrl(raw); if(!embed) return alert('No se pudo extraer ID de Vimeo');
-        renderMediaBlock({url:embed,tipo:'vimeo',name:'Vimeo',status:'Guardado (embed)'}); await sb.from('contenidos').insert([{ url: raw, tipo:'vimeo', path:null, name:'Vimeo' }]); return;
-      }
-      if(isImageExt(raw)){ renderMediaBlock({url:raw,tipo:'image',name:raw,status:'Guardado'}); await sb.from('contenidos').insert([{ url: raw, tipo:'image', path:null, name: raw }]); return; }
-      if(isVideoExt(raw)){ renderMediaBlock({url:raw,tipo:'video',name:raw,status:'Guardado'}); await sb.from('contenidos').insert([{ url: raw, tipo:'video', path:null, name: raw }]); return; }
-      // fallback
-      renderMediaBlock({url:raw,tipo:'unknown',name:raw,status:'Guardado (no preview)'}); await sb.from('contenidos').insert([{ url: raw, tipo:'unknown', path:null, name: raw }]);
-    }catch(e){ console.error(e); alert('Error guardando URL: ' + (e.message||e)); }
-  });
-
-  // --- Resolver URL util (public o signed) para recursos que subimos ---
-  async function resolveFileUrl(item){
-    // si guardamos path, intentamos generar public o signed URL actualizada
-    if(item.path){
-      try{
-        const { data: publicData } = await sb.storage.from(BUCKET).getPublicUrl(item.path);
-        let candidate = publicData?.publicUrl || null;
-        // chequeo rápido con fetch HEAD (si falla, generamos signed)
-        if(candidate){
-          try{
-            const res = await fetch(candidate, { method:'HEAD' });
-            if(res.ok) return candidate;
-            // no ok -> intentar signed
-          }catch(e){
-            // probable CORS o privado -> intentar signed
-          }
-        }
-        // crear signed url 24h
-        const { data: signedData, error: signedErr } = await sb.storage.from(BUCKET).createSignedUrl(item.path, 60*60*24);
-        if(signedErr) throw signedErr;
-        return signedData?.signedUrl || item.url;
-      }catch(e){
-        console.warn('No se pudo resolver signed/public url para path:', item.path, e.message||e);
-        return item.url; // fallback
-      }
-    }
-
-    // si no hay path, intentar extraer path desde url supabase pública
-    try{
-      const u = new URL(item.url);
-      const m = u.pathname.match(/\/storage\/v1\/object\/public\/[^\/]+\/(.+)/);
-      if(m){
-        const path = decodeURIComponent(m[1]);
-        const { data: signedData, error: signedErr } = await sb.storage.from(BUCKET).createSignedUrl(path, 60*60*24);
-        if(!signedErr && signedData?.signedUrl) return signedData.signedUrl;
-      }
-    }catch(e){ /* ignore */ }
-
-    // fallback normal
-    return item.url;
-  }
-
-  // --- Cargar guardados en DB ---
-  async function loadSaved(){
-    preview.innerHTML = '';
-    try{
-      const { data, error } = await sb.from('contenidos').select('*').order('created_at',{ascending:false}).limit(500);
-      if(error) throw error;
-      if(!data || !data.length) return;
-      for(const item of data){
-        const tipo = item.tipo || (isImageExt(item.url)?'image': isVideoExt(item.url)?'video': (isYouTube(item.url)?'youtube': isVimeo(item.url)?'vimeo':'unknown'));
-        if(tipo==='youtube'){
-          const embed = youtubeEmbedUrl(item.url) || item.url;
-          renderMediaBlock({url:embed,tipo:'youtube',name:item.name||item.url,status:'Guardado'});
-        } else if(tipo==='vimeo'){
-          const embed = vimeoEmbedUrl(item.url) || item.url;
-          renderMediaBlock({url:embed,tipo:'vimeo',name:item.name||item.url,status:'Guardado'});
-        } else if(item.path){
-          // si es un recurso subido al bucket, resolvemos su URL (public o signed)
-          const resolved = await resolveFileUrl(item);
-          renderMediaBlock({url:resolved,tipo:tipo,name:item.name||item.url,status:'Guardado'});
-        } else {
-          // recurso externo directo
-          renderMediaBlock({url:item.url,tipo:tipo,name:item.name||item.url,status:'Guardado'});
-        }
-      }
+      block.querySelector('.status').textContent='Subido';
+      const media = block.querySelector(tipo==='image'?'img':'video'); if(media) media.src=fileUrl;
+      URL.revokeObjectURL(localUrl);
     }catch(err){
-      console.error('Error cargando contenidos:', err);
-      alert('Error al cargar contenidos: ' + (err.message||err));
+      console.error('Error subiendo archivo:',err);
+      block.querySelector('.status').textContent='Error';
+      alert('Error al subir '+file.name+': '+(err.message||err));
     }
   }
+  fileInput.value='';
+});
 
-  refreshBtn.addEventListener('click', loadSaved);
-  // carga inicial
-  loadSaved();
+// --- Añadir por URL ---
+addUrlBtn.addEventListener('click', async ()=>{
+  const raw = (urlInput.value||'').trim(); if(!raw) return alert('Introduce URL válida'); urlInput.value='';
+  try{
+    let tipo='unknown', urlFinal = raw;
+    if(isYouTube(raw)){ tipo='youtube'; urlFinal=youtubeEmbedUrl(raw)||raw; }
+    else if(isVimeo(raw)){ tipo='vimeo'; urlFinal=vimeoEmbedUrl(raw)||raw; }
+    else if(isImageExt(raw)){ tipo='image'; }
+    else if(isVideoExt(raw)){ tipo='video'; }
+
+    renderMediaBlock({url:urlFinal,tipo,name:raw,status:'Guardado (embed)'});
+
+    await sb.from('contenidos').insert([{
+      url: raw,
+      tipo,
+      path: null,
+      name: raw,
+      created_at: new Date().toISOString()
+    }]);
+  }catch(e){ console.error(e); alert('Error guardando URL: '+(e.message||e)); }
+});
+
+// --- Cargar guardados ---
+async function loadSaved(){
+  preview.innerHTML='';
+  try{
+    const { data, error } = await sb.from('contenidos').select('*').order('created_at',{ascending:false}).limit(500);
+    if(error) throw error;
+    if(!data?.length) return;
+    for(const item of data){
+      let tipo = item.tipo || (isImageExt(item.url)?'image': isVideoExt(item.url)?'video': (isYouTube(item.url)?'youtube': isVimeo(item.url)?'vimeo':'unknown'));
+      let urlRender = item.url;
+      if(item.path){
+        const { data: signedData, error: signedErr } = await sb.storage.from(BUCKET).createSignedUrl(item.path,60*60*24);
+        if(!signedErr && signedData?.signedUrl) urlRender = signedData.signedUrl;
+      }
+      renderMediaBlock({url:urlRender,tipo,name:item.name||item.url,status:'Guardado'});
+    }
+  }catch(err){ console.error(err); alert('Error cargando contenidos: '+(err.message||err)); }
+}
+
+refreshBtn.addEventListener('click',loadSaved);
+loadSaved();
 </script>
 </body>
 </html>
