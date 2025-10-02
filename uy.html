@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Subir Imágenes y Videos</title>
+  <script src="https://unpkg.com/@supabase/supabase-js"></script>
   <style>
     body { font-family: Arial, sans-serif; background:#f5f5f5; padding:20px; }
     .preview { margin-top:20px; display:flex; flex-wrap:wrap; gap:15px; }
@@ -27,30 +28,64 @@
   <div class="preview" id="preview"></div>
 
   <script>
+    // ⚡ Configura tu Supabase
+    const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co"; 
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; 
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
     const preview = document.getElementById("preview");
 
     // Subida desde el ordenador
-    document.getElementById("fileInput").addEventListener("change", (event) => {
+    document.getElementById("fileInput").addEventListener("change", async (event) => {
       const files = event.target.files;
       for (let file of files) {
-        const url = URL.createObjectURL(file);
-        renderMedia(url, file.type);
+        const filePath = `${Date.now()}_${file.name}`;
+        
+        // 📤 Subir a Supabase Storage
+        const { data, error } = await supabase.storage
+          .from("zona18")
+          .upload(filePath, file);
+
+        if (error) {
+          console.error("Error al subir archivo:", error.message);
+          alert("Error al subir archivo: " + error.message);
+        } else {
+          // Obtener URL pública
+          const { data: urlData } = supabase.storage.from("zona18").getPublicUrl(filePath);
+          const fileUrl = urlData.publicUrl;
+
+          // Guardar en base de datos
+          const { error: insertError } = await supabase
+            .from("contenidos")
+            .insert([{ url: fileUrl, tipo: file.type.startsWith("video") ? "video" : "image" }]);
+
+          if (insertError) console.error("Error al guardar en BD:", insertError.message);
+
+          // Render en la página
+          renderMedia(fileUrl, file.type);
+        }
       }
     });
 
-    // Subida desde URL
-    function addFromUrl() {
+    // Subida desde URL externa
+    async function addFromUrl() {
       const url = document.getElementById("urlInput").value.trim();
       if (!url) return alert("Introduce una URL válida");
 
-      // Detectar si es video o imagen
+      let tipo = null;
       if (url.match(/\.(mp4|webm|ogg)$/i)) {
-        renderMedia(url, "video");
+        tipo = "video";
       } else if (url.match(/\.(jpeg|jpg|png|gif|webp)$/i)) {
-        renderMedia(url, "image");
+        tipo = "image";
       } else {
-        alert("Formato no soportado");
+        return alert("Formato no soportado");
       }
+
+      // Guardar en BD
+      const { error } = await supabase.from("contenidos").insert([{ url, tipo }]);
+      if (error) console.error("Error al guardar en BD:", error.message);
+
+      renderMedia(url, tipo);
       document.getElementById("urlInput").value = "";
     }
 
@@ -67,6 +102,14 @@
 
       preview.appendChild(div);
     }
+
+    // 📥 Cargar contenidos guardados al entrar
+    (async function loadContent() {
+      const { data, error } = await supabase.from("contenidos").select("*").order("created_at", { ascending: false });
+      if (!error && data) {
+        data.forEach(item => renderMedia(item.url, item.tipo));
+      }
+    })();
   </script>
 </body>
 </html>
