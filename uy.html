@@ -19,7 +19,6 @@
     .meta{font-size:13px;color:#ccc;display:flex;justify-content:space-between;align-items:center}
     .status{font-size:12px;color:#9aa}
     .note{color:#aaa;font-size:13px;margin-top:6px}
-    code{background:#111;padding:2px 4px;border-radius:4px}
   </style>
 </head>
 <body>
@@ -70,11 +69,11 @@ function youtubeEmbedUrl(url){
 }
 function vimeoEmbedUrl(url){ try{ const m=url.match(/vimeo\.com\/(\d+)/); return m?`https://player.vimeo.com/video/${m[1]}`:null; }catch(e){return null;} }
 
-function renderMediaBlock({url,tipo,name='',status=''}){
+function renderMediaBlock({url,tipo,status=''}){
   const div=document.createElement('div'); div.className='preview-item';
   const meta=document.createElement('div'); meta.className='meta';
-  meta.innerHTML=`<span>${name || (tipo==='image'?'Imagen':'Vídeo')}</span><span class="status">${status}</span>`;
-  if(tipo==='image'){ const img=document.createElement('img'); img.src=url; img.alt=name||'imagen'; div.appendChild(img); }
+  meta.innerHTML=`<span>${tipo==='image'?'Imagen':tipo==='video'?'Vídeo':tipo}</span><span class="status">${status}</span>`;
+  if(tipo==='image'){ const img=document.createElement('img'); img.src=url; div.appendChild(img); }
   else if(tipo==='video'){ const video=document.createElement('video'); video.src=url; video.controls=true; video.preload='metadata'; div.appendChild(video); }
   else if(tipo==='youtube'||tipo==='vimeo'){ const iframe=document.createElement('iframe'); iframe.src=url; iframe.width='560'; iframe.height='315'; iframe.allow='accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture'; iframe.allowFullscreen=true; div.appendChild(iframe); }
   else { const a=document.createElement('a'); a.href=url; a.textContent=url; a.target='_blank'; div.appendChild(a); }
@@ -88,7 +87,7 @@ fileInput.addEventListener('change', async e=>{
   for(const file of files){
     const localUrl = URL.createObjectURL(file);
     const tipo = file.type.startsWith('video')?'video':'image';
-    const block = renderMediaBlock({url:localUrl,tipo,name:file.name,status:'Subiendo...'});
+    const block = renderMediaBlock({url:localUrl,tipo,status:'Subiendo...'});
     try{
       const ext = (file.name.split('.').pop()||'').split('?')[0];
       const path = `${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext|| (tipo==='image'?'jpg':'mp4')}`;
@@ -99,12 +98,9 @@ fileInput.addEventListener('change', async e=>{
       if(signedErr) throw signedErr;
       const fileUrl = signedData.signedUrl;
 
-      // Insertar en DB con created_at para evitar error
       const { error: insertErr } = await sb.from('contenidos').insert([{
         url: fileUrl,
         tipo,
-        path,
-        name: file.name,
         created_at: new Date().toISOString()
       }]);
       if(insertErr) throw insertErr;
@@ -131,13 +127,11 @@ addUrlBtn.addEventListener('click', async ()=>{
     else if(isImageExt(raw)){ tipo='image'; }
     else if(isVideoExt(raw)){ tipo='video'; }
 
-    renderMediaBlock({url:urlFinal,tipo,name:raw,status:'Guardado (embed)'});
+    renderMediaBlock({url:urlFinal,tipo,status:'Guardado (embed)'});
 
     await sb.from('contenidos').insert([{
       url: raw,
       tipo,
-      path: null,
-      name: raw,
       created_at: new Date().toISOString()
     }]);
   }catch(e){ console.error(e); alert('Error guardando URL: '+(e.message||e)); }
@@ -152,12 +146,7 @@ async function loadSaved(){
     if(!data?.length) return;
     for(const item of data){
       let tipo = item.tipo || (isImageExt(item.url)?'image': isVideoExt(item.url)?'video': (isYouTube(item.url)?'youtube': isVimeo(item.url)?'vimeo':'unknown'));
-      let urlRender = item.url;
-      if(item.path){
-        const { data: signedData, error: signedErr } = await sb.storage.from(BUCKET).createSignedUrl(item.path,60*60*24);
-        if(!signedErr && signedData?.signedUrl) urlRender = signedData.signedUrl;
-      }
-      renderMediaBlock({url:urlRender,tipo,name:item.name||item.url,status:'Guardado'});
+      renderMediaBlock({url:item.url,tipo,status:'Guardado'});
     }
   }catch(err){ console.error(err); alert('Error cargando contenidos: '+(err.message||err)); }
 }
