@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Casino - Ajustes</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<style>
+  body {
+    background: #2c2c2c;
+    color: white;
+    font-family: Arial, sans-serif;
+    text-align: center;
+    padding: 40px;
+  }
+  h1 { color: #ffd54f; }
+  #preview {
+    width: 120px; height: 120px;
+    border-radius: 50%;
+    object-fit: cover;
+    margin-bottom: 20px;
+    border: 2px solid #ff4081;
+  }
+  input[type="file"] { margin: 12px 0; }
+  button {
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: #ff4081;
+    color: white;
+    cursor: pointer;
+    margin-top: 8px;
+  }
+  button:hover { transform: scale(1.05); }
+</style>
+</head>
+<body>
+
+<h1>⚙ Ajustes de Perfil</h1>
+
+<img id="preview" src="logoDefault.png" alt="Foto de perfil">
+
+<div>
+  <input type="file" id="fileInput" accept="image/*">
+  <br>
+  <button id="uploadBtn">Subir Foto</button>
+</div>
+
+<script>
+  /* --------- CONFIGURA SUPABASE AQUI ---------- */
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3NjEyNTIyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+/* -------------------------------------------- */
+
+let currentUser = null;
+
+// Cargar usuario de localStorage
+document.addEventListener('DOMContentLoaded', async () => {
+  const saved = localStorage.getItem("currentUser");
+  if(saved) currentUser = JSON.parse(saved);
+
+  if(currentUser && currentUser.logo) document.getElementById('preview').src = currentUser.logo;
+
+  document.getElementById('uploadBtn').addEventListener('click', uploadImage);
+});
+
+// Subir imagen a Supabase Storage
+async function uploadImage() {
+  const fileInput = document.getElementById('fileInput');
+  const file = fileInput.files[0];
+
+  if(!file) return alert("Selecciona una imagen primero");
+  if(!currentUser || !currentUser.id) return alert("Debes iniciar sesión");
+
+  const fileExt = file.name.split('.').pop();
+  const fileName = `perfil_${currentUser.id}.${fileExt}`;
+  const filePath = `${fileName}`;
+
+  // Subida a Storage (bucket 'avatars' por ejemplo)
+  const { data, error: uploadError } = await supabase.storage
+    .from('avatars')
+    .upload(filePath, file, { upsert: true });
+
+  if(uploadError) return alert("Error al subir la imagen: " + uploadError.message);
+
+  // Obtener URL pública
+  const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+  const publicUrl = urlData.publicUrl;
+
+  // Actualizar tabla usuarios
+  const { error: updateError } = await supabase
+    .from('usuarios')
+    .update({ logo: publicUrl })
+    .eq('id', currentUser.id);
+
+  if(updateError) return alert("Error al guardar la foto: " + updateError.message);
+
+  // Actualizar localStorage y UI
+  currentUser.logo = publicUrl;
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  document.getElementById('preview').src = publicUrl;
+
+  alert("✅ Foto de perfil actualizada correctamente!");
+}
+</script>
+
+</body>
+</html>
