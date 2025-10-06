@@ -3,106 +3,149 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Casino - Ajustes</title>
+<title>Ajustes de Perfil - Subir Foto</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
   body {
-    background: #2c2c2c;
+    background-color: #2c2c2c;
     color: white;
     font-family: Arial, sans-serif;
     text-align: center;
     padding: 40px;
   }
-  h1 { color: #ffd54f; }
-  #preview {
-    width: 120px; height: 120px;
+  .user-info {
+    margin-bottom: 20px;
+  }
+  #userLogo {
+    width: 120px;
+    height: 120px;
     border-radius: 50%;
     object-fit: cover;
-    margin-bottom: 20px;
-    border: 2px solid #ff4081;
+    margin-bottom: 12px;
+    border: 3px solid #fff;
   }
-  input[type="file"] { margin: 12px 0; }
+  input[type="file"] {
+    margin-top: 12px;
+  }
   button {
     padding: 10px 16px;
+    margin-top: 12px;
     border: none;
     border-radius: 8px;
-    background: #ff4081;
-    color: white;
     cursor: pointer;
-    margin-top: 8px;
+    background-color: #ff4081;
+    color: white;
   }
-  button:hover { transform: scale(1.05); }
+  button:hover { transform: scale(1.03); }
+  #status { margin-top: 12px; font-size: 0.95rem; color: #ffd54f; }
 </style>
 </head>
 <body>
 
-<h1>⚙ Ajustes de Perfil</h1>
+<h1>⚙️ Ajustes de Perfil</h1>
 
-<img id="preview" src="logoDefault.png" alt="Foto de perfil">
-
-<div>
-  <input type="file" id="fileInput" accept="image/*">
-  <br>
-  <button id="uploadBtn">Subir Foto</button>
+<div class="user-info">
+  <img id="userLogo" src="logoDefault.png" alt="Foto de perfil">
+  <div id="userName">Usuario</div>
 </div>
 
+<input type="file" id="avatarInput" accept="image/*">
+<br>
+<button id="uploadBtn">Subir Foto</button>
+
+<div id="status"></div>
+
 <script>
-  /* --------- CONFIGURA SUPABASE AQUI ---------- */
+/* --------- CONFIGURA SUPABASE AQUI ---------- */
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3NjEyNTIyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 /* -------------------------------------------- */
 
 let currentUser = null;
 
-// Cargar usuario de localStorage
-document.addEventListener('DOMContentLoaded', async () => {
-  const saved = localStorage.getItem("currentUser");
-  if(saved) currentUser = JSON.parse(saved);
+document.addEventListener("DOMContentLoaded", async () => {
+  await initUser();
 
-  if(currentUser && currentUser.logo) document.getElementById('preview').src = currentUser.logo;
-
-  document.getElementById('uploadBtn').addEventListener('click', uploadImage);
+  document.getElementById("uploadBtn").addEventListener("click", async () => {
+    const fileInput = document.getElementById("avatarInput");
+    if (!fileInput.files.length) return alert("Selecciona un archivo primero.");
+    const file = fileInput.files[0];
+    await uploadAvatar(file);
+  });
 });
 
-// Subir imagen a Supabase Storage
-async function uploadImage() {
-  const fileInput = document.getElementById('fileInput');
-  const file = fileInput.files[0];
+/* ---------- Obtener usuario ---------- */
+async function initUser() {
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser();
+    if (error || !user) {
+      document.getElementById("status").textContent = "Debes iniciar sesión primero.";
+      return;
+    }
+    currentUser = user;
 
-  if(!file) return alert("Selecciona una imagen primero");
-  if(!currentUser || !currentUser.id) return alert("Debes iniciar sesión");
+    // intentar cargar logo desde la tabla usuarios
+    const { data, error: err } = await supabase.from("usuarios")
+      .select("username, logo")
+      .eq("auth_id", currentUser.id)
+      .single();
 
-  const fileExt = file.name.split('.').pop();
-  const fileName = `perfil_${currentUser.id}.${fileExt}`;
-  const filePath = `${fileName}`;
+    if (err) console.warn(err);
 
-  // Subida a Storage (bucket 'avatars' por ejemplo)
-  const { data, error: uploadError } = await supabase.storage
-    .from('avatars')
-    .upload(filePath, file, { upsert: true });
+    if (data) {
+      document.getElementById("userName").textContent = data.username || "Usuario";
+      document.getElementById("userLogo").src = data.logo || "logoDefault.png";
+    }
 
-  if(uploadError) return alert("Error al subir la imagen: " + uploadError.message);
+  } catch(e) {
+    console.error("Error initUser:", e);
+  }
+}
+
+/* ---------- Subir avatar al bucket ---------- */
+async function uploadAvatar(file) {
+  if (!currentUser) return alert("No hay usuario logueado.");
+
+  const fileExt = file.name.split(".").pop();
+  const fileName = `${currentUser.id}.${fileExt}`;
+  const filePath = `avatars/${fileName}`;
+
+  document.getElementById("status").textContent = "Subiendo imagen...";
+
+  const { data, error } = await supabase.storage.from("avatars").upload(filePath, file, {
+    upsert: true
+  });
+
+  if (error) {
+    console.error("Error al subir la imagen:", error);
+    document.getElementById("status").textContent = "❌ Error al subir la imagen.";
+    return;
+  }
 
   // Obtener URL pública
-  const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-  const publicUrl = urlData.publicUrl;
+  const { publicUrl, error: urlErr } = supabase.storage.from("avatars").getPublicUrl(filePath);
+  if (urlErr) {
+    console.error("Error al obtener URL:", urlErr);
+    document.getElementById("status").textContent = "❌ Error obteniendo la URL de la imagen.";
+    return;
+  }
 
   // Actualizar tabla usuarios
-  const { error: updateError } = await supabase
-    .from('usuarios')
+  const { error: updErr } = await supabase.from("usuarios")
     .update({ logo: publicUrl })
-    .eq('id', currentUser.id);
+    .eq("auth_id", currentUser.id);
 
-  if(updateError) return alert("Error al guardar la foto: " + updateError.message);
+  if (updErr) {
+    console.error("Error al actualizar tabla usuarios:", updErr);
+    document.getElementById("status").textContent = "❌ Error guardando la imagen en tu perfil.";
+    return;
+  }
 
-  // Actualizar localStorage y UI
-  currentUser.logo = publicUrl;
-  localStorage.setItem("currentUser", JSON.stringify(currentUser));
-  document.getElementById('preview').src = publicUrl;
-
-  alert("✅ Foto de perfil actualizada correctamente!");
+  // Actualizar UI
+  document.getElementById("userLogo").src = publicUrl;
+  document.getElementById("status").textContent = "✅ Imagen subida correctamente.";
 }
 </script>
 
