@@ -74,13 +74,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     const fileInput = document.getElementById("avatarInput");
     if (!fileInput.files.length) return alert("Selecciona un archivo primero.");
     const file = fileInput.files[0];
-    await uploadAvatar(file);
+    await uploadProfileImage(file);
   });
 });
 
 /* ---------- Obtener usuario ---------- */
 async function initUser() {
-  // primero intentar cargar desde localStorage
   const saved = localStorage.getItem("currentUser");
   let local = saved ? JSON.parse(saved) : null;
 
@@ -91,7 +90,6 @@ async function initUser() {
     return;
   }
 
-  // luego intentar desde Supabase Auth
   try {
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) {
@@ -100,28 +98,35 @@ async function initUser() {
     }
     currentUser = user;
 
-    // cargar info de tabla usuarios
     const { data, error: err } = await supabase.from("usuarios")
-      .select("username, logo")
+      .select("id, username, logo")
       .eq("auth_id", currentUser.id)
       .single();
 
-    if (err) console.warn(err);
+    if (err) {
+      console.warn(err);
+      document.getElementById("status").textContent = "Error al cargar datos del usuario.";
+      return;
+    }
 
     if (data) {
       document.getElementById("userName").textContent = data.username || "Usuario";
       document.getElementById("userLogo").src = data.logo || "logoDefault.png";
+      currentUser = data;
       localStorage.setItem("currentUser", JSON.stringify(data));
     }
   } catch(e) {
     console.error("Error initUser:", e);
+    document.getElementById("status").textContent = "Excepción al cargar usuario.";
   }
 }
 
-  async function uploadProfileImage(file) {
+/* ---------- Subir avatar ---------- */
+async function uploadProfileImage(file) {
   if (!currentUser || !currentUser.id) return alert("Debes iniciar sesión.");
 
   try {
+    // Subir al bucket "avatars"
     const { data, error } = await supabase.storage
       .from('avatars')
       .upload(`profile_${currentUser.id}.png`, file, { upsert: true });
@@ -134,18 +139,20 @@ async function initUser() {
       return alert(errorMsg);
     }
 
-    // Obtener la URL pública
+    // Obtener URL pública
     const { data: urlData, error: urlError } = supabase.storage
       .from('avatars')
       .getPublicUrl(`profile_${currentUser.id}.png`);
 
     if (urlError) {
       console.error("Error obteniendo URL pública:", urlError);
-      return alert(`❌ Error obteniendo URL: ${urlError.message}`);
+      return alert(`❌ Error obteniendo URL pública: ${urlError.message}`);
     }
 
-    // Actualizar UI y BDD
+    // Actualizar UI
     document.getElementById('userLogo').src = urlData.publicUrl;
+
+    // Guardar en tabla "usuarios"
     const { error: dbError } = await supabase
       .from('usuarios')
       .update({ logo: urlData.publicUrl })
@@ -159,14 +166,11 @@ async function initUser() {
     currentUser.logo = urlData.publicUrl;
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
     alert("✅ Imagen subida correctamente.");
-
   } catch (e) {
     console.error("Excepción al subir imagen:", e);
     alert(`❌ Excepción al subir imagen: ${e.message || e}`);
   }
 }
-
 </script>
-
 </body>
 </html>
