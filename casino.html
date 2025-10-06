@@ -133,244 +133,287 @@
   </div>
 
 <script>
-/* --------- CONFIGURA SUPABASE AQUI ---------- */
+  /* --------- CONFIGURA SUPABASE AQUI ---------- */
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const SUPABASE_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 /* -------------------------------------------- */
 
-let currentUser = null; // objeto con los datos reales de la tabla "usuarios"
-let authUser = null;    // usuario auth devuelto por supabase.auth.getUser()
+let currentUser = null;
+let authUser = null;
 
-document.addEventListener('DOMContentLoaded', async () => {
-  // UI listeners
-  document.getElementById("reward3Btn").addEventListener("click", ()=> toggleShow('tableColorPicker'));
-  document.getElementById("rewardBgBtn").addEventListener("click", ()=> toggleShow('backgroundPicker'));
-  document.getElementById("rewardNameBtn").addEventListener("click", ()=> toggleShow('nameColorPicker'));
-  document.getElementById("backgroundPicker").addEventListener("input", e => setBackgroundColor(e.target.value));
-  document.getElementById("nameColorPicker").addEventListener("input", e => setNameColor(e.target.value));
-  document.getElementById("tableColorPicker").addEventListener("input", e => setTableColor(e.target.value));
-  document.getElementById('userInfo').addEventListener('click', toggleDropdown);
-  document.addEventListener('click', (e)=> { const ui=document.getElementById('userInfo'), dd=document.getElementById('dropdownMenu'); if(!ui.contains(e.target) && !dd.contains(e.target)) dd.style.display='none'; });
+document.addEventListener("DOMContentLoaded", async () => {
+  // Eventos UI
+  document.getElementById("reward3Btn").addEventListener("click", () => toggleShow("tableColorPicker"));
+  document.getElementById("rewardBgBtn").addEventListener("click", () => toggleShow("backgroundPicker"));
+  document.getElementById("rewardNameBtn").addEventListener("click", () => toggleShow("nameColorPicker"));
 
-  // Inicia la carga: primero obtener sesión de auth, luego cargar datos de "usuarios" y Top5
+  document.getElementById("backgroundPicker").addEventListener("input", (e) => setBackgroundColor(e.target.value));
+  document.getElementById("nameColorPicker").addEventListener("input", (e) => setNameColor(e.target.value));
+  document.getElementById("tableColorPicker").addEventListener("input", (e) => setTableColor(e.target.value));
+
+  document.getElementById("userInfo").addEventListener("click", toggleDropdown);
+  document.addEventListener("click", (e) => {
+    const ui = document.getElementById("userInfo"),
+      dd = document.getElementById("dropdownMenu");
+    if (!ui.contains(e.target) && !dd.contains(e.target)) dd.style.display = "none";
+  });
+
   await initUserAndUI();
-  await loadTop5();
+  setTimeout(loadTop5, 1500);
 });
 
 /* ---------- INIT: obtener sesión y datos de usuario ---------- */
-async function initUserAndUI(){
-  // 1) intento obtener usuario auth desde supabase
+async function initUserAndUI() {
+  // primero intenta cargar desde localStorage
+  const saved = localStorage.getItem("currentUser");
+  let local = null;
+  if (saved) {
+    try {
+      local = JSON.parse(saved);
+    } catch (e) {
+      local = null;
+    }
+  }
+
+  // si ya existe en localStorage, cargarlo directamente
+  if (local && local.id) {
+    const row = await fetchUserRow("id", local.id);
+    if (row) {
+      currentUser = row;
+      renderUserUI();
+      return;
+    }
+  }
+
+  // si no hay en localStorage, intenta Supabase Auth
   try {
     const { data: authData, error: authErr } = await supabase.auth.getUser();
-    if (authErr) console.warn('auth.getUser() error:', authErr);
+    if (authErr) console.warn("auth.getUser() error:", authErr);
     authUser = authData?.user || null;
   } catch (e) {
-    console.error('Error calling supabase.auth.getUser():', e);
+    console.error("Error calling supabase.auth.getUser():", e);
     authUser = null;
   }
 
-  // 2) fallback a localStorage si no hay auth session
-  const saved = localStorage.getItem('currentUser');
-  let local = null;
-  if (saved) {
-    try { local = JSON.parse(saved); } catch(e){ local = null; }
-  }
-
-  // 3) Intentar cargar fila de tabla "usuarios" de forma robusta:
-  //    - Si authUser está presente, se prueba por auth_id = authUser.id
-  //    - Si falla, se intenta por email (authUser.email o local.email)
-  //    - Finalmente por id = local.id (compatibilidad con tu código previo)
   let row = null;
   if (authUser && authUser.id) {
-    // probar por auth_id (recomendado si creaste auth_id en la tabla)
-    row = await fetchUserRow('auth_id', authUser.id);
-    if (!row && authUser.email) row = await fetchUserRow('email', authUser.email);
+    row = await fetchUserRow("auth_id", authUser.id);
+    if (!row && authUser.email) row = await fetchUserRow("email", authUser.email);
   }
 
-  // fallback: si local tiene id, intentar por id
-  if (!row && local && local.id) {
-    row = await fetchUserRow('id', local.id);
-  }
-  // fallback by email from local
-  if(!row && local && local.email) row = await fetchUserRow('email', local.email);
+  if (!row && local && local.email) row = await fetchUserRow("email", local.email);
 
-  // si no hay row, dejamos currentUser = null (no logueado en tabla usuarios)
   if (!row) {
     currentUser = null;
-    // actualizar UI para no-logueado
-    document.getElementById('userInfo').style.display = 'none';
-    document.getElementById('authContainer').style.display = 'flex';
-    document.getElementById('pekepuntos').textContent = 'Pekepuntos: —';
-    console.info('No se encontró fila en tabla usuarios para la sesión actual.');
+    document.getElementById("userInfo").style.display = "none";
+    document.getElementById("authContainer").style.display = "flex";
+    document.getElementById("pekepuntos").textContent = "Pekepuntos: —";
+    console.info("No se encontró fila en tabla usuarios para la sesión actual.");
     return;
   }
 
-  // tenemos fila: usarla como currentUser
   currentUser = row;
-  // guardar local para compatibilidad
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  renderUserUI();
+}
 
-  // mostrar UI de usuario y aplicar estilos guardados
-  document.getElementById('userInfo').style.display = 'flex';
-  document.getElementById('authContainer').style.display = 'none';
-  document.getElementById('userName').textContent = currentUser.username || 'Usuario';
-  document.getElementById('userLogo').src = currentUser.logo || 'logoDefault.png';
-  document.getElementById('pekepuntos').textContent = `Pekepuntos: ${currentUser.pekepuntos ?? 0}`;
+/* ---------- renderizar datos del usuario ---------- */
+function renderUserUI() {
+  document.getElementById("userInfo").style.display = "flex";
+  document.getElementById("authContainer").style.display = "none";
+  document.getElementById("userName").textContent = currentUser.username || "Usuario";
+  document.getElementById("userLogo").src = currentUser.logo || "logoDefault.png";
+  document.getElementById("pekepuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos ?? 0}`;
 
   if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
-  if (currentUser.nombre_color) document.getElementById('userName').style.color = currentUser.nombre_color;
+  if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
   if (currentUser.tabla_color) {
     applyTableColor(currentUser.tabla_color);
-    // también actualizar picker's value si quieres
-    const picker = document.getElementById('tableColorPicker');
+    const picker = document.getElementById("tableColorPicker");
     if (picker) picker.value = currentUser.tabla_color;
   }
 }
 
-/* helper para pedir la fila del usuario intentando distintas columnas */
-async function fetchUserRow(column, value){
+/* helper para pedir la fila del usuario */
+async function fetchUserRow(column, value) {
   try {
-    const { data, error } = await supabase.from('usuarios').select('*').eq(column, value).limit(1).maybeSingle();
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("*")
+      .eq(column, value)
+      .limit(1)
+      .maybeSingle();
     if (error) {
       console.warn(`fetchUserRow error by ${column}:`, error);
       return null;
     }
     return data || null;
   } catch (e) {
-    console.error('fetchUserRow exception:', e);
+    console.error("fetchUserRow exception:", e);
     return null;
   }
 }
 
 /* ---------- TOP 5 ---------- */
 async function loadTop5() {
-  const top5List = document.getElementById('top5List');
-  top5List.innerHTML = '<li style="color:#aaa;">Cargando top 5...</li>';
+  try {
+    const top5List = document.getElementById("top5List");
+    top5List.innerHTML = '<li style="color:#aaa;">Cargando top 5...</li>';
 
-  const { data, error } = await supabase
-    .from('usuarios')
-    .select('id, username, pekepuntos, logo, nombre_color')
-    .order('pekepuntos', { ascending: false })
-    .limit(5);
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("id, username, pekepuntos, logo, nombre_color")
+      .order("pekepuntos", { ascending: false })
+      .limit(5);
 
-  // si hay error
-  if (error) {
-    top5List.innerHTML = `<li style="color:red;">❌ Error al cargar el Top 5:<br>${error.message}</li>`;
-    return;
-  }
+    if (error) {
+      top5List.innerHTML = `<li style="color:red;">❌ Error al cargar el Top 5:<br>${error.message}</li>`;
+      return;
+    }
 
-  // si no hay datos
-  if (!data || data.length === 0) {
-    top5List.innerHTML = '<li style="color:#ccc;">(No hay jugadores aún en la base de datos)</li>';
-    return;
-  }
+    if (!data || data.length === 0) {
+      top5List.innerHTML = '<li style="color:#ccc;">(No hay jugadores aún en la base de datos)</li>';
+      return;
+    }
 
-  // limpiar lista
-  top5List.innerHTML = '';
+    top5List.innerHTML = "";
 
-  // mostrar jugadores
-  data.forEach((u, idx) => {
-    const li = document.createElement('li');
-    li.className = 'top5-item';
+    data.forEach((u, idx) => {
+      const li = document.createElement("li");
+      li.className = "top5-item";
 
-    // color de nombre según ranking
-    let nameColor = u.nombre_color || '#fff';
-    if (idx === 0) nameColor = 'gold';
-    else if (idx === 1) nameColor = 'silver';
-    else if (idx === 2) nameColor = '#b87333';
+      let nameColor = u.nombre_color || "#fff";
+      if (idx === 0) nameColor = "gold";
+      else if (idx === 1) nameColor = "silver";
+      else if (idx === 2) nameColor = "#b87333";
 
-    // avatar o circulo gris
-    const img = u.logo
-      ? `<img src="${u.logo}" alt="logo">`
-      : `<div style="width:36px;height:36px;border-radius:50%;background:#666;"></div>`;
+      const img = u.logo
+        ? `<img src="${u.logo}" alt="logo">`
+        : `<div style="width:36px;height:36px;border-radius:50%;background:#666;"></div>`;
 
-    // construir el item
-    li.innerHTML = `
-      ${img}
-      <div style="flex:1;text-align:left;">
-        <strong style="color:${nameColor}">${idx + 1}. ${u.username}</strong>
-        <div style="font-size:0.9rem;color:#ddd;">${u.pekepuntos ?? 0} Pekepuntos</div>
-      </div>
-    `;
+      li.innerHTML = `
+        ${img}
+        <div style="flex:1;text-align:left;">
+          <strong style="color:${nameColor}">${idx + 1}. ${u.username}</strong>
+          <div style="font-size:0.9rem;color:#ddd;">${u.pekepuntos ?? 0} Pekepuntos</div>
+        </div>
+      `;
 
-    top5List.appendChild(li);
-  });
+      top5List.appendChild(li);
+    });
 
-    // mostrar exclusivas según posición
-    if (currentUser && currentUser.id){
-      const pos = data.findIndex(x => x.id === currentUser.id);
-      ['exclusiveTop5','exclusiveTop3','exclusiveTop2','exclusiveTop1'].forEach(id => document.getElementById(id).style.display = 'none');
-      if (pos !== -1){
-        if (pos <= 4) document.getElementById('exclusiveTop5').style.display = 'block';
-        if (pos <= 2) document.getElementById('exclusiveTop3').style.display = 'block';
-        if (pos === 1) document.getElementById('exclusiveTop2').style.display = 'block';
-        if (pos === 0) document.getElementById('exclusiveTop1').style.display = 'block';
-        if (pos === 0) document.getElementById('userName').style.color = 'gold';
-        else if (pos === 1) document.getElementById('userName').style.color = 'silver';
-        else if (pos === 2) document.getElementById('userName').style.color = '#b87333';
-        else if (currentUser.nombre_color) document.getElementById('userName').style.color = currentUser.nombre_color;
-      } else {
-        if (currentUser.nombre_color) document.getElementById('userName').style.color = currentUser.nombre_color;
+    // Mostrar rangos especiales
+    if (currentUser && currentUser.id) {
+      const pos = data.findIndex((x) => x.id === currentUser.id);
+      ["exclusiveTop5", "exclusiveTop3", "exclusiveTop2", "exclusiveTop1"].forEach(
+        (id) => (document.getElementById(id).style.display = "none")
+      );
+
+      if (pos !== -1) {
+        if (pos <= 4) document.getElementById("exclusiveTop5").style.display = "block";
+        if (pos <= 2) document.getElementById("exclusiveTop3").style.display = "block";
+        if (pos === 1) document.getElementById("exclusiveTop2").style.display = "block";
+        if (pos === 0) document.getElementById("exclusiveTop1").style.display = "block";
+
+        // Colorear el nombre del usuario según posición
+        if (pos === 0) document.getElementById("userName").style.color = "gold";
+        else if (pos === 1) document.getElementById("userName").style.color = "silver";
+        else if (pos === 2) document.getElementById("userName").style.color = "#b87333";
+        else if (currentUser.nombre_color)
+          document.getElementById("userName").style.color = currentUser.nombre_color;
       }
     }
-  } catch(e){
-    console.error('loadTop5 exception:', e);
+  } catch (e) {
+    console.error("loadTop5 exception:", e);
   }
 }
 
 /* ---------- RECOMPENSAS: guardar y aplicar estilos ---------- */
-async function setBackgroundColor(color){
+async function setBackgroundColor(color) {
   document.body.style.backgroundColor = color;
-  if(!currentUser || !currentUser.id) return alert('Debes iniciar sesión para usar esta recompensa.');
-  const { error } = await supabase.from('usuarios').update({ fondo_color: color }).eq('id', currentUser.id);
-  if (error) { console.error('Error guardando fondo_color:', error); alert('Error guardando color de fondo'); return; }
+  if (!currentUser || !currentUser.id)
+    return alert("Debes iniciar sesión para usar esta recompensa.");
+  const { error } = await supabase.from("usuarios").update({ fondo_color: color }).eq("id", currentUser.id);
+  if (error) {
+    console.error("Error guardando fondo_color:", error);
+    alert("Error guardando color de fondo");
+    return;
+  }
   currentUser.fondo_color = color;
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
 }
 
-async function setNameColor(color){
-  document.getElementById('userName').style.color = color;
-  if(!currentUser || !currentUser.id) return alert('Debes iniciar sesión para usar esta recompensa.');
-  const { error } = await supabase.from('usuarios').update({ nombre_color: color }).eq('id', currentUser.id);
-  if (error) { console.error('Error guardando nombre_color:', error); alert('Error guardando color de nombre'); return; }
+async function setNameColor(color) {
+  document.getElementById("userName").style.color = color;
+  if (!currentUser || !currentUser.id)
+    return alert("Debes iniciar sesión para usar esta recompensa.");
+  const { error } = await supabase.from("usuarios").update({ nombre_color: color }).eq("id", currentUser.id);
+  if (error) {
+    console.error("Error guardando nombre_color:", error);
+    alert("Error guardando color de nombre");
+    return;
+  }
   currentUser.nombre_color = color;
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
 }
 
-async function setTableColor(color){
-  // aplicar inmediatamente
+async function setTableColor(color) {
   applyTableColor(color);
-  if(!currentUser || !currentUser.id) return alert('Debes iniciar sesión para usar esta recompensa.');
+  if (!currentUser || !currentUser.id)
+    return alert("Debes iniciar sesión para usar esta recompensa.");
 
-  // guardar en la BDD
-  const { data, error } = await supabase.from('usuarios').update({ tabla_color: color }).eq('id', currentUser.id).select().single();
-  if (error) { console.error('Error guardando tabla_color:', error); alert('❌ Error al guardar el color en Supabase (revisa consola)'); return; }
-  // success: actualizar currentUser y localStorage
+  const { error } = await supabase.from("usuarios").update({ tabla_color: color }).eq("id", currentUser.id);
+  if (error) {
+    console.error("Error guardando tabla_color:", error);
+    alert("❌ Error al guardar el color en Supabase (revisa consola)");
+    return;
+  }
+
   currentUser.tabla_color = color;
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
-  alert('✅ Color de tablas guardado correctamente.');
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  const picker = document.getElementById("tableColorPicker");
+  if (picker) picker.value = color;
+  applyTableColor(color);
 }
 
-/* aplica color a variables CSS y a tablas ya presentes */
-function applyTableColor(color){
-  document.documentElement.style.setProperty('--table-bg', color);
+/* aplica color a las tablas */
+function applyTableColor(color) {
+  document.documentElement.style.setProperty("--table-bg", color);
   const lum = luminanceFromHex(color);
-  const textColor = lum < 0.5 ? '#ffffff' : '#000000';
-  document.documentElement.style.setProperty('--table-text', textColor);
-  // además aplicamos inline a todas las tablas (para compatibilidad)
-  document.querySelectorAll('table').forEach(tbl => {
+  const textColor = lum < 0.5 ? "#ffffff" : "#000000";
+  document.documentElement.style.setProperty("--table-text", textColor);
+  document.querySelectorAll("table").forEach((tbl) => {
     tbl.style.backgroundColor = color;
     tbl.style.color = textColor;
   });
 }
 
 /* ---------- util ---------- */
-function toggleDropdown(){ const dd=document.getElementById('dropdownMenu'); dd.style.display = dd.style.display==='block' ? 'none' : 'block'; }
-function toggleShow(id){ const el=document.getElementById(id); el.style.display = el.style.display==='block' ? 'none' : 'block'; }
-function luminanceFromHex(hex){ try{ const h=hex.replace('#',''); const r=parseInt(h.substring(0,2),16)/255; const g=parseInt(h.substring(2,4),16)/255; const b=parseInt(h.substring(4,6),16)/255; const srgb=[r,g,b].map(c => (c<=0.03928) ? c/12.92 : Math.pow((c+0.055)/1.055,2.4)); return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2]; }catch(e){return 1;} }
-function escapeHtml(s){ if(!s) return ''; return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
+function toggleDropdown() {
+  const dd = document.getElementById("dropdownMenu");
+  dd.style.display = dd.style.display === "block" ? "none" : "block";
+}
+function toggleShow(id) {
+  const el = document.getElementById(id);
+  el.style.display = el.style.display === "block" ? "none" : "block";
+}
+function luminanceFromHex(hex) {
+  try {
+    const h = hex.replace("#", "");
+    const r = parseInt(h.substring(0, 2), 16) / 255;
+    const g = parseInt(h.substring(2, 4), 16) / 255;
+    const b = parseInt(h.substring(4, 6), 16) / 255;
+    const srgb = [r, g, b].map((c) =>
+      c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+    );
+    return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+  } catch (e) {
+    return 1;
+  }
+}
 
 </script>
 </body>
