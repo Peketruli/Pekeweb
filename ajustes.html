@@ -10,7 +10,7 @@ body { background:#2c2c2c; color:white; font-family:Arial,sans-serif; text-align
 #userLogo { width:120px; height:120px; border-radius:50%; object-fit:cover; border:3px solid #fff; margin-bottom:12px; }
 button { padding:10px 16px; margin-top:12px; border:none; border-radius:8px; cursor:pointer; background:#ff4081; color:white; }
 button:hover { transform:scale(1.03); }
-#status { margin-top:12px; color:#ffd54f; }
+#status { margin-top:12px; color:#ffd54f; white-space: pre-line; }
 </style>
 </head>
 <body>
@@ -28,29 +28,32 @@ button:hover { transform:scale(1.03); }
 <div id="status"></div>
 
 <script>
-/* --------- CONFIGURA SUPABASE AQUI ---------- */
+/* --------- CONFIGURA SUPABASE ---------- */
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-/* -------------------------------------------- */
+/* ------------------------------------- */
 
 let currentUser = null;
 
-// Simulación: cargar usuario actual desde localStorage
 document.addEventListener("DOMContentLoaded", async () => {
   const saved = localStorage.getItem("currentUser");
   if (!saved) {
     document.getElementById("status").textContent = "Debes iniciar sesión primero.";
     return;
   }
+
   currentUser = JSON.parse(saved);
-  document.getElementById("userName").textContent = currentUser.username;
+  document.getElementById("userName").textContent = currentUser.username || "Usuario";
   document.getElementById("userLogo").src = currentUser.logo || "logoDefault.png";
 
   document.getElementById("uploadBtn").addEventListener("click", async () => {
     const fileInput = document.getElementById("avatarInput");
-    if (!fileInput.files.length) return alert("Selecciona un archivo primero.");
+    if (!fileInput.files.length) {
+      alert("Selecciona un archivo primero.");
+      return;
+    }
     const file = fileInput.files[0];
     await uploadAvatar(file);
   });
@@ -59,31 +62,50 @@ document.addEventListener("DOMContentLoaded", async () => {
 async function uploadAvatar(file) {
   if (!currentUser || !currentUser.id) return alert("Debes iniciar sesión.");
 
-  try {
-    const filePath = `profile_${currentUser.id}.png`;
+  const filePath = `profile_${currentUser.id}.png`;
+  const statusEl = document.getElementById("status");
+  statusEl.textContent = "⏳ Subiendo imagen...";
 
-    // Subida al bucket 'avatars'
-    const { data, error } = await supabase.storage.from('avatars').upload(filePath, file, { upsert:true });
-    if (error) return alert(`❌ Error al subir la imagen: ${error.message}`);
+  try {
+    // Subir imagen al bucket 'avatars'
+    const { data, error } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file, { upsert: true });
+
+    if (error) {
+      statusEl.textContent = `❌ Error al subir la imagen.\nMensaje: ${error.message || "desconocido"}\nCódigo: ${error.status || "N/A"}\nDetalles: ${error.details || "N/A"}`;
+      return;
+    }
 
     // Obtener URL pública
-    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-    document.getElementById("userLogo").src = urlData.publicUrl;
+    const { data: urlData, error: urlError } = supabase.storage
+      .from('avatars')
+      .getPublicUrl(filePath);
 
-    // Guardar URL en la tabla usuarios
-    const { error: dbError } = await supabase.from('usuarios')
+    if (urlError) {
+      statusEl.textContent = `❌ Error obteniendo URL pública: ${urlError.message}`;
+      return;
+    }
+
+    // Actualizar logo en tabla usuarios
+    const { error: dbError } = await supabase
+      .from('usuarios')
       .update({ logo: urlData.publicUrl })
       .eq('id', currentUser.id);
 
-    if (dbError) return alert(`❌ Error guardando logo en la base de datos: ${dbError.message}`);
+    if (dbError) {
+      statusEl.textContent = `❌ Error guardando logo en la base de datos: ${dbError.message}`;
+      return;
+    }
 
     currentUser.logo = urlData.publicUrl;
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
-    alert("✅ Imagen subida correctamente.");
+    document.getElementById("userLogo").src = urlData.publicUrl;
+    statusEl.textContent = "✅ Imagen subida correctamente.";
 
-  } catch(e) {
-    console.error("Excepción:", e);
-    alert(`❌ Excepción al subir imagen: ${e.message}`);
+  } catch (e) {
+    statusEl.textContent = `❌ Excepción al subir imagen: ${e.message || e}`;
+    console.error(e);
   }
 }
 </script>
