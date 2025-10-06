@@ -1,89 +1,174 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Perfil de Usuario</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Perfil - subir avatar</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.23.0/dist/supabase.min.js"></script>
 <style>
-  body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f4f4f4; }
-  img { border-radius: 50%; width: 150px; height: 150px; object-fit: cover; border: 3px solid #333; }
-  input, button { margin-top: 10px; padding: 8px; }
+  body{font-family:Arial,Helvetica,sans-serif;display:flex;flex-direction:column;align-items:center;padding:30px;background:#f4f4f4}
+  .card{background:white;padding:20px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.08);width:360px;text-align:center}
+  img{width:140px;height:140px;border-radius:50%;object-fit:cover;border:3px solid #222}
+  input,button{margin-top:12px;padding:8px;width:100%;}
+  #log{white-space:pre-wrap;text-align:left;margin-top:12px;background:#111;color:#fff;padding:8px;border-radius:6px;max-height:160px;overflow:auto;font-size:12px}
 </style>
 </head>
 <body>
+  <div class="card">
+    <h2>Perfil — Avatar</h2>
 
-<h1>Tu Perfil</h1>
-<img id="profileImg" src="https://tuweb.com/default-profile.png" alt="Foto de perfil">
+    <!-- Autenticación -->
+    <div id="authArea">
+      <input id="emailInput" placeholder="tu@email.com" />
+      <button id="loginBtn">Enviar magic link (login)</button>
+      <button id="logoutBtn" style="display:none">Cerrar sesión</button>
+      <p id="authStatus" style="font-size:14px;color:#666"></p>
+    </div>
 
-<div>
-  <input type="file" id="profileInput" accept="image/*">
-  <button id="uploadBtn">Subir Foto</button>
-</div>
+    <hr>
+
+    <!-- Perfil -->
+    <img id="profileImg" src="https://tuweb.com/default-profile.png" alt="avatar">
+    <p id="userId" style="font-size:12px;color:#666;margin:6px 0"></p>
+
+    <input type="file" id="profileInput" accept="image/*" />
+    <button id="uploadBtn">Subir foto</button>
+    <div id="progress" style="margin-top:8px;font-size:13px;color:#333"></div>
+
+    <div id="log">Consola: esperando acciones...</div>
+  </div>
 
 <script>
-  // Configura Supabase
-  const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-  const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-  const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+  // --- CONFIGURA ESTO ---
+  const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+  // -----------------------
 
-  async function getUser() {
-    const { data: { user } } = await supabase.auth.getUser();
-    return user;
+  const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const $ = id => document.getElementById(id);
+  const log = msg => {
+    console.log(msg);
+    const el = $('log');
+    el.textContent = (new Date().toLocaleTimeString()) + " — " + msg + "\n" + el.textContent;
+  };
+
+  // Auth handlers
+  $('loginBtn').addEventListener('click', async () => {
+    const email = $('emailInput').value.trim();
+    if (!email) return alert('Introduce un email.');
+    log('Enviando magic link a ' + email + ' ...');
+    const { error } = await supabase.auth.signInWithOtp({ email });
+    if (error) {
+      log('Error signInWithOtp: ' + error.message);
+      alert('Error al enviar magic link: ' + error.message);
+      return;
+    }
+    alert('Revisa tu usuario para el link de acceso (magic link).');
+  });
+
+  $('logoutBtn').addEventListener('click', async () => {
+    await supabase.auth.signOut();
+  });
+
+  // Actualiza UI cuando cambia el estado de sesión
+  supabase.auth.onAuthStateChange((event, session) => {
+    log('Auth event: ' + event);
+    updateUIFromSession(session?.usuarios || null);
+  });
+
+  async function getUsuarios() {
+    const { data } = await supabase.auth.getUsuarios();
+    return data.usuarios;
   }
 
-  async function loadProfile() {
-    const user = await getUser();
-    if (!user) return alert("Debes iniciar sesión");
+  async function updateUIFromSession(usuarios) {
+    if (!usuarios) {
+      $('authStatus').textContent = 'No has iniciado sesión';
+      $('logoutBtn').style.display = 'none';
+      $('loginBtn').style.display = 'inline-block';
+      $('usuariosId').textContent = '';
+      $('profileImg').src = 'https://tuweb.com/default-profile.png';
+      log('Usuario no autenticado.');
+      return;
+    }
 
-    const { data, error } = await supabase
-      .from('users')
-      .select('profile_url')
-      .eq('id', user.id)
-      .single();
+    $('authStatus').textContent = 'Conectado como: ' + (usuarios.email || usuarios.id);
+    $('logoutBtn').style.display = 'inline-block';
+    $('loginBtn').style.display = 'none';
+    $('usuariosId').textContent = 'usuarios.id: ' + usuarios.id;
+    log('Usuario autenticado: ' + usuarios.id);
 
-    if (error) console.error(error);
-
-    document.getElementById('profileImg').src = data?.profile_url || 'https://tuweb.com/default-profile.png';
+    // Cargar perfil desde tabla users
+    try {
+      const { data, error } = await supabase.from('usuarios').select('profile_url').eq('id', usuarios.id).single();
+      if (error && error.code !== 'PGRST116') { // ignore no rows
+        log('Error al leer usuarios: ' + (error.message || JSON.stringify(error)));
+      } else {
+        const url = data?.profile_url || 'https://tuweb.com/default-profile.png';
+        $('profileImg').src = url;
+        log('profile_url cargado: ' + url);
+      }
+    } catch (err) {
+      log('Exception leyendo usuarios: ' + err.message);
+    }
   }
 
+  // Subida
+  $('uploadBtn').addEventListener('click', uploadProfile);
   async function uploadProfile() {
-    const fileInput = document.getElementById('profileInput');
-    const file = fileInput.files[0];
-    if (!file) return alert("Selecciona un archivo");
+    const file = $('profileInput').files[0];
+    if (!file) return alert('Selecciona un archivo primero.');
+    const usuarios = await getUsuarios();
+    if (!usarios return alert('Debes iniciar sesión antes de subir.');
 
-    const user = await getUser();
-    if (!user) return alert("Debes iniciar sesión");
+    const safeName = encodeURIComponent(`${Date.now()}-${file.name}`);
+    const filePath = `${usuarios.id}/${safeName}`; // carpeta por usuario
 
-    const filePath = `public/${user.id}-${file.name}`;
+    log('Subiendo a avatars/' + filePath);
+    $('progress').textContent = 'Subiendo...';
 
-    // Subimos la imagen a Supabase Storage
-    const { data, error } = await supabase.storage
-      .from('avatars')
-      .upload(filePath, file, { upsert: true });
+    try {
+      const { data: uploadData, error: uploadError } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
+      if (uploadError) {
+        log('Error upload: ' + uploadError.message);
+        $('progress').textContent = 'Error subiendo: ' + uploadError.message;
+        return;
+      }
+      log('Subida OK: ' + JSON.stringify(uploadData));
 
-    if (error) return console.error("Error subiendo archivo:", error.message);
+      // Obtener URL pública (asegúrate de que el bucket sea público)
+      const { data: publicData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      const publicUrl = publicData?.publicUrl;
+      if (!publicUrl) {
+        log('No se obtuvo publicUrl. Revisa permisos del bucket.');
+        $('progress').textContent = 'Error: no publicUrl (revisa bucket)';
+        return;
+      }
 
-    // Obtenemos la URL pública
-    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      // Actualizar tabla users
+      const { error: updateError } = await supabase.from('usuarios').update({ profile_url: publicUrl }).eq('id', usuarios.id);
+      if (updateError) {
+        log('Error actualizando DB: ' + updateError.message);
+        $('progress').textContent = 'Error actualizando DB: ' + updateError.message;
+        return;
+      }
 
-    // Actualizamos la tabla de usuarios
-    const { error: updateError } = await supabase
-      .from('users')
-      .update({ profile_url: publicUrl })
-      .eq('id', user.id);
-
-    if (updateError) return console.error("Error actualizando DB:", updateError.message);
-
-    document.getElementById('profileImg').src = publicUrl;
-    alert("Foto de perfil actualizada correctamente");
+      $('profileImg').src = publicUrl;
+      $('progress').textContent = 'Foto actualizada correctamente ✅';
+      log('profile_url actualizado en DB con: ' + publicUrl);
+    } catch (err) {
+      log('Exception uploadProfile: ' + err.message);
+      $('progress').textContent = 'Error (ver consola)';
+    }
   }
 
-  document.getElementById('uploadBtn').addEventListener('click', uploadProfile);
+  // Inicial: comprobar sesión existente
+  (async () => {
+    const { data } = await supabase.auth.getUsuarios();
+    updateUIFromSession(data.ussuarios || null);
+  })();
 
-  // Carga la foto al iniciar
-  loadProfile();
 </script>
-
 </body>
 </html>
