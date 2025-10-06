@@ -244,7 +244,6 @@ async function fetchUserRow(column, value) {
   }
 }
 
-/* ---------- TOP 5 ---------- */
 async function loadTop5() {
   try {
     const top5List = document.getElementById("top5List");
@@ -252,7 +251,7 @@ async function loadTop5() {
 
     const { data, error } = await supabase
       .from("usuarios")
-      .select("id, username, pekepuntos, logo, nombre_color")
+      .select("id, username, pekepuntos, logo, nombre_color, foto_desbloqueada, recompensa3_desbloqueada")
       .order("pekepuntos", { ascending: false })
       .limit(5);
 
@@ -272,59 +271,106 @@ async function loadTop5() {
       const li = document.createElement("li");
       li.className = "top5-item";
 
-      // determinar color del nombre según rango y si tiene color desbloqueado
       let nameColor = u.nombre_color || "#fff";
       if (idx === 0 && u.nombre_color === "gold") nameColor = "gold";
       else if (idx === 1 && u.nombre_color === "silver") nameColor = "silver";
       else if (idx === 2 && u.nombre_color === "#b87333") nameColor = "#b87333";
 
-      const img = u.logo
+      const imgHtml = u.logo
         ? `<img src="${u.logo}" alt="logo">`
         : `<div style="width:36px;height:36px;border-radius:50%;background:#666;"></div>`;
 
+      // botón para reclamar recompensa si es el usuario actual y no la tiene desbloqueada
+      let rewardBtn = '';
+      if(currentUser && u.id === currentUser.id){
+        if(idx <= 4 && !currentUser.foto_desbloqueada){
+          rewardBtn = `<button onclick="reclamarFoto()" class="reward-button" style="margin-left:8px;">Reclamar foto Top 5</button>`;
+        }
+        if(idx === 2 && !currentUser.recompensa3_desbloqueada){
+          rewardBtn += `<button onclick="reclamarCobre()" class="reward-button" style="margin-left:8px;">Reclamar cobre</button>`;
+        }
+        if(idx === 1 && !currentUser.recompensa2_desbloqueada){
+          rewardBtn += `<button onclick="reclamarPlata()" class="reward-button" style="margin-left:8px;">Reclamar plata</button>`;
+        }
+        if(idx === 0 && !currentUser.recompensa1_desbloqueada){
+          rewardBtn += `<button onclick="reclamarOro()" class="reward-button" style="margin-left:8px;">Reclamar oro</button>`;
+        }
+      }
+
       li.innerHTML = `
-        ${img}
+        ${imgHtml}
         <div style="flex:1;text-align:left;">
           <strong style="color:${nameColor}">${idx + 1}. ${u.username}</strong>
           <div style="font-size:0.9rem;color:#ddd;">${u.pekepuntos ?? 0} Pekepuntos</div>
         </div>
+        ${rewardBtn}
       `;
+
       top5List.appendChild(li);
     });
 
-    // Mostrar rangos especiales solo si el usuario tiene color desbloqueado
-    if (currentUser && currentUser.id) {
-      const pos = data.findIndex((x) => x.id === currentUser.id);
-      ["exclusiveTop5", "exclusiveTop3", "exclusiveTop2", "exclusiveTop1"].forEach(
-        (id) => (document.getElementById(id).style.display = "none")
-      );
+    // mostrar rangos especiales y aplicar colores
+    if(currentUser && currentUser.id){
+      const pos = data.findIndex(x => x.id === currentUser.id);
+      ["exclusiveTop5","exclusiveTop3","exclusiveTop2","exclusiveTop1"].forEach(id => document.getElementById(id).style.display='none');
 
-      if (pos !== -1) {
-        // Top5 siempre visible
-        if (pos <= 4) document.getElementById("exclusiveTop5").style.display = "block";
+      if(pos !== -1){
+        if(pos<=4) document.getElementById("exclusiveTop5").style.display='block';
+        if(pos<=2 && currentUser.nombre_color === "#b87333") document.getElementById("exclusiveTop3").style.display='block';
+        if(pos===1 && currentUser.nombre_color === "silver") document.getElementById("exclusiveTop2").style.display='block';
+        if(pos===0 && currentUser.nombre_color === "gold") document.getElementById("exclusiveTop1").style.display='block';
 
-        // Top3 cobre
-        if (pos <= 2 && currentUser.nombre_color === "#b87333")
-          document.getElementById("exclusiveTop3").style.display = "block";
-
-        // Top2 plata
-        if (pos === 1 && currentUser.nombre_color === "silver")
-          document.getElementById("exclusiveTop2").style.display = "block";
-
-        // Top1 oro
-        if (pos === 0 && currentUser.nombre_color === "gold")
-          document.getElementById("exclusiveTop1").style.display = "block";
-
-        // colorear el nombre según color desbloqueado
-        if (pos === 0 && currentUser.nombre_color === "gold") document.getElementById("userName").style.color = "gold";
-        else if (pos === 1 && currentUser.nombre_color === "silver") document.getElementById("userName").style.color = "silver";
-        else if (pos === 2 && currentUser.nombre_color === "#b87333") document.getElementById("userName").style.color = "#b87333";
-        else if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
+        // colorear nombre
+        if(pos===0 && currentUser.nombre_color === "gold") document.getElementById("userName").style.color="gold";
+        else if(pos===1 && currentUser.nombre_color === "silver") document.getElementById("userName").style.color="silver";
+        else if(pos===2 && currentUser.nombre_color === "#b87333") document.getElementById("userName").style.color="#b87333";
+        else if(currentUser.nombre_color) document.getElementById("userName").style.color=currentUser.nombre_color;
       }
     }
-  } catch (e) {
+  } catch(e){
     console.error("loadTop5 exception:", e);
   }
+}
+
+// funciones para reclamar recompensas
+async function reclamarFoto(){
+  if(!currentUser) return alert("Debes iniciar sesión");
+  const { error } = await supabase.from("usuarios").update({ foto_desbloqueada:true }).eq("id", currentUser.id);
+  if(error) return alert("Error al desbloquear foto");
+  currentUser.foto_desbloqueada = true;
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  alert("✅ Foto desbloqueada!");
+  loadTop5();
+}
+
+async function reclamarCobre(){
+  if(!currentUser) return alert("Debes iniciar sesión");
+  const { error } = await supabase.from("usuarios").update({ recompensa3_desbloqueada:true }).eq("id", currentUser.id);
+  if(error) return alert("Error al desbloquear cobre");
+  currentUser.recompensa3_desbloqueada = true;
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  alert("✅ Recompensa cobre desbloqueada!");
+  loadTop5();
+}
+
+async function reclamarPlata(){
+  if(!currentUser) return alert("Debes iniciar sesión");
+  const { error } = await supabase.from("usuarios").update({ recompensa2_desbloqueada:true }).eq("id", currentUser.id);
+  if(error) return alert("Error al desbloquear plata");
+  currentUser.recompensa2_desbloqueada = true;
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  alert("✅ Recompensa plata desbloqueada!");
+  loadTop5();
+}
+
+async function reclamarOro(){
+  if(!currentUser) return alert("Debes iniciar sesión");
+  const { error } = await supabase.from("usuarios").update({ recompensa1_desbloqueada:true }).eq("id", currentUser.id);
+  if(error) return alert("Error al desbloquear oro");
+  currentUser.recompensa1_desbloqueada = true;
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  alert("✅ Recompensa oro desbloqueada!");
+  loadTop5();
 }
 
 
