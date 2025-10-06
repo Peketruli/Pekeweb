@@ -163,6 +163,7 @@ async function uploadAvatar(file) {
   stored.logo = publicUrl;
   localStorage.setItem("currentUser", JSON.stringify(stored));
 }
+
   async function uploadProfileImage(file) {
   if (!currentUser || !currentUser.id) return alert("Debes iniciar sesión.");
 
@@ -172,31 +173,42 @@ async function uploadAvatar(file) {
       .upload(`profile_${currentUser.id}.png`, file, { upsert: true });
 
     if (error) {
-      console.error("Error al subir la imagen:", error);
-      let errorMsg = `Error al subir la imagen: ${error.message || "Desconocido"}`;
-      if (error.status) errorMsg += ` (Status: ${error.status})`;
-      if (error.details) errorMsg += ` - Detalles: ${error.details}`;
+      console.error("Supabase Storage Error:", error);
+      let errorMsg = `❌ Error al subir la imagen.\nMensaje: ${error.message || "desconocido"}`;
+      if (error.status) errorMsg += `\nCódigo de error: ${error.status}`;
+      if (error.details) errorMsg += `\nDetalles: ${error.details}`;
       return alert(errorMsg);
     }
 
+    // Obtener la URL pública
     const { data: urlData, error: urlError } = supabase.storage
       .from('avatars')
       .getPublicUrl(`profile_${currentUser.id}.png`);
 
     if (urlError) {
       console.error("Error obteniendo URL pública:", urlError);
-      return alert(`Error obteniendo URL de la imagen: ${urlError.message}`);
+      return alert(`❌ Error obteniendo URL: ${urlError.message}`);
     }
 
-    // actualizar logo en la UI y en la BDD
+    // Actualizar UI y BDD
     document.getElementById('userLogo').src = urlData.publicUrl;
-    await supabase.from('usuarios').update({ logo: urlData.publicUrl }).eq('id', currentUser.id);
+    const { error: dbError } = await supabase
+      .from('usuarios')
+      .update({ logo: urlData.publicUrl })
+      .eq('id', currentUser.id);
+
+    if (dbError) {
+      console.error("Error guardando logo en la BDD:", dbError);
+      return alert(`❌ Error guardando logo en la base de datos: ${dbError.message}`);
+    }
+
     currentUser.logo = urlData.publicUrl;
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
     alert("✅ Imagen subida correctamente.");
+
   } catch (e) {
     console.error("Excepción al subir imagen:", e);
-    alert(`Excepción al subir imagen: ${e.message || e}`);
+    alert(`❌ Excepción al subir imagen: ${e.message || e}`);
   }
 }
 
