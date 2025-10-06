@@ -10,7 +10,7 @@ body { background:#2c2c2c; color:white; font-family:Arial,sans-serif; text-align
 #userLogo { width:120px; height:120px; border-radius:50%; object-fit:cover; border:3px solid #fff; margin-bottom:12px; }
 button { padding:10px 16px; margin-top:12px; border:none; border-radius:8px; cursor:pointer; background:#ff4081; color:white; }
 button:hover { transform:scale(1.03); }
-#status { margin-top:12px; color:#ffd54f; white-space: pre-line; }
+#status { margin-top:12px; color:#ffd54f; }
 </style>
 </head>
 <body>
@@ -30,85 +30,60 @@ button:hover { transform:scale(1.03); }
 <script>
 /* --------- CONFIGURA SUPABASE ---------- */
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-const { createClient } = window.supabase;
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-/* ------------------------------------- */
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // Usa la anon key correcta
+const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
 
+// Cargar usuario autenticado y su info
 document.addEventListener("DOMContentLoaded", async () => {
-  const saved = localStorage.getItem("currentUser");
-  if (!saved) {
-    document.getElementById("status").textContent = "Debes iniciar sesión primero.";
-    return;
-  }
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) return document.getElementById("status").textContent = "Debes iniciar sesión primero.";
 
-  currentUser = JSON.parse(saved);
-  document.getElementById("userName").textContent = currentUser.username || "Usuario";
-  document.getElementById("userLogo").src = currentUser.logo || "logoDefault.png";
+  currentUser = user;
 
-  document.getElementById("uploadBtn").addEventListener("click", async () => {
-    const fileInput = document.getElementById("avatarInput");
-    if (!fileInput.files.length) {
-      alert("Selecciona un archivo primero.");
-      return;
-    }
-    const file = fileInput.files[0];
-    await uploadAvatar(file);
-  });
+  // Cargar datos de la tabla usuarios
+  const { data, error: err } = await supabase.from("usuarios")
+    .select("id, username, logo")
+    .eq("auth_id", currentUser.id)
+    .single();
+
+  if (err) return document.getElementById("status").textContent = "Error cargando info de usuario.";
+
+  currentUser.dbId = data.id;  // Guardamos el id real de la fila
+  document.getElementById("userName").textContent = data.username;
+  document.getElementById("userLogo").src = data.logo || "logoDefault.png";
 });
 
-async function uploadAvatar(file) {
-  if (!currentUser || !currentUser.id) return alert("Debes iniciar sesión.");
+// Subir imagen
+document.getElementById("uploadBtn").addEventListener("click", async () => {
+  const fileInput = document.getElementById("avatarInput");
+  if (!fileInput.files.length) return alert("Selecciona un archivo primero.");
+  const file = fileInput.files[0];
 
-  const filePath = `profile_${currentUser.id}.png`;
-  const statusEl = document.getElementById("status");
-  statusEl.textContent = "⏳ Subiendo imagen...";
+  if (!currentUser || !currentUser.dbId) return alert("Usuario no cargado.");
 
-  try {
-    // Subir imagen al bucket 'avatars'
-    const { data, error } = await supabase.storage
-      .from('avatars')
-      .upload(filePath, file, { upsert: true });
+  const filePath = `profile_${currentUser.dbId}.png`;
 
-    if (error) {
-      statusEl.textContent = `❌ Error al subir la imagen.\nMensaje: ${error.message || "desconocido"}\nCódigo: ${error.status || "N/A"}\nDetalles: ${error.details || "N/A"}`;
-      return;
-    }
+  // Subida al bucket
+  const { data, error } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
+  if (error) return alert(`❌ Error al subir la imagen: ${error.message}`);
 
-    // Obtener URL pública
-    const { data: urlData, error: urlError } = supabase.storage
-      .from('avatars')
-      .getPublicUrl(filePath);
+  // Obtener URL pública
+  const { data: urlData, error: urlError } = supabase.storage.from('avatars').getPublicUrl(filePath);
+  if (urlError) return alert(`❌ Error obteniendo URL: ${urlError.message}`);
 
-    if (urlError) {
-      statusEl.textContent = `❌ Error obteniendo URL pública: ${urlError.message}`;
-      return;
-    }
+  // Guardar URL en tabla usuarios
+  const { error: dbError } = await supabase.from('usuarios')
+    .update({ logo: urlData.publicUrl })
+    .eq('auth_id', currentUser.id);
 
-    // Actualizar logo en tabla usuarios
-const { error: dbError } = await supabase
-  .from('usuarios')
-  .update({ logo: urlData.publicUrl })
-  .eq('auth_id', currentUser.auth_id);
+  if (dbError) return alert(`❌ Error guardando logo: ${dbError.message}`);
 
-
-    if (dbError) {
-      statusEl.textContent = `❌ Error guardando logo en la base de datos: ${dbError.message}`;
-      return;
-    }
-
-    currentUser.logo = urlData.publicUrl;
-    localStorage.setItem("currentUser", JSON.stringify(currentUser));
-    document.getElementById("userLogo").src = urlData.publicUrl;
-    statusEl.textContent = "✅ Imagen subida correctamente.";
-
-  } catch (e) {
-    statusEl.textContent = `❌ Excepción al subir imagen: ${e.message || e}`;
-    console.error(e);
-  }
-}
+  document.getElementById("userLogo").src = urlData.publicUrl;
+  alert("✅ Imagen subida correctamente.");
+});
 </script>
+
 </body>
 </html>
