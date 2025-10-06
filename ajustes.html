@@ -44,6 +44,8 @@
 
 <h1>⚙️ Ajustes de Perfil</h1>
 
+<button onclick="window.location.href='Hub.html'">⬅️ Volver al Hub</button>
+
 <div class="user-info">
   <img id="userLogo" src="logoDefault.png" alt="Foto de perfil">
   <div id="userName">Usuario</div>
@@ -78,6 +80,18 @@ document.addEventListener("DOMContentLoaded", async () => {
 
 /* ---------- Obtener usuario ---------- */
 async function initUser() {
+  // primero intentar cargar desde localStorage
+  const saved = localStorage.getItem("currentUser");
+  let local = saved ? JSON.parse(saved) : null;
+
+  if (local && local.id) {
+    currentUser = local;
+    document.getElementById("userName").textContent = local.username || "Usuario";
+    document.getElementById("userLogo").src = local.logo || "logoDefault.png";
+    return;
+  }
+
+  // luego intentar desde Supabase Auth
   try {
     const { data: { user }, error } = await supabase.auth.getUser();
     if (error || !user) {
@@ -86,7 +100,7 @@ async function initUser() {
     }
     currentUser = user;
 
-    // intentar cargar logo desde la tabla usuarios
+    // cargar info de tabla usuarios
     const { data, error: err } = await supabase.from("usuarios")
       .select("username, logo")
       .eq("auth_id", currentUser.id)
@@ -97,8 +111,8 @@ async function initUser() {
     if (data) {
       document.getElementById("userName").textContent = data.username || "Usuario";
       document.getElementById("userLogo").src = data.logo || "logoDefault.png";
+      localStorage.setItem("currentUser", JSON.stringify(data));
     }
-
   } catch(e) {
     console.error("Error initUser:", e);
   }
@@ -124,7 +138,6 @@ async function uploadAvatar(file) {
     return;
   }
 
-  // Obtener URL pública
   const { publicUrl, error: urlErr } = supabase.storage.from("avatars").getPublicUrl(filePath);
   if (urlErr) {
     console.error("Error al obtener URL:", urlErr);
@@ -143,9 +156,12 @@ async function uploadAvatar(file) {
     return;
   }
 
-  // Actualizar UI
   document.getElementById("userLogo").src = publicUrl;
   document.getElementById("status").textContent = "✅ Imagen subida correctamente.";
+  // actualizar localStorage
+  let stored = JSON.parse(localStorage.getItem("currentUser") || "{}");
+  stored.logo = publicUrl;
+  localStorage.setItem("currentUser", JSON.stringify(stored));
 }
 </script>
 
