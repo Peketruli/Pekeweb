@@ -140,151 +140,163 @@ const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 /* -------------------------------------------- */
 
-let currentUser = null; // objeto actualizado desde la BDD
+let currentUser = null; // objeto con los datos reales de la tabla "usuarios"
+let authUser = null;    // usuario auth devuelto por supabase.auth.getUser()
 
 document.addEventListener('DOMContentLoaded', async () => {
-  document.getElementById("reward3Btn").addEventListener("click",()=>{
-    document.getElementById("tableColorPicker").style.display="block";
-});
-  const saved = localStorage.getItem('currentUser');
-  if (saved) {
-    try { currentUser = JSON.parse(saved); } catch(e){ currentUser = null; }
-  }
-
-  // listeners UI
+  // UI listeners
+  document.getElementById("reward3Btn").addEventListener("click", ()=> toggleShow('tableColorPicker'));
+  document.getElementById("rewardBgBtn").addEventListener("click", ()=> toggleShow('backgroundPicker'));
+  document.getElementById("rewardNameBtn").addEventListener("click", ()=> toggleShow('nameColorPicker'));
+  document.getElementById("backgroundPicker").addEventListener("input", e => setBackgroundColor(e.target.value));
+  document.getElementById("nameColorPicker").addEventListener("input", e => setNameColor(e.target.value));
+  document.getElementById("tableColorPicker").addEventListener("input", e => setTableColor(e.target.value));
   document.getElementById('userInfo').addEventListener('click', toggleDropdown);
-  document.addEventListener('click', (e) => {
-    const ui = document.getElementById('userInfo');
-    const dd = document.getElementById('dropdownMenu');
-    if (!ui.contains(e.target) && !dd.contains(e.target)) dd.style.display = 'none';
-  });
+  document.addEventListener('click', (e)=> { const ui=document.getElementById('userInfo'), dd=document.getElementById('dropdownMenu'); if(!ui.contains(e.target) && !dd.contains(e.target)) dd.style.display='none'; });
 
-  // recompensas - mostrar pickers
-  document.getElementById('rewardBgBtn').addEventListener('click', ()=> toggleShow('backgroundPicker'));
-  document.getElementById('rewardNameBtn').addEventListener('click', ()=> toggleShow('nameColorPicker'));
-  document.getElementById('rewardTableBtn').addEventListener('click', ()=> toggleShow('tableColorPicker'));
-
-  // pickers -> acciones
-  document.getElementById('backgroundPicker').addEventListener('input', e => setBackgroundColor(e.target.value));
-  document.getElementById('nameColorPicker').addEventListener('input', e => setNameColor(e.target.value));
-  document.getElementById('tableColorPicker').addEventListener('input', e => setTableColor(e.target.value));
-
-  // carga inicial de datos
-  await refreshCurrentUser();
+  // Inicia la carga: primero obtener sesión de auth, luego cargar datos de "usuarios" y Top5
+  await initUserAndUI();
   await loadTop5();
 });
 
-/* ---------- UTIL ---------- */
-function toggleDropdown(){ const dd = document.getElementById('dropdownMenu'); dd.style.display = dd.style.display === 'block' ? 'none' : 'block'; }
-function toggleShow(id){ const el = document.getElementById(id); el.style.display = (el.style.display==='block') ? 'none' : 'block'; }
-
-/* ---------- LOGOUT ---------- */
-async function logout(){
-  try { await supabase.auth.signOut(); } catch(e){/*ignore*/ }
-  localStorage.removeItem('currentUser');
-  currentUser = null;
-  // simple redirect to login
-  window.location.href = 'login.html';
-}
-
-async function loadUserInfo() {
-    const user = currentUser;
-    const authContainer = document.getElementById("authContainer");
-    const userInfo = document.getElementById("userInfo");
-
-    if (user) {
-        userInfo.style.display = "flex";
-        authContainer.style.display = "none";
-        document.getElementById("userName").textContent = user.username || "Usuario";
-        document.getElementById("userLogo").src = user.logo || "logoDefault.png";
-
-        // Cargar pekepuntos
-        cargarPekepuntos(user.id);
-
-        // 🔹 Cargar colores guardados en Supabase
-        const { data, error } = await supabase
-            .from("usuarios")
-            .select("fondo_color, nombre_color, tabla_color")
-            .eq("id", user.id)
-            .single();
-
-        if (!error && data) {
-            // Fondo personalizado
-            if (data.fondo_color) document.body.style.backgroundColor = data.fondo_color;
-
-            // Color del nombre
-            if (data.nombre_color) document.getElementById("userName").style.color = data.nombre_color;
-
-            // Color de las tablas
-            if (data.tabla_color) {
-                document.querySelectorAll("table").forEach(tbl => {
-                    tbl.style.backgroundColor = data.tabla_color;
-                });
-            }
-        } else if (error) {
-            console.error("Error al cargar datos del usuario:", error);
-        }
-
-    } else {
-        userInfo.style.display = "none";
-        authContainer.style.display = "flex";
-    }
-}
-
-/* ---------- REFRESCAR DATOS DEL USUARIO DESDE BDD ---------- */
-async function refreshCurrentUser(){
-  // si no hay usuario local, no intentamos fetch de id
-  if(!currentUser || !currentUser.id){
-    // ocultar userInfo, mostrar botón login
-    document.getElementById('userInfo').style.display = 'none';
-    document.getElementById('authContainer').style.display = 'flex';
-    // igual cargamos top5 público
-    document.getElementById('pekepuntos').textContent = 'Pekepuntos: —';
-    return;
+/* ---------- INIT: obtener sesión y datos de usuario ---------- */
+async function initUserAndUI(){
+  // 1) intento obtener usuario auth desde supabase
+  try {
+    const { data: authData, error: authErr } = await supabase.auth.getUser();
+    if (authErr) console.warn('auth.getUser() error:', authErr);
+    authUser = authData?.user || null;
+  } catch (e) {
+    console.error('Error calling supabase.auth.getUser():', e);
+    authUser = null;
   }
 
-  // traer registro actualizado desde supabase
-  const { data, error } = await supabase
-    .from('usuarios')
-    .select('id, username, logo, pekepuntos, fondo_color, nombre_color, tabla_color')
-    .eq('id', currentUser.id)
-    .single();
+  // 2) fallback a localStorage si no hay auth session
+  const saved = localStorage.getItem('currentUser');
+  let local = null;
+  if (saved) {
+    try { local = JSON.parse(saved); } catch(e){ local = null; }
+  }
 
-  if(error){
-    console.error('Error al cargar usuario:', error.message || error);
+  // 3) Intentar cargar fila de tabla "usuarios" de forma robusta:
+  //    - Si authUser está presente, se prueba por auth_id = authUser.id
+  //    - Si falla, se intenta por email (authUser.email o local.email)
+  //    - Finalmente por id = local.id (compatibilidad con tu código previo)
+  let row = null;
+  if (authUser && authUser.id) {
+    // probar por auth_id (recomendado si creaste auth_id en la tabla)
+    row = await fetchUserRow('auth_id', authUser.id);
+    if (!row && authUser.email) row = await fetchUserRow('email', authUser.email);
+  }
+
+  // fallback: si local tiene id, intentar por id
+  if (!row && local && local.id) {
+    row = await fetchUserRow('id', local.id);
+  }
+  // fallback by email from local
+  if(!row && local && local.email) row = await fetchUserRow('email', local.email);
+
+  // si no hay row, dejamos currentUser = null (no logueado en tabla usuarios)
+  if (!row) {
+    currentUser = null;
+    // actualizar UI para no-logueado
     document.getElementById('userInfo').style.display = 'none';
     document.getElementById('authContainer').style.display = 'flex';
     document.getElementById('pekepuntos').textContent = 'Pekepuntos: —';
+    console.info('No se encontró fila en tabla usuarios para la sesión actual.');
     return;
   }
 
-  // actualizar currentUser completo
-  currentUser = data;
-  // guardar de nuevo local (por si)
+  // tenemos fila: usarla como currentUser
+  currentUser = row;
+  // guardar local para compatibilidad
   localStorage.setItem('currentUser', JSON.stringify(currentUser));
 
-  // mostrar UI
+  // mostrar UI de usuario y aplicar estilos guardados
   document.getElementById('userInfo').style.display = 'flex';
   document.getElementById('authContainer').style.display = 'none';
   document.getElementById('userName').textContent = currentUser.username || 'Usuario';
   document.getElementById('userLogo').src = currentUser.logo || 'logoDefault.png';
   document.getElementById('pekepuntos').textContent = `Pekepuntos: ${currentUser.pekepuntos ?? 0}`;
 
-  // aplicar estilos guardados
-  if(currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
-  if(currentUser.nombre_color) document.getElementById('userName').style.color = currentUser.nombre_color;
-  if(currentUser.tabla_color) applyTableColor(currentUser.tabla_color);
+  if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
+  if (currentUser.nombre_color) document.getElementById('userName').style.color = currentUser.nombre_color;
+  if (currentUser.tabla_color) {
+    applyTableColor(currentUser.tabla_color);
+    // también actualizar picker's value si quieres
+    const picker = document.getElementById('tableColorPicker');
+    if (picker) picker.value = currentUser.tabla_color;
+  }
 }
 
-/* ---------- RECOMPENSAS: Guardar estilos en BDD y aplicar ---------- */
+/* helper para pedir la fila del usuario intentando distintas columnas */
+async function fetchUserRow(column, value){
+  try {
+    const { data, error } = await supabase.from('usuarios').select('*').eq(column, value).limit(1).maybeSingle();
+    if (error) {
+      console.warn(`fetchUserRow error by ${column}:`, error);
+      return null;
+    }
+    return data || null;
+  } catch (e) {
+    console.error('fetchUserRow exception:', e);
+    return null;
+  }
+}
+
+/* ---------- TOP 5 ---------- */
+async function loadTop5(){
+  try {
+    const { data, error } = await supabase
+      .from('usuarios')
+      .select('id, username, pekepuntos, logo, nombre_color')
+      .order('pekepuntos', { ascending: false })
+      .limit(5);
+
+    if (error) { console.error('Error Top5:', error); return; }
+    const top5List = document.getElementById('top5List');
+    top5List.innerHTML = '';
+
+    data.forEach((u, idx) => {
+      const li = document.createElement('li');
+      li.className = 'top5-item';
+      let nameColor = u.nombre_color || '#ffffff';
+      if (idx === 0) nameColor = 'gold';
+      else if (idx === 1) nameColor = 'silver';
+      else if (idx === 2) nameColor = '#b87333';
+      const imgHtml = u.logo ? `<img src="${u.logo}" alt="logo">` : `<div style="width:36px;height:36px;border-radius:50%;background:#666;display:inline-block;"></div>`;
+      li.innerHTML = `${imgHtml}<div style="flex:1;text-align:left;"><strong style="color:${nameColor}">${idx+1}. ${escapeHtml(u.username)}</strong><div style="font-size:0.9rem;color:#ddd">${u.pekepuntos} Pekepuntos</div></div>`;
+      top5List.appendChild(li);
+    });
+
+    // mostrar exclusivas según posición
+    if (currentUser && currentUser.id){
+      const pos = data.findIndex(x => x.id === currentUser.id);
+      ['exclusiveTop5','exclusiveTop3','exclusiveTop2','exclusiveTop1'].forEach(id => document.getElementById(id).style.display = 'none');
+      if (pos !== -1){
+        if (pos <= 4) document.getElementById('exclusiveTop5').style.display = 'block';
+        if (pos <= 2) document.getElementById('exclusiveTop3').style.display = 'block';
+        if (pos === 1) document.getElementById('exclusiveTop2').style.display = 'block';
+        if (pos === 0) document.getElementById('exclusiveTop1').style.display = 'block';
+        if (pos === 0) document.getElementById('userName').style.color = 'gold';
+        else if (pos === 1) document.getElementById('userName').style.color = 'silver';
+        else if (pos === 2) document.getElementById('userName').style.color = '#b87333';
+        else if (currentUser.nombre_color) document.getElementById('userName').style.color = currentUser.nombre_color;
+      } else {
+        if (currentUser.nombre_color) document.getElementById('userName').style.color = currentUser.nombre_color;
+      }
+    }
+  } catch(e){
+    console.error('loadTop5 exception:', e);
+  }
+}
+
+/* ---------- RECOMPENSAS: guardar y aplicar estilos ---------- */
 async function setBackgroundColor(color){
-  // aplicar localmente
   document.body.style.backgroundColor = color;
-  // guardar en la BDD
   if(!currentUser || !currentUser.id) return alert('Debes iniciar sesión para usar esta recompensa.');
   const { error } = await supabase.from('usuarios').update({ fondo_color: color }).eq('id', currentUser.id);
-  if(error){ console.error(error); alert('Error guardando color de fondo'); return; }
-  // refrescar cache local
+  if (error) { console.error('Error guardando fondo_color:', error); alert('Error guardando color de fondo'); return; }
   currentUser.fondo_color = color;
   localStorage.setItem('currentUser', JSON.stringify(currentUser));
 }
@@ -293,107 +305,42 @@ async function setNameColor(color){
   document.getElementById('userName').style.color = color;
   if(!currentUser || !currentUser.id) return alert('Debes iniciar sesión para usar esta recompensa.');
   const { error } = await supabase.from('usuarios').update({ nombre_color: color }).eq('id', currentUser.id);
-  if(error){ console.error(error); alert('Error guardando color de nombre'); return; }
+  if (error) { console.error('Error guardando nombre_color:', error); alert('Error guardando color de nombre'); return; }
   currentUser.nombre_color = color;
   localStorage.setItem('currentUser', JSON.stringify(currentUser));
 }
 
-// Recompensa 3: cambiar color de las tablas
 async function setTableColor(color){
-    if (!currentUser) return alert("Debes iniciar sesión.");
+  // aplicar inmediatamente
+  applyTableColor(color);
+  if(!currentUser || !currentUser.id) return alert('Debes iniciar sesión para usar esta recompensa.');
 
-    // Cambiar el color en todas las tablas visibles
-    document.querySelectorAll("table").forEach(tbl => {
-        tbl.style.backgroundColor = color;
-    });
-
-    // Guardar el color en Supabase
-    const { error } = await supabase
-        .from("usuarios")
-        .update({ tabla_color: color })
-        .eq("id", currentUser.id);
-
-    if (error) {
-        console.error(error);
-        alert("❌ Error al guardar el color en Supabase");
-    } else {
-        alert("✅ ¡Color de tablas actualizado correctamente!");
-    }
+  // guardar en la BDD
+  const { data, error } = await supabase.from('usuarios').update({ tabla_color: color }).eq('id', currentUser.id).select().single();
+  if (error) { console.error('Error guardando tabla_color:', error); alert('❌ Error al guardar el color en Supabase (revisa consola)'); return; }
+  // success: actualizar currentUser y localStorage
+  currentUser.tabla_color = color;
+  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  alert('✅ Color de tablas guardado correctamente.');
 }
 
+/* aplica color a variables CSS y a tablas ya presentes */
 function applyTableColor(color){
-  // definir variable CSS para tablas
   document.documentElement.style.setProperty('--table-bg', color);
-  // ajustar texto en tablas si el color es oscuro -> blanco, si es claro -> negro
   const lum = luminanceFromHex(color);
   const textColor = lum < 0.5 ? '#ffffff' : '#000000';
   document.documentElement.style.setProperty('--table-text', textColor);
-}
-
-/* utilidad luminancia */
-function luminanceFromHex(hex){
-  try{
-    const h = hex.replace('#','');
-    const r = parseInt(h.substring(0,2),16)/255;
-    const g = parseInt(h.substring(2,4),16)/255;
-    const b = parseInt(h.substring(4,6),16)/255;
-    // sRGB -> linear
-    const srgb = [r,g,b].map(c => (c<=0.03928) ? c/12.92 : Math.pow((c+0.055)/1.055,2.4));
-    return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2];
-  }catch(e){ return 1; }
-}
-
-/* ---------- TOP 5 ---------- */
-async function loadTop5(){
-  const { data, error } = await supabase
-    .from('usuarios')
-    .select('id, username, pekepuntos, logo, nombre_color')
-    .order('pekepuntos', { ascending: false })
-    .limit(5);
-
-  if(error){ console.error('Error Top5:', error.message || error); return; }
-  const top5List = document.getElementById('top5List');
-  top5List.innerHTML = '';
-
-  data.forEach((u, idx) => {
-    const li = document.createElement('li');
-    li.className = 'top5-item';
-    // override color por ranking 1-3
-    let nameColor = u.nombre_color || '#ffffff';
-    if(idx === 0) nameColor = 'gold';
-    else if(idx === 1) nameColor = 'silver';
-    else if(idx === 2) nameColor = '#b87333'; // cobre
-
-    const imgHtml = u.logo ? `<img src="${u.logo}" alt="logo">` : `<div style="width:36px;height:36px;border-radius:50%;background:#666;display:inline-block;"></div>`;
-    li.innerHTML = `${imgHtml}<div style="flex:1;text-align:left;"><strong style="color:${nameColor}">${idx+1}. ${escapeHtml(u.username)}</strong><div style="font-size:0.9rem;color:#ddd">${u.pekepuntos} Pekepuntos</div></div>`;
-    top5List.appendChild(li);
+  // además aplicamos inline a todas las tablas (para compatibilidad)
+  document.querySelectorAll('table').forEach(tbl => {
+    tbl.style.backgroundColor = color;
+    tbl.style.color = textColor;
   });
-
-  // mostrar recompensas exclusivas segun tu posicion
-  if(currentUser && currentUser.id){
-    const pos = data.findIndex(x => x.id === currentUser.id);
-    // ocultar todos
-    ['exclusiveTop5','exclusiveTop3','exclusiveTop2','exclusiveTop1'].forEach(id => document.getElementById(id).style.display = 'none');
-    if(pos !== -1){
-      if(pos <= 4) document.getElementById('exclusiveTop5').style.display = 'block';
-      if(pos <= 2) document.getElementById('exclusiveTop3').style.display = 'block';
-      if(pos === 1) document.getElementById('exclusiveTop2').style.display = 'block';
-      if(pos === 0) document.getElementById('exclusiveTop1').style.display = 'block';
-      // si estás en top1/2/3 sobrescribimos el color del nombre de tu UI
-      if(pos === 0) document.getElementById('userName').style.color = 'gold';
-      else if(pos === 1) document.getElementById('userName').style.color = 'silver';
-      else if(pos === 2) document.getElementById('userName').style.color = '#b87333';
-      else if(currentUser.nombre_color) document.getElementById('userName').style.color = currentUser.nombre_color;
-    } else {
-      // si no estás en el top, aplicar tu color guardado
-      if(currentUser && currentUser.nombre_color) document.getElementById('userName').style.color = currentUser.nombre_color;
-      // ocultar exclusivas
-      ['exclusiveTop5','exclusiveTop3','exclusiveTop2','exclusiveTop1'].forEach(id => document.getElementById(id).style.display = 'none');
-    }
-  }
 }
 
-/* ---------- helpers ---------- */
+/* ---------- util ---------- */
+function toggleDropdown(){ const dd=document.getElementById('dropdownMenu'); dd.style.display = dd.style.display==='block' ? 'none' : 'block'; }
+function toggleShow(id){ const el=document.getElementById(id); el.style.display = el.style.display==='block' ? 'none' : 'block'; }
+function luminanceFromHex(hex){ try{ const h=hex.replace('#',''); const r=parseInt(h.substring(0,2),16)/255; const g=parseInt(h.substring(2,4),16)/255; const b=parseInt(h.substring(4,6),16)/255; const srgb=[r,g,b].map(c => (c<=0.03928) ? c/12.92 : Math.pow((c+0.055)/1.055,2.4)); return 0.2126*srgb[0] + 0.7152*srgb[1] + 0.0722*srgb[2]; }catch(e){return 1;} }
 function escapeHtml(s){ if(!s) return ''; return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
 
 </script>
