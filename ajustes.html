@@ -1,107 +1,81 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ajustes de Perfil</title>
-<script src="https://unpkg.com/@supabase/supabase-js"></script>
-<style>
-body { background:#2c2c2c; color:white; font-family:Arial,sans-serif; text-align:center; padding:40px; }
-#userLogo { width:120px; height:120px; border-radius:50%; object-fit:cover; border:3px solid #fff; margin-bottom:12px; }
-button { padding:10px 16px; margin-top:12px; border:none; border-radius:8px; cursor:pointer; background:#ff4081; color:white; }
-button:hover { transform:scale(1.03); }
-#status { margin-top:12px; color:#ffd54f; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Perfil de Usuario</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.23.0/dist/supabase.min.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; text-align: center; padding: 50px; }
+    img { border-radius: 50%; width: 150px; height: 150px; object-fit: cover; border: 3px solid #333; }
+    input, button { margin-top: 10px; padding: 8px; }
+  </style>
 </head>
 <body>
 
-<h1>⚙️ Ajustes de Perfil</h1>
-<button onclick="window.location.href='Hub.html'">⬅️ Volver al Hub</button>
+<h1>Tu Perfil</h1>
+
+<img id="profileImg" src="https://tuweb.com/default-profile.png" alt="Foto de perfil">
 
 <div>
-  <img id="userLogo" src="logoDefault.png" alt="Foto de perfil">
-  <div id="userName">Usuario</div>
+  <input type="file" id="profileInput" accept="image/*">
+  <button onclick="uploadProfile()">Subir Foto</button>
 </div>
 
-<input type="file" id="avatarInput" accept="image/*"><br>
-<button id="uploadBtn">Subir Foto</button>
-<div id="status"></div>
-
 <script>
-/* --------- CONFIGURA SUPABASE ---------- */
-const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // Usa la anon key correcta
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  // Inicializa Supabase
+  const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+  const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+  const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
-let currentUser = null;
+  async function loadProfile() {
+    const user = supabase.auth.user();
+    if (!user) return alert("Debes iniciar sesión");
 
-// Cargar usuario autenticado y su info
-document.addEventListener("DOMContentLoaded", async () => {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user) return document.getElementById("status").textContent = "Debes iniciar sesión primero.";
+    const { data, error } = await supabase
+      .from('users')
+      .select('profile_url')
+      .eq('id', user.id)
+      .single();
 
-  currentUser = user;
+    if (error) console.error(error);
 
-  // Cargar datos de la tabla usuarios
-  const { data, error: err } = await supabase.from("usuarios")
-    .select("id, username, logo")
-    .eq("auth_id", currentUser.id)
-    .single();
-
-  if (err) return document.getElementById("status").textContent = "Error cargando info de usuario.";
-
-  currentUser.dbId = data.id;  // Guardamos el id real de la fila
-  document.getElementById("userName").textContent = data.username;
-  document.getElementById("userLogo").src = data.logo || "logoDefault.png";
-});
-
-// Subir imagen
-document.getElementById("uploadBtn").addEventListener("click", async () => {
-  const fileInput = document.getElementById("avatarInput");
-  if (!fileInput.files.length) return alert("Selecciona un archivo primero.");
-  const file = fileInput.files[0];
-
-  if (!currentUser || !currentUser.dbId) return alert("Usuario no cargado.");
-
-  const filePath = `profile_${currentUser.dbId}.png`;
-
-  // Subida al bucket
-  const { data, error } = await supabase.storage.from('avatars').upload(filePath, file, { upsert: true });
-  if (error) return alert(`❌ Error al subir la imagen: ${error.message}`);
-
-  // Obtener URL pública
-  const { data: urlData, error: urlError } = supabase.storage.from('avatars').getPublicUrl(filePath);
-  if (urlError) return alert(`❌ Error obteniendo URL: ${urlError.message}`);
-
-  // Guardar URL en tabla usuarios
-  const { error: dbError } = await supabase.from('usuarios')
-    .update({ logo: urlData.publicUrl })
-    .eq('auth_id', currentUser.id);
-
-  if (dbError) return alert(`❌ Error guardando logo: ${dbError.message}`);
-
-  document.getElementById("userLogo").src = urlData.publicUrl;
-  alert("✅ Imagen subida correctamente.");
-});
+    document.getElementById('profileImg').src = data?.profile_url || 'https://tuweb.com/default-profile.png';
+  }
 
   async function uploadProfile() {
-    const file = document.getElementById('profileInput').files[0];
-    if (!file) return alert('Selecciona un archivo');
+    const fileInput = document.getElementById('profileInput');
+    const file = fileInput.files[0];
+    if (!file) return alert("Selecciona un archivo");
 
+    const user = supabase.auth.user();
+    if (!user) return alert("Debes iniciar sesión");
+
+    // Subimos la imagen a Storage
     const { data, error } = await supabase.storage
       .from('avatars')
-      .upload(`public/${file.name}`, file, { upsert: true });
+      .upload(`public/${user.id}-${file.name}`, file, { upsert: true });
 
     if (error) return console.error(error);
 
-    const { publicURL } = supabase.storage.from('avatars').getPublicUrl(file.name);
+    // Obtenemos la URL pública
+    const { publicUrl } = supabase.storage.from('avatars').getPublicUrl(`public/${user.id}-${file.name}`);
 
-    // Actualizamos la URL en la tabla de usuario
-    const user = supabase.auth.user();
-    await supabase.from('users').update({ profile_url: publicURL }).eq('id', user.id);
+    // Actualizamos la URL en la tabla users
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ profile_url: publicUrl })
+      .eq('id', user.id);
 
-    alert('Foto de perfil actualizada');
+    if (updateError) return console.error(updateError);
+
+    // Mostramos la nueva imagen
+    document.getElementById('profileImg').src = publicUrl;
+    alert("Foto de perfil actualizada");
   }
+
+  // Carga la foto al iniciar
+  loadProfile();
 </script>
 
 </body>
