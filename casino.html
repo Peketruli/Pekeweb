@@ -108,8 +108,8 @@
 
     <!-- Recompensa 3: Cambiar color de las tablas -->
     <div style="margin-bottom:12px;">
-      <button class="reward-button" id="rewardTableBtn">Recompensa 3: Cambiar Color de las Tablas</button>
-      <input type="color" id="tableColorPicker" style="display:none; margin-left:8px;" />
+     <button class="reward-button" id="reward3Btn">Recompensa 3: Cambiar color de tablas</button>
+<input type="color" id="tableColorPicker" style="display:none;" onchange="setTableColor(this.value)">
     </div>
 
     <!-- Recompensas por ranking -->
@@ -143,7 +143,9 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 let currentUser = null; // objeto actualizado desde la BDD
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // leer usuario guardado localmente (login)
+  document.getElementById("reward3Btn").addEventListener("click",()=>{
+    document.getElementById("tableColorPicker").style.display="block";
+});
   const saved = localStorage.getItem('currentUser');
   if (saved) {
     try { currentUser = JSON.parse(saved); } catch(e){ currentUser = null; }
@@ -183,6 +185,40 @@ async function logout(){
   currentUser = null;
   // simple redirect to login
   window.location.href = 'login.html';
+}
+
+  async function loadUserInfo() {
+    const user = currentUser;
+    const authContainer = document.getElementById("authContainer");
+    const userInfo = document.getElementById("userInfo");
+
+    if (user) {
+        userInfo.style.display = "flex";
+        authContainer.style.display = "none";
+        document.getElementById("userName").textContent = user.username || "Usuario";
+        document.getElementById("userLogo").src = user.logo || "logoDefault.png";
+        cargarPekepuntos(user.id);
+
+        // 🔹 Obtener datos extra del usuario
+        const { data, error } = await supabase
+            .from("usuarios")
+            .select("fondo_color, nombre_color, tabla_color")
+            .eq("id", user.id)
+            .single();
+
+        if (!error && data) {
+            if (data.fondo_color) document.body.style.backgroundColor = data.fondo_color;
+            if (data.nombre_color) document.getElementById("userName").style.color = data.nombre_color;
+            if (data.tabla_color) {
+                document.querySelectorAll("table").forEach(tbl => {
+                    tbl.style.backgroundColor = data.tabla_color;
+                });
+            }
+        }
+    } else {
+        userInfo.style.display = "none";
+        authContainer.style.display = "flex";
+    }
 }
 
 /* ---------- REFRESCAR DATOS DEL USUARIO DESDE BDD ---------- */
@@ -252,13 +288,27 @@ async function setNameColor(color){
   localStorage.setItem('currentUser', JSON.stringify(currentUser));
 }
 
+// Recompensa 3: cambiar color de las tablas
 async function setTableColor(color){
-  applyTableColor(color);
-  if(!currentUser || !currentUser.id) return alert('Debes iniciar sesión para usar esta recompensa.');
-  const { error } = await supabase.from('usuarios').update({ tabla_color: color }).eq('id', currentUser.id);
-  if(error){ console.error(error); alert('Error guardando color de tablas'); return; }
-  currentUser.tabla_color = color;
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    if (!currentUser) return alert("Debes iniciar sesión.");
+
+    // Cambiar el color en todas las tablas visibles
+    document.querySelectorAll("table").forEach(tbl => {
+        tbl.style.backgroundColor = color;
+    });
+
+    // Guardar el color en Supabase
+    const { error } = await supabase
+        .from("usuarios")
+        .update({ tabla_color: color })
+        .eq("id", currentUser.id);
+
+    if (error) {
+        console.error(error);
+        alert("❌ Error al guardar el color en Supabase");
+    } else {
+        alert("✅ ¡Color de tablas actualizado correctamente!");
+    }
 }
 
 function applyTableColor(color){
