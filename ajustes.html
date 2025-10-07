@@ -32,7 +32,8 @@
 
 <script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // tu anon key
+const SUPABASE_KEY = "TU_SUPABASE_ANON_KEY_AQUI";
+
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const profileImg = document.getElementById("profileImg");
@@ -44,73 +45,56 @@ const logoutBtn = document.getElementById("logoutBtn");
 const msgEl = document.getElementById("msg");
 
 // Mostrar mensaje
-function showMessage(text, type="info"){
+function showMessage(text, type="info") {
   msgEl.textContent = text;
-  msgEl.style.color = type==="error" ? "#ff4d4d" : type==="success" ? "#4dff88" : "#fff";
+  msgEl.style.color = type === "error" ? "#ff4d4d" : type === "success" ? "#4dff88" : "#fff";
 }
 
-// Cargar sesión de Supabase
-async function loadUser(){
-  const { data: { session }, error } = await supabase.auth.getSession();
-  if(error || !session){
-    showMessage("No hay sesión activa. Redirigiendo...", "error");
-    setTimeout(()=>window.location.href="login.html",1500);
-    return null;
-  }
-  
-  const userId = session.user.id;
-  const { data: userData, error: userError } = await supabase
-    .from("usuarios")
-    .select("*")
-    .eq("id", userId)
-    .single();
-
-  if(userError || !userData){
-    showMessage("No se pudo cargar tu usuario: " + (userError?.message || "Desconocido"), "error");
-    return null;
-  }
-
-  userNameEl.textContent = userData.username || "Usuario";
-  profileImg.src = userData.profile_url || "https://tuweb.com/default-profile.png";
-  return userData;
+// Cargar usuario desde localStorage
+let user = JSON.parse(localStorage.getItem("currentUser"));
+if (!user) {
+  showMessage("No hay sesión activa. Redirigiendo...", "error");
+  setTimeout(() => window.location.href = "login.html", 1500);
+} else {
+  userNameEl.textContent = user.username || "Usuario";
+  profileImg.src = user.profile_url || "https://tuweb.com/default-profile.png";
+  showMessage("✅ Sesión cargada correctamente", "success");
 }
 
-// Subir imagen
-uploadBtn.addEventListener("click", async ()=>{
-  const user = await loadUser();
-  if(!user) return;
-
+// Subir foto de perfil
+uploadBtn.addEventListener("click", async () => {
+  if (!user) { showMessage("No hay usuario cargado", "error"); return; }
   const file = fileInput.files[0];
-  if(!file){ showMessage("Selecciona una imagen primero", "error"); return; }
+  if (!file) { showMessage("Selecciona una imagen primero", "error"); return; }
 
   const filePath = `${user.id}/${Date.now()}-${file.name}`;
   showMessage("Subiendo imagen...", "info");
 
-  const { data, error } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
-  if(error){ showMessage("Error al subir imagen: "+error.message, "error"); return; }
+  const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert: true });
+  if (uploadError) { showMessage("Error al subir imagen: " + uploadError.message, "error"); return; }
 
   const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
   const publicUrl = urlData.publicUrl;
 
-  const { error: dbError } = await supabase.from("usuarios")
-    .update({ profile_url: publicUrl })
-    .eq("id", user.id);
+  const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
+  if (dbError) { showMessage("Error al guardar en base de datos: " + dbError.message, "error"); return; }
 
-  if(dbError){ showMessage("Error guardando URL: "+dbError.message, "error"); return; }
-
+  user.profile_url = publicUrl;
+  localStorage.setItem("currentUser", JSON.stringify(user));
   profileImg.src = publicUrl;
-  showMessage("✅ Foto actualizada correctamente", "success");
+  showMessage("✅ Foto de perfil actualizada", "success");
 });
 
-// Botones
-hubBtn.addEventListener("click", ()=> window.location.href="Hub.html");
-logoutBtn.addEventListener("click", async ()=>{
-  await supabase.auth.signOut();
-  window.location.href="login.html";
-});
+// Botón volver al Hub
+hubBtn.addEventListener("click", () => window.location.href = "Hub.html");
 
-// Cargar usuario al inicio
-loadUser();
+// Cerrar sesión
+logoutBtn.addEventListener("click", () => {
+  localStorage.removeItem("currentUser");
+  showMessage("Cerrando sesión...");
+  setTimeout(() => window.location.href = "login.html", 1000);
+});
 </script>
+
 </body>
 </html>
