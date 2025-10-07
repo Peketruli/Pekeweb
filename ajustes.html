@@ -11,7 +11,10 @@
   button, label { background:#007bff; color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; margin:5px; }
   button:hover { background:#0056b3; }
   #logoutBtn { background:#dc3545; }
-  #msg { margin-top:10px; font-size:0.9em; }
+  #msg { margin-top:10px; font-size:0.9em; min-height:20px; }
+  .success { color:#00ff7f; }
+  .error { color:#ff3d3d; }
+  .info { color:#ffff00; }
 </style>
 </head>
 <body>
@@ -24,7 +27,7 @@
   <p>Haz clic en la foto para cambiar tu avatar</p>
   <input type="file" id="fileInput" accept="image/*" style="display:none;">
   
-  <p id="msg"></p>
+  <p id="msg" class="info"></p>
   <button id="logoutBtn">Cerrar sesión</button>
 </div>
 
@@ -39,12 +42,22 @@
   const msg = document.getElementById("msg");
   const logoutBtn = document.getElementById("logoutBtn");
 
+  // Función para mostrar mensajes
+  function showMessage(text, type="info") {
+    msg.textContent = text;
+    msg.className = type;
+  }
+
   // Obtener usuario
   let user = JSON.parse(localStorage.getItem("currentUser"));
-  if(!user) window.location.href = "login.html";
-
-  userNameEl.textContent = user.username || "Usuario";
-  profileImg.src = user.profile_url || "https://tuweb.com/default-profile.png";
+  if(!user) {
+    showMessage("No se encontró usuario. Redirigiendo al login...", "error");
+    setTimeout(()=>window.location.href="login.html", 1500);
+  } else {
+    userNameEl.textContent = user.username || "Usuario";
+    profileImg.src = user.profile_url || "https://tuweb.com/default-profile.png";
+    showMessage("Usuario cargado correctamente", "success");
+  }
 
   // Logout
   logoutBtn.addEventListener("click", () => {
@@ -57,24 +70,28 @@
 
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files[0];
-    if(!file) { msg.textContent = "Selecciona una imagen primero"; return; }
+    if(!file) { showMessage("Selecciona una imagen primero", "error"); return; }
 
     const filePath = `avatars/${user.id}/${Date.now()}-${file.name}`;
-    msg.textContent = "Subiendo imagen...";
+    showMessage("Subiendo imagen...", "info");
 
-    const { data: uploadData, error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
-    if(uploadError) { msg.textContent = "Error al subir imagen: " + uploadError.message; return; }
+    try {
+      const { data: uploadData, error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
+      if(uploadError) throw uploadError;
 
-    const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    const publicUrl = urlData.publicUrl;
+      const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+      const publicUrl = urlData.publicUrl;
 
-    const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
-    if(dbError) { msg.textContent = "Error al actualizar la base de datos: " + dbError.message; return; }
+      const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
+      if(dbError) throw dbError;
 
-    user.profile_url = publicUrl;
-    localStorage.setItem("currentUser", JSON.stringify(user));
-    profileImg.src = publicUrl;
-    msg.textContent = "✅ Foto actualizada correctamente";
+      user.profile_url = publicUrl;
+      localStorage.setItem("currentUser", JSON.stringify(user));
+      profileImg.src = publicUrl;
+      showMessage("✅ Foto actualizada correctamente", "success");
+    } catch(err) {
+      showMessage("❌ Error: " + (err.message || err), "error");
+    }
   });
 </script>
 
