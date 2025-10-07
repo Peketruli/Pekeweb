@@ -73,6 +73,40 @@
     localStorage.removeItem("currentUser");
     window.location.href = "login.html";
   });
+
+  async function uploadProfilePhoto(file) {
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  if(!user) { alert("Debes iniciar sesión"); return; }
+
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${user.id}.${fileExt}`;
+
+  const { error: uploadError } = await supabase
+    .storage
+    .from('profile-photos')
+    .upload(fileName, file, { upsert: true });
+
+  if(uploadError) {
+    console.error("Error al subir imagen:", uploadError);
+    alert("Error al subir imagen: " + uploadError.message);
+    return;
+  }
+
+  // Obtener URL pública
+  const { data } = supabase.storage.from('profile-photos').getPublicUrl(fileName);
+  const photoUrl = data.publicUrl;
+
+  // Guardar URL en tu tabla de usuarios
+  await supabase.from('users').update({ logo: photoUrl }).eq('id', user.id);
+
+  // Actualizar localStorage
+  user.logo = photoUrl;
+  localStorage.setItem("currentUser", JSON.stringify(user));
+
+  // Actualizar imagen en la UI
+  document.getElementById("userLogo").src = photoUrl;
+}
+
 </script>
 
 </body>
