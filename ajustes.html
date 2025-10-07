@@ -3,24 +3,52 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Perfil de Usuario (Debug)</title>
+<title>Perfil de Usuario (Debug Visual)</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/supabase.min.js"></script>
 <style>
-  body { font-family: Arial, sans-serif; background:#f4f4f4; text-align:center; padding:40px; }
-  img { border-radius:50%; width:150px; height:150px; object-fit:cover; border:3px solid #333; }
-  input,button { margin-top:10px; padding:8px; }
-  #status { margin-top:15px; background:#ddd; display:inline-block; padding:8px 14px; border-radius:6px; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #f4f4f4;
+    text-align: center;
+    padding: 40px;
+  }
+  img {
+    border-radius: 50%;
+    width: 150px;
+    height: 150px;
+    object-fit: cover;
+    border: 3px solid #333;
+  }
+  input, button {
+    margin-top: 10px;
+    padding: 8px;
+  }
+  #log {
+    margin-top: 25px;
+    text-align: left;
+    max-width: 500px;
+    margin-inline: auto;
+    background: #111;
+    color: #0f0;
+    padding: 15px;
+    border-radius: 8px;
+    font-family: monospace;
+    white-space: pre-wrap;
+  }
 </style>
 </head>
 <body>
 
 <h1>Tu Perfil</h1>
+
 <img id="profileImg" src="https://tuweb.com/default-profile.png" alt="Foto de perfil">
+
 <div>
   <input type="file" id="profileInput" accept="image/*">
   <button id="uploadBtn">Subir Foto</button>
 </div>
-<div id="status">Esperando...</div>
+
+<div id="log">🟢 Esperando acción...</div>
 
 <script>
   const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
@@ -30,64 +58,75 @@
   const img = document.getElementById("profileImg");
   const btn = document.getElementById("uploadBtn");
   const input = document.getElementById("profileInput");
-  const status = document.getElementById("status");
+  const logBox = document.getElementById("log");
 
-  function setStatus(msg, color="#333") {
-    status.textContent = msg;
-    status.style.color = color;
+  function log(msg, color="lime") {
+    logBox.style.color = color;
+    logBox.textContent += "\n" + msg;
   }
 
   async function getUser() {
+    log("🔹 Obteniendo usuario actual...");
     const { data, error } = await supabase.auth.getUser();
-    console.log("getUser ->", data, error);
-    if (error || !data.user) {
-      setStatus("No hay sesión activa ❌", "red");
+
+    if (error) {
+      log("❌ Error al obtener usuario: " + error.message, "red");
       return null;
     }
+
+    if (!data.user) {
+      log("⚠️ No hay usuario logueado (auth.getUser() = null)", "yellow");
+      return null;
+    }
+
+    log("✅ Usuario detectado: " + data.user.id);
     return data.user;
   }
 
   async function uploadProfile() {
-    console.log("uploadProfile() iniciada");
+    log("\n===============================");
+    log("📤 Subida de foto iniciada...");
+
     const file = input.files[0];
-    if (!file) return setStatus("Selecciona un archivo primero", "red");
+    if (!file) {
+      log("❌ No se seleccionó archivo.", "red");
+      return;
+    }
 
     const user = await getUser();
-    if (!user) return;
-
-    setStatus("Subiendo imagen...", "blue");
-    console.log("Subiendo archivo:", file.name);
+    if (!user) {
+      log("❌ No hay sesión activa. No se puede subir.", "red");
+      return;
+    }
 
     const filePath = `${user.id}/${Date.now()}-${file.name}`;
+    log("➡️ Subiendo archivo: " + filePath);
+
     const { data: uploadData, error: uploadError } = await supabase.storage
       .from("avatars")
       .upload(filePath, file, { upsert: true });
 
-    console.log("uploadData:", uploadData, "uploadError:", uploadError);
-
     if (uploadError) {
-      setStatus("Error al subir: " + uploadError.message, "red");
+      log("❌ Error al subir archivo: " + uploadError.message, "red");
       return;
     }
 
     const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(filePath);
     const publicUrl = publicData.publicUrl;
-    console.log("publicUrl:", publicUrl);
+    log("🌐 URL pública generada: " + publicUrl);
 
     const { error: updateError } = await supabase
       .from("usuarios")
       .update({ profile_url: publicUrl })
       .eq("id", user.id);
 
-    console.log("updateError:", updateError);
-
     if (updateError) {
-      setStatus("Error DB: " + updateError.message, "red");
+      log("❌ Error al actualizar la tabla usuarios: " + updateError.message, "red");
       return;
     }
 
     img.src = publicUrl;
-    setStatus("✅ Foto actualizada correctamente", "green");
+    log("✅ Foto actualizada correctamente", "lime");
   }
 
   btn.addEventListener("click", uploadProfile);
