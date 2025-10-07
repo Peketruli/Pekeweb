@@ -5,12 +5,12 @@
 <title>Ajustes de Perfil</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-body { background:#111; color:white; font-family:Arial; text-align:center; padding:40px; }
-.container { background:#222; padding:30px; border-radius:10px; width:320px; margin:auto; }
-img { width:100px; height:100px; border-radius:50%; object-fit:cover; margin-bottom:10px; border:2px solid #444; }
-button, label { background:#007bff; color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; margin:5px; }
-button:hover { background:#0056b3; }
-#logoutBtn { background:#dc3545; }
+  body { background:#111; color:white; font-family:Arial; text-align:center; padding:40px; }
+  .container { background:#222; padding:30px; border-radius:10px; width:320px; margin:auto; }
+  img { width:100px; height:100px; border-radius:50%; object-fit:cover; margin-bottom:10px; border:2px solid #444; }
+  button, label { background:#007bff; color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; margin:5px; }
+  button:hover { background:#0056b3; }
+  #logoutBtn { background:#dc3545; }
 </style>
 </head>
 <body>
@@ -29,64 +29,57 @@ button:hover { background:#0056b3; }
 </div>
 
 <script>
-const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // ⚠ Usa solo la anon key aquí
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  // Configuración de Supabase
+  const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // reemplaza con tu API key anon
+  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-document.addEventListener("DOMContentLoaded", async () => {
   const user = JSON.parse(localStorage.getItem("currentUser"));
-  if (!user) { window.location.href = "login.html"; return; }
-
-  const profileImg = document.getElementById("profileImg");
-  const userName = document.getElementById("userName");
   const fileInput = document.getElementById("fileInput");
   const uploadBtn = document.getElementById("uploadBtn");
   const msg = document.getElementById("msg");
-  const logoutBtn = document.getElementById("logoutBtn");
 
-  userName.textContent = user.username || "Usuario";
-  profileImg.src = user.logo || "logoDefault.png";
+  // Validar usuario
+  if(!user) window.location.href = "login.html";
 
+  // Mostrar info
+  document.getElementById("userName").textContent = user.username || "Usuario";
+  document.getElementById("profileImg").src = user.profile_url || "logoDefault.png";
+
+  // Cerrar sesión
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    localStorage.removeItem("currentUser");
+    window.location.href = "login.html";
+  });
+
+  // Subir foto
   uploadBtn.addEventListener("click", async () => {
     const file = fileInput.files[0];
-    if (!file) return msg.textContent = "Selecciona una imagen primero";
+    if(!file) { msg.textContent = "Selecciona una imagen primero"; return; }
 
-    const fileExt = file.name.split('.').pop();
-    const filePath = `avatars/${user.id}.${fileExt}`;
+    const filePath = `${user.id}/${Date.now()}-${file.name}`;
 
-    // Subida al bucket usando la sesión del usuario
-    const { error: uploadError } = await supabase.storage
-      .from("avatars")
-      .upload(filePath, file, { upsert: true });
+    // Subida al bucket
+    const { data, error } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
+    if(error) { msg.textContent = "Error al subir imagen: " + error.message; return; }
 
-    if (uploadError) {
-      msg.textContent = "Error al subir imagen: " + uploadError.message;
-      return;
-    }
+    const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+    const publicUrl = urlData.publicUrl;
 
-    const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    const publicUrl = data.publicUrl;
-
-    // Guardar URL en la tabla usuarios
+    // Actualizar tabla usuarios
     const { error: dbError } = await supabase
       .from("usuarios")
       .update({ profile_url: publicUrl })
       .eq("id", user.id);
 
-    if (dbError) { msg.textContent = "Error en la base de datos: " + dbError.message; return; }
+    if(dbError) { msg.textContent = "Error en la base de datos: " + dbError.message; return; }
 
-    user.logo = publicUrl;
+    // Actualizar localStorage y UI
+    user.profile_url = publicUrl;
     localStorage.setItem("currentUser", JSON.stringify(user));
-    profileImg.src = publicUrl;
+    document.getElementById("profileImg").src = publicUrl;
     msg.textContent = "✅ Foto actualizada correctamente";
   });
-
-  logoutBtn.addEventListener("click", () => {
-    localStorage.removeItem("currentUser");
-    window.location.href = "login.html";
-  });
-});
 </script>
-
 </body>
 </html>
