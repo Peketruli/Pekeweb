@@ -32,8 +32,7 @@
 
 <script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; // tu anon key
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const profileImg = document.getElementById("profileImg");
@@ -44,81 +43,74 @@ const hubBtn = document.getElementById("hubBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const msgEl = document.getElementById("msg");
 
-function showMessage(text, type="info") {
+// Mostrar mensaje
+function showMessage(text, type="info"){
   msgEl.textContent = text;
-  msgEl.style.color = type === "error" ? "#ff4d4d" : type === "success" ? "#4dff88" : "#fff";
+  msgEl.style.color = type==="error" ? "#ff4d4d" : type==="success" ? "#4dff88" : "#fff";
 }
 
-// Cargar usuario desde Supabase Auth + tabla usuarios
-async function loadUser() {
-  // Primero revisamos localStorage
-  let user = JSON.parse(localStorage.getItem("currentUser"));
-  if(user) {
-    userNameEl.textContent = user.username || "Usuario";
-    profileImg.src = user.profile_url || "https://tuweb.com/default-profile.png";
-    showMessage("✅ Sesión cargada correctamente desde localStorage", "success");
-    return user;
-  }
-
-  // Si no hay localStorage, intentamos con Supabase Auth
+// Cargar sesión de Supabase
+async function loadUser(){
   const { data: { session }, error } = await supabase.auth.getSession();
-  if(error || !session || !session.user) {
+  if(error || !session){
     showMessage("No hay sesión activa. Redirigiendo...", "error");
     setTimeout(()=>window.location.href="login.html",1500);
     return null;
   }
-
+  
   const userId = session.user.id;
-  const { data, error: userError } = await supabase.from("usuarios").select("*").eq("id", userId).single();
-  if(userError || !data) {
-    showMessage("No se pudo cargar tu info: "+(userError?.message || "Usuario no encontrado"), "error");
+  const { data: userData, error: userError } = await supabase
+    .from("usuarios")
+    .select("*")
+    .eq("id", userId)
+    .single();
+
+  if(userError || !userData){
+    showMessage("No se pudo cargar tu usuario: " + (userError?.message || "Desconocido"), "error");
     return null;
   }
 
-  localStorage.setItem("currentUser", JSON.stringify(data));
-  userNameEl.textContent = data.username || "Usuario";
-  profileImg.src = data.profile_url || "https://tuweb.com/default-profile.png";
-  showMessage("✅ Sesión cargada correctamente desde Supabase Auth", "success");
-  return data;
+  userNameEl.textContent = userData.username || "Usuario";
+  profileImg.src = userData.profile_url || "https://tuweb.com/default-profile.png";
+  return userData;
 }
 
-
-let currentUser = null;
-loadUser().then(u => currentUser = u);
-
 // Subir imagen
-uploadBtn.addEventListener("click", async () => {
-  if(!currentUser){ showMessage("No hay usuario cargado", "error"); return; }
+uploadBtn.addEventListener("click", async ()=>{
+  const user = await loadUser();
+  if(!user) return;
+
   const file = fileInput.files[0];
   if(!file){ showMessage("Selecciona una imagen primero", "error"); return; }
 
-  const filePath = `${currentUser.id}/${Date.now()}-${file.name}`;
+  const filePath = `${user.id}/${Date.now()}-${file.name}`;
   showMessage("Subiendo imagen...", "info");
 
-  const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
-  if(uploadError){ showMessage("Error al subir imagen: "+uploadError.message, "error"); return; }
+  const { data, error } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
+  if(error){ showMessage("Error al subir imagen: "+error.message, "error"); return; }
 
   const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
   const publicUrl = urlData.publicUrl;
 
-  const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", currentUser.id);
-  if(dbError){ showMessage("Error al guardar en base de datos: "+dbError.message,"error"); return; }
+  const { error: dbError } = await supabase.from("usuarios")
+    .update({ profile_url: publicUrl })
+    .eq("id", user.id);
 
-  currentUser.profile_url = publicUrl;
-  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  if(dbError){ showMessage("Error guardando URL: "+dbError.message, "error"); return; }
+
   profileImg.src = publicUrl;
-  showMessage("✅ Foto de perfil actualizada", "success");
+  showMessage("✅ Foto actualizada correctamente", "success");
 });
 
 // Botones
-hubBtn.addEventListener("click", ()=>window.location.href="Hub.html");
+hubBtn.addEventListener("click", ()=> window.location.href="Hub.html");
 logoutBtn.addEventListener("click", async ()=>{
   await supabase.auth.signOut();
-  localStorage.removeItem("currentUser");
-  showMessage("Cerrando sesión...");
-  setTimeout(()=>window.location.href="login.html",1000);
+  window.location.href="login.html";
 });
-</script>
 
+// Cargar usuario al inicio
+loadUser();
+</script>
 </body>
 </html>
