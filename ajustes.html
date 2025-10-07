@@ -11,7 +11,7 @@
   button, label { background:#007bff; color:white; border:none; padding:10px 18px; border-radius:6px; cursor:pointer; margin:5px; font-size:1em; }
   button:hover, label:hover { background:#0056b3; }
   #logoutBtn { background:#dc3545; }
-  #msg { margin-top:10px; font-weight:bold; min-height: 20px; }
+  #msg { margin-top:10px; font-weight:bold; min-height:20px; }
 </style>
 </head>
 <body>
@@ -34,12 +34,7 @@
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiIsImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true
-  }
-});
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const profileImg = document.getElementById("profileImg");
 const userNameEl = document.getElementById("userName");
@@ -49,58 +44,30 @@ const hubBtn = document.getElementById("hubBtn");
 const logoutBtn = document.getElementById("logoutBtn");
 const msgEl = document.getElementById("msg");
 
+// Mostrar mensaje visual
 function showMessage(text, type="info") {
   msgEl.textContent = text;
   msgEl.style.color = type === "error" ? "#ff4d4d" : type === "success" ? "#4dff88" : "#fff";
 }
 
-// --- CARGAR SESIÓN DEL USUARIO ---
-async function loadUser() {
-  showMessage("Cargando sesión...");
-  const { data: { session }, error } = await supabase.auth.getSession();
-
-  if (error) {
-    showMessage("Error al obtener sesión: " + error.message, "error");
-    return null;
-  }
-
-  if (!session || !session.user) {
-    showMessage("⚠️ No hay sesión activa. Redirigiendo...", "error");
-    setTimeout(() => window.location.href = "login.html", 1500);
-    return null;
-  }
-
-  const userId = session.user.id;
-  const { data, error: userError } = await supabase
-    .from("usuarios")
-    .select("*")
-    .eq("id", userId)
-    .single();
-
-  if (userError || !data) {
-    showMessage("No se pudo cargar tu información", "error");
-    return null;
-  }
-
-  userNameEl.textContent = data.username || "Usuario sin nombre";
-  profileImg.src = data.profile_url || "https://tuweb.com/default-profile.png";
+// --- CARGAR USUARIO DESDE LOCALSTORAGE ---
+let user = JSON.parse(localStorage.getItem("currentUser"));
+if (!user) {
+  showMessage("No hay sesión activa. Redirigiendo...", "error");
+  setTimeout(() => window.location.href = "login.html", 1500);
+} else {
+  userNameEl.textContent = user.username || "Usuario";
+  profileImg.src = user.profile_url || "https://tuweb.com/default-profile.png";
   showMessage("✅ Sesión cargada correctamente", "success");
-  return data;
 }
 
-// --- SUBIR FOTO DE PERFIL ---
+// --- SUBIR FOTO ---
 uploadBtn.addEventListener("click", async () => {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session || !session.user) {
-    showMessage("No hay sesión activa. Inicia sesión primero", "error");
-    return;
-  }
-
-  const userId = session.user.id;
+  if (!user) { showMessage("No hay usuario cargado", "error"); return; }
   const file = fileInput.files[0];
   if (!file) { showMessage("Selecciona una imagen primero", "error"); return; }
 
-  const filePath = `${userId}/${Date.now()}-${file.name}`;
+  const filePath = `${user.id}/${Date.now()}-${file.name}`;
   showMessage("Subiendo imagen...", "info");
 
   const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert: true });
@@ -109,9 +76,11 @@ uploadBtn.addEventListener("click", async () => {
   const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
   const publicUrl = urlData.publicUrl;
 
-  const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", userId);
-  if (dbError) { showMessage("Error al guardar URL en base de datos: " + dbError.message, "error"); return; }
+  const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
+  if (dbError) { showMessage("Error al guardar en base de datos: " + dbError.message, "error"); return; }
 
+  user.profile_url = publicUrl;
+  localStorage.setItem("currentUser", JSON.stringify(user));
   profileImg.src = publicUrl;
   showMessage("✅ Foto de perfil actualizada", "success");
 });
@@ -119,15 +88,12 @@ uploadBtn.addEventListener("click", async () => {
 // --- BOTONES ---
 hubBtn.addEventListener("click", () => window.location.href = "Hub.html");
 
-logoutBtn.addEventListener("click", async () => {
-  await supabase.auth.signOut();
-  localStorage.clear();
+logoutBtn.addEventListener("click", () => {
+  localStorage.removeItem("currentUser");
   showMessage("Cerrando sesión...");
   setTimeout(() => window.location.href = "login.html", 1000);
 });
-
-// --- INICIAR ---
-loadUser();
 </script>
+
 </body>
 </html>
