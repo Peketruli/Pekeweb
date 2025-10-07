@@ -31,57 +31,50 @@
 <script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiIsImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+// Crear cliente Supabase
 const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Obtener el usuario logueado de Supabase (no solo localStorage)
 const user = JSON.parse(localStorage.getItem("currentUser"));
+const session = JSON.parse(localStorage.getItem("supabaseSession")); // <-- esto debe guardarse al login
 
-// Si no hay usuario logueado, mandar al login
-if (!user) {
+if (!user || !session) {
   window.location.href = "login.html";
-} else {
-  document.getElementById("userName").textContent = user.username || "Usuario";
-  document.getElementById("profileImg").src = user.logo || "logoDefault.png";
 }
 
-const fileInput = document.getElementById("fileInput");
-const uploadBtn = document.getElementById("uploadBtn");
-const msg = document.getElementById("msg");
-
+// Subir foto
 uploadBtn.addEventListener("click", async () => {
   const file = fileInput.files[0];
   if (!file) return msg.textContent = "Selecciona una imagen primero";
 
-  const fileName = `${user.id}/${Date.now()}-${file.name}`;
+  const filePath = `${user.id}/${Date.now()}-${file.name}`;
 
-  // Subida al bucket "avatars"
-  const { error: uploadError } = await supabase.storage
+  // Usar la sesión del usuario para autenticación
+  const { data, error } = await supabase.storage
     .from("avatars")
-    .upload(fileName, file, { upsert: true });
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: true
+    });
 
-  if (uploadError) {
-    console.error("Error al subir imagen:", uploadError);
-    return msg.textContent = "Error al subir imagen: " + uploadError.message;
-  }
+  if (error) return msg.textContent = "Error al subir imagen: " + error.message;
 
-  // Obtener URL pública
-  const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
-  const publicUrl = data.publicUrl;
+  const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+  const publicUrl = urlData.publicUrl;
 
-  // Guardar en tabla usuarios (asegúrate de que la columna sea "profile_url")
-  const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
+  // Guardar URL en tabla usuarios
+  const { error: dbError } = await supabase
+    .from("usuarios")
+    .update({ profile_url: publicUrl })
+    .eq("id", user.id);
+
   if (dbError) return msg.textContent = "Error en la base de datos: " + dbError.message;
 
-  // Actualizar UI y localStorage
+  // Actualizar UI
   user.logo = publicUrl;
   localStorage.setItem("currentUser", JSON.stringify(user));
   document.getElementById("profileImg").src = publicUrl;
   msg.textContent = "✅ Foto actualizada correctamente";
-});
-
-// Logout
-document.getElementById("logoutBtn").addEventListener("click", () => {
-  localStorage.removeItem("currentUser");
-  window.location.href = "login.html";
 });
 </script>
 
