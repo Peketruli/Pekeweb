@@ -29,84 +29,60 @@
 </div>
 
 <script>
-  const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-  const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiIsImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  const user = JSON.parse(localStorage.getItem("currentUser"));
+const user = JSON.parse(localStorage.getItem("currentUser"));
 
-  // 🔹 Si no hay usuario logueado, mandar al login
-  if (!user) {
-    window.location.href = "login.html";
-  } else {
-    document.getElementById("userName").textContent = user.username || "Usuario";
-    document.getElementById("profileImg").src = user.logo || "logoDefault.png";
-  }
+// Si no hay usuario logueado, mandar al login
+if (!user) {
+  window.location.href = "login.html";
+} else {
+  document.getElementById("userName").textContent = user.username || "Usuario";
+  document.getElementById("profileImg").src = user.logo || "logoDefault.png";
+}
 
-  const fileInput = document.getElementById("fileInput");
-  const uploadBtn = document.getElementById("uploadBtn");
-  const msg = document.getElementById("msg");
+const fileInput = document.getElementById("fileInput");
+const uploadBtn = document.getElementById("uploadBtn");
+const msg = document.getElementById("msg");
 
-  uploadBtn.addEventListener("click", async () => {
-    const file = fileInput.files[0];
-    if (!file) return msg.textContent = "Selecciona una imagen primero";
+uploadBtn.addEventListener("click", async () => {
+  const file = fileInput.files[0];
+  if (!file) return msg.textContent = "Selecciona una imagen primero";
 
-    const filePath = `${user.id}/${Date.now()}-${file.name}`;
-    const { data, error } = await supabase.storage.from("avatars").upload(filePath, file, { upsert: true });
-    if (error) return msg.textContent = "Error al subir imagen: " + error.message;
+  const fileName = `${user.id}/${Date.now()}-${file.name}`;
 
-    const { data: publicData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    const publicUrl = publicData.publicUrl;
-
-    // Guardar en la tabla usuarios
-    const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
-    if (dbError) return msg.textContent = "Error en la base de datos: " + dbError.message;
-
-    // Actualizar en localStorage y pantalla
-    user.logo = publicUrl;
-    localStorage.setItem("currentUser", JSON.stringify(user));
-    document.getElementById("profileImg").src = publicUrl;
-    msg.textContent = "✅ Foto actualizada correctamente";
-  });
-
-  document.getElementById("logoutBtn").addEventListener("click", () => {
-    localStorage.removeItem("currentUser");
-    window.location.href = "login.html";
-  });
-
-  async function uploadProfilePhoto(file) {
-  const user = JSON.parse(localStorage.getItem("currentUser"));
-  if(!user) { alert("Debes iniciar sesión"); return; }
-
-  const fileExt = file.name.split('.').pop();
-  const fileName = `${user.id}.${fileExt}`;
-
-  const { error: uploadError } = await supabase
-    .storage
-    .from('profile-photos')
+  // Subida al bucket "avatars"
+  const { error: uploadError } = await supabase.storage
+    .from("avatars")
     .upload(fileName, file, { upsert: true });
 
-  if(uploadError) {
+  if (uploadError) {
     console.error("Error al subir imagen:", uploadError);
-    alert("Error al subir imagen: " + uploadError.message);
-    return;
+    return msg.textContent = "Error al subir imagen: " + uploadError.message;
   }
 
   // Obtener URL pública
-  const { data } = supabase.storage.from('profile-photos').getPublicUrl(fileName);
-  const photoUrl = data.publicUrl;
+  const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
+  const publicUrl = data.publicUrl;
 
-  // Guardar URL en tu tabla de usuarios
-  await supabase.from('users').update({ logo: photoUrl }).eq('id', user.id);
+  // Guardar en tabla usuarios (asegúrate de que la columna sea "profile_url")
+  const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
+  if (dbError) return msg.textContent = "Error en la base de datos: " + dbError.message;
 
-  // Actualizar localStorage
-  user.logo = photoUrl;
+  // Actualizar UI y localStorage
+  user.logo = publicUrl;
   localStorage.setItem("currentUser", JSON.stringify(user));
+  document.getElementById("profileImg").src = publicUrl;
+  msg.textContent = "✅ Foto actualizada correctamente";
+});
 
-  // Actualizar imagen en la UI
-  document.getElementById("userLogo").src = photoUrl;
-}
-
+// Logout
+document.getElementById("logoutBtn").addEventListener("click", () => {
+  localStorage.removeItem("currentUser");
+  window.location.href = "login.html";
+});
 </script>
 
 </body>
