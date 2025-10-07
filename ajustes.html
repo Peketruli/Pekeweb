@@ -5,12 +5,12 @@
 <title>Ajustes de Perfil</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-  body { background:#111; color:white; font-family:Arial; text-align:center; padding:40px; }
-  .container { background:#222; padding:30px; border-radius:10px; width:320px; margin:auto; }
-  img { width:100px; height:100px; border-radius:50%; object-fit:cover; margin-bottom:10px; border:2px solid #444; }
-  button, label { background:#007bff; color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; margin:5px; }
-  button:hover { background:#0056b3; }
-  #logoutBtn { background:#dc3545; }
+body { background:#111; color:white; font-family:Arial; text-align:center; padding:40px; }
+.container { background:#222; padding:30px; border-radius:10px; width:320px; margin:auto; }
+img { width:100px; height:100px; border-radius:50%; object-fit:cover; margin-bottom:10px; border:2px solid #444; }
+button, label { background:#007bff; color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; margin:5px; }
+button:hover { background:#0056b3; }
+#logoutBtn { background:#dc3545; }
 </style>
 </head>
 <body>
@@ -30,17 +30,12 @@
 
 <script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiIsImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // ⚠ Usa solo la anon key aquí
 const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   const user = JSON.parse(localStorage.getItem("currentUser"));
-  const session = JSON.parse(localStorage.getItem("supabaseSession"));
-
-  if (!user || !session) {
-    window.location.href = "login.html";
-    return;
-  }
+  if (!user) { window.location.href = "login.html"; return; }
 
   const profileImg = document.getElementById("profileImg");
   const userName = document.getElementById("userName");
@@ -52,28 +47,33 @@ document.addEventListener("DOMContentLoaded", () => {
   userName.textContent = user.username || "Usuario";
   profileImg.src = user.logo || "logoDefault.png";
 
-  // Botón subir foto
   uploadBtn.addEventListener("click", async () => {
     const file = fileInput.files[0];
     if (!file) return msg.textContent = "Selecciona una imagen primero";
 
-    const filePath = `${user.id}/${Date.now()}-${file.name}`;
+    const fileExt = file.name.split('.').pop();
+    const filePath = `avatars/${user.id}.${fileExt}`;
 
-    const { data, error } = await supabase.storage
+    // Subida al bucket usando la sesión del usuario
+    const { error: uploadError } = await supabase.storage
       .from("avatars")
       .upload(filePath, file, { upsert: true });
 
-    if (error) return msg.textContent = "Error al subir imagen: " + error.message;
+    if (uploadError) {
+      msg.textContent = "Error al subir imagen: " + uploadError.message;
+      return;
+    }
 
-    const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    const publicUrl = urlData.publicUrl;
+    const { data } = supabase.storage.from("avatars").getPublicUrl(filePath);
+    const publicUrl = data.publicUrl;
 
+    // Guardar URL en la tabla usuarios
     const { error: dbError } = await supabase
       .from("usuarios")
       .update({ profile_url: publicUrl })
       .eq("id", user.id);
 
-    if (dbError) return msg.textContent = "Error en la base de datos: " + dbError.message;
+    if (dbError) { msg.textContent = "Error en la base de datos: " + dbError.message; return; }
 
     user.logo = publicUrl;
     localStorage.setItem("currentUser", JSON.stringify(user));
@@ -81,13 +81,12 @@ document.addEventListener("DOMContentLoaded", () => {
     msg.textContent = "✅ Foto actualizada correctamente";
   });
 
-  // Botón cerrar sesión
   logoutBtn.addEventListener("click", () => {
     localStorage.removeItem("currentUser");
-    localStorage.removeItem("supabaseSession");
     window.location.href = "login.html";
   });
 });
 </script>
+
 </body>
 </html>
