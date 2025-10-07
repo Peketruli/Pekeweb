@@ -8,97 +8,92 @@
   body { background:#111; color:white; font-family:Arial; text-align:center; padding:40px; }
   .container { background:#222; padding:30px; border-radius:10px; width:350px; margin:auto; }
   img { width:120px; height:120px; border-radius:50%; object-fit:cover; margin-bottom:10px; border:2px solid #444; }
-  button { background:#007bff; color:white; border:none; padding:10px 20px; border-radius:6px; cursor:pointer; margin:5px; }
-  button:hover { background:#0056b3; }
-  #uploadBtn { background:#28a745; }
-  #hubBtn { background:#6c757d; }
-  #msg { margin-top:15px; min-height:20px; font-weight:bold; }
-  .success { color:#00ff7f; }
-  .error { color:#ff3d3d; }
-  .info { color:#ffff00; }
+  button, label { background:#007bff; color:white; border:none; padding:10px 18px; border-radius:6px; cursor:pointer; margin:5px; font-size:1em; }
+  button:hover, label:hover { background:#0056b3; }
+  #logoutBtn { background:#dc3545; }
+  #msg { margin-top:10px; font-weight:bold; }
 </style>
 </head>
 <body>
 
 <h1>Ajustes de tu perfil</h1>
+
 <div class="container">
   <img id="profileImg" src="https://tuweb.com/default-profile.png" alt="Foto de perfil">
-
   <h2 id="userName">Cargando...</h2>
 
   <input type="file" id="fileInput" accept="image/*"><br>
-
-  <button id="uploadBtn">Cambiar foto</button>
+  <button id="uploadBtn">Cambiar foto</button><br>
   <button id="hubBtn">Volver al Hub</button>
 
-  <p id="msg" class="info"></p>
+  <p id="msg"></p>
+  <button id="logoutBtn">Cerrar sesión</button>
 </div>
 
 <script>
-  // Configuración de Supabase
-  const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiIsImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiIsImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 
-  const profileImg = document.getElementById("profileImg");
-  const userNameEl = document.getElementById("userName");
-  const fileInput = document.getElementById("fileInput");
-  const uploadBtn = document.getElementById("uploadBtn");
-  const hubBtn = document.getElementById("hubBtn");
-  const msg = document.getElementById("msg");
+const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  function showMessage(text, type="info"){
-    msg.textContent = text;
-    msg.className = type;
-  }
+const profileImg = document.getElementById("profileImg");
+const userNameEl = document.getElementById("userName");
+const fileInput = document.getElementById("fileInput");
+const uploadBtn = document.getElementById("uploadBtn");
+const hubBtn = document.getElementById("hubBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const msgEl = document.getElementById("msg");
 
-  // Obtener usuario del localStorage
-  let user = JSON.parse(localStorage.getItem("currentUser"));
-  if(!user){
-    showMessage("Usuario no encontrado. Redirigiendo al login...", "error");
-    setTimeout(()=>window.location.href="login.html", 1500);
-  } else {
-    userNameEl.textContent = user.username || "Usuario";
-    profileImg.src = user.profile_url || "https://tuweb.com/default-profile.png";
-    showMessage("Usuario cargado correctamente", "success");
-  }
+// Función para mostrar mensajes
+function showMessage(text, type="info") {
+  msgEl.textContent = text;
+  msgEl.style.color = type === "error" ? "#ff4d4d" : type === "success" ? "#4dff88" : "#fff";
+}
 
-  // Volver al Hub
-  hubBtn.addEventListener("click", ()=>window.location.href="Hub.html");
+// Cargar usuario desde localStorage
+let user = JSON.parse(localStorage.getItem("currentUser"));
+if(!user) {
+  showMessage("Usuario no encontrado. Redirigiendo al login...", "error");
+  setTimeout(()=>window.location.href="login.html",1500);
+} else {
+  userNameEl.textContent = user.username || "Usuario";
+  profileImg.src = user.profile_url || "https://tuweb.com/default-profile.png";
+  showMessage("Usuario cargado correctamente", "success");
+}
 
-  // Subir/cambiar foto
-  uploadBtn.addEventListener("click", async ()=>{
-    if(!fileInput.files[0]){
-      showMessage("Selecciona una imagen primero", "error");
-      return;
-    }
+// Subir foto de perfil
+uploadBtn.addEventListener("click", async () => {
+  const file = fileInput.files[0];
+  if(!file) { showMessage("Selecciona una imagen primero", "error"); return; }
 
-    const file = fileInput.files[0];
-    const filePath = `avatars/${user.id}/${Date.now()}-${file.name}`;
-    showMessage("Subiendo imagen...", "info");
+  const filePath = `${user.id}/${Date.now()}-${file.name}`;
+  showMessage("Subiendo imagen...", "info");
 
-    try{
-      // Subida al bucket
-      const { data: uploadData, error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
-      if(uploadError) throw uploadError;
+  const { data, error } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
+  if(error){ showMessage("Error al subir imagen: " + error.message, "error"); return; }
 
-      // Obtener URL pública
-      const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-      const publicUrl = urlData.publicUrl;
+  const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
+  const publicUrl = urlData.publicUrl;
 
-      // Actualizar tabla usuarios
-      const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
-      if(dbError) throw dbError;
+  // Guardar URL en la tabla usuarios
+  const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
+  if(dbError){ showMessage("Error al guardar en la base de datos: " + dbError.message, "error"); return; }
 
-      // Actualizar localStorage y UI
-      user.profile_url = publicUrl;
-      localStorage.setItem("currentUser", JSON.stringify(user));
-      profileImg.src = publicUrl;
-      showMessage("✅ Foto actualizada correctamente", "success");
-    } catch(err){
-      showMessage("❌ Error: " + (err.message || err), "error");
-    }
-  });
+  // Actualizar UI y localStorage
+  user.profile_url = publicUrl;
+  localStorage.setItem("currentUser", JSON.stringify(user));
+  profileImg.src = publicUrl;
+  showMessage("✅ Foto actualizada correctamente", "success");
+});
+
+// Botón para volver al Hub
+hubBtn.addEventListener("click", () => { window.location.href="Hub.html"; });
+
+// Cerrar sesión
+logoutBtn.addEventListener("click", () => {
+  localStorage.removeItem("currentUser");
+  window.location.href="login.html";
+});
 </script>
 
 </body>
