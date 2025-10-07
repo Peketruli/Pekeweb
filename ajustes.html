@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>Ajustes de Perfil</title>
-<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.35.0/dist/supabase.min.js"></script>
 <style>
   body { background:#111; color:white; font-family:Arial; text-align:center; padding:40px; }
   .container { background:#222; padding:30px; border-radius:10px; width:320px; margin:auto; }
@@ -20,8 +20,7 @@
   <img id="profileImg" src="logoDefault.png" alt="Foto de perfil">
   <h2 id="userName">Cargando...</h2>
 
-  <label for="fileInput">📸 Cambiar foto</label>
-  <input type="file" id="fileInput" accept="image/*" style="display:none;">
+  <input type="file" id="fileInput" accept="image/*">
   <button id="uploadBtn">Subir Foto</button>
 
   <p id="msg"></p>
@@ -29,57 +28,58 @@
 </div>
 
 <script>
-  // Configuración de Supabase
+  // Configura Supabase
   const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // reemplaza con tu API key anon
-  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // reemplaza por tu key anon
+  const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  const user = JSON.parse(localStorage.getItem("currentUser"));
+  // Elementos
+  const profileImg = document.getElementById("profileImg");
+  const userNameEl = document.getElementById("userName");
   const fileInput = document.getElementById("fileInput");
   const uploadBtn = document.getElementById("uploadBtn");
   const msg = document.getElementById("msg");
+  const logoutBtn = document.getElementById("logoutBtn");
 
-  // Validar usuario
-  if(!user) window.location.href = "login.html";
-
-  // Mostrar info
-  document.getElementById("userName").textContent = user.username || "Usuario";
-  document.getElementById("profileImg").src = user.profile_url || "logoDefault.png";
+  // Obtener usuario del localStorage
+  let user = JSON.parse(localStorage.getItem("currentUser"));
+  if(!user) {
+    window.location.href = "login.html";
+  } else {
+    userNameEl.textContent = user.username || "Usuario";
+    profileImg.src = user.profile_url || "logoDefault.png";
+  }
 
   // Cerrar sesión
-  document.getElementById("logoutBtn").addEventListener("click", () => {
+  logoutBtn.addEventListener("click", () => {
     localStorage.removeItem("currentUser");
     window.location.href = "login.html";
   });
 
   // Subir foto
   uploadBtn.addEventListener("click", async () => {
+    if(!fileInput.files[0]) { msg.textContent = "Selecciona una imagen primero"; return; }
     const file = fileInput.files[0];
-    if(!file) { msg.textContent = "Selecciona una imagen primero"; return; }
-
     const filePath = `${user.id}/${Date.now()}-${file.name}`;
 
-    // Subida al bucket
-    const { data, error } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
-    if(error) { msg.textContent = "Error al subir imagen: " + error.message; return; }
+    // Subida
+    const { data: uploadData, error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
+    if(uploadError) { msg.textContent = "Error al subir imagen: " + uploadError.message; return; }
 
     const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
     const publicUrl = urlData.publicUrl;
 
     // Actualizar tabla usuarios
-    const { error: dbError } = await supabase
-      .from("usuarios")
-      .update({ profile_url: publicUrl })
-      .eq("id", user.id);
+    const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
+    if(dbError) { msg.textContent = "Error al guardar en la DB: " + dbError.message; return; }
 
-    if(dbError) { msg.textContent = "Error en la base de datos: " + dbError.message; return; }
-
-    // Actualizar localStorage y UI
+    // Actualizar UI y localStorage
     user.profile_url = publicUrl;
     localStorage.setItem("currentUser", JSON.stringify(user));
-    document.getElementById("profileImg").src = publicUrl;
+    profileImg.src = publicUrl;
     msg.textContent = "✅ Foto actualizada correctamente";
   });
 </script>
+
 </body>
 </html>
