@@ -8,80 +8,69 @@
   body { background:#111; color:white; font-family:Arial; text-align:center; padding:40px; }
   .container { background:#222; padding:30px; border-radius:10px; width:320px; margin:auto; }
   img { width:100px; height:100px; border-radius:50%; object-fit:cover; margin-bottom:10px; border:2px solid #444; cursor:pointer; }
-  button, input { background:#007bff; color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; margin:5px; }
+  button, label { background:#007bff; color:white; border:none; padding:8px 15px; border-radius:6px; cursor:pointer; margin:5px; }
   button:hover { background:#0056b3; }
   #logoutBtn { background:#dc3545; }
+  #msg { margin-top:10px; font-size:0.9em; }
 </style>
 </head>
 <body>
 
 <h1>Ajustes de tu perfil</h1>
 <div class="container">
-  <img id="profileImg" src="logoDefault.png" alt="Foto de perfil" title="Haz clic para cambiar">
+  <img id="profileImg" src="https://tuweb.com/default-profile.png" alt="Foto de perfil">
   <h2 id="userName">Cargando...</h2>
 
+  <p>Haz clic en la foto para cambiar tu avatar</p>
   <input type="file" id="fileInput" accept="image/*" style="display:none;">
-  <button id="uploadBtn">Subir Foto</button>
-
+  
   <p id="msg"></p>
   <button id="logoutBtn">Cerrar sesión</button>
 </div>
 
 <script>
-  // Configuración Supabase
   const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // Reemplaza con tu anon key
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiIsImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
   const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
   const profileImg = document.getElementById("profileImg");
   const userNameEl = document.getElementById("userName");
   const fileInput = document.getElementById("fileInput");
-  const uploadBtn = document.getElementById("uploadBtn");
   const msg = document.getElementById("msg");
   const logoutBtn = document.getElementById("logoutBtn");
 
-  // Obtener usuario del localStorage
+  // Obtener usuario
   let user = JSON.parse(localStorage.getItem("currentUser"));
   if(!user) window.location.href = "login.html";
 
-  // Mostrar información del usuario
   userNameEl.textContent = user.username || "Usuario";
   profileImg.src = user.profile_url || "https://tuweb.com/default-profile.png";
 
-  // Click en la imagen abre el selector de archivo
-  profileImg.addEventListener("click", () => fileInput.click());
-
-  // Preview instantáneo
-  fileInput.addEventListener("change", () => {
-    if(fileInput.files[0]) profileImg.src = URL.createObjectURL(fileInput.files[0]);
-  });
-
-  // Cerrar sesión
+  // Logout
   logoutBtn.addEventListener("click", () => {
     localStorage.removeItem("currentUser");
     window.location.href = "login.html";
   });
 
-  // Subir foto de perfil
-  uploadBtn.addEventListener("click", async () => {
-    if(!fileInput.files[0]) { msg.textContent = "Selecciona una imagen primero"; return; }
+  // Cambiar foto
+  profileImg.addEventListener("click", () => fileInput.click());
 
+  fileInput.addEventListener("change", async () => {
     const file = fileInput.files[0];
+    if(!file) { msg.textContent = "Selecciona una imagen primero"; return; }
+
     const filePath = `avatars/${user.id}/${Date.now()}-${file.name}`;
+    msg.textContent = "Subiendo imagen...";
 
-    // Subida al bucket
-    const { data, error } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
-    if(error) { msg.textContent = "Error al subir imagen: " + error.message; return; }
+    const { data: uploadData, error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert:true });
+    if(uploadError) { msg.textContent = "Error al subir imagen: " + uploadError.message; return; }
 
-    // Obtener URL pública
     const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
     const publicUrl = urlData.publicUrl;
 
-    // Actualizar tabla usuarios
     const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", user.id);
-    if(dbError) { msg.textContent = "Error en DB: " + dbError.message; return; }
+    if(dbError) { msg.textContent = "Error al actualizar la base de datos: " + dbError.message; return; }
 
-    // Actualizar localStorage y UI
     user.profile_url = publicUrl;
     localStorage.setItem("currentUser", JSON.stringify(user));
     profileImg.src = publicUrl;
