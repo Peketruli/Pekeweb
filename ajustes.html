@@ -2,132 +2,129 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Ajustes de Perfil</title>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.35.0/dist/umd/supabase.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ajustes de tu perfil</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-  body { background:#111; color:white; font-family:Arial; text-align:center; padding:40px; }
-  .container { background:#222; padding:30px; border-radius:10px; width:350px; margin:auto; }
-  img { width:120px; height:120px; border-radius:50%; object-fit:cover; margin-bottom:10px; border:2px solid #444; }
-  button, label { background:#007bff; color:white; border:none; padding:10px 18px; border-radius:6px; cursor:pointer; margin:5px; font-size:1em; }
-  button:hover, label:hover { background:#0056b3; }
-  #logoutBtn { background:#dc3545; }
-  #msg { margin-top:10px; font-weight:bold; min-height:25px; }
+  body {
+    font-family: Arial, sans-serif;
+    background: #111;
+    color: white;
+    text-align: center;
+    margin-top: 50px;
+  }
+  .container {
+    background: #1c1c1c;
+    padding: 30px;
+    border-radius: 10px;
+    display: inline-block;
+  }
+  img {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 3px solid #444;
+  }
+  button {
+    margin: 10px;
+    padding: 10px 20px;
+    border: none;
+    background: #007bff;
+    color: white;
+    cursor: pointer;
+    border-radius: 5px;
+  }
+  button:hover { background: #0056b3; }
+  #logout { background: #e53935; }
+  #logout:hover { background: #b71c1c; }
+  .status { margin-top: 15px; font-weight: bold; }
 </style>
 </head>
 <body>
+  <h1>Ajustes de tu perfil</h1>
+  <div class="container">
+    <img id="avatar" src="" alt="Foto de perfil">
+    <h2 id="username">Cargando...</h2>
 
-<h1>Ajustes de tu perfil</h1>
+    <input type="file" id="fileInput" accept="image/*">
+    <button id="uploadBtn">Cambiar foto</button>
+    <button onclick="window.location.href='hub.html'">Volver al Hub</button>
 
-<div class="container">
-  <img id="profileImg" src="https://tuweb.com/default-profile.png" alt="Foto de perfil">
-  <h2 id="userName">Cargando...</h2>
-
-  <input type="file" id="fileInput" accept="image/*"><br>
-  <button id="uploadBtn">Cambiar foto</button><br>
-  <button id="hubBtn">Volver al Hub</button>
-
-  <p id="msg"></p>
-  <button id="logoutBtn">Cerrar sesión</button>
-</div>
+    <div id="status" class="status"></div>
+    <button id="logout">Cerrar sesión</button>
+  </div>
 
 <script>
-const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const supabaseUrl = "https://TU-PROJECT-URL.supabase.co";
+  const supabaseKey = "TU-API-KEY";
+  const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-const msg = document.getElementById("msg");
-const userNameEl = document.getElementById("userName");
-const profileImg = document.getElementById("profileImg");
-const fileInput = document.getElementById("fileInput");
-const uploadBtn = document.getElementById("uploadBtn");
-const hubBtn = document.getElementById("hubBtn");
-const logoutBtn = document.getElementById("logoutBtn");
+  const usernameEl = document.getElementById("username");
+  const avatarEl = document.getElementById("avatar");
+  const statusEl = document.getElementById("status");
+  const uploadBtn = document.getElementById("uploadBtn");
+  const fileInput = document.getElementById("fileInput");
+  const logoutBtn = document.getElementById("logout");
 
-function showMessage(text, type="info") {
-  msg.textContent = text;
-  msg.style.color = type === "error" ? "#ff4d4d" : type === "success" ? "#4dff88" : "#fff";
-}
+  async function cargarSesion() {
+    let session = null;
+    const { data } = await supabase.auth.getSession();
+    session = data.session;
 
-// 🔍 Intentar detectar el usuario automáticamente
-async function detectUser() {
-  showMessage("🔍 Detectando sesión...");
+    if (!session) {
+      const storedSession = localStorage.getItem("supabase.auth.token");
+      if (storedSession) {
+        session = JSON.parse(storedSession)?.currentSession;
+        statusEl.innerHTML = "✅ Sesión detectada desde localStorage";
+      }
+    } else {
+      statusEl.innerHTML = "✅ Sesión detectada desde Supabase";
+    }
 
-  let user = JSON.parse(localStorage.getItem("currentUser") ||
-                        localStorage.getItem("user") ||
-                        localStorage.getItem("usuario") || "null");
+    if (!session) {
+      statusEl.innerHTML = "❌ No se ha detectado una sesión activa. Inicia sesión para continuar.";
+      setTimeout(() => window.location.href = "login.html", 2500);
+      return null;
+    }
 
-  if (user && user.id) {
-    showMessage("✅ Sesión detectada desde localStorage", "success");
-    userNameEl.textContent = user.username || "Usuario";
-    profileImg.src = user.profile_url || "https://tuweb.com/default-profile.png";
+    const user = session.user;
+    usernameEl.textContent = user?.user_metadata?.username || user?.email || "Usuario";
+
+    const { data: publicUrl } = supabase.storage.from("avatars").getPublicUrl(`${user.id}.jpg`);
+    avatarEl.src = publicUrl?.publicUrl || "https://via.placeholder.com/120";
     return user;
   }
 
-  // Si no hay usuario en localStorage, intentar desde Supabase
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) {
-    showMessage("❌ No se ha detectado una sesión activa. Inicia sesión para continuar.", "error");
-    setTimeout(() => window.location.href = "login.html", 2500);
-    return null;
-  }
+  uploadBtn.addEventListener("click", async () => {
+    const user = await cargarSesion();
+    const file = fileInput.files[0];
+    if (!file) return alert("Selecciona una imagen primero.");
 
-  // Obtener datos del usuario en la tabla
-  const { data: userData, error: userErr } = await supabase
-    .from("usuarios")
-    .select("*")
-    .eq("id", data.user.id)
-    .single();
+    const filePath = `${user.id}.jpg`;
+    const { error } = await supabase.storage.from("avatars").upload(filePath, file, {
+      upsert: true,
+      contentType: file.type,
+    });
 
-  if (userErr || !userData) {
-    showMessage("Error cargando datos del usuario", "error");
-    return null;
-  }
+    if (error) {
+      console.error("Error al subir imagen:", error.message);
+      alert("❌ Error al subir imagen: " + error.message);
+      return;
+    }
 
-  localStorage.setItem("currentUser", JSON.stringify(userData));
-  userNameEl.textContent = userData.username || "Usuario";
-  profileImg.src = userData.profile_url || "https://tuweb.com/default-profile.png";
-  showMessage("✅ Sesión detectada desde Supabase", "success");
-  return userData;
-}
+    const { data: publicUrl } = supabase.storage.from("avatars").getPublicUrl(filePath);
+    avatarEl.src = publicUrl.publicUrl;
+    alert("✅ Imagen actualizada correctamente.");
+  });
 
-let currentUser = null;
+  logoutBtn.addEventListener("click", async () => {
+    await supabase.auth.signOut();
+    localStorage.removeItem("supabase.auth.token");
+    window.location.href = "login.html";
+  });
 
-uploadBtn.addEventListener("click", async () => {
-  if (!currentUser) { showMessage("❌ No hay sesión cargada", "error"); return; }
-
-  const file = fileInput.files[0];
-  if (!file) { showMessage("Selecciona una imagen primero", "error"); return; }
-
-  showMessage("Subiendo imagen...");
-  const filePath = `${currentUser.id}/${Date.now()}-${file.name}`;
-
-  const { error: uploadError } = await supabase.storage.from("avatars").upload(filePath, file, { upsert: true });
-  if (uploadError) { showMessage("Error al subir imagen: " + uploadError.message, "error"); return; }
-
-  const { data: urlData } = supabase.storage.from("avatars").getPublicUrl(filePath);
-  const publicUrl = urlData.publicUrl;
-
-  const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("id", currentUser.id);
-  if (dbError) { showMessage("Error al guardar URL: " + dbError.message, "error"); return; }
-
-  currentUser.profile_url = publicUrl;
-  localStorage.setItem("currentUser", JSON.stringify(currentUser));
-  profileImg.src = publicUrl;
-  showMessage("✅ Foto de perfil actualizada correctamente", "success");
-});
-
-hubBtn.addEventListener("click", () => window.location.href = "Hub.html");
-
-logoutBtn.addEventListener("click", () => {
-  localStorage.removeItem("currentUser");
-  showMessage("Cerrando sesión...");
-  setTimeout(() => window.location.href = "login.html", 1000);
-});
-
-(async () => {
-  currentUser = await detectUser();
-})();
+  cargarSesion();
 </script>
-
 </body>
 </html>
