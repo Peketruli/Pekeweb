@@ -44,7 +44,7 @@
 <body>
   <h1>Ajustes de tu perfil</h1>
   <div class="container">
-    <img id="avatar" src="" alt="Foto de perfil">
+    <img id="avatar" src="https://via.placeholder.com/120" alt="Foto de perfil">
     <h2 id="username">Cargando...</h2>
 
     <input type="file" id="fileInput" accept="image/*">
@@ -56,61 +56,73 @@
   </div>
 
 <script>
-  const supabaseUrl = "https://TU-PROJECT-URL.supabase.co";
-  const supabaseKey = "TU-API-KEY";
+  const supabaseUrl = "https://TU-PROJECT-URL.supabase.co"; // ⚠️ Cambia esto
+  const supabaseKey = "TU-API-KEY"; // ⚠️ Cambia esto
   const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
   const usernameEl = document.getElementById("username");
   const avatarEl = document.getElementById("avatar");
   const statusEl = document.getElementById("status");
-  const uploadBtn = document.getElementById("uploadBtn");
   const fileInput = document.getElementById("fileInput");
+  const uploadBtn = document.getElementById("uploadBtn");
   const logoutBtn = document.getElementById("logout");
 
-  async function cargarSesion() {
-    let session = null;
-    const { data } = await supabase.auth.getSession();
-    session = data.session;
+  async function getUserSession() {
+    try {
+      // Intentar obtener sesión desde Supabase
+      const { data, error } = await supabase.auth.getSession();
+      if (error) console.warn("Error al obtener sesión:", error.message);
+      let session = data?.session;
 
-    if (!session) {
-      const storedSession = localStorage.getItem("supabase.auth.token");
-      if (storedSession) {
-        session = JSON.parse(storedSession)?.currentSession;
-        statusEl.innerHTML = "✅ Sesión detectada desde localStorage";
+      // Si no hay sesión, intentar desde localStorage
+      if (!session) {
+        const stored = localStorage.getItem("supabase.auth.token");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          session = parsed?.currentSession;
+          if (session) {
+            statusEl.innerHTML = "✅ Sesión detectada desde localStorage";
+          }
+        }
       }
-    } else {
-      statusEl.innerHTML = "✅ Sesión detectada desde Supabase";
-    }
 
-    if (!session) {
-      statusEl.innerHTML = "❌ No se ha detectado una sesión activa. Inicia sesión para continuar.";
-      setTimeout(() => window.location.href = "login.html", 2500);
+      // Si sigue sin haber sesión
+      if (!session) {
+        statusEl.innerHTML = "❌ No se ha detectado una sesión activa. Inicia sesión para continuar.";
+        setTimeout(() => window.location.href = "login.html", 2500);
+        return null;
+      }
+
+      // Si la hay
+      const user = session.user;
+      usernameEl.textContent = user.user_metadata?.username || user.email || "Usuario";
+      const { data: publicUrl } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(`${user.id}.jpg`);
+      avatarEl.src = publicUrl.publicUrl;
+      return user;
+    } catch (err) {
+      console.error("Error general de sesión:", err);
+      statusEl.innerHTML = "❌ Error al cargar sesión";
       return null;
     }
-
-    const user = session.user;
-    usernameEl.textContent = user?.user_metadata?.username || user?.email || "Usuario";
-
-    const { data: publicUrl } = supabase.storage.from("avatars").getPublicUrl(`${user.id}.jpg`);
-    avatarEl.src = publicUrl?.publicUrl || "https://via.placeholder.com/120";
-    return user;
   }
 
   uploadBtn.addEventListener("click", async () => {
-    const user = await cargarSesion();
+    const user = await getUserSession();
+    if (!user) return;
+
     const file = fileInput.files[0];
     if (!file) return alert("Selecciona una imagen primero.");
 
     const filePath = `${user.id}.jpg`;
-    const { error } = await supabase.storage.from("avatars").upload(filePath, file, {
-      upsert: true,
-      contentType: file.type,
-    });
+    const { error } = await supabase.storage
+      .from("avatars")
+      .upload(filePath, file, { upsert: true, contentType: file.type });
 
     if (error) {
       console.error("Error al subir imagen:", error.message);
-      alert("❌ Error al subir imagen: " + error.message);
-      return;
+      return alert("❌ Error al subir imagen: " + error.message);
     }
 
     const { data: publicUrl } = supabase.storage.from("avatars").getPublicUrl(filePath);
@@ -124,7 +136,7 @@
     window.location.href = "login.html";
   });
 
-  cargarSesion();
+  getUserSession();
 </script>
 </body>
 </html>
