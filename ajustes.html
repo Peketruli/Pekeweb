@@ -49,11 +49,6 @@
             margin-bottom: 10px;
         }
 
-        .readonly {
-            background: #e9e9e9;
-            cursor: not-allowed;
-        }
-
         button {
             margin-top: 15px;
             padding: 10px;
@@ -68,36 +63,37 @@
         button:hover {
             background: #555;
         }
+
+        #previewLogo {
+            width: 100px;
+            height: 100px;
+            display: none;
+            margin-top: 10px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid #333;
+        }
     </style>
 </head>
 <body>
-    <button onclick="window.location.href='Hub.html'">🏠 Volver a la Página Principal</button>
+    <button onclick="window.location.href='PaginaPrincipal.html'">🏠 Volver a la Página Principal</button>
 
     <div class="settings-container">
-        <h2>Ajustes de Usuario</h2>
+        <h2>Cambiar Logo de Perfil</h2>
 
-        <label for="userEmail">Correo electrónico</label>
-        <input type="email" id="userEmail" class="readonly" readonly>
-
-        <label for="userPassword">Contraseña</label>
-        <input type="password" id="userPassword" class="readonly" readonly>
-
-        <label for="userName">Nombre de usuario</label>
-        <input type="text" id="userName" class="readonly" readonly>
-
-        <label for="userLogo">Logo de perfil</label>
+        <label for="userLogo">Selecciona una imagen</label>
         <input type="file" id="userLogo" accept="image/*">
-        <img id="previewLogo" src="" alt="Vista previa" style="width: 100px; height: 100px; display: none; margin-top: 10px;">
+        <img id="previewLogo" src="" alt="Vista previa">
 
-        <button onclick="saveSettings()">Guardar cambios</button>
+        <button onclick="saveSettings()">Guardar Logo</button>
     </div>
 
     <!-- Supabase JS -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/supabase.min.js"></script>
     <script>
         // Inicializa Supabase
-       const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+        const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
         const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
         async function loadUserSettings() {
@@ -106,15 +102,12 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 
             const { data, error } = await supabase
                 .from('users')
-                .select('*')
+                .select('logo')
                 .eq('id', user.id)
                 .single();
 
             if (error) return console.error(error);
 
-            document.getElementById("userEmail").value = data.email || "";
-            document.getElementById("userPassword").value = "********";
-            document.getElementById("userName").value = data.username || "";
             if (data.logo) {
                 document.getElementById("previewLogo").src = data.logo;
                 document.getElementById("previewLogo").style.display = "block";
@@ -137,31 +130,30 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
             if (!user) return alert("No estás logueado");
 
             const logoInput = document.getElementById("userLogo");
-            let logoUrl = null;
+            if (logoInput.files.length === 0) return alert("Selecciona una imagen primero");
 
-            if (logoInput.files.length > 0) {
-                const file = logoInput.files[0];
-                const { data, error } = await supabase.storage
-                    .from('user-logos')  // Bucket que debes crear en Supabase
-                    .upload(`${user.id}/${file.name}`, file, { upsert: true });
-
-                if (error) return console.error(error);
-
-                const { publicUrl } = supabase
-                    .storage
-                    .from('user-logos')
-                    .getPublicUrl(`${user.id}/${file.name}`);
-                logoUrl = publicUrl;
-            }
-
-            const { error } = await supabase
-                .from('users')
-                .update({ logo: logoUrl })
-                .eq('id', user.id);
+            const file = logoInput.files[0];
+            // Subir al bucket 'user-logos'
+            const { data, error } = await supabase.storage
+                .from('user-logos')
+                .upload(`${user.id}/${file.name}`, file, { upsert: true });
 
             if (error) return console.error(error);
 
-            alert("Configuración guardada");
+            const { publicUrl } = supabase
+                .storage
+                .from('user-logos')
+                .getPublicUrl(`${user.id}/${file.name}`);
+
+            // Guardar URL en tabla users
+            const { error: updateError } = await supabase
+                .from('users')
+                .update({ logo: publicUrl })
+                .eq('id', user.id);
+
+            if (updateError) return console.error(updateError);
+
+            alert("Logo actualizado correctamente");
         }
 
         document.addEventListener("DOMContentLoaded", loadUserSettings);
