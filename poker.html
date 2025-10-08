@@ -6,14 +6,64 @@
 <title>Juego de Cartas Web - Salas Online</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-  body { font-family: Arial, sans-serif; background:#4CAF50; color:#fff; text-align:center; padding:20px; }
+  body {
+    font-family: Arial, sans-serif;
+    background:#4CAF50;
+    color:#fff;
+    text-align:center;
+    padding:20px;
+  }
   h1 { margin-bottom: 10px; }
   .mano { margin: 20px 0; }
-  .carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:20px; }
-  button { padding:10px 20px; font-size:16px; cursor:pointer; border-radius:5px; border:none; background:#388E3C; color:#fff; margin:5px; }
+  .carta {
+    display:inline-block;
+    width:60px;
+    height:90px;
+    line-height:90px;
+    border:2px solid #fff;
+    border-radius:10px;
+    margin:5px;
+    background:#fff;
+    color:#000;
+    font-weight:bold;
+    font-size:20px;
+  }
+  button {
+    padding:10px 20px;
+    font-size:16px;
+    cursor:pointer;
+    border-radius:5px;
+    border:none;
+    background:#388E3C;
+    color:#fff;
+    margin:5px;
+  }
   button:hover { background:#2E7D32; }
-  input { padding:8px; border:none; border-radius:5px; margin:5px; font-size:16px; }
-  #salaCodigo { font-size:18px; color:#ffeb3b; }
+  input {
+    padding:8px;
+    border:none;
+    border-radius:5px;
+    margin:5px;
+    font-size:16px;
+  }
+  #salaCodigo {
+    font-size:18px;
+    color:#ffeb3b;
+  }
+  #listaSalas {
+    background:#2E7D32;
+    border-radius:10px;
+    padding:15px;
+    margin-top:20px;
+  }
+  .sala-item {
+    background:#66BB6A;
+    padding:8px;
+    border-radius:8px;
+    margin:5px;
+    cursor:pointer;
+  }
+  .sala-item:hover { background:#81C784; }
 </style>
 </head>
 <body>
@@ -24,6 +74,11 @@
   <input type="text" id="roomName" placeholder="Nombre de la sala">
   <button onclick="crearSala()">Crear Sala</button>
   <button onclick="unirse()">Unirse</button>
+
+  <div id="listaSalas">
+    <h3>Salas disponibles</h3>
+    <div id="salasActivas"></div>
+  </div>
 </div>
 
 <div id="juego" style="display:none;">
@@ -63,15 +118,20 @@ async function crearSala() {
   const nombreSala = document.getElementById('roomName').value.trim();
   if (!nombreSala) return alert('Ingresa un nombre para la sala');
 
+  // Verificar si la sala ya existe
+  const { data: existe } = await supabase.from('rooms').select('name').eq('name', nombreSala).single();
+  if (existe) return alert('Esa sala ya existe');
+
   const { error } = await supabase.from('rooms').insert([{ name: nombreSala }]);
   if (error) return alert('Error al crear sala: ' + error.message);
 
   alert('Sala creada con éxito: ' + nombreSala);
+  cargarSalas();
 }
 
-async function unirse() {
+async function unirse(roomName = null) {
   const player = document.getElementById('playerName').value.trim();
-  const room = document.getElementById('roomName').value.trim();
+  const room = roomName || document.getElementById('roomName').value.trim();
   if (!player || !room) return alert('Ingresa tu nombre y el nombre de la sala');
 
   salaActual = room;
@@ -111,7 +171,28 @@ async function actualizarEstado() {
   });
 }
 
+async function cargarSalas() {
+  const { data: salas, error } = await supabase.from('rooms').select('*');
+  const div = document.getElementById('salasActivas');
+  div.innerHTML = '';
+  if (error) return (div.textContent = 'Error al cargar salas');
+  if (!salas || salas.length === 0) return (div.textContent = 'No hay salas activas');
+
+  salas.forEach(sala => {
+    const item = document.createElement('div');
+    item.className = 'sala-item';
+    item.textContent = sala.name;
+    item.onclick = () => {
+      document.getElementById('roomName').value = sala.name;
+      unirse(sala.name);
+    };
+    div.appendChild(item);
+  });
+}
+
 setInterval(actualizarEstado, 5000);
+setInterval(cargarSalas, 4000);
+window.onload = cargarSalas;
 </script>
 </body>
 </html>
