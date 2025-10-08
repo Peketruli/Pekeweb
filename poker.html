@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Juego de Cartas Web</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<style>
+  body { font-family: Arial, sans-serif; background:#4CAF50; color:#fff; text-align:center; padding:20px; }
+  h1 { margin-bottom: 10px; }
+  .mano { margin: 20px 0; }
+  .carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:20px; }
+  button { padding:10px 20px; font-size:16px; cursor:pointer; border-radius:5px; border:none; background:#388E3C; color:#fff; margin:5px; }
+  button:hover { background:#2E7D32; }
+</style>
+</head>
+<body>
+<h1>Juego de Cartas Web</h1>
+
+<input type="text" id="playerName" placeholder="Tu nombre">
+<button onclick="unirse()">Empezar Partida</button>
+
+<div id="estadoJuego"></div>
+<div class="mano" id="manoJugador"></div>
+
+<script>
+const SUPABASE_URL = 'TU_SUPABASE_URL';
+const SUPABASE_KEY = 'TU_SUPABASE_ANON_KEY';
+const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const palos = ['♠','♥','♦','♣'];
+const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+
+function crearBaraja() {
+  let baraja = [];
+  for (let palo of palos) {
+    for (let valor of valores) {
+      baraja.push(valor + palo);
+    }
+  }
+  return baraja;
+}
+
+function barajar(baraja) {
+  for (let i = baraja.length-1; i>0; i--){
+    let j = Math.floor(Math.random()*(i+1));
+    [baraja[i], baraja[j]] = [baraja[j], baraja[i]];
+  }
+  return baraja;
+}
+
+async function unirse() {
+  const player = document.getElementById('playerName').value.trim();
+  if(!player) return alert('Ingresa tu nombre');
+
+  // Crear y barajar baraja local
+  let baraja = crearBaraja();
+  barajar(baraja);
+
+  // Tomar 5 cartas para el jugador
+  let mano = baraja.splice(0,5);
+
+  // Guardar jugador en Supabase
+  const { error } = await supabase.from('card_game').insert([{ player, hand: mano, points: 0 }]);
+  if(error) return alert('Error al unirse: '+error.message);
+
+  mostrarMano(mano);
+  actualizarEstado();
+}
+
+function mostrarMano(mano) {
+  const div = document.getElementById('manoJugador');
+  div.innerHTML = '';
+  mano.forEach(carta=>{
+    let cartaDiv = document.createElement('div');
+    cartaDiv.className='carta';
+    cartaDiv.textContent=carta;
+    div.appendChild(cartaDiv);
+  });
+}
+
+// Mostrar jugadores conectados y puntos
+async function actualizarEstado() {
+  let { data: jugadores } = await supabase.from('card_game').select('*');
+  const estado = document.getElementById('estadoJuego');
+  estado.innerHTML = '<h3>Jugadores conectados</h3>';
+  jugadores.forEach(j => {
+    estado.innerHTML += `<p>${j.player} - Puntos: ${j.points}</p>`;
+  });
+}
+
+// Auto actualizar cada 5 segundos
+setInterval(actualizarEstado,5000);
+</script>
+</body>
+</html>
