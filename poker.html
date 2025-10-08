@@ -1,396 +1,116 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Juego de Cartas Web - Salas</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Juego de Cartas Web - Salas Online</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
   body { font-family: Arial, sans-serif; background:#4CAF50; color:#fff; text-align:center; padding:20px; }
   h1 { margin-bottom: 10px; }
-  .controls { margin-bottom: 12px; }
-  input { padding:8px; border-radius:6px; border:none; margin:4px; }
   .mano { margin: 20px 0; }
-  .carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:18px; cursor:pointer; user-select:none; }
-  .carta.selected { box-shadow: inset 0 0 0 4px rgba(255,255,255,0.6); transform: translateY(-6px); }
-  button { padding:10px 14px; font-size:14px; cursor:pointer; border-radius:6px; border:none; background:#388E3C; color:#fff; margin:5px; }
+  .carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:20px; }
+  button { padding:10px 20px; font-size:16px; cursor:pointer; border-radius:5px; border:none; background:#388E3C; color:#fff; margin:5px; }
   button:hover { background:#2E7D32; }
-  #estadoJuego { text-align:left; display:inline-block; margin-top:10px; background: rgba(255,255,255,0.05); padding:12px; border-radius:8px; min-width:260px; }
-  .small { font-size:13px; color:#E8F5E9; }
-  .badge { background: rgba(255,255,255,0.12); padding:4px 8px; border-radius:10px; margin-left:6px; font-size:12px; }
+  input { padding:8px; border:none; border-radius:5px; margin:5px; font-size:16px; }
+  #salaCodigo { font-size:18px; color:#ffeb3b; }
 </style>
 </head>
 <body>
-<h1>Juego de Cartas Web — Salas</h1>
+<h1>Juego de Cartas Web</h1>
 
-<div class="controls">
-  <input type="text" id="playerName" placeholder="Tu nombre" />
-  <input type="text" id="roomName" placeholder="Nombre de la sala (p. ej. amigos123)" />
-  <button onclick="unirse()">Unirse / Empezar</button>
+<div id="inicio">
+  <input type="text" id="playerName" placeholder="Tu nombre">
+  <input type="text" id="roomName" placeholder="Nombre de la sala">
+  <button onclick="crearSala()">Crear Sala</button>
+  <button onclick="unirse()">Unirse</button>
 </div>
 
-<div id="estadoJuego"></div>
-
-<div class="mano" id="manoJugador"></div>
-
-<div id="acciones" style="display:none;">
-  <button onclick="toggleSelectMode()">Seleccionar cartas (clic para seleccionar)</button>
-  <button onclick="cambiarSeleccionadas()">Cambiar seleccionadas</button>
-  <span class="small" id="infoCambios"></span>
-  <div id="manoInfo" class="small" style="margin-top:8px;"></div>
+<div id="juego" style="display:none;">
+  <h3>Sala: <span id="salaCodigo"></span></h3>
+  <div id="estadoJuego"></div>
+  <div class="mano" id="manoJugador"></div>
 </div>
 
 <script>
-/* --- CONFIGURA AQUÍ --- */
 const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-/* ---------------------- */
-
 const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const palos = ['♠','♥','♦','♣'];
 const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+let salaActual = '';
 
-let localState = {
-  player: null,
-  room: null,
-  hand: [],           // mano actual del jugador
-  selecting: false,   // modo selección ON/OFF
-  selected: new Set(),// índices seleccionados
-  changesLeft: 3,
-  myRowId: null       // id del registro en DB
-};
-
-/* Crea baraja completa */
-function crearBaraja(){
+function crearBaraja() {
   let baraja = [];
-  for (let palo of palos){
-    for (let valor of valores){
+  for (let palo of palos) {
+    for (let valor of valores) {
       baraja.push(valor + palo);
     }
   }
   return baraja;
 }
 
-function barajar(array){
-  for (let i = array.length - 1; i > 0; i--){
+function barajar(baraja) {
+  for (let i = baraja.length - 1; i > 0; i--) {
     let j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
+    [baraja[i], baraja[j]] = [baraja[j], baraja[i]];
   }
-  return array;
+  return baraja;
 }
 
-/* --- UTIL: obtener todas las cartas ya usadas en la sala (por otros jugadores) --- */
-async function cartasUsadasEnSala(room, excludePlayerId = null){
-  // devuelve un Set de cartas usadas por TODOS los jugadores en la sala
-  const { data, error } = await supabase
-    .from('card_game')
-    .select('id, player, hand')
-    .eq('room', room);
+async function crearSala() {
+  const nombreSala = document.getElementById('roomName').value.trim();
+  if (!nombreSala) return alert('Ingresa un nombre para la sala');
 
-  if(error){
-    console.error('Error al leer manos en sala:', error);
-    return new Set();
-  }
-  const used = new Set();
-  (data || []).forEach(row => {
-    if(row.id === excludePlayerId) return; // omitimos, si se pide
-    if(Array.isArray(row.hand)){
-      row.hand.forEach(c => used.add(c));
-    }
-  });
-  return used;
+  const { error } = await supabase.from('rooms').insert([{ name: nombreSala }]);
+  if (error) return alert('Error al crear sala: ' + error.message);
+
+  alert('Sala creada con éxito: ' + nombreSala);
 }
 
-/* --- Reparte 5 cartas sin duplicados en la sala (comprueba manos existentes) --- */
-async function repartirManoUnica(room){
-  const deck = crearBaraja();
-  // quitamos las cartas ya usadas por otros jugadores en la sala
-  const used = await cartasUsadasEnSala(room);
-  const remaining = deck.filter(c => !used.has(c));
-  barajar(remaining);
-  return remaining.splice(0,5);
-}
-
-/* --- Unirse / crear jugador en sala --- */
-async function unirse(){
+async function unirse() {
   const player = document.getElementById('playerName').value.trim();
   const room = document.getElementById('roomName').value.trim();
-  if(!player) return alert('Ingresa tu nombre.');
-  if(!room) return alert('Ingresa un nombre de sala.');
+  if (!player || !room) return alert('Ingresa tu nombre y el nombre de la sala');
 
-  localState.player = player;
-  localState.room = room;
+  salaActual = room;
+  document.getElementById('inicio').style.display = 'none';
+  document.getElementById('juego').style.display = 'block';
+  document.getElementById('salaCodigo').textContent = room;
 
-  // Antes de insertar: comprobar si ya existe un registro con mismo player en la misma sala.
-  // Si existe, lo eliminamos para evitar duplicados (simplifica re-join).
-  try {
-    const { data: existing, error: e1 } = await supabase
-      .from('card_game')
-      .select('id')
-      .eq('player', player)
-      .eq('room', room)
-      .limit(1);
+  let baraja = crearBaraja();
+  barajar(baraja);
+  let mano = baraja.splice(0, 5);
 
-    if(e1){
-      console.warn('Error checking existing player:', e1);
-    } else if(existing && existing.length){
-      // opcional: eliminar la fila previa (limpieza)
-      await supabase.from('card_game').delete().eq('id', existing[0].id);
-    }
-  } catch(err){
-    console.error(err);
-  }
+  const { error } = await supabase.from('card_game').insert([{ player, room, hand: mano, points: 0 }]);
+  if (error) return alert('Error al unirse: ' + error.message);
 
-  // Repartir mano distinta
-  const mano = await repartirManoUnica(room);
-
-  // Insertar nuevo registro
-  const { data, error } = await supabase
-    .from('card_game')
-    .insert([{ player, room, hand: mano, points: 0, changes: 0 }])
-    .select()
-    .single();
-
-  if(error){
-    console.error(error);
-    return alert('Error al unirse: ' + error.message);
-  }
-
-  localState.hand = mano;
-  localState.myRowId = data.id;
-  localState.changesLeft = 3 - (data.changes || 0);
-
-  mostrarMano(localState.hand);
-  document.getElementById('acciones').style.display = 'block';
-  actualizarInfoCambios();
-  actualizarEstado(); // primera carga
+  mostrarMano(mano);
+  actualizarEstado();
 }
 
-/* --- Mostrar mano en pantalla (cartas clicables) --- */
-function mostrarMano(mano){
+function mostrarMano(mano) {
   const div = document.getElementById('manoJugador');
   div.innerHTML = '';
-  mano.forEach((carta, idx) => {
+  mano.forEach(carta => {
     const cartaDiv = document.createElement('div');
     cartaDiv.className = 'carta';
     cartaDiv.textContent = carta;
-    cartaDiv.dataset.idx = idx;
-    cartaDiv.onclick = () => {
-      if(!localState.selecting) return;
-      if(localState.selected.has(idx)){
-        localState.selected.delete(idx);
-        cartaDiv.classList.remove('selected');
-      } else {
-        localState.selected.add(idx);
-        cartaDiv.classList.add('selected');
-      }
-      actualizarManoInfo();
-    };
     div.appendChild(cartaDiv);
   });
-  actualizarManoInfo();
 }
 
-/* --- Toggle modo selección --- */
-function toggleSelectMode(){
-  localState.selecting = !localState.selecting;
-  localState.selected.clear();
-  // limpiar estilos
-  document.querySelectorAll('.carta').forEach(el => el.classList.remove('selected'));
-  document.getElementById('acciones').querySelector('button').textContent = localState.selecting ? 'Modo: seleccionar (clic en cartas para marcar)' : 'Seleccionar cartas (clic para seleccionar)';
-  actualizarManoInfo();
-}
-
-/* --- Información sobre la mano (puntuación y selected) --- */
-function actualizarManoInfo(){
-  const info = document.getElementById('manoInfo');
-  const score = calcularPuntos(localState.hand);
-  const sel = Array.from(localState.selected).sort((a,b)=>a-b);
-  info.innerHTML = `Puntuación: <strong>${score.label}</strong> (puntos: ${score.points})` + (sel.length ? ` — cartas seleccionadas: ${sel.join(', ')}` : '');
-}
-
-/* --- Actualiza texto de cambios disponibles --- */
-function actualizarInfoCambios(){
-  document.getElementById('infoCambios').textContent = `Cambios restantes: ${localState.changesLeft}`;
-}
-
-/* --- Calcular puntos (sistema neutral) --- */
-function calcularPuntos(mano){
-  // mano: array de strings como "A♠", "10♥"
-  // transformamos a valores numéricos y palos
-  const rankMap = { 'A':14, 'K':13,'Q':12,'J':11 };
-  function valToNum(val){
-    if(rankMap[val]) return rankMap[val];
-    return parseInt(val,10);
-  }
-  const ranks = mano.map(c => {
-    const v = c.slice(0, c.length-1); // "10" o "A"
-    return valToNum(v);
-  }).sort((a,b)=>a-b);
-
-  const suits = mano.map(c => c.slice(-1));
-
-  // cuentas de ranks
-  const counts = {};
-  ranks.forEach(r => counts[r] = (counts[r]||0) + 1);
-  const countVals = Object.values(counts).sort((a,b)=>b-a); // ej [3,1,1] etc
-
-  const isFlush = suits.every(s => s === suits[0]);
-
-  // comprobar straight (considerando A como 1 también)
-  let isStraight = false;
-  // caso normal
-  let straightNormal = true;
-  for(let i=1;i<ranks.length;i++){
-    if(ranks[i] !== ranks[i-1]+1) straightNormal = false;
-  }
-  // caso A-2-3-4-5 (A como 1)
-  const altRanks = ranks.slice();
-  if(altRanks.includes(14)){
-    // convertir A(14) a 1 y reordenar
-    const alt = altRanks.map(x => x===14 ? 1 : x).sort((a,b)=>a-b);
-    let straightAlt = true;
-    for(let i=1;i<alt.length;i++){
-      if(alt[i] !== alt[i-1]+1) straightAlt = false;
-    }
-    isStraight = straightNormal || straightAlt;
-  } else {
-    isStraight = straightNormal;
-  }
-
-  // determinar mano
-  let label = 'Carta alta';
-  let points = 0;
-  if(isStraight && isFlush){ label='Escalera de color'; points=8; }
-  else if(countVals[0] === 4){ label='Póker (cuatro iguales)'; points=7; }
-  else if(countVals[0] === 3 && countVals[1] === 2){ label='Full (tres + par)'; points=6; }
-  else if(isFlush){ label='Color (flush)'; points=5; }
-  else if(isStraight){ label='Escalera (straight)'; points=4; }
-  else if(countVals[0] === 3){ label='Trío'; points=3; }
-  else if(countVals[0] === 2 && countVals[1] === 2){ label='Dos pares'; points=2; }
-  else if(countVals[0] === 2){ label='Pareja'; points=1; }
-  else { label='Carta alta'; points=0; }
-
-  return { label, points };
-}
-
-/* --- Cambiar cartas seleccionadas (máx 3 veces) --- */
-async function cambiarSeleccionadas(){
-  if(!localState.myRowId) return alert('No estás en una sala aún.');
-  const selArr = Array.from(localState.selected).sort((a,b)=>a-b);
-  if(selArr.length === 0) return alert('Selecciona al menos una carta para cambiar.');
-  if(localState.changesLeft <= 0) return alert('Has agotado tus cambios (máx 3).');
-
-  const room = localState.room;
-  // kept = cartas que no se seleccionan
-  const kept = localState.hand.filter((_, idx) => !localState.selected.has(idx));
-
-  // obtenemos cartas usadas por otros jugadores y por nuestros kept
-  const used = await cartasUsadasEnSala(room, localState.myRowId);
-  kept.forEach(c => used.add(c));
-
-  // deck restante
-  const deck = crearBaraja().filter(c => !used.has(c));
-  barajar(deck);
-
-  if(deck.length < selArr.length){
-    return alert('No quedan suficientes cartas disponibles en la sala para reemplazar (intenta de nuevo).');
-  }
-
-  // tomar nuevas cartas
-  const nuevas = deck.splice(0, selArr.length);
-
-  // Formar nueva mano respetando posiciones (reemplaza en índices seleccionados)
-  const nuevaMano = localState.hand.slice();
-  let i = 0;
-  for(const idx of selArr){
-    nuevaMano[idx] = nuevas[i++];
-  }
-
-  // calcular puntos
-  const score = calcularPuntos(nuevaMano);
-
-  // actualizar DB: hand y increment changes
-  const { data, error } = await supabase
-    .from('card_game')
-    .update({
-      hand: nuevaMano,
-      points: score.points,
-      changes: (Math.min(3, (localState.changesLeft ? (3-localState.changesLeft) : 0) + 1)) // we can't read DB changes reliably here; we'll recalc after fetch
-    })
-    .eq('id', localState.myRowId)
-    .select()
-    .single();
-
-  if(error){
-    console.error(error);
-    return alert('Error al cambiar cartas: ' + error.message);
-  }
-
-  // tras la actualización, recalculamos changesLeft leyendo la fila actualizada
-  // (más robusto que intentar llevarlo sólo en cliente)
-  const { data: fresh, error: e2 } = await supabase
-    .from('card_game')
-    .select('changes')
-    .eq('id', localState.myRowId)
-    .single();
-
-  if(e2){
-    console.warn('No se pudo leer cambios actualizados:', e2);
-    // fallback: restamos 1 localmente
-    localState.changesLeft = Math.max(0, localState.changesLeft - 1);
-  } else {
-    localState.changesLeft = Math.max(0, 3 - (fresh.changes || 0));
-  }
-
-  // actualizar estado local y UI
-  localState.hand = nuevaMano;
-  localState.selected.clear();
-  localState.selecting = false;
-  mostrarMano(localState.hand);
-  actualizarInfoCambios();
-  actualizarEstado();
-  alert('Cartas cambiadas. Nueva puntuación: ' + score.label + ' (puntos: ' + score.points + ')');
-}
-
-/* --- Mostrar jugadores de la misma sala y sus puntos --- */
-async function actualizarEstado(){
-  if(!localState.room) return;
-  const { data, error } = await supabase
-    .from('card_game')
-    .select('id, player, hand, points, changes, created_at')
-    .eq('room', localState.room)
-    .order('points', { ascending: false });
-
-  if(error){
-    console.error('Error al actualizar estado:', error);
-    return;
-  }
-
-  // Si nuestra fila fue eliminada o no existe, ocultamos acciones
-  const myRow = (data || []).find(r => r.id === localState.myRowId);
-  if(!myRow){
-    // quizá el usuario recargó otra ventana; ocultamos botones hasta que se vuelva a unir
-    // pero no hacemos borrado automático.
-    document.getElementById('acciones').style.display = 'none';
-  } else {
-    document.getElementById('acciones').style.display = 'block';
-    // actualizar cambios restantes desde DB
-    localState.changesLeft = Math.max(0, 3 - (myRow.changes || 0));
-    actualizarInfoCambios();
-  }
-
-  // render estado
-  const cont = document.getElementById('estadoJuego');
-  cont.innerHTML = `<h3>Jugadores en sala: ${localState.room}</h3>`;
-  (data || []).forEach(r => {
-    const meMark = r.id === localState.myRowId ? ' (tú)' : '';
-    cont.innerHTML += `<p><strong>${r.player}</strong>${meMark} — Puntos: ${r.points} <span class="badge">Cambios usados: ${r.changes || 0}</span></p>`;
+async function actualizarEstado() {
+  if (!salaActual) return;
+  let { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaActual);
+  const estado = document.getElementById('estadoJuego');
+  estado.innerHTML = '<h3>Jugadores en la sala</h3>';
+  jugadores.forEach(j => {
+    estado.innerHTML += `<p>${j.player} - Puntos: ${j.points}</p>`;
   });
 }
 
-/* Auto-actualizar cada 5 segundos */
 setInterval(actualizarEstado, 5000);
 </script>
 </body>
