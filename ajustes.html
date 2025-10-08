@@ -3,122 +3,137 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Subir Imagen con Supabase</title>
+<title>Foto de Perfil</title>
 <style>
 body {
   font-family: Arial, sans-serif;
-  background: #f4f4f4;
+  background: #111;
+  color: #eee;
+  text-align: center;
   padding: 30px;
 }
 .container {
-  background: white;
-  max-width: 500px;
-  margin: 0 auto;
+  background: #1b1b1b;
   padding: 20px;
-  border-radius: 10px;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+  border-radius: 12px;
+  max-width: 400px;
+  margin: auto;
+  box-shadow: 0 0 15px rgba(0,0,0,0.4);
 }
-input[type="file"], input[type="text"], textarea {
-  width: 100%;
-  margin-top: 10px;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-  box-sizing: border-box;
+img {
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-top: 15px;
+  border: 3px solid #0077ff;
+}
+input[type="file"] {
+  margin-top: 15px;
 }
 button {
   margin-top: 15px;
-  padding: 10px 15px;
   background: #0077ff;
   color: white;
   border: none;
-  border-radius: 5px;
+  padding: 10px 20px;
+  border-radius: 6px;
   cursor: pointer;
 }
-button:hover { background: #0055aa; }
-img {
-  display: block;
-  max-width: 200px;
-  margin: 15px auto;
-  border-radius: 10px;
-}
+button:hover { background: #005ad6; }
 </style>
 </head>
 <body>
 
 <div class="container">
-  <h2>🖼 Subir Imagen y Guardar en Supabase</h2>
+  <h2>👤 Tu foto de perfil</h2>
+  <img id="profilePic" src="https://via.placeholder.com/120" alt="Foto de perfil">
   <form id="uploadForm">
-    <label>Nombre</label>
-    <input type="text" id="title" placeholder="Título o nombre" required>
-
-    <label>Descripción</label>
-    <textarea id="description" rows="3" placeholder="Escribe algo..."></textarea>
-
-    <label>Seleccionar Imagen</label>
-    <input type="file" id="foto" accept="image/*" required>
-
-    <button type="submit">Subir Imagen</button>
+    <input type="file" id="avatarInput" accept="image/*">
+    <button type="submit">Subir foto</button>
   </form>
-
-  <h3 id="status"></h3>
-  <img id="preview" style="display:none;">
+  <p id="status"></p>
 </div>
 
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
-// 🧩 Configuración Supabase (la misma que usas en Política)
+// 🧩 Configuración de Supabase
 const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const form = document.getElementById("uploadForm");
-const statusText = document.getElementById("status");
-const preview = document.getElementById("preview");
+// 📦 Obtener usuario desde localStorage
+const userData = JSON.parse(localStorage.getItem("user"));
+const userId = userData?.id || null;
+if(!userId){
+  alert("No se ha detectado una sesión activa");
+}
 
-form.addEventListener("submit", async (e)=>{
+// 🔄 Cargar la foto de perfil actual
+async function loadProfilePic() {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("avatar_url")
+    .eq("id", userId)
+    .single();
+
+  if (error) {
+    console.warn("No se pudo cargar la imagen:", error.message);
+    return;
+  }
+
+  if (data && data.avatar_url) {
+    document.getElementById("profilePic").src = data.avatar_url;
+  }
+}
+loadProfilePic();
+
+// 📤 Subir imagen nueva
+document.getElementById("uploadForm").addEventListener("submit", async (e)=>{
   e.preventDefault();
-  statusText.textContent = "⏳ Subiendo imagen...";
+  const status = document.getElementById("status");
+  const file = document.getElementById("avatarInput").files[0];
+
+  if(!file){
+    alert("Selecciona una imagen");
+    return;
+  }
+
+  status.textContent = "⏳ Subiendo imagen...";
   
-  const title = document.getElementById("title").value.trim();
-  const description = document.getElementById("description").value.trim();
-  const file = document.getElementById("foto").files[0];
-
-  if(!file){ alert("Selecciona una imagen"); return; }
-
-  // Crear un nombre único
+  // Nombre único para cada usuario
   const fileExt = file.name.split('.').pop();
-  const fileName = crypto.randomUUID() + '.' + fileExt;
-  const filePath = `parties/logos/${fileName}`;
+  const filePath = `avatars/${userId}.${fileExt}`;
 
   // Subir a Supabase Storage
-  const { error: uploadError } = await supabase.storage.from('logos').upload(filePath, file);
+  const { error: uploadError } = await supabase.storage
+    .from('logos') // usa el mismo bucket que ya tienes
+    .upload(filePath, file, { upsert: true });
+
   if(uploadError){
-    alert("❌ Error subiendo imagen: " + uploadError.message);
-    statusText.textContent = "❌ Error subiendo imagen";
+    status.textContent = "❌ Error al subir: " + uploadError.message;
     return;
   }
 
-  // Generar URL pública
+  // Obtener URL pública
   const { data: urlData } = supabase.storage.from("logos").getPublicUrl(filePath);
-  const imageUrl = urlData.publicUrl;
+  const publicUrl = urlData.publicUrl;
 
-  // Guardar en base de datos
-  const { error: dbError } = await supabase
-    .from('imagenes') // 👈 crea esta tabla en tu DB
-    .insert([{ title, description, image_path: filePath }]);
+  // Guardar en la base de datos
+  const { error: updateError } = await supabase
+    .from("profiles")
+    .update({ avatar_url: publicUrl })
+    .eq("id", userId);
 
-  if(dbError){
-    alert("❌ Error guardando en DB: " + dbError.message);
-    statusText.textContent = "❌ Error guardando en DB";
+  if(updateError){
+    status.textContent = "❌ Error al guardar en DB";
     return;
   }
 
-  // Mostrar preview
-  preview.src = imageUrl;
-  preview.style.display = "block";
-  statusText.textContent = "✅ Imagen subida correctamente";
+  // Mostrar nueva imagen
+  document.getElementById("profilePic").src = publicUrl;
+  status.textContent = "✅ Foto actualizada correctamente";
 });
 </script>
 </body>
