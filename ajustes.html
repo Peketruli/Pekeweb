@@ -2,141 +2,108 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Ajustes de tu perfil</title>
-<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
-  body {
-    font-family: Arial, sans-serif;
-    background: #111;
-    color: white;
-    text-align: center;
-    margin-top: 50px;
-  }
-  .container {
-    background: #1c1c1c;
-    padding: 30px;
-    border-radius: 10px;
-    display: inline-block;
-  }
-  img {
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    object-fit: cover;
-    border: 3px solid #444;
-  }
-  button {
-    margin: 10px;
-    padding: 10px 20px;
-    border: none;
-    background: #007bff;
-    color: white;
-    cursor: pointer;
-    border-radius: 5px;
-  }
-  button:hover { background: #0056b3; }
-  #logout { background: #e53935; }
-  #logout:hover { background: #b71c1c; }
-  .status { margin-top: 15px; font-weight: bold; }
+  body { background:#111; color:white; font-family:Arial; text-align:center; padding:40px; }
+  .container { background:#222; padding:30px; border-radius:10px; width:350px; margin:auto; }
+  img { width:120px; height:120px; border-radius:50%; object-fit:cover; margin-bottom:10px; border:2px solid #444; }
+  button, label { background:#007bff; color:white; border:none; padding:10px 18px; border-radius:6px; cursor:pointer; margin:5px; font-size:1em; }
+  button:hover, label:hover { background:#0056b3; }
+  #logoutBtn { background:#dc3545; }
+  #msg { margin-top:10px; font-weight:bold; min-height:20px; }
 </style>
 </head>
 <body>
-  <h1>Ajustes de tu perfil</h1>
-  <div class="container">
-    <img id="avatar" src="https://via.placeholder.com/120" alt="Foto de perfil">
-    <h2 id="username">Cargando...</h2>
 
-    <input type="file" id="fileInput" accept="image/*">
-    <button id="uploadBtn">Cambiar foto</button>
-    <button onclick="window.location.href='hub.html'">Volver al Hub</button>
+<h1>Ajustes de tu perfil</h1>
 
-    <div id="status" class="status"></div>
-    <button id="logout">Cerrar sesión</button>
-  </div>
+<div class="container">
+  <img id="profileImg" src="https://tuweb.com/default-profile.png" alt="Foto de perfil">
+  <h2 id="userName">Cargando...</h2>
+
+  <input type="file" id="fileInput" accept="image/*"><br>
+  <button id="uploadBtn">Cambiar foto</button><br>
+  <button id="hubBtn">Volver al Hub</button>
+
+  <p id="msg"></p>
+  <button id="logoutBtn">Cerrar sesión</button>
+</div>
 
 <script>
-  const supabaseUrl = "https://TU-PROJECT-URL.supabase.co"; // ⚠️ Cambia esto
-  const supabaseKey = "TU-API-KEY"; // ⚠️ Cambia esto
-  const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  const usernameEl = document.getElementById("username");
-  const avatarEl = document.getElementById("avatar");
-  const statusEl = document.getElementById("status");
-  const fileInput = document.getElementById("fileInput");
-  const uploadBtn = document.getElementById("uploadBtn");
-  const logoutBtn = document.getElementById("logout");
+const profileImg = document.getElementById("profileImg");
+const userNameEl = document.getElementById("userName");
+const fileInput = document.getElementById("fileInput");
+const uploadBtn = document.getElementById("uploadBtn");
+const hubBtn = document.getElementById("hubBtn");
+const logoutBtn = document.getElementById("logoutBtn");
+const msgEl = document.getElementById("msg");
 
-  async function getUserSession() {
-    try {
-      // Intentar obtener sesión desde Supabase
-      const { data, error } = await supabase.auth.getSession();
-      if (error) console.warn("Error al obtener sesión:", error.message);
-      let session = data?.session;
+function showMessage(text, type="info") {
+  msgEl.textContent = text;
+  msgEl.style.color = type === "error" ? "#ff4d4d" : type === "success" ? "#4dff88" : "#fff";
+}
 
-      // Si no hay sesión, intentar desde localStorage
-      if (!session) {
-        const stored = localStorage.getItem("supabase.auth.token");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          session = parsed?.currentSession;
-          if (session) {
-            statusEl.innerHTML = "✅ Sesión detectada desde localStorage";
-          }
-        }
-      }
+let currentUser = null;
 
-      // Si sigue sin haber sesión
-      if (!session) {
-        statusEl.innerHTML = "❌ No se ha detectado una sesión activa. Inicia sesión para continuar.";
-        setTimeout(() => window.location.href = "login.html", 2500);
-        return null;
-      }
-
-      // Si la hay
-      const user = session.user;
-      usernameEl.textContent = user.user_metadata?.username || user.email || "Usuario";
-      const { data: publicUrl } = supabase.storage
-        .from("avatars")
-        .getPublicUrl(`${user.id}.jpg`);
-      avatarEl.src = publicUrl.publicUrl;
-      return user;
-    } catch (err) {
-      console.error("Error general de sesión:", err);
-      statusEl.innerHTML = "❌ Error al cargar sesión";
-      return null;
-    }
+// 🔹 Detectar sesión activa
+async function detectSession() {
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session) {
+    showMessage("❌ No se ha detectado una sesión activa. Inicia sesión para continuar.", "error");
+    setTimeout(() => window.location.href = "login.html", 2000);
+    return;
   }
 
-  uploadBtn.addEventListener("click", async () => {
-    const user = await getUserSession();
-    if (!user) return;
+  currentUser = data.session.user;
+  const { data: userInfo } = await supabase.from("usuarios").select("*").eq("auth_id", currentUser.id).single();
 
-    const file = fileInput.files[0];
-    if (!file) return alert("Selecciona una imagen primero.");
+  if (userInfo) {
+    userNameEl.textContent = userInfo.username;
+    profileImg.src = userInfo.profile_url || "https://tuweb.com/default-profile.png";
+    showMessage("✅ Sesión detectada correctamente", "success");
+  } else {
+    showMessage("⚠️ No se encontró el usuario en la tabla", "error");
+  }
+}
 
-    const filePath = `${user.id}.jpg`;
-    const { error } = await supabase.storage
-      .from("avatars")
-      .upload(filePath, file, { upsert: true, contentType: file.type });
+// 🔹 Subir nueva imagen
+uploadBtn.addEventListener("click", async () => {
+  if (!currentUser) return showMessage("No hay sesión activa", "error");
+  const file = fileInput.files[0];
+  if (!file) return showMessage("Selecciona una imagen", "error");
 
-    if (error) {
-      console.error("Error al subir imagen:", error.message);
-      return alert("❌ Error al subir imagen: " + error.message);
-    }
+  const path = `${currentUser.id}/${Date.now()}-${file.name}`;
 
-    const { data: publicUrl } = supabase.storage.from("avatars").getPublicUrl(filePath);
-    avatarEl.src = publicUrl.publicUrl;
-    alert("✅ Imagen actualizada correctamente.");
-  });
+  showMessage("Subiendo imagen...", "info");
+  const { error: uploadError } = await supabase.storage.from("avatars").upload(path, file, { upsert: true });
+  if (uploadError) return showMessage("Error al subir: " + uploadError.message, "error");
 
-  logoutBtn.addEventListener("click", async () => {
-    await supabase.auth.signOut();
-    localStorage.removeItem("supabase.auth.token");
-    window.location.href = "login.html";
-  });
+  const { data } = supabase.storage.from("avatars").getPublicUrl(path);
+  const publicUrl = data.publicUrl;
 
-  getUserSession();
+  const { error: dbError } = await supabase.from("usuarios").update({ profile_url: publicUrl }).eq("auth_id", currentUser.id);
+  if (dbError) return showMessage("Error al actualizar BD: " + dbError.message, "error");
+
+  profileImg.src = publicUrl;
+  showMessage("✅ Foto de perfil actualizada", "success");
+});
+
+// 🔹 Otros botones
+hubBtn.addEventListener("click", () => window.location.href = "hub.html");
+logoutBtn.addEventListener("click", async () => {
+  await supabase.auth.signOut();
+  showMessage("Cerrando sesión...");
+  setTimeout(() => window.location.href = "login.html", 1000);
+});
+
+// Cargar sesión al iniciar
+detectSession();
 </script>
+
 </body>
 </html>
