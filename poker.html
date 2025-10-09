@@ -3,175 +3,113 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Juego de Cartas Web - Salas Online</title>
+<title>Salas Online - Pekepóker</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-  body { font-family: Arial, sans-serif; background:#4CAF50; color:#fff; text-align:center; padding:20px; }
+  body { font-family: Arial, sans-serif; background:#2E7D32; color:#fff; text-align:center; padding:20px; }
   h1 { margin-bottom: 10px; }
-  .mano { margin: 20px 0; }
-  .carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:20px; }
-  button { padding:10px 20px; font-size:16px; cursor:pointer; border-radius:5px; border:none; background:#388E3C; color:#fff; margin:5px; }
-  button:hover { background:#2E7D32; }
-  input { padding:8px; border:none; border-radius:5px; margin:5px; font-size:16px; }
-  #salaCodigo { font-size:18px; color:#ffeb3b; }
+  .sala { background:#388E3C; padding:10px; margin:10px auto; border-radius:10px; width:200px; cursor:pointer; transition:.3s; }
+  .sala:hover { background:#43A047; }
+  button { padding:10px 20px; font-size:16px; cursor:pointer; border-radius:5px; border:none; background:#66BB6A; color:#fff; margin:5px; }
+  button:hover { background:#81C784; }
+  #estadoJuego p { margin:4px; }
 </style>
 </head>
 <body>
-<h1>Juego de Cartas Web</h1>
+<h1>Salas Online</h1>
 
 <div id="inicio">
-  <input type="text" id="roomName" placeholder="Nombre de la sala">
-  <button onclick="crearSala()">Crear Sala</button>
-  <div id="listaSalas"><p>Cargando salas...</p></div>
+  <button onclick="crearSala()">Crear nueva sala</button>
+  <h3>Salas disponibles:</h3>
+  <div id="listaSalas">Cargando salas...</div>
 </div>
 
 <div id="juego" style="display:none;">
-  <h3>Sala: <span id="salaCodigo"></span></h3>
+  <h2>Sala: <span id="salaCodigo"></span></h2>
   <div id="estadoJuego"></div>
-  <div class="mano" id="manoJugador"></div>
-  <button onclick="salirDeSala()">Salir de la Sala</button>
+  <button onclick="salirSala()">Salir de la sala</button>
 </div>
 
 <script>
 const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+const supabase = Supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true
-  }
-});
+let username = localStorage.getItem("username"); // Detecta sesión guardada
+let salaActual = null;
 
-const palos = ['♠','♥','♦','♣'];
-const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-let usuarioActual = null;
-let salaActual = '';
-
-async function obtenerUsuario() {
-  const { data, error } = await supabase.auth.getUser();
-  if (error || !data.user) {
-    alert('No se detecta sesión activa. Inicia sesión primero.');
-    return null;
-  }
-
-  // Obtener nombre del usuario desde tu tabla personalizada
-  const { data: userData } = await supabase
-    .from('usuarios')
-    .select('username')
-    .eq('id', data.user.id)
-    .single();
-
-  if (!userData) {
-    alert('Usuario no encontrado en la base de datos.');
-    return null;
-  }
-
-  usuarioActual = userData.username;
-  console.log('✅ Sesión detectada:', usuarioActual);
-  return usuarioActual;
+if (!username) {
+  alert("No se ha detectado una sesión activa. Inicia sesión primero.");
+  window.location.href = "/login.html"; // cambia a tu login real
 }
 
+// Crear sala
+async function crearSala() {
+  const codigo = 'Sala-' + Math.floor(Math.random() * 10000);
+  const { error } = await supabase.from('rooms').insert([{ name: codigo }]);
+  if (error) return alert('Error al crear sala: ' + error.message);
+  unirseSala(codigo);
+}
+
+// Mostrar salas disponibles
 async function cargarSalas() {
-  const { data: salas } = await supabase.from('rooms').select('*');
+  const { data, error } = await supabase.from('rooms').select('*');
   const lista = document.getElementById('listaSalas');
-  lista.innerHTML = '<h3>Salas disponibles</h3>';
-  if (!salas || salas.length === 0) {
-    lista.innerHTML += '<p>No hay salas creadas todavía</p>';
+  if (error) return lista.textContent = 'Error al cargar salas.';
+
+  if (!data || data.length === 0) {
+    lista.textContent = 'No hay salas disponibles.';
     return;
   }
-  salas.forEach(sala => {
+
+  lista.innerHTML = '';
+  data.forEach(sala => {
     const div = document.createElement('div');
-    div.innerHTML = `<button onclick="unirse('${sala.name}')">${sala.name}</button>`;
+    div.className = 'sala';
+    div.textContent = sala.name;
+    div.onclick = () => unirseSala(sala.name);
     lista.appendChild(div);
   });
 }
 
-async function crearSala() {
-  const nombreSala = document.getElementById('roomName').value.trim();
-  if (!nombreSala) return alert('Ingresa un nombre para la sala');
-
-  const { error } = await supabase.from('rooms').insert([{ name: nombreSala }]);
-  if (error) return alert('Error al crear sala: ' + error.message);
-
-  alert('Sala creada con éxito');
-  cargarSalas();
-}
-
-async function unirse(room) {
-  if (!usuarioActual) return alert('Inicia sesión primero');
-
-  salaActual = room;
+// Unirse a una sala
+async function unirseSala(nombreSala) {
+  salaActual = nombreSala;
   document.getElementById('inicio').style.display = 'none';
   document.getElementById('juego').style.display = 'block';
-  document.getElementById('salaCodigo').textContent = room;
+  document.getElementById('salaCodigo').textContent = nombreSala;
 
-  let baraja = crearBaraja();
-  barajar(baraja);
-  let mano = baraja.splice(0, 5);
+  const { error } = await supabase.from('card_game').insert([{ player: username, room: nombreSala, points: 0 }]);
+  if (error) console.error(error);
 
-  // Insertar o actualizar jugador en la sala
-  await supabase.from('card_game')
-    .upsert({ player: usuarioActual, room: room, hand: mano, points: 0 });
-
-  mostrarMano(mano);
-  actualizarEstado();
+  actualizarJugadores();
 }
 
-function mostrarMano(mano) {
-  const div = document.getElementById('manoJugador');
-  div.innerHTML = '';
-  mano.forEach(carta => {
-    const cartaDiv = document.createElement('div');
-    cartaDiv.className = 'carta';
-    cartaDiv.textContent = carta;
-    div.appendChild(cartaDiv);
-  });
-}
-
-async function actualizarEstado() {
+// Mostrar jugadores en la sala
+async function actualizarJugadores() {
   if (!salaActual) return;
-  let { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaActual);
-  const estado = document.getElementById('estadoJuego');
-  estado.innerHTML = '<h3>Jugadores en la sala</h3>';
-  jugadores.forEach(j => {
-    estado.innerHTML += `<p>${j.player} - Puntos: ${j.points}</p>`;
-  });
+  const { data } = await supabase.from('card_game').select('*').eq('room', salaActual);
+  const div = document.getElementById('estadoJuego');
+  div.innerHTML = '<h3>Jugadores en la sala:</h3>';
+  data?.forEach(j => div.innerHTML += `<p>${j.player} (${j.points} pts)</p>`);
 }
 
-async function salirDeSala() {
-  if (!usuarioActual || !salaActual) return;
-  await supabase.from('card_game').delete().eq('player', usuarioActual).eq('room', salaActual);
-  salaActual = '';
-  document.getElementById('juego').style.display = 'none';
+setInterval(() => {
+  if (salaActual) actualizarJugadores();
+  else cargarSalas();
+}, 3000);
+
+// Salir de la sala
+async function salirSala() {
+  if (!salaActual) return;
+  await supabase.from('card_game').delete().eq('player', username).eq('room', salaActual);
+  salaActual = null;
   document.getElementById('inicio').style.display = 'block';
+  document.getElementById('juego').style.display = 'none';
   cargarSalas();
 }
 
-function crearBaraja() {
-  let baraja = [];
-  for (let palo of palos) {
-    for (let valor of valores) {
-      baraja.push(valor + palo);
-    }
-  }
-  return baraja;
-}
-
-function barajar(baraja) {
-  for (let i = baraja.length - 1; i > 0; i--) {
-    let j = Math.floor(Math.random() * (i + 1));
-    [baraja[i], baraja[j]] = [baraja[j], baraja[i]];
-  }
-  return baraja;
-}
-
-// Inicialización
-obtenerUsuario().then(user => {
-  if (user) cargarSalas();
-});
-setInterval(actualizarEstado, 5000);
+cargarSalas();
 </script>
 </body>
 </html>
