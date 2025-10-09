@@ -113,148 +113,44 @@
 
 <script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // mismo que en tu hub
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let currentUser = null;
-
-document.addEventListener("DOMContentLoaded", async () => {
-  document.getElementById("reward3Btn").addEventListener("click", () => toggleShow("tableColorPicker"));
-  document.getElementById("rewardBgBtn").addEventListener("click", () => toggleShow("backgroundPicker"));
-  document.getElementById("rewardNameBtn").addEventListener("click", () => toggleShow("nameColorPicker"));
-
-  document.getElementById("backgroundPicker").addEventListener("input", (e) => setBackgroundColor(e.target.value));
-  document.getElementById("nameColorPicker").addEventListener("input", (e) => setNameColor(e.target.value));
-  document.getElementById("tableColorPicker").addEventListener("input", (e) => setTableColor(e.target.value));
-
-  document.getElementById("userInfo").addEventListener("click", toggleDropdown);
-  document.addEventListener("click", (e) => {
-    const ui = document.getElementById("userInfo"), dd = document.getElementById("dropdownMenu");
-    if (!ui.contains(e.target) && !dd.contains(e.target)) dd.style.display = "none";
-  });
-
-  await initUser();
-  await loadTop5();
-});
-
-async function initUser() {
-  const saved = localStorage.getItem("currentUser");
-  if(saved){
-    try{ currentUser = JSON.parse(saved); renderUserUI(); return; }catch{}
+async function verificarSesion() {
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  if (!user) {
+    alert("⚠️ No has iniciado sesión. Redirigiendo al login...");
+    window.location.href = "login.html";
+    return;
   }
-
-  const { data: authData } = await supabase.auth.getUser();
-  if(authData?.user){
-    const { data } = await supabase.from("usuarios").select("*").eq("auth_id", authData.user.id).limit(1).maybeSingle();
-    if(data){ currentUser = data; localStorage.setItem("currentUser", JSON.stringify(currentUser)); renderUserUI(); }
-  }
-}
-
-function renderUserUI(){
-  document.getElementById("userInfo").style.display="flex";
-  document.getElementById("authContainer").style.display="none";
-  document.getElementById("userName").textContent=currentUser.username||"Usuario";
-  document.getElementById("userLogo").src=currentUser.logo||"logoDefault.png";
-  document.getElementById("pekepuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos ? Number(currentUser.pekepuntos) : 0}`;
-  if(currentUser.fondo_color) document.body.style.backgroundColor=currentUser.fondo_color;
-  if(currentUser.nombre_color) document.getElementById("userName").style.color=currentUser.nombre_color;
-  if(currentUser.tabla_color) { applyTableColor(currentUser.tabla_color); document.getElementById("tableColorPicker").value=currentUser.tabla_color; }
-}
-
-async function loadTop5(){
-  const top5List = document.getElementById("top5List");
-  top5List.innerHTML = '<li style="color:#aaa;">Cargando top 5...</li>';
 
   try {
+    // Verificar si el usuario existe realmente en la tabla 'usuarios'
     const { data, error } = await supabase
       .from("usuarios")
-      .select("id, username, pekepuntos, logo, nombre_color")
-      .order("pekepuntos", { ascending: false })
-      .limit(5);
+      .select("id, username, pekepuntos, logo")
+      .eq("username", user.username)
+      .single();
 
-    if (error) {
-      top5List.innerHTML = `<li style="color:red;">❌ Error al cargar el Top 5:<br>${error.message}</li>`;
-      console.error(error);
+    if (error || !data) {
+      console.error("Error al verificar usuario:", error);
+      alert("❌ Error al comprobar la sesión. Por favor inicia sesión de nuevo.");
+      localStorage.removeItem("currentUser");
+      window.location.href = "login.html";
       return;
     }
 
-    if (!data || data.length === 0) {
-      top5List.innerHTML = '<li style="color:#ccc;">(No hay jugadores aún en la base de datos)</li>';
-      return;
-    }
-
-    // 🔥 Conversión robusta
-    const fixedData = data.map(u => ({
-      ...u,
-      pekepuntos: u.pekepuntos !== null && u.pekepuntos !== undefined
-        ? parseInt(u.pekepuntos)
-        : 0
-    }));
-
-    console.log("TOP5 data:", fixedData); // 👀 Comprueba en la consola qué valores llegan
-
-    top5List.innerHTML = "";
-    fixedData.forEach((u, idx) => {
-      const li = document.createElement("li");
-      li.className = "top5-item";
-      const nameColor = (idx === 0)
-        ? "gold"
-        : (idx === 1)
-        ? "silver"
-        : (idx === 2)
-        ? "#b87333"
-        : u.nombre_color || "#fff";
-      const imgHtml = u.logo
-        ? `<img src="${u.logo}" alt="logo">`
-        : `<div style="width:36px;height:36px;border-radius:50%;background:#666;"></div>`;
-      li.innerHTML = `
-        ${imgHtml}
-        <div style="flex:1;text-align:left;">
-          <strong style="color:${nameColor}">${idx + 1}. ${u.username || 'Jugador'}</strong>
-          <div style="font-size:0.9rem;color:#ddd;">${u.pekepuntos} Pekepuntos</div>
-        </div>
-      `;
-      top5List.appendChild(li);
-    });
+    console.log("✅ Sesión válida:", data);
+    return data;
 
   } catch (e) {
-    console.error("loadTop5 exception:", e);
-    top5List.innerHTML = '<li style="color:red;">Error cargando Top 5 (revisa consola)</li>';
+    console.error("Error al conectar con Supabase:", e);
+    alert("⚠️ Error de conexión con Supabase. Intenta más tarde.");
   }
 }
 
-
-    top5List.innerHTML = "";
-    data.forEach((u, idx) => {
-      const li = document.createElement("li");
-      li.className = "top5-item";
-      const nameColor = (idx === 0) ? "gold" : (idx === 1) ? "silver" : (idx === 2) ? "#b87333" : u.nombre_color || "#fff";
-      const imgHtml = u.logo ? `<img src="${u.logo}" alt="logo">` : `<div style="width:36px;height:36px;border-radius:50%;background:#666;"></div>`;
-      li.innerHTML = `
-        ${imgHtml}
-        <div style="flex:1;text-align:left;">
-          <strong style="color:${nameColor}">${idx+1}. ${u.username || 'Jugador'}</strong>
-          <div style="font-size:0.9rem;color:#ddd;">${u.pekepuntos.toLocaleString()} Pekepuntos</div>
-        </div>
-      `;
-      top5List.appendChild(li);
-    });
-
-  } catch(e){
-    console.error("loadTop5 exception:", e);
-    top5List.innerHTML = '<li style="color:red;">Error cargando Top 5 (revisa consola)</li>';
-  }
-}
-
-
-function toggleDropdown(){ const dd=document.getElementById("dropdownMenu"); dd.style.display = dd.style.display==="block"?"none":"block"; }
-function toggleShow(id){ const el=document.getElementById(id); el.style.display = el.style.display==="block"?"none":"block"; }
-function applyTableColor(color){ document.querySelectorAll('.section').forEach(sec=>sec.style.backgroundColor=color); document.querySelectorAll('table').forEach(tbl=>tbl.style.backgroundColor=color); }
-async function setBackgroundColor(color){ document.body.style.backgroundColor=color; if(currentUser){ await supabase.from("usuarios").update({fondo_color:color}).eq("id",currentUser.id); currentUser.fondo_color=color; localStorage.setItem("currentUser",JSON.stringify(currentUser)); } }
-async function setNameColor(color){ document.getElementById("userName").style.color=color; if(currentUser){ await supabase.from("usuarios").update({nombre_color:color}).eq("id",currentUser.id); currentUser.nombre_color=color; localStorage.setItem("currentUser",JSON.stringify(currentUser)); } }
-async function setTableColor(color){ applyTableColor(color); if(currentUser){ await supabase.from("usuarios").update({tabla_color:color}).eq("id",currentUser.id); currentUser.tabla_color=color; localStorage.setItem("currentUser",JSON.stringify(currentUser)); } }
-
+document.addEventListener("DOMContentLoaded", verificarSesion);
 </script>
 </body>
 </html>
