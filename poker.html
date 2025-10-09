@@ -39,15 +39,29 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let usuarioActual = null;
 let salaActual = '';
 
-// --- Detectar sesión guardada ---
-const currentUser = localStorage.getItem('username'); // o el nombre que uses en tu login
+// --- Detectar sesión ---
+async function detectarSesion() {
+  // Primero mirar si hay un nombre guardado localmente
+  let storedUser = localStorage.getItem('username') || localStorage.getItem('user') || null;
 
-if (!currentUser) {
+  if (storedUser) {
+    usuarioActual = storedUser;
+    console.log("Sesión detectada desde localStorage:", usuarioActual);
+    return true;
+  }
+
+  // Si no hay en localStorage, intentar con Supabase Auth
+  const { data, error } = await supabase.auth.getSession();
+  if (data?.session) {
+    usuarioActual = data.session.user.email || data.session.user.id;
+    console.log("Sesión detectada desde Supabase:", usuarioActual);
+    return true;
+  }
+
+  // Si no hay sesión
   alert("No tienes la sesión iniciada. Inicia sesión primero.");
   window.location.href = "/login.html";
-} else {
-  usuarioActual = currentUser; // ✅ Asignamos el usuario actual correctamente
-  console.log("Sesión detectada:", usuarioActual);
+  return false;
 }
 
 // --- Crear nueva sala ---
@@ -148,7 +162,7 @@ function mostrarMano(mano) {
   });
 }
 
-// --- Actualizar estado de la sala ---
+// --- Actualizar estado ---
 async function actualizarEstado() {
   if (!salaActual) return;
   const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaActual);
@@ -163,10 +177,13 @@ async function actualizarEstado() {
 
 // --- Eventos ---
 document.getElementById('crearBtn').addEventListener('click', crearSala);
-setInterval(listarSalas, 4000);
 
 // --- Inicialización ---
-listarSalas();
+(async () => {
+  const sesionOK = await detectarSesion();
+  if (sesionOK) listarSalas();
+  setInterval(listarSalas, 4000);
+})();
 </script>
 </body>
 </html>
