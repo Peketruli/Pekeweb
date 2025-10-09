@@ -13,52 +13,24 @@
     text-align:center;
     padding:20px;
   }
-  h1 { margin-bottom: 10px; }
-  .mano { margin: 20px 0; }
+  .mano { margin:20px 0; }
   .carta {
     display:inline-block;
-    width:60px;
-    height:90px;
+    width:60px; height:90px;
     line-height:90px;
-    border:2px solid #fff;
-    border-radius:10px;
+    border:2px solid #fff; border-radius:10px;
     margin:5px;
-    background:#fff;
-    color:#000;
-    font-weight:bold;
-    font-size:20px;
+    background:#fff; color:#000; font-weight:bold; font-size:20px;
   }
   button {
-    padding:10px 20px;
-    font-size:16px;
-    cursor:pointer;
-    border-radius:5px;
-    border:none;
-    background:#388E3C;
-    color:#fff;
-    margin:5px;
+    padding:10px 20px; margin:5px;
+    border:none; border-radius:5px;
+    background:#388E3C; color:#fff;
+    cursor:pointer; font-size:16px;
   }
   button:hover { background:#2E7D32; }
-  input {
-    padding:8px;
-    border:none;
-    border-radius:5px;
-    margin:5px;
-    font-size:16px;
-  }
-  #listaSalas {
-    background:#2E7D32;
-    border-radius:10px;
-    padding:15px;
-    margin-top:20px;
-  }
-  .sala-item {
-    background:#66BB6A;
-    padding:8px;
-    border-radius:8px;
-    margin:5px;
-    cursor:pointer;
-  }
+  input { padding:8px; border:none; border-radius:5px; margin:5px; font-size:16px; }
+  .sala-item { background:#66BB6A; padding:8px; border-radius:8px; margin:5px; cursor:pointer; }
   .sala-item:hover { background:#81C784; }
 </style>
 </head>
@@ -66,10 +38,8 @@
 <h1>Juego de Cartas Web</h1>
 
 <div id="inicio">
-  <input type="text" id="playerName" placeholder="Tu nombre">
   <input type="text" id="roomName" placeholder="Nombre de la sala">
   <button id="btnCrear">Crear Sala</button>
-  <button id="btnUnirse">Unirse</button>
 
   <div id="listaSalas">
     <h3>Salas disponibles</h3>
@@ -87,29 +57,19 @@
 const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
 
-// ✅ CORRECTO: crear cliente con "const client = ..."
 const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-const palos = ['♠','♥','♦','♣'];
-const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+let user = null;
 let salaActual = '';
 
-function crearBaraja() {
-  let baraja = [];
-  for (let palo of palos) {
-    for (let valor of valores) {
-      baraja.push(valor + palo);
-    }
+async function obtenerUsuario() {
+  const { data } = await client.auth.getUser();
+  if (!data?.user) {
+    alert('Inicia sesión para jugar.');
+    return null;
   }
-  return baraja;
-}
-
-function barajar(baraja) {
-  for (let i = baraja.length - 1; i > 0; i--) {
-    let j = Math.floor(Math.random() * (i + 1));
-    [baraja[i], baraja[j]] = [baraja[j], baraja[i]];
-  }
-  return baraja;
+  user = data.user;
+  return user;
 }
 
 async function crearSala() {
@@ -122,53 +82,64 @@ async function crearSala() {
   const { error } = await client.from('rooms').insert([{ name: nombreSala }]);
   if (error) return alert('Error al crear sala: ' + error.message);
 
-  alert('Sala creada con éxito: ' + nombreSala);
-  cargarSalas();
+  alert('Sala creada: ' + nombreSala);
+  unirse(nombreSala);
 }
 
-async function unirse(roomName = null) {
-  const player = document.getElementById('playerName').value.trim();
-  const room = roomName || document.getElementById('roomName').value.trim();
-  if (!player || !room) return alert('Ingresa tu nombre y el nombre de la sala');
+async function unirse(roomName) {
+  if (!user) await obtenerUsuario();
+  salaActual = roomName;
 
-  salaActual = room;
   document.getElementById('inicio').style.display = 'none';
   document.getElementById('juego').style.display = 'block';
-  document.getElementById('salaCodigo').textContent = room;
+  document.getElementById('salaCodigo').textContent = roomName;
 
-  let baraja = crearBaraja();
+  const baraja = crearBaraja();
   barajar(baraja);
-  let mano = baraja.splice(0, 5);
+  const mano = baraja.splice(0, 5);
 
-  const { error } = await client.from('card_game').insert([{ player, room, hand: mano, points: 0 }]);
-  if (error) return alert('Error al unirse: ' + error.message);
-
+  await client.from('card_game').insert([{ user_id: user.id, room: roomName, hand: mano, points: 0 }]);
   mostrarMano(mano);
   actualizarEstado();
+}
+
+function crearBaraja() {
+  const palos = ['♠','♥','♦','♣'];
+  const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  let baraja = [];
+  for (let p of palos) for (let v of valores) baraja.push(v + p);
+  return baraja;
+}
+
+function barajar(baraja) {
+  for (let i = baraja.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [baraja[i], baraja[j]] = [baraja[j], baraja[i]];
+  }
 }
 
 function mostrarMano(mano) {
   const div = document.getElementById('manoJugador');
   div.innerHTML = '';
-  mano.forEach(carta => {
-    const cartaDiv = document.createElement('div');
-    cartaDiv.className = 'carta';
-    cartaDiv.textContent = carta;
-    div.appendChild(cartaDiv);
+  mano.forEach(c => {
+    const carta = document.createElement('div');
+    carta.className = 'carta';
+    carta.textContent = c;
+    div.appendChild(carta);
   });
 }
 
 async function actualizarEstado() {
   if (!salaActual) return;
-  let { data: jugadores } = await client.from('card_game').select('*').eq('room', salaActual);
+  const { data: jugadores } = await client.from('card_game').select('*').eq('room', salaActual);
   const estado = document.getElementById('estadoJuego');
   estado.innerHTML = '<h3>Jugadores en la sala</h3>';
-  if (!jugadores || jugadores.length === 0) {
-    estado.innerHTML += '<p>No hay jugadores aún.</p>';
+  if (!jugadores?.length) {
+    estado.innerHTML += '<p>No hay jugadores.</p>';
     return;
   }
   jugadores.forEach(j => {
-    estado.innerHTML += `<p>${j.player} - Puntos: ${j.points}</p>`;
+    estado.innerHTML += `<p>${j.user_id.slice(0, 6)}... - Puntos: ${j.points}</p>`;
   });
 }
 
@@ -176,28 +147,30 @@ async function cargarSalas() {
   const { data: salas, error } = await client.from('rooms').select('*');
   const div = document.getElementById('salasActivas');
   div.innerHTML = '';
-  if (error) return (div.textContent = 'Error al cargar salas');
-  if (!salas || salas.length === 0) return (div.textContent = 'No hay salas activas');
+  if (error) return div.textContent = 'Error al cargar salas';
+  if (!salas?.length) return div.textContent = 'No hay salas activas';
 
-  salas.forEach(sala => {
+  salas.forEach(s => {
     const item = document.createElement('div');
     item.className = 'sala-item';
-    item.textContent = sala.name;
-    item.onclick = () => {
-      document.getElementById('roomName').value = sala.name;
-      unirse(sala.name);
-    };
+    item.textContent = s.name;
+    item.onclick = () => unirse(s.name);
     div.appendChild(item);
   });
 }
 
-setInterval(actualizarEstado, 5000);
-setInterval(cargarSalas, 4000);
-window.onload = cargarSalas;
+async function salirDeSala() {
+  if (user && salaActual) {
+    await client.from('card_game').delete().eq('user_id', user.id).eq('room', salaActual);
+  }
+}
 
-// ✅ Ahora los botones sí funcionan
+window.addEventListener('beforeunload', salirDeSala);
+setInterval(cargarSalas, 4000);
+setInterval(actualizarEstado, 5000);
+window.onload = async () => { await obtenerUsuario(); cargarSalas(); };
+
 document.getElementById('btnCrear').addEventListener('click', crearSala);
-document.getElementById('btnUnirse').addEventListener('click', () => unirse());
 </script>
 </body>
 </html>
