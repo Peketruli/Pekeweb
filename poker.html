@@ -21,8 +21,8 @@ button.sala-btn:hover { background:#059669; }
 #salas { margin-top:15px; }
 #juego { display:none; margin-top:20px; }
 .mano { margin-top:15px; }
-.carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:20px; }
-.hidden { display:none; }
+.carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:20px; cursor:pointer; }
+.carta:hover { background:#f3f4f6; color:#000; }
 </style>
 </head>
 <body>
@@ -57,6 +57,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let usuarioActual = null;
 let salaActual = '';
+let manoJugador = [];
 let intervaloActualizacion = null;
 
 // Cargar usuario
@@ -104,6 +105,29 @@ async function crearSala() {
     alert('Sala creada: ' + codigo);
 }
 
+// Crear y barajar baraja
+function crearBaraja() {
+    const palos = ['♠','♥','♦','♣'];
+    const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+    const baraja = [];
+    for (let palo of palos) for (let val of valores) baraja.push(val+palo);
+    return baraja;
+}
+function barajar(baraja) { for(let i=baraja.length-1;i>0;i--){ let j=Math.floor(Math.random()*(i+1)); [baraja[i],baraja[j]]=[baraja[j],baraja[i]]; } }
+
+// Mostrar mano y asignar click a cartas
+function mostrarMano(mano){ 
+    const div=document.getElementById('manoJugador'); 
+    div.innerHTML=''; 
+    mano.forEach(c=>{
+        const d=document.createElement('div'); 
+        d.className='carta'; 
+        d.textContent=c; 
+        d.onclick = () => jugarCarta(c); 
+        div.appendChild(d);
+    }); 
+}
+
 // Unirse a sala
 async function unirseASala(nombreSala) {
     if (!usuarioActual) return alert('No se detectó sesión');
@@ -114,19 +138,18 @@ async function unirseASala(nombreSala) {
 
     const baraja = crearBaraja();
     barajar(baraja);
-    const mano = baraja.splice(0,5);
-    mostrarMano(mano);
+    manoJugador = baraja.splice(0,5);
+    mostrarMano(manoJugador);
 
-    // Añadir jugador a la tabla (solo si no existe ya)
-    const { data: existe } = await supabase
-        .from('card_game')
+    // Insertar jugador si no existe
+    const { data: existe } = await supabase.from('card_game')
         .select('*')
         .eq('player', usuarioActual)
         .eq('room', salaActual)
         .single();
 
     if (!existe) {
-        await supabase.from('card_game').insert([{ player: usuarioActual, room: salaActual, hand: mano }]);
+        await supabase.from('card_game').insert([{ player: usuarioActual, room: salaActual, hand: manoJugador, played: null }]);
     }
 
     actualizarEstado();
@@ -145,53 +168,64 @@ document.getElementById('salirSalaBtn').onclick = async () => {
     listarSalas();
 };
 
-// Crear baraja
-function crearBaraja() {
-    const palos = ['♠','♥','♦','♣'];
-    const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-    const baraja = [];
-    for (let palo of palos) for (let val of valores) baraja.push(val+palo);
-    return baraja;
-}
-function barajar(baraja) { for(let i=baraja.length-1;i>0;i--){ let j=Math.floor(Math.random()*(i+1)); [baraja[i],baraja[j]]=[baraja[j],baraja[i]]; } }
-function mostrarMano(mano) { const div=document.getElementById('manoJugador'); div.innerHTML=''; mano.forEach(c=>{ const d=document.createElement('div'); d.className='carta'; d.textContent=c; div.appendChild(d); }); }
+// Jugar carta
+async function jugarCarta(carta) {
+    if (!salaActual) return;
+    // Guardar carta jugada
+    await supabase.from('card_game').update({ played: carta }).eq('player', usuarioActual).eq('room', salaActual);
+    // Quitar de mano
+    manoJugador = manoJugador.filter(c => c !== carta);
+    mostrarMano(manoJugador);
 
-// Actualizar jugadores y pekepuntos
+    // Revisar si todos jugaron
+    const { data: jugadores } = await supabase.from('card_game')
+        .select('player, played')
+        .eq('room', salaActual);
+
+    if (jugadores.every(j => j.played)) {
+        determinarGanador(jugadores);
+    }
+}
+
+// Determinar ganador de la ronda
+async function determinarGanador(jugadores) {
+    const valorCarta = { 'A':14,'K':13,'Q':12,'J':11,'10':10,'9':9,'8':8,'7':7,'6':6,'5':5,'4':4,'3':3,'2':2 };
+    let max = -1;
+    let ganador = '';
+    jugadores.forEach(j => {
+        const val = j.played.slice(0, j.played.length-1); 
+        const puntos = valorCarta[val];
+        if (puntos > max) { max = puntos; ganador = j.player; }
+    });
+
+    // Sumar pekepuntos
+    const { data: user } = await supabase.from('usuarios').select('pekepuntos').eq('username', ganador).single();
+    await supabase.from('usuarios').update({ pekepuntos: user.pekepuntos + 10 }).eq('username', ganador);
+
+    // Limpiar jugadas
+    await supabase.from('card_game').update({ played: null }).eq('room', salaActual);
+
+    alert(`Ganador de la ronda: ${ganador} +10 pekepuntos!`);
+    actualizarEstado();
+}
+
+// Actualizar estado de la sala
 async function actualizarEstado() {
     if (!salaActual) return;
 
     try {
-        // 1️⃣ Obtener jugadores en la sala
-        const { data: jugadores, error: jugadoresErr } = await supabase
-            .from('card_game')
-            .select('player')
-            .eq('room', salaActual);
-
-        if (jugadoresErr) throw jugadoresErr;
-
+        const { data: jugadores } = await supabase.from('card_game').select('player').eq('room', salaActual);
         const div = document.getElementById('estadoJuego');
         div.innerHTML = '<h4>Jugadores en la sala</h4>';
-        if (!jugadores || jugadores.length === 0) {
-            div.innerHTML += '<p>(ninguno aún)</p>';
-            return;
-        }
+        if (!jugadores || jugadores.length===0) { div.innerHTML += '<p>(ninguno aún)</p>'; return; }
 
-        // 2️⃣ Obtener todos los usuarios con sus pekepuntos de una sola vez
+        // Obtener pekepuntos
         const nombresJugadores = jugadores.map(j => j.player);
-        const { data: usuarios, error: usuariosErr } = await supabase
-            .from('usuarios')
-            .select('username, pekepuntos')
-            .in('username', nombresJugadores);
-
-        if (usuariosErr) throw usuariosErr;
-
-        // 3️⃣ Mostrar jugadores con pekepuntos
+        const { data: usuarios } = await supabase.from('usuarios').select('username, pekepuntos').in('username', nombresJugadores);
         jugadores.forEach(j => {
             const user = usuarios.find(u => u.username === j.player);
-            const puntos = user ? user.pekepuntos : 0;
-            div.innerHTML += `<p>${j.player} - Pekepuntos: ${puntos}</p>`;
+            div.innerHTML += `<p>${j.player} - Pekepuntos: ${user ? user.pekepuntos : 0}</p>`;
         });
-
     } catch(err) {
         console.error('Error actualizando sala:', err);
     }
