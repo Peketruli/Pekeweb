@@ -1,287 +1,178 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Debug sesión + Juego de cartas</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Juego de Cartas Online</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-  body { font-family: Arial, sans-serif; padding:20px; background: #0f172a; color: #e6eef8; }
-  h1 { margin-top:0 }
-  .panel { background:#0b1220; padding:12px; border-radius:8px; margin-bottom:12px; }
-  button { padding:8px 12px; margin:6px; border-radius:6px; border:none; cursor:pointer; }
-  .btn-primary { background:#2563eb; color:white; }
-  .btn-warn { background:#f59e0b; color:black; }
-  pre { background:#071025; padding:10px; border-radius:6px; overflow:auto; max-height:220px; }
-  #gameArea { display:none; margin-top:12px; }
-  .carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:20px; }
+body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(135deg, #1f2937, #4b5563);
+    color: #fff;
+    margin:0; padding:0;
+}
+header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:15px 30px;
+    background:#111827;
+    box-shadow:0 2px 6px rgba(0,0,0,0.5);
+}
+#userInfo {
+    display:flex; align-items:center; gap:10px;
+}
+#userLogo { width:40px; height:40px; border-radius:50%; border:2px solid #fff; }
+main { padding:20px; text-align:center; }
+button {
+    padding:10px 20px; margin:5px;
+    border:none; border-radius:6px;
+    cursor:pointer; font-weight:bold;
+}
+button.primary { background:#3b82f6; color:white; }
+button.primary:hover { background:#2563eb; }
+button.danger { background:#ef4444; color:white; }
+button.danger:hover { background:#b91c1c; }
+.sala-btn { background:#10b981; color:white; }
+.sala-btn:hover { background:#059669; }
+#salas { margin-top:15px; }
+#juego { display:none; margin-top:20px; }
+.mano { margin-top:15px; }
+.carta {
+    display:inline-block;
+    width:60px; height:90px;
+    line-height:90px;
+    border:2px solid #fff;
+    border-radius:10px;
+    margin:5px;
+    background:#fff;
+    color:#000;
+    font-weight:bold;
+    font-size:20px;
+}
+.hidden { display:none; }
 </style>
 </head>
 <body>
-  <h1>Debug de sesión — Juego de cartas</h1>
-
-  <div class="panel">
-    <strong>Origen / info:</strong>
-    <div id="originInfo"></div>
-  </div>
-
-  <div class="panel">
-    <strong>Estado localStorage:</strong>
-    <div id="lsEnabled"></div>
-    <button class="btn-primary" id="btnListLS">Listar localStorage</button>
-    <button class="btn-warn" id="btnSetSample">Poner sample currentUser</button>
-    <button id="btnClearSample">Borrar currentUser</button>
-    <pre id="lsDump">Pulsa "Listar localStorage" para ver claves y valores...</pre>
-    <div style="font-size:0.9em">Consejo: si el hub guarda la sesión como <code>currentUser</code>, aquí debe aparecer esa clave. Si no aparece, el juego no la encontrará.</div>
-  </div>
-
-  <div class="panel">
-    <strong>Detección automática de sesión:</strong>
-    <button class="btn-primary" id="btnDetect">Detectar sesión ahora</button>
-    <div id="detectResult" style="margin-top:8px">Resultado: —</div>
-    <div style="margin-top:8px; font-size:0.9em">
-      Si no detecta sesión:
-      <ul>
-        <li>Comprueba que el hub y este archivo estén en <strong>la misma URL/origen (protocolo+host+puerto)</strong>.</li>
-        <li>Comprueba en DevTools → Application → Local Storage que exista <code>currentUser</code>.</li>
-        <li>Si el hub usa otra clave, modifica/usa esa clave (ej. <code>username</code>, <code>user</code>).</li>
-      </ul>
+<header>
+    <h2>🎴 Juego de Cartas</h2>
+    <div id="userInfo">
+        <img id="userLogo" src="logoDefault.png" alt="Logo">
+        <span id="userName"></span>
+        <button id="logoutBtn" class="danger">Cerrar sesión</button>
     </div>
-  </div>
-
-  <div id="gameArea" class="panel">
-    <h2>Juego (activo)</h2>
-    <div><strong>Usuario detectado:</strong> <span id="usuarioDetectado"></span></div>
-    <div style="margin-top:8px;">
-      <button id="crearBtn">Crear nueva sala</button>
-      <div id="salas" style="margin-top:10px">Salas: (se cargan cuando detecte sesión)</div>
+</header>
+<main>
+    <div id="zonaInicial">
+        <button id="crearBtn" class="primary">Crear nueva sala</button>
+        <h3>Salas disponibles</h3>
+        <div id="salas">Cargando salas...</div>
     </div>
 
-    <div id="juego" style="display:none; margin-top:12px;">
-      <h3>Sala: <span id="salaCodigo"></span></h3>
-      <div id="estadoJuego"></div>
-      <div class="mano" id="manoJugador"></div>
+    <div id="juego">
+        <h3>Sala: <span id="salaCodigo"></span></h3>
+        <div id="estadoJuego"></div>
+        <div class="mano" id="manoJugador"></div>
     </div>
-  </div>
+</main>
 
 <script>
-/* ---------------- CONFIG ---------------- */
 const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'; // si quieres comprobar sesión con Supabase deja una anon key válida aquí
-const { createClient } = window.supabase || {};
-const supabase = (typeof createClient === 'function' && SUPABASE_KEY !== 'TU_SUPABASE_KEY')
-  ? createClient(SUPABASE_URL, SUPABASE_KEY)
-  : null;
-/* --------------------------------------- */
+const SUPABASE_KEY = 'TU_SUPABASE_KEY';
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-document.getElementById('originInfo').textContent =
-  `location.href=${location.href}\norigin=${location.origin}\nhost=${location.host}\nprotocol=${location.protocol}`;
-
-function isLocalStorageAvailable() {
-  try {
-    localStorage.setItem('__test_ls', '1');
-    localStorage.removeItem('__test_ls');
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-document.getElementById('lsEnabled').textContent = 'localStorage disponible: ' + isLocalStorageAvailable();
-
-function listLocalStorage() {
-  const dump = {};
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    const raw = localStorage.getItem(key);
-    let parsed = null;
-    let parseError = null;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (e) {
-      parseError = e.message;
-    }
-    dump[key] = { raw, parsed, parseError };
-  }
-  document.getElementById('lsDump').textContent = JSON.stringify(dump, null, 2);
-}
-document.getElementById('btnListLS').onclick = listLocalStorage;
-
-document.getElementById('btnSetSample').onclick = () => {
-  const sample = { username: 'Peketruli', email: 'peketruli@example.com', logo: 'logoDefault.png' };
-  localStorage.setItem('currentUser', JSON.stringify(sample));
-  alert('Se ha puesto sample currentUser en localStorage.');
-  listLocalStorage();
-};
-document.getElementById('btnClearSample').onclick = () => {
-  localStorage.removeItem('currentUser');
-  alert('currentUser borrado.');
-  listLocalStorage();
-};
-
-/* Detección robusta: prueba varias claves, parsea JSON, y (si hay supabase key válida) comprueba sesión en supabase */
-async function detectarSesionRobusta() {
-  const candidateKeys = ['currentUser','user','username','userInfo','session','auth_user'];
-  let found = null;
-  for (const k of candidateKeys) {
-    const v = localStorage.getItem(k);
-    if (v !== null) {
-      let parsed = null;
-      try { parsed = JSON.parse(v); } catch(e){ parsed = v; }
-      // buscar propiedades útiles
-      const username = parsed && (parsed.username || parsed.email || parsed.user || parsed.name) || parsed;
-      found = { key:k, raw: v, parsed, username };
-      break;
-    }
-  }
-
-  // Si no lo hemos encontrado en LS, intentar Supabase (siempre que tengamos una anon key válida)
-  let supaInfo = null;
-  if (!found && supabase) {
-    try {
-      const { data } = await supabase.auth.getSession();
-      if (data?.session?.user) {
-        supaInfo = { fromSupabase: true, user: data.session.user };
-        found = { key: 'supabase_session', raw: 'supabase session', parsed: data.session.user, username: data.session.user.email || data.session.user.id };
-      }
-    } catch (e) {
-      supaInfo = { error: String(e) };
-    }
-  }
-
-  return { found, supaInfo, origin: { href: location.href, origin: location.origin, host: location.host, protocol: location.protocol } };
-}
-
-document.getElementById('btnDetect').onclick = async () => {
-  document.getElementById('detectResult').textContent = 'Detectando...';
-  const res = await detectarSesionRobusta();
-  document.getElementById('detectResult').textContent = JSON.stringify(res, null, 2);
-
-  if (res.found) {
-    // Si encuentra algo válido, inicia el juego usando el username detectado
-    const usuario = (typeof res.found.parsed === 'object') ? (res.found.parsed.username || res.found.parsed.email || res.found.parsed.id || res.found.parsed.user || '') : res.found.parsed;
-    iniciarJuegoConUsuario(usuario || res.found.username || 'Usuario');
-  } else {
-    alert('No se encontró ninguna sesión. Asegúrate de que tu hub guarda localStorage key "currentUser" y que este archivo está en el mismo origen.');
-  }
-};
-
-/* ------------------ Juego (simplificado) ------------------ */
 let usuarioActual = null;
 let salaActual = '';
 
-function iniciarJuegoConUsuario(usuario) {
-  usuarioActual = usuario;
-  document.getElementById('usuarioDetectado').textContent = usuarioActual;
-  document.getElementById('gameArea').style.display = 'block';
-  listarSalas(); // carga inicial
-  // mostrar el botón crearSala funcional
-  document.getElementById('crearBtn').onclick = crearSala;
+function cargarUsuario() {
+    const user = JSON.parse(localStorage.getItem('currentUser'));
+    if (!user) {
+        alert('No tienes sesión iniciada');
+        window.location.href = 'login.html';
+        return;
+    }
+    usuarioActual = user.username;
+    document.getElementById('userName').textContent = usuarioActual;
+    document.getElementById('userLogo').src = user.logo || 'logoDefault.png';
+
+    // Botón privado visible solo para ti
+    if (usuarioActual !== 'Peketruli') {
+        // ejemplo: ocultar botones privados
+        // document.querySelector('#descargaBtn')?.classList.add('hidden');
+    }
+}
+
+document.getElementById('logoutBtn').onclick = () => {
+    localStorage.removeItem('currentUser');
+    window.location.href = 'login.html';
+};
+
+async function listarSalas() {
+    const div = document.getElementById('salas');
+    div.innerHTML = 'Cargando salas...';
+    let data = [];
+    if (supabase) {
+        const res = await supabase.from('rooms').select('*');
+        data = res.data || [];
+    }
+    div.innerHTML = '';
+    if (data.length === 0) div.innerHTML = 'No hay salas disponibles';
+    data.forEach(sala => {
+        const btn = document.createElement('button');
+        btn.textContent = `Unirse a ${sala.name}`;
+        btn.className = 'sala-btn';
+        btn.onclick = () => unirseASala(sala.name);
+        div.appendChild(btn);
+    });
 }
 
 async function crearSala() {
-  if (!usuarioActual) { alert('No se detectó sesión.'); return; }
-  const codigo = 'sala_' + Math.floor(Math.random() * 10000);
-  // Intentamos insertar en supabase si hay cliente, si no, simulamos localmente
-  if (supabase) {
-    const { error } = await supabase.from('rooms').insert([{ name: codigo }]);
-    if (error) return alert('Error al crear sala: ' + error.message);
-  } else {
-    // simulación: guardamos en localStorage.rooms como array
-    const rooms = JSON.parse(localStorage.getItem('debug_rooms') || '[]');
-    rooms.push({ name: codigo, createdBy: usuarioActual });
-    localStorage.setItem('debug_rooms', JSON.stringify(rooms));
-  }
-  listarSalas();
-  alert('Sala creada: ' + codigo);
-}
-
-async function listarSalas() {
-  const div = document.getElementById('salas');
-  div.innerHTML = 'Cargando salas...';
-  let data = null;
-  if (supabase) {
-    const r = await supabase.from('rooms').select('*');
-    data = r.data;
-  } else {
-    data = JSON.parse(localStorage.getItem('debug_rooms') || '[]');
-  }
-  if (!data || data.length === 0) { div.innerHTML = 'No hay salas disponibles.'; return; }
-  div.innerHTML = '';
-  data.forEach(sala => {
-    const btn = document.createElement('button');
-    btn.textContent = `Unirse a ${sala.name}`;
-    btn.onclick = () => unirseASala(sala.name);
-    div.appendChild(btn);
-  });
+    if (!usuarioActual) return alert('No se detectó sesión');
+    const codigo = 'sala_' + Math.floor(Math.random()*10000);
+    if (supabase) await supabase.from('rooms').insert([{ name: codigo }]);
+    listarSalas();
+    alert('Sala creada: '+codigo);
 }
 
 async function unirseASala(nombreSala) {
-  if (!usuarioActual) return alert('No se detectó sesión.');
-  salaActual = nombreSala;
-  document.getElementById('juego').style.display = 'block';
-  document.getElementById('salaCodigo').textContent = nombreSala;
+    if (!usuarioActual) return alert('No se detectó sesión');
+    salaActual = nombreSala;
+    document.getElementById('zonaInicial').style.display = 'none';
+    document.getElementById('juego').style.display = 'block';
+    document.getElementById('salaCodigo').textContent = salaActual;
 
-  let baraja = crearBaraja();
-  barajar(baraja);
-  let mano = baraja.splice(0,5);
+    let baraja = crearBaraja(); barajar(baraja); let mano = baraja.splice(0,5);
+    mostrarMano(mano);
 
-  if (supabase) {
-    const { error } = await supabase.from('card_game').insert([{ player: usuarioActual, room: nombreSala, hand: mano, points: 0 }]);
-    if (error) return alert('Error al unirse: ' + error.message);
-  } else {
-    // simulación local: append to debug_card_game
-    const cg = JSON.parse(localStorage.getItem('debug_card_game') || '[]');
-    cg.push({ player: usuarioActual, room: nombreSala, hand: mano, points: 0 });
-    localStorage.setItem('debug_card_game', JSON.stringify(cg));
-  }
-
-  mostrarMano(mano);
-  actualizarEstado();
+    if (supabase) await supabase.from('card_game').insert([{player:usuarioActual, room:nombreSala, hand:mano, points:0}]);
+    actualizarEstado();
 }
 
-function crearBaraja(){
-  const palos = ['♠','♥','♦','♣'];
-  const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  let baraja = [];
-  for (let palo of palos) for (let valor of valores) baraja.push(valor+palo);
-  return baraja;
+function crearBaraja() {
+    const palos = ['♠','♥','♦','♣'];
+    const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+    let baraja=[];
+    for (let palo of palos) for (let val of valores) baraja.push(val+palo);
+    return baraja;
 }
-function barajar(baraja){
-  for(let i=baraja.length-1;i>0;i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [baraja[i], baraja[j]] = [baraja[j], baraja[i]];
-  }
-  return baraja;
-}
-function mostrarMano(mano){
-  const div = document.getElementById('manoJugador');
-  div.innerHTML = '';
-  mano.forEach(c=>{
-    const el = document.createElement('div');
-    el.className = 'carta';
-    el.textContent = c;
-    div.appendChild(el);
-  });
-}
-async function actualizarEstado(){
-  if(!salaActual) return;
-  let jugadores = null;
-  if (supabase) {
-    const r = await supabase.from('card_game').select('*').eq('room', salaActual);
-    jugadores = r.data;
-  } else {
-    jugadores = JSON.parse(localStorage.getItem('debug_card_game') || '[]').filter(x=>x.room===salaActual);
-  }
-  const estado = document.getElementById('estadoJuego');
-  estado.innerHTML = '<h4>Jugadores en la sala</h4>';
-  if (jugadores && jugadores.length) {
-    jugadores.forEach(j => estado.innerHTML += `<p>${j.player} - Puntos: ${j.points}</p>`);
-  } else estado.innerHTML += '<p>(ninguno aún)</p>';
+function barajar(baraja){ for(let i=baraja.length-1;i>0;i--){ let j=Math.floor(Math.random()*(i+1)); [baraja[i],baraja[j]]=[baraja[j],baraja[i]]; } }
+function mostrarMano(mano){ const div=document.getElementById('manoJugador'); div.innerHTML=''; mano.forEach(c=>{const d=document.createElement('div'); d.className='carta'; d.textContent=c; div.appendChild(d); }); }
+async function actualizarEstado(){ 
+    if(!salaActual) return;
+    const res = await supabase.from('card_game').select('*').eq('room', salaActual);
+    const jugadores = res.data || [];
+    const div = document.getElementById('estadoJuego');
+    div.innerHTML = '<h4>Jugadores en la sala</h4>';
+    if(jugadores.length===0) div.innerHTML+='<p>(ninguno aún)</p>';
+    jugadores.forEach(j=>div.innerHTML+=`<p>${j.player} - Puntos: ${j.points}</p>`);
 }
 
-/* ----------------------------------------------------- */
-/* Auto-listado inicial: si quieres listar ls al cargar: */
-// listLocalStorage();
+document.getElementById('crearBtn').onclick = crearSala;
+
+window.onload = () => {
+    cargarUsuario();
+    listarSalas();
+};
 </script>
 </body>
 </html>
