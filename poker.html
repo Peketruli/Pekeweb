@@ -18,37 +18,20 @@ header {
     background:#111827;
     box-shadow:0 2px 6px rgba(0,0,0,0.5);
 }
-#userInfo {
-    display:flex; align-items:center; gap:10px;
-}
+#userInfo { display:flex; align-items:center; gap:10px; }
 #userLogo { width:40px; height:40px; border-radius:50%; border:2px solid #fff; }
 main { padding:20px; text-align:center; }
-button {
-    padding:10px 20px; margin:5px;
-    border:none; border-radius:6px;
-    cursor:pointer; font-weight:bold;
-}
+button { padding:10px 20px; margin:5px; border:none; border-radius:6px; cursor:pointer; font-weight:bold; }
 button.primary { background:#3b82f6; color:white; }
 button.primary:hover { background:#2563eb; }
 button.danger { background:#ef4444; color:white; }
 button.danger:hover { background:#b91c1c; }
-.sala-btn { background:#10b981; color:white; }
-.sala-btn:hover { background:#059669; }
+button.sala-btn { background:#10b981; color:white; }
+button.sala-btn:hover { background:#059669; }
 #salas { margin-top:15px; }
 #juego { display:none; margin-top:20px; }
 .mano { margin-top:15px; }
-.carta {
-    display:inline-block;
-    width:60px; height:90px;
-    line-height:90px;
-    border:2px solid #fff;
-    border-radius:10px;
-    margin:5px;
-    background:#fff;
-    color:#000;
-    font-weight:bold;
-    font-size:20px;
-}
+.carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:20px; }
 .hidden { display:none; }
 </style>
 </head>
@@ -72,12 +55,13 @@ button.danger:hover { background:#b91c1c; }
         <h3>Sala: <span id="salaCodigo"></span></h3>
         <div id="estadoJuego"></div>
         <div class="mano" id="manoJugador"></div>
+        <button id="salirSalaBtn" class="danger">Salir de la sala</button>
     </div>
 </main>
 
 <script>
 const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+const SUPABASE_KEY = 'TU_SUPABASE_KEY';
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -94,12 +78,6 @@ function cargarUsuario() {
     usuarioActual = user.username;
     document.getElementById('userName').textContent = usuarioActual;
     document.getElementById('userLogo').src = user.logo || 'logoDefault.png';
-
-    // Botón privado visible solo para ti
-    if (usuarioActual !== 'Peketruli') {
-        // ejemplo: ocultar botones privados
-        // document.querySelector('#descargaBtn')?.classList.add('hidden');
-    }
 }
 
 document.getElementById('logoutBtn').onclick = () => {
@@ -110,13 +88,10 @@ document.getElementById('logoutBtn').onclick = () => {
 async function listarSalas() {
     const div = document.getElementById('salas');
     div.innerHTML = 'Cargando salas...';
-    let data = [];
-    if (supabase) {
-        const res = await supabase.from('rooms').select('*');
-        data = res.data || [];
-    }
+    const { data, error } = await supabase.from('rooms').select('*');
+    if (error) { div.innerHTML = 'Error al cargar salas'; console.error(error); return; }
     div.innerHTML = '';
-    if (data.length === 0) div.innerHTML = 'No hay salas disponibles';
+    if (!data || data.length === 0) div.innerHTML = 'No hay salas disponibles';
     data.forEach(sala => {
         const btn = document.createElement('button');
         btn.textContent = `Unirse a ${sala.name}`;
@@ -129,7 +104,7 @@ async function listarSalas() {
 async function crearSala() {
     if (!usuarioActual) return alert('No se detectó sesión');
     const codigo = 'sala_' + Math.floor(Math.random()*10000);
-    if (supabase) await supabase.from('rooms').insert([{ name: codigo }]);
+    await supabase.from('rooms').insert([{ name: codigo }]);
     listarSalas();
     alert('Sala creada: '+codigo);
 }
@@ -141,31 +116,52 @@ async function unirseASala(nombreSala) {
     document.getElementById('juego').style.display = 'block';
     document.getElementById('salaCodigo').textContent = salaActual;
 
-    let baraja = crearBaraja(); barajar(baraja); let mano = baraja.splice(0,5);
+    // Añadir jugador a la tabla
+    const baraja = crearBaraja();
+    barajar(baraja);
+    const mano = baraja.splice(0,5);
     mostrarMano(mano);
 
-    if (supabase) await supabase.from('card_game').insert([{player:usuarioActual, room:nombreSala, hand:mano, points:0}]);
+    await supabase.from('card_game').insert([{player:usuarioActual, room:salaActual, hand:mano, points:0}]);
     actualizarEstado();
 }
+
+// Botón salir de sala
+document.getElementById('salirSalaBtn').onclick = async () => {
+    if (!salaActual) return;
+    await supabase.from('card_game').delete().eq('player', usuarioActual).eq('room', salaActual);
+    salaActual = '';
+    document.getElementById('juego').style.display = 'none';
+    document.getElementById('zonaInicial').style.display = 'block';
+    listarSalas();
+};
 
 function crearBaraja() {
     const palos = ['♠','♥','♦','♣'];
     const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-    let baraja=[];
+    const baraja = [];
     for (let palo of palos) for (let val of valores) baraja.push(val+palo);
     return baraja;
 }
 function barajar(baraja){ for(let i=baraja.length-1;i>0;i--){ let j=Math.floor(Math.random()*(i+1)); [baraja[i],baraja[j]]=[baraja[j],baraja[i]]; } }
-function mostrarMano(mano){ const div=document.getElementById('manoJugador'); div.innerHTML=''; mano.forEach(c=>{const d=document.createElement('div'); d.className='carta'; d.textContent=c; div.appendChild(d); }); }
+function mostrarMano(mano){ 
+    const div=document.getElementById('manoJugador'); 
+    div.innerHTML=''; 
+    mano.forEach(c=>{const d=document.createElement('div'); d.className='carta'; d.textContent=c; div.appendChild(d);}); 
+}
+
+// Actualizar jugadores en la sala cada 2 segundos
 async function actualizarEstado(){ 
     if(!salaActual) return;
-    const res = await supabase.from('card_game').select('*').eq('room', salaActual);
-    const jugadores = res.data || [];
+    const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaActual);
     const div = document.getElementById('estadoJuego');
     div.innerHTML = '<h4>Jugadores en la sala</h4>';
-    if(jugadores.length===0) div.innerHTML+='<p>(ninguno aún)</p>';
-    jugadores.forEach(j=>div.innerHTML+=`<p>${j.player} - Puntos: ${j.points}</p>`);
+    if(!jugadores || jugadores.length===0) div.innerHTML+='<p>(ninguno aún)</p>';
+    else jugadores.forEach(j=>div.innerHTML+=`<p>${j.player} - Puntos: ${j.points}</p>`);
 }
+
+// Refrescar lista de jugadores cada 2s
+setInterval(() => { if(salaActual) actualizarEstado(); }, 2000);
 
 document.getElementById('crearBtn').onclick = crearSala;
 
