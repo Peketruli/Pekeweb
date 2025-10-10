@@ -151,24 +151,44 @@ function mostrarMano(mano){
 }
 
 // Actualizar jugadores en la sala cada 2 segundos
-async function actualizarEstado(){ 
-    if(!salaActual) return;
-    const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaActual);
+async function actualizarEstado() {
+    if (!salaActual) return;
+
+    // Obtenemos los jugadores en esta sala
+    const { data: jugadores, error } = await supabase
+        .from('card_game')
+        .select('player')
+        .eq('room', salaActual);
+
+    if (error) {
+        console.error('Error cargando jugadores:', error);
+        return;
+    }
+
     const div = document.getElementById('estadoJuego');
     div.innerHTML = '<h4>Jugadores en la sala</h4>';
-    if(!jugadores || jugadores.length===0) div.innerHTML+='<p>(ninguno aún)</p>';
-    else jugadores.forEach(j=>div.innerHTML+=`<p>${j.player} - Puntos: ${j.points}</p>`);
+
+    if (!jugadores || jugadores.length === 0) {
+        div.innerHTML += '<p>(ninguno aún)</p>';
+        return;
+    }
+
+    // Por cada jugador, buscamos sus pekepuntos
+    for (let j of jugadores) {
+        const { data: usuario, error: err } = await supabase
+            .from('users') // o como se llame tu tabla de usuarios
+            .select('username, pekepuntos')
+            .eq('username', j.player)
+            .single(); // un solo registro
+
+        if (err) {
+            console.error('Error cargando pekepuntos de', j.player, err);
+            continue;
+        }
+
+        div.innerHTML += `<p>${usuario.username} - Pekepuntos: ${usuario.pekepuntos}</p>`;
+    }
 }
-
-// Refrescar lista de jugadores cada 2s
-setInterval(() => { if(salaActual) actualizarEstado(); }, 2000);
-
-document.getElementById('crearBtn').onclick = crearSala;
-
-window.onload = () => {
-    cargarUsuario();
-    listarSalas();
-};
 </script>
 </body>
 </html>
