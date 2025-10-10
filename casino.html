@@ -134,39 +134,67 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadTop5();  
 });  
 
-async function initUser() {  
-  const saved = localStorage.getItem("currentUser");  
-  if(saved){  
-    try{ currentUser = JSON.parse(saved); renderUserUI(); return; }catch{}  
-  }  
+async function initUser() {
+  try {
+    // Obtener usuario de Supabase Auth
+    const { data: { user } } = await supabase.auth.getUser();
 
-  const { data: authData } = await supabase.auth.getUser();  
-  if(authData?.user){  
-    const { data } = await supabase.from("usuarios").select("*").eq("auth_id", authData.user.id).limit(1).maybeSingle();  
-    if(data){ currentUser = data; localStorage.setItem("currentUser", JSON.stringify(currentUser)); renderUserUI(); }  
-  }  
-}  
+    if (!user) {
+      console.log("No hay usuario logueado");
+      return;
+    }
 
-function renderUserUI(){  
-  if(!currentUser) return;
+    // Buscar el usuario en la tabla "usuarios" por su auth_id
+    const { data, error } = await supabase
+      .from("usuarios")
+      .select("*")
+      .eq("auth_id", user.id)
+      .maybeSingle();
 
-  document.getElementById("userInfo").style.display="flex";  
-  document.getElementById("authContainer").style.display="none";  
+    if (error) {
+      console.error("Error cargando usuario de la DB:", error);
+      return;
+    }
 
-  document.getElementById("userName").textContent = currentUser.username || "Usuario";  
-  document.getElementById("userLogo").src = currentUser.logo || "logoDefault.png";  
+    if (!data) {
+      console.log("Usuario no encontrado en la tabla usuarios");
+      return;
+    }
 
-  // Forzar que siempre sea número
-  const puntos = currentUser.pekepuntos != null ? Number(currentUser.pekepuntos) : 0;
+    currentUser = data;
+
+    // Guardar en localStorage
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+
+    // Actualizar UI
+    renderUserUI();
+
+  } catch (err) {
+    console.error("initUser exception:", err);
+  }
+}
+
+
+function renderUserUI() {
+  if (!currentUser) return;
+
+  document.getElementById("userInfo").style.display = "flex";
+  document.getElementById("authContainer").style.display = "none";
+
+  document.getElementById("userName").textContent = currentUser.username || "Usuario";
+  document.getElementById("userLogo").src = currentUser.logo || "logoDefault.png";
+
+  const puntos = Number(currentUser.pekepuntos || 0);
   document.getElementById("pekepuntos").textContent = `Pekepuntos: ${puntos.toLocaleString()}`;
 
-  if(currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;  
-  if(currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;  
-  if(currentUser.tabla_color) { 
-    applyTableColor(currentUser.tabla_color); 
-    document.getElementById("tableColorPicker").value = currentUser.tabla_color; 
-  }  
+  if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
+  if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
+  if (currentUser.tabla_color) {
+    applyTableColor(currentUser.tabla_color);
+    document.getElementById("tableColorPicker").value = currentUser.tabla_color;
+  }
 }
+
 
 async function loadTop5(){
   const top5List = document.getElementById("top5List");
