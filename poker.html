@@ -150,43 +150,46 @@ function mostrarMano(mano){
     mano.forEach(c=>{const d=document.createElement('div'); d.className='carta'; d.textContent=c; div.appendChild(d);}); 
 }
 
-// Actualizar jugadores en la sala cada 2 segundos
 async function actualizarEstado() {
     if (!salaActual) return;
 
-    // Obtenemos los jugadores en la sala
-    const { data: jugadores, error } = await supabase
-        .from('card_game')
-        .select('player')
-        .eq('room', salaActual);
+    try {
+        // 1️⃣ Obtener todos los jugadores de la sala
+        const { data: jugadores, error: jugadoresErr } = await supabase
+            .from('card_game')
+            .select('player')
+            .eq('room', salaActual);
 
-    if (error) {
-        console.error('Error al cargar jugadores:', error);
-        return;
-    }
+        if (jugadoresErr) throw jugadoresErr;
 
-    const div = document.getElementById('estadoJuego');
-    div.innerHTML = '<h4>Jugadores en la sala</h4>';
+        const div = document.getElementById('estadoJuego');
+        div.innerHTML = '<h4>Jugadores en la sala</h4>';
 
-    if (!jugadores || jugadores.length === 0) {
-        div.innerHTML += '<p>(ninguno aún)</p>';
-        return;
-    }
-
-    // Por cada jugador, obtenemos sus pekepuntos desde la tabla de usuarios
-    for (let j of jugadores) {
-        const { data: usuario, error: err } = await supabase
-            .from('usuarios')  // nombre de la tabla donde están los usuarios
-            .select('username, pekepuntos')
-            .eq('username', j.player)
-            .single();
-
-        if (err) {
-            console.error('Error cargando pekepuntos de', j.player, err);
-            continue;
+        if (!jugadores || jugadores.length === 0) {
+            div.innerHTML += '<p>(ninguno aún)</p>';
+            return;
         }
 
-        div.innerHTML += `<p>${usuario.username} - Pekepuntos: ${usuario.pekepuntos}</p>`;
+        // 2️⃣ Obtener todos los usuarios que estén en la sala de una sola vez
+        const nombresJugadores = jugadores.map(j => j.player);
+        const { data: usuarios, error: usuariosErr } = await supabase
+            .from('usuarios')   // Ajusta si tu tabla de usuarios tiene otro nombre
+            .select('username, pekepuntos')
+            .in('username', nombresJugadores);
+
+        if (usuariosErr) throw usuariosErr;
+
+        // 3️⃣ Cruzar datos y mostrarlos
+        jugadores.forEach(j => {
+            const user = usuarios.find(u => u.username === j.player);
+            const puntos = user ? user.pekepuntos : 0;
+            div.innerHTML += `<p>${j.player} - Pekepuntos: ${puntos}</p>`;
+        });
+
+    } catch (err) {
+        console.error('Error al actualizar jugadores:', err);
+        const div = document.getElementById('estadoJuego');
+        div.innerHTML = '<p>Error cargando jugadores</p>';
     }
 }
 
