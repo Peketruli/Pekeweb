@@ -23,7 +23,8 @@ button.sala-btn:hover { background:#059669;}
 .mano { margin-top:15px;}
 .carta { display:inline-block; width:60px; height:90px; line-height:90px; border:2px solid #fff; border-radius:10px; margin:5px; background:#fff; color:#000; font-weight:bold; font-size:20px; cursor:pointer;}
 .carta:hover { background:#f3f4f6; color:#000;}
-#apuestas { margin-top:15px;}
+#apuestas, #fichas { margin-top:15px;}
+.ficha { display:inline-block; width:50px; height:50px; border-radius:50%; margin:5px; line-height:50px; font-weight:bold; cursor:pointer; border:2px solid #fff; }
 </style>
 </head>
 <body>
@@ -44,6 +45,17 @@ button.sala-btn:hover { background:#059669;}
 
 <div id="juego">
 <h3>Sala: <span id="salaCodigo"></span></h3>
+
+<!-- SISTEMA DE FICHAS -->
+<div id="fichas">
+  <h4>🎰 Banco de fichas</h4>
+  <p>Pekepuntos disponibles: <span id="pekepuntosUsuario">0</span></p>
+  <input type="number" id="depositoCantidad" placeholder="Pekepuntos a depositar" min="1">
+  <button id="depositarBtn" class="primary">Depositar</button>
+  <div id="fichasJugador"></div>
+  <button id="cobrarBtn" class="sala-btn">💰 Entregar fichas al banco</button>
+</div>
+
 <div id="estadoJuego"></div>
 <div id="apuestas">
 <h4>Apuestas</h4>
@@ -57,7 +69,7 @@ button.sala-btn:hover { background:#059669;}
 
 <script>
 const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // tu clave
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -66,19 +78,82 @@ let salaActual = '';
 let manoJugador = [];
 let intervaloActualizacion = null;
 let montoActual = 0;
+let fichas = { 1:0, 5:0, 25:0, 100:0 };
 
 // Cargar usuario
-function cargarUsuario() {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    if (!user) {
-        alert('No tienes sesión iniciada');
-        window.location.href = 'login.html';
-        return;
-    }
-    usuarioActual = user.username;
-    document.getElementById('userName').textContent = usuarioActual;
-    document.getElementById('userLogo').src = user.logo || 'logoDefault.png';
+async function cargarUsuario() {
+  const user = JSON.parse(localStorage.getItem('currentUser'));
+  if (!user) {
+    alert('No tienes sesión iniciada');
+    window.location.href = 'login.html';
+    return;
+  }
+  usuarioActual = user.username;
+  document.getElementById('userName').textContent = usuarioActual;
+  document.getElementById('userLogo').src = user.logo || 'logoDefault.png';
+
+  const { data } = await supabase.from('usuarios').select('pekepuntos').eq('username', usuarioActual).single();
+  document.getElementById('pekepuntosUsuario').textContent = data.pekepuntos;
 }
+
+// Mostrar fichas
+function mostrarFichas() {
+  const div = document.getElementById('fichasJugador');
+  div.innerHTML = '';
+  const colores = {1:'#fff',5:'#ef4444',25:'#3b82f6',100:'#10b981'};
+  for (const [valor, cantidad] of Object.entries(fichas)) {
+    if (cantidad>0) {
+      const chip = document.createElement('div');
+      chip.className = 'ficha';
+      chip.style.background = colores[valor];
+      chip.style.color = (valor==1)?'#000':'#fff';
+      chip.textContent = `${valor}x${cantidad}`;
+      div.appendChild(chip);
+    }
+  }
+}
+
+// Depositar pekepuntos y recibir fichas
+document.getElementById('depositarBtn').onclick = async () => {
+  const cantidad = parseInt(document.getElementById('depositoCantidad').value);
+  if (!cantidad || cantidad <= 0) return alert('Cantidad inválida');
+  
+  const { data: user } = await supabase.from('usuarios').select('pekepuntos').eq('username', usuarioActual).single();
+  if (user.pekepuntos < cantidad) return alert('No tienes suficientes Pekepuntos');
+
+  // Restar pekepuntos
+  await supabase.from('usuarios').update({ pekepuntos: user.pekepuntos - cantidad }).eq('username', usuarioActual);
+
+  // Repartir fichas (de mayor a menor)
+  let restante = cantidad;
+  [100,25,5,1].forEach(v=>{
+    const num = Math.floor(restante/v);
+    fichas[v] += num;
+    restante -= num*v;
+  });
+  
+  alert('Has cambiado tus Pekepuntos por fichas');
+  mostrarFichas();
+  cargarUsuario();
+};
+
+// Entregar fichas al banco
+document.getElementById('cobrarBtn').onclick = async () => {
+  let total = 0;
+  for (const [valor,cantidad] of Object.entries(fichas)) {
+    total += valor * cantidad;
+    fichas[valor]=0;
+  }
+
+  if (total === 0) return alert('No tienes fichas para entregar');
+
+  const { data: user } = await supabase.from('usuarios').select('pekepuntos').eq('username', usuarioActual).single();
+  await supabase.from('usuarios').update({ pekepuntos: user.pekepuntos + total }).eq('username', usuarioActual);
+
+  alert(`Has entregado tus fichas y recibido ${total} Pekepuntos`);
+  mostrarFichas();
+  cargarUsuario();
+};
 
 // Logout
 document.getElementById('logoutBtn').onclick = () => {
