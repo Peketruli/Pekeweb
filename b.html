@@ -282,50 +282,7 @@ const dropdownMenu=document.getElementById("dropdownMenu");
 userInfoDiv.addEventListener("click",()=>{ dropdownMenu.style.display=dropdownMenu.style.display==="block"?"none":"block"; });
 document.addEventListener("click",(e)=>{if(!userInfoDiv.contains(e.target)&&!dropdownMenu.contains(e.target)) dropdownMenu.style.display="none";});
 
-function showNewBlogForm(){ if(!isUserLoggedIn()){ alert("Debes iniciar sesión para publicar un blog"); return; } document.getElementById("newBlogForm").classList.remove("hidden"); }
-function hideNewBlogForm(){ document.getElementById("newBlogForm").classList.add("hidden"); }
-
-async function loadBlogs(){
-  const blogsList = document.getElementById("blogsList");
-  blogsList.innerHTML = "Cargando blogs...";
-  const { data, error } = await db.from("blog").select("*").order("created_at", { ascending: false });
-  if(error){ console.error("Error al cargar blogs:", error); blogsList.innerHTML = `<p>Error al cargar blogs: ${error.message}</p>`; return; }
-  if(!data || data.length === 0){ blogsList.innerHTML = "<p>No hay blogs publicados.</p>"; return; }
-
-  blogsList.innerHTML = "";
-  const user = getCurrentUser();
-
-  data.forEach(blog => {
-    const div = document.createElement("div");
-    div.className = "blog-post";
-
-    // Evitamos que la imagen o botón de like bloquee el click
-    div.innerHTML = `
-      <h3>${blog.title}</h3>
-      <p style="font-size:0.9em;color:gray;">Autor: ${blog.author || "Anónimo"}</p>
-      ${blog.media_url ? `<img src="${blog.media_url}" class="blog-media">` : ""}
-      <p>❤️ <span id="likeCount-${blog.id}">${blog.likes || 0}</span>
-      <button class="like-btn" id="likeBtn-${blog.id}">❤️</button></p>
-    `;
-
-    // Evento click para abrir blog (solo si no es like)
-    div.addEventListener("click", (e) => { 
-      if(!e.target.classList.contains("like-btn")) openBlog(blog); 
-    });
-
-    const likeBtn = div.querySelector(`#likeBtn-${blog.id}`);
-    likeBtn.addEventListener("click", (e) => { 
-      e.stopPropagation(); // evitar que abra el blog
-      toggleLike(blog.id); 
-    });
-
-    if(user && localStorage.getItem(`like_${blog.id}_${user.id}`)) likeBtn.classList.add("liked");
-
-    blogsList.appendChild(div);
-  });
-}
-
-// Mostrar formulario flotante encima de los blogs
+// Mostrar formulario flotante modal
 function showNewBlogForm(){
   if(!isUserLoggedIn()){ alert("Debes iniciar sesión para publicar un blog"); return; }
   const form = document.getElementById("newBlogForm");
@@ -334,7 +291,7 @@ function showNewBlogForm(){
   form.style.top = "50%";
   form.style.left = "50%";
   form.style.transform = "translate(-50%, -50%)";
-  form.style.zIndex = 10;
+  form.style.zIndex = 20;
   form.style.width = "90%";
   form.style.maxWidth = "500px";
   form.style.backgroundColor = "rgba(20,10,30,0.95)";
@@ -350,7 +307,46 @@ function hideNewBlogForm(){
   form.style.zIndex = "";
 }
 
+// Cargar blogs
+async function loadBlogs(){
+  const blogsList = document.getElementById("blogsList");
+  blogsList.innerHTML = "Cargando blogs...";
+  const { data, error } = await db.from("blog").select("*").order("created_at", { ascending: false });
+  if(error){ console.error(error); blogsList.innerHTML = `<p>Error al cargar blogs: ${error.message}</p>`; return; }
+  if(!data || data.length === 0){ blogsList.innerHTML = "<p>No hay blogs publicados.</p>"; return; }
 
+  blogsList.innerHTML = "";
+  const user = getCurrentUser();
+
+  data.forEach(blog => {
+    const div = document.createElement("div");
+    div.className = "blog-post";
+
+    div.innerHTML = `
+      <h3>${blog.title}</h3>
+      <p style="font-size:0.9em;color:gray;">Autor: ${blog.author || "Anónimo"}</p>
+      ${blog.media_url ? `<img src="${blog.media_url}" class="blog-media">` : ""}
+      <p>❤️ <span id="likeCount-${blog.id}">${blog.likes||0}</span>
+      <button class="like-btn" id="likeBtn-${blog.id}">❤️</button></p>
+    `;
+
+    div.addEventListener("click", e => {
+      if(!e.target.classList.contains("like-btn")) openBlog(blog);
+    });
+
+    const likeBtn = div.querySelector(`#likeBtn-${blog.id}`);
+    likeBtn.addEventListener("click", e => { 
+      e.stopPropagation();
+      toggleLike(blog.id); 
+    });
+
+    if(user && localStorage.getItem(`like_${blog.id}_${user.id}`)) likeBtn.classList.add("liked");
+
+    blogsList.appendChild(div);
+  });
+}
+
+// Dar like
 async function toggleLike(blogId){
   const user=getCurrentUser();
   if(!user){ alert("Inicia sesión para dar like"); return; }
@@ -366,6 +362,7 @@ async function toggleLike(blogId){
   await db.from("blog").update({likes:newLikes}).eq("id",blogId);
 }
 
+// Publicar blog
 async function publishBlog(){
   const user=getCurrentUser();
   if(!user){ alert("Debes iniciar sesión"); return; }
@@ -394,6 +391,7 @@ async function publishBlog(){
   loadBlogs();
 }
 
+// Abrir blog
 function openBlog(blog){
   document.getElementById("blogTitleDetail").textContent=blog.title;
   document.getElementById("blogContentDetail").textContent=blog.content;
@@ -413,6 +411,7 @@ function openBlog(blog){
   window.currentBlogId=blog.id;
 }
 
+// Publicar comentario
 async function publishComment(){
   const user=getCurrentUser();
   if(!user){ alert("Debes iniciar sesión"); return; }
@@ -432,7 +431,11 @@ async function publishComment(){
   openBlog({...blogData, comments:newComments});
 }
 
-function closeBlog(){ document.getElementById("blogDetails").classList.add("hidden"); document.getElementById("blogsList").classList.remove("hidden"); }
+// Cerrar detalle
+function closeBlog(){ 
+  document.getElementById("blogDetails").classList.add("hidden"); 
+  document.getElementById("blogsList").classList.remove("hidden"); 
+}
 </script>
 
 </body>
