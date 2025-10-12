@@ -307,13 +307,43 @@ function hideNewBlogForm(){
   form.style.zIndex = "";
 }
 
-// Cargar blogs
+// Abrir blog - ahora obtiene datos actualizados desde Supabase
+async function openBlog(blogId){
+  const { data: blogData, error } = await db.from("blog").select("*").eq("id", blogId).single();
+  if(error){ console.error(error); alert("Error al abrir el blog"); return; }
+
+  document.getElementById("blogTitleDetail").textContent = blogData.title;
+  document.getElementById("blogContentDetail").textContent = blogData.content;
+
+  const mediaDiv = document.getElementById("blogMediaDetail");
+  mediaDiv.innerHTML = "";
+  if(blogData.media_url){
+    if(blogData.media_url.endsWith(".mp4")) 
+      mediaDiv.innerHTML = `<video src="${blogData.media_url}" controls class="blog-media"></video>`;
+    else 
+      mediaDiv.innerHTML = `<img src="${blogData.media_url}" class="blog-media">`;
+  }
+
+  const commentsList = document.getElementById("commentsList");
+  commentsList.innerHTML = "";
+  if(blogData.comments && blogData.comments.length>0){
+    blogData.comments.forEach(c => {
+      commentsList.innerHTML += `<div><strong>${c.author}</strong>: ${c.comment}</div>`;
+    });
+  } else commentsList.innerHTML = "<p>No hay comentarios todavía.</p>";
+
+  document.getElementById("blogsList").classList.add("hidden");
+  document.getElementById("blogDetails").classList.remove("hidden");
+
+  window.currentBlogId = blogData.id;
+}
+
+// Modificar la carga de blogs para usar blog.id en el click
 async function loadBlogs(){
   const blogsList = document.getElementById("blogsList");
   blogsList.innerHTML = "Cargando blogs...";
   const { data, error } = await db.from("blog").select("*").order("created_at", { ascending: false });
-  if(error){ console.error(error); blogsList.innerHTML = `<p>Error al cargar blogs: ${error.message}</p>`; return; }
-  if(!data || data.length === 0){ blogsList.innerHTML = "<p>No hay blogs publicados.</p>"; return; }
+  if(error){ blogsList.innerHTML = `<p>Error: ${error.message}</p>`; return; }
 
   blogsList.innerHTML = "";
   const user = getCurrentUser();
@@ -321,17 +351,17 @@ async function loadBlogs(){
   data.forEach(blog => {
     const div = document.createElement("div");
     div.className = "blog-post";
-
     div.innerHTML = `
       <h3>${blog.title}</h3>
-      <p style="font-size:0.9em;color:gray;">Autor: ${blog.author || "Anónimo"}</p>
+      <p style="font-size:0.9em;color:gray;">Autor: ${blog.author||"Anónimo"}</p>
       ${blog.media_url ? `<img src="${blog.media_url}" class="blog-media">` : ""}
       <p>❤️ <span id="likeCount-${blog.id}">${blog.likes||0}</span>
       <button class="like-btn" id="likeBtn-${blog.id}">❤️</button></p>
     `;
 
+    // Click abrir blog usando ID
     div.addEventListener("click", e => {
-      if(!e.target.classList.contains("like-btn")) openBlog(blog);
+      if(!e.target.classList.contains("like-btn")) openBlog(blog.id);
     });
 
     const likeBtn = div.querySelector(`#likeBtn-${blog.id}`);
