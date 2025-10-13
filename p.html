@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Juego de Cartas - Diagnóstico de sesión</title>
 <style>
-  body{font-family:Arial, sans-serif;background:#111;color:#eee;margin:0;padding:20px;display:flex;flex-direction:column;align-items:center;}
+  body{font-family:Arial,sans-serif;background:#111;color:#eee;margin:0;padding:20px;display:flex;flex-direction:column;align-items:center;}
   .card{background:#1b1b1b;border-radius:10px;padding:14px;width:95%;max-width:980px;margin:12px 0;border:1px solid rgba(255,140,50,0.06);}
   h1{color:#ff9a33;text-align:center}
   .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
@@ -18,7 +18,8 @@
   .hidden{display:none}
   .fichaResumen span{margin-right:12px}
   .sala {display:flex;justify-content:space-between;align-items:center;background:#222;padding:10px;border-radius:8px;margin:8px 0}
-  input,select{padding:8px;border-radius:6px;border:1px solid #333;background:#0f0f0f;color:#fff}
+  input,select,textarea{padding:8px;border-radius:6px;border:1px solid #333;background:#0f0f0f;color:#fff}
+  textarea{resize:none;}
 </style>
 </head>
 <body>
@@ -28,7 +29,7 @@
 <!-- DIAGNÓSTICO -->
 <div class="card" id="diagCard">
   <h3>Diagnóstico de session storage / localStorage</h3>
-  <p class="small">Esta herramienta buscará automáticamente objetos en <code>localStorage</code> que parezcan ser tu sesión. Si encuentra coincidencias, podrás seleccionarla.</p>
+  <p class="small">Esta herramienta buscará automáticamente objetos en <code>localStorage</code> que parezcan ser tu sesión.</p>
   <div class="row" style="margin-bottom:8px;">
     <button id="scanBtn">🔎 Detectar sesión en localStorage</button>
     <button id="forceBtn" class="secondary">📝 Forzar sesión manual (JSON)</button>
@@ -38,14 +39,7 @@
 
   <div id="scanResults" class="klist hidden"></div>
 
-  <div id="manualArea" class="hidden" style="margin-top:8px">
-    <p class="small">Pega aquí el objeto JSON del usuario (ej: {"id":"uuid","username":"Alice","pekepuntos":500})</p>
-    <textarea id="manualJson" rows="4" style="width:100%;background:#0f0f0f;color:#fff;border:1px solid #333;padding:8px;border-radius:6px"></textarea>
-    <div class="row" style="margin-top:8px">
-      <button id="applyManual">Aplicar como sesión</button>
-      <button id="cancelManual" class="secondary">Cancelar</button>
-    </div>
-  </div>
+  <div id="manualArea" class="hidden" style="margin-top:8px"></div>
 </div>
 
 <!-- RESUMEN SESIÓN ACTUAL -->
@@ -58,7 +52,7 @@
 <!-- CONVERSION / FICHAS -->
 <div class="card" id="conversionCard">
   <h3>Canjear Pekepuntos por Fichas</h3>
-  <div id="conversionUi" class="">
+  <div id="conversionUi">
     <p class="small">Pekepuntos actuales: <strong id="pekepuntosActuales">0</strong></p>
     <div class="row" style="margin-bottom:8px">
       <select id="tipoFicha"><option value="1">Blanca (1)</option><option value="5">Roja (5)</option><option value="25">Azul (25)</option><option value="100">Verde (100)</option></select>
@@ -93,7 +87,7 @@
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
-// --- CONFIG SUPABASE (mantén tus keys) ---
+// --- CONFIG SUPABASE ---
 const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -104,14 +98,12 @@ let fichas = { blanca:0, roja:0, azul:0, verde:0 };
 let salaActual = null;
 const maxJugadoresPorSala = 5;
 
-// --- UI elements ---
+// --- ELEMENTOS UI ---
 const scanBtn = document.getElementById('scanBtn');
 const scanResults = document.getElementById('scanResults');
 const diagStatus = document.getElementById('diagStatus');
 const sessionInfo = document.getElementById('sessionInfo');
 const sessionRaw = document.getElementById('sessionRaw');
-const loginBtn = document.getElementById('loginBtn');
-
 const conversionUi = document.getElementById('conversionUi');
 const noSessionConv = document.getElementById('noSessionConv');
 const pekepuntosActualesEl = document.getElementById('pekepuntosActuales');
@@ -119,114 +111,27 @@ const fichaResumen = document.getElementById('fichaResumen');
 const canjearBtn = document.getElementById('canjearBtn');
 const tipoFichaSel = document.getElementById('tipoFicha');
 const cantidadFichasInp = document.getElementById('cantidadFichas');
-
 const crearSalaBtn = document.getElementById('crearSalaBtn');
 const salasContainer = document.getElementById('salasContainer');
 const refreshSalasBtn = document.getElementById('refreshSalas');
-
 const salaActivaCard = document.getElementById('salaActivaCard');
 const nombreSalaActivaEl = document.getElementById('nombreSalaActiva');
 const jugadoresSalaEl = document.getElementById('jugadoresSala');
 const fichasContainer = document.getElementById('fichasContainer');
 const startBtn = document.getElementById('startBtn');
+const forceBtn = document.getElementById('forceBtn');
+const manualArea = document.getElementById('manualArea');
 
-// --- UTIL: detectar objetos JSON que parezcan usuarios ---
+// --- UTIL ---
 function isLikelyUser(obj){
   if(!obj || typeof obj !== 'object') return false;
   const keys = Object.keys(obj).map(k=>k.toLowerCase());
-  // buscamos señales típicas
-  const hasId = keys.includes('id') || keys.includes('user_id') || keys.includes('uuid');
-  const hasName = keys.includes('username') || keys.includes('nombre') || keys.includes('user') || keys.includes('name');
-  return (hasId && hasName) || keys.includes('pekepuntos') || keys.includes('points');
+  return keys.includes('username') || keys.includes('nombre') || keys.includes('user');
 }
 
-// --- ESCANEAR localStorage ---
-function scanLocalStorage(){
-  scanResults.innerHTML = '';
-  scanResults.classList.remove('hidden');
-  diagStatus.textContent = ' buscando…';
-  const found = [];
-  for(const i=0;i<localStorage.length;i++){
-    const key = localStorage.key(i);
-    const val = localStorage.getItem(key);
-    let parsed = null;
-    try { parsed = JSON.parse(val); } catch(e){ parsed = null; }
-    const possible = isLikelyUser(parsed);
-    const container = document.createElement('div');
-    container.className = 'kitem';
-    const left = document.createElement('div');
-    left.innerHTML = `<strong>${key}</strong><div class="small">${typeof val === 'string' ? (val.length>200? val.slice(0,200)+'…': val) : String(val)}</div>`;
-    const right = document.createElement('div');
-    if(possible){
-      const btn = document.createElement('button');
-      btn.innerText = 'Usar esta sesión';
-      btn.addEventListener('click', ()=> applyDetected(key, parsed));
-      right.appendChild(btn);
-      found.push({key, parsed});
-    } else {
-      const span = document.createElement('span');
-      span.className='small';
-      span.innerText = 'No parece sesión';
-      right.appendChild(span);
-    }
-    container.appendChild(left);
-    container.appendChild(right);
-    scanResults.appendChild(container);
-  }
-  diagStatus.textContent = ` ${localStorage.length} claves examinadas`;
-  if(scanResults.children.length===0) scanResults.innerHTML = '<div class="small">localStorage vacío</div>';
-}
+function quantityOrFix(v){ return Number.isInteger(v)?v:Math.floor(v); }
 
-// --- APLICAR SESIÓN detectada ---
-function applyDetected(key, parsed){
-  if(!parsed) return alert('Valor no parseable');
-  // guardar uniformemente como "currentUser"
-  localStorage.setItem('currentUser', JSON.stringify(parsed));
-  loadUserFromLocal();
-  alert(`Sesión aplicada desde clave "${key}".`);
-  scanResults.classList.add('hidden');
-}
-
-// --- FORZAR SESIÓN MANUAL (UI) ---
-const forceBtn = document.getElementById('forceBtn');
-const manualArea = document.getElementById('manualArea') || (() => {
-  const ma = document.createElement('div'); ma.id='manualArea'; ma.className='hidden'; document.getElementById('diagCard').appendChild(ma); return ma;
-})();
-forceBtn.addEventListener('click', ()=> {
-  manualArea.classList.toggle('hidden');
-  if(manualArea.classList.contains('hidden')) return;
-  manualArea.innerHTML = `
-    <p class="small">Pega aquí el JSON que representa al usuario:</p>
-    <textarea id="manualJson" rows="5" style="width:100%;background:#0f0f0f;color:#fff;border:1px solid #333;padding:8px;border-radius:6px"></textarea>
-    <div class="row" style="margin-top:8px">
-      <button id="applyManual">Aplicar como sesión</button>
-      <button id="cancelManual" class="secondary">Cancelar</button>
-    </div>`;
-  document.getElementById('applyManual').addEventListener('click', ()=>{
-    const t = document.getElementById('manualJson').value.trim();
-    if(!t) return alert('Pega primero el JSON');
-    try{
-      const obj = JSON.parse(t);
-      localStorage.setItem('currentUser', JSON.stringify(obj));
-      manualArea.classList.add('hidden');
-      loadUserFromLocal();
-      alert('Sesión manual aplicada.');
-    }catch(e){
-      alert('JSON inválido: '+e.message);
-    }
-  });
-  document.getElementById('cancelManual').addEventListener('click', ()=> manualArea.classList.add('hidden'));
-});
-
-// --- BORRAR currentUser ---
-document.getElementById('clearDetected').addEventListener('click', ()=>{
-  localStorage.removeItem('currentUser');
-  usuarioSesion = null;
-  updateSessionUI();
-  alert('currentUser borrado de localStorage.');
-});
-
-// --- CARGAR SESIÓN desde múltiples claves e inicializar estado ---
+// --- SESIÓN ---
 function loadUserFromLocal(){
   usuarioSesion = null;
   const posibles = ["currentUser","usuario","user","session"];
@@ -237,17 +142,16 @@ function loadUserFromLocal(){
       const parsed = JSON.parse(val);
       if(isLikelyUser(parsed)){
         usuarioSesion = parsed;
-        // unify under currentUser
         localStorage.setItem('currentUser', JSON.stringify(parsed));
         break;
       }
     }catch(e){}
   }
-  // si no se detectó aún, también intentar cualquier clave genérica:
+  // fallback: buscar cualquier clave
   if(!usuarioSesion){
     for(let i=0;i<localStorage.length;i++){
       const k = localStorage.key(i);
-      if(['currentUser','usuario','user','session'].includes(k)) continue;
+      if(posibles.includes(k)) continue;
       const val = localStorage.getItem(k);
       try{
         const parsed = JSON.parse(val);
@@ -259,20 +163,24 @@ function loadUserFromLocal(){
       }catch(e){}
     }
   }
+  // fallback de prueba si no hay usuario
+  if(!usuarioSesion){
+    usuarioSesion = { username:'Invitado', pekepuntos:500 };
+    localStorage.setItem('currentUser', JSON.stringify(usuarioSesion));
+  }
   updateSessionUI();
+  loadFichasFromStorage();
 }
 
-// --- UPDATE UI sesión ---
+// --- UI SESIÓN ---
 function updateSessionUI(){
   if(usuarioSesion){
-    sessionInfo.innerHTML = `<strong>${usuarioSesion.username || usuarioSesion.nombre || usuarioSesion.user || 'Usuario'}</strong> — id: ${usuarioSesion.id || usuarioSesion.user_id || 'n/a'}`;
+    sessionInfo.innerHTML = `<strong>${usuarioSesion.username}</strong> — id: ${usuarioSesion.id||'n/a'}`;
     sessionRaw.classList.remove('hidden');
-    sessionRaw.textContent = JSON.stringify(usuarioSesion, null, 2);
-    // habilitar conversion y carga de fichas
+    sessionRaw.textContent = JSON.stringify(usuarioSesion,null,2);
     conversionUi.classList.remove('hidden');
     noSessionConv.classList.add('hidden');
-    pekepuntosActualesEl.textContent = usuarioSesion.pekepuntos ?? (usuarioSesion.points ?? 0);
-    loadFichasFromStorage();
+    pekepuntosActualesEl.textContent = usuarioSesion.pekepuntos ?? 0;
   } else {
     sessionInfo.innerText = 'Ninguna sesión activa';
     sessionRaw.classList.add('hidden');
@@ -283,7 +191,7 @@ function updateSessionUI(){
   }
 }
 
-// --- FICHAS: persistencia y UI ---
+// --- FICHAS ---
 function loadFichasFromStorage(){
   try{
     const fs = JSON.parse(localStorage.getItem('fichas'));
@@ -296,139 +204,105 @@ function renderFichas(){
   localStorage.setItem('fichas', JSON.stringify(fichas));
 }
 
-// --- CANJEAR FICHAS ---
+// --- CANJEAR ---
 canjearBtn.addEventListener('click', ()=>{
-  if(!usuarioSesion) return alert('No hay sesión: inicia sesión o usa Detectar sesión.');
+  if(!usuarioSesion) return alert('No hay sesión');
   const tipo = Number(tipoFichaSel.value);
   const cantidad = parseInt(cantidadFichasInp.value,10);
   if(!cantidad || cantidad<=0) return alert('Cantidad inválida');
-  const pekes = usuarioSesion.pekepuntos ?? usuarioSesion.points ?? 0;
+  const pekes = usuarioSesion.pekepuntos ?? 0;
   const total = tipo * cantidad;
   if(pekes < total) return alert('No tienes suficientes pekepuntos');
-  // restar y guardar
-  usuarioSesion.pekepuntos = (usuarioSesion.pekepuntos ?? usuarioSesion.points ?? 0) - total;
+  usuarioSesion.pekepuntos -= total;
   localStorage.setItem('currentUser', JSON.stringify(usuarioSesion));
-  document.getElementById('pekepuntosActuales').textContent = usuarioSesion.pekepuntos;
-  // añadir fichas
+  pekepuntosActualesEl.textContent = usuarioSesion.pekepuntos;
   if(tipo===1) fichas.blanca += cantidad;
   if(tipo===5) fichas.roja += quantityOrFix(cantidad);
   if(tipo===25) fichas.azul += cantidad;
   if(tipo===100) fichas.verde += cantidad;
   renderFichas();
+  cantidadFichasInp.value='';
   alert('Canje realizado.');
-  cantidadFichasInp.value = '';
 });
 
-// pequeña corrección si hay tipos raros
-function quantityOrFix(v){ return Number.isInteger(v)?v:Math.floor(v); }
-
-// --- SALAS (Supabase) ---
+// --- SALAS ---
 async function mostrarSalas(){
   try{
     const { data: salas } = await supabase.from('rooms').select('*').order('created_at',{ascending:true});
     salasContainer.innerHTML = '';
-    salas.forEach(s => {
+    salas.forEach(s=>{
       const div = document.createElement('div');
       div.className='sala';
-      const left = document.createElement('div'); left.innerHTML = `<strong>${s.name}</strong><div class="small">creada: ${new Date(s.created_at).toLocaleString()}</div>`;
+      const left = document.createElement('div'); 
+      left.innerHTML = `<strong>${s.name}</strong><div class="small">creada: ${new Date(s.created_at).toLocaleString()}</div>`;
       const right = document.createElement('div');
       const btn = document.createElement('button'); btn.innerText='Unirse';
-      btn.addEventListener('click', ()=> unirseASala(s.id, s.name));
+      btn.addEventListener('click', ()=> unirseASala(s.id,s.name));
       right.appendChild(btn);
       div.appendChild(left); div.appendChild(right);
       salasContainer.appendChild(div);
     });
-  }catch(e){
-    salasContainer.innerHTML = '<div class="small">Error al cargar salas</div>';
-  }
+  }catch(e){ salasContainer.innerHTML='<div class="small">Error al cargar salas</div>'; }
 }
-
 refreshSalasBtn.addEventListener('click', mostrarSalas);
 
 async function crearSala(){
-  if(!usuarioSesion) return alert('Debes tener sesión para crear una sala');
+  if(!usuarioSesion) return alert('Debes tener sesión');
   const nombre = document.getElementById('nombreSala').value.trim();
   if(!nombre) return alert('Nombre vacío');
-  const { data, error } = await supabase.from('rooms').insert([{ name: nombre }]).select().single();
+  const { data, error } = await supabase.from('rooms').insert([{ name:nombre }]).select().single();
   if(error) return alert('Error creando sala: '+(error.message||error));
   document.getElementById('nombreSala').value='';
-  await unirseASala(data.id, data.name);
+  await unirseASala(data.id,data.name);
   await mostrarSalas();
 }
 crearSalaBtn.addEventListener('click', crearSala);
 
-
 // --- UNIRSE ---
 async function unirseASala(roomId, roomName){
-  if(!usuarioSesion) return alert('Debes iniciar sesión (usa Detectar sesión si no estás detectado).');
-
-  // contar jugadores en esa room (por name)
+  if(!usuarioSesion) return alert('Debes iniciar sesión');
   const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', roomName);
   if(jugadores && jugadores.length >= maxJugadoresPorSala) return alert('Sala llena');
-  if(jugadores && jugadores.some(j=> j.user_id === (usuarioSesion.id || usuarioSesion.user_id))) return alert('Ya estás en la sala');
-
-  // 🔧 inserción segura: evitar cadenas vacías o tipos erróneos
-  const inserir = {
-    user_id: usuarioSesion.id || usuarioSesion.user_id || null,
-    player: usuarioSesion.username || usuarioSesion.nombre || 'Jugador',
-    room: roomName,
-    hand: null, // ✅ evita "malformed array literal"
-    points: usuarioSesion.pekepuntos ?? usuarioSesion.points ?? 0
-  };
-
+  if(jugadores && jugadores.some(j=> j.user_id === (usuarioSesion.id||null))) return alert('Ya estás en la sala');
+  const inserir = { user_id: usuarioSesion.id||null, player: usuarioSesion.username, room: roomName, hand:null, points: usuarioSesion.pekepuntos??0 };
   const { error } = await supabase.from('card_game').insert([inserir]);
-  if(error) {
-    console.error('Error al unirse:', error);
-    return alert('Error al unirse: ' + (error.message || error));
-  }
-
+  if(error) return alert('Error al unirse: '+(error.message||error));
   salaActual = roomName;
   mostrarSalaActiva(roomName);
 }
-
 
 // --- MOSTRAR SALA ACTIVA ---
 async function mostrarSalaActiva(roomName){
   salaActivaCard.classList.remove('hidden');
   nombreSalaActivaEl.innerText = `Sala: ${roomName}`;
-  // cargar jugadores
   const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', roomName);
-  jugadoresSalaEl.innerHTML = '';
+  jugadoresSalaEl.innerHTML='';
   jugadores.forEach(j=>{
     const div = document.createElement('div'); div.className='small'; div.innerText = `${j.player} — pekepuntos: ${j.points} — apuesta: ${j.apuesta||0}`;
     jugadoresSalaEl.appendChild(div);
   });
-  // generar botones para apostar (usar fichas)
-  fichasContainer.innerHTML = '';
+  fichasContainer.innerHTML='';
   [[1,'Blanca'],[5,'Roja'],[25,'Azul'],[100,'Verde']].forEach(([v,label])=>{
     const b = document.createElement('button'); b.innerText = `${label} (${v})`;
     b.addEventListener('click', ()=> apostarConFichas(v));
     fichasContainer.appendChild(b);
   });
-  // habilitar start si todos apostaron
   verificarApuestas(jugadores);
 }
 
-// --- APOSTAR usando fichas ---
+// --- APOSTAR ---
 async function apostarConFichas(valor){
   if(!salaActual) return alert('No estás en sala');
-  // comprobar si el usuario tiene suficientes fichas del tipo
-  // valor-> cuál ficha restaremos: 1->blanca,5->roja,25->azul,100->verde
-  const tipo = valor === 1 ? 'blanca' : valor ===5 ? 'roja' : valor===25 ? 'azul' : 'verde';
-  if(fichas[tipo] <= 0) return alert(`No tienes fichas ${tipo}`);
-  // restar 1 ficha de ese tipo (o permitir apostar cantidad? por simplicidad restamos 1)
-  fichas[tipo] -= 1;
+  const tipo = valor===1?'blanca':valor===5?'roja':valor===25?'azul':'verde';
+  if(fichas[tipo]<=0) return alert(`No tienes fichas ${tipo}`);
+  fichas[tipo]-=1;
   renderFichas();
-  // actualizar en tabla card_game la columna apuesta del jugador en esta sala
-  // buscamos registro del usuario en card_game dentro de salaActual:
-  const idUsuario = usuarioSesion.id || usuarioSesion.user_id || null;
+  const idUsuario = usuarioSesion.id||null;
   const { data: registros } = await supabase.from('card_game').select('*').eq('room', salaActual).eq('user_id', idUsuario);
-  if(!registros || registros.length===0) return alert('Registro del jugador no encontrado en la sala (recarga la sala).');
+  if(!registros || registros.length===0) return alert('Registro no encontrado.');
   const reg = registros[0];
-  const nuevaApuesta = (reg.apuesta || 0) + valor;
-  // actualizar puntos guardados en el registro (points) opcionalmente
-  await supabase.from('card_game').update({apuesta: nuevaApuesta, points: (reg.points||0) - valor}).eq('id', reg.id);
-  // refrescar sala
+  const nuevaApuesta = (reg.apuesta||0)+valor;
+  await supabase.from('card_game').update({apuesta:nuevaApuesta, points:(reg.points||0)-valor}).eq('id',reg.id);
   mostrarSalaActiva(salaActual);
 }
 
@@ -438,42 +312,68 @@ function verificarApuestas(jugadores){
   startBtn.disabled = !todosApostaron;
 }
 
-// start btn (placeholder)
+// start btn
 startBtn.addEventListener('click', ()=> alert('Comienza la partida — lógica por implementar'));
 
-// --- BOTONES DIAGNÓSTICO ---
-scanBtn.addEventListener('click', ()=> {
-  scanResults.classList.remove('hidden');
-  scanLocalStorage();
-});
-document.getElementById('loginBtn').addEventListener('click', ()=> { window.location.href = 'l.html' });
+// --- DIAGNÓSTICO ---
+scanBtn.addEventListener('click', ()=> { scanResults.classList.remove('hidden'); scanLocalStorage(); });
 
-// --- INICIALIZACIÓN ---
-// --- INICIALIZACIÓN AUTOMÁTICA DE SESIÓN ---
-window.addEventListener('DOMContentLoaded', async () => {
-  // intentar cargar sesión automáticamente
-  loadUserFromLocal();
-
-  if (!usuarioSesion) {
-    console.warn('⚠️ No se detectó sesión activa en localStorage.');
-    diagStatus.textContent = 'No hay sesión detectada automáticamente.';
-  } else {
-    diagStatus.textContent = `Sesión cargada automáticamente: ${usuarioSesion.username || usuarioSesion.nombre || 'Usuario'}`;
-  }
-
+document.getElementById('clearDetected').addEventListener('click', ()=>{
+  localStorage.removeItem('currentUser');
+  usuarioSesion = null;
   updateSessionUI();
-  await mostrarSalas();
-
-  // Configurar botón de login si existe
-  const loginBtn = document.getElementById('loginBtn');
-  if (loginBtn) {
-    loginBtn.addEventListener('click', () => {
-      window.location.href = 'l.html';
-    });
-  }
+  alert('currentUser borrado de localStorage.');
 });
 
+// --- MANUAL ---
+forceBtn.addEventListener('click', ()=> {
+  manualArea.classList.toggle('hidden');
+  if(manualArea.classList.contains('hidden')) return;
+  manualArea.innerHTML = `
+    <p class="small">Pega aquí el JSON que representa al usuario:</p>
+    <textarea id="manualJson" rows="5"></textarea>
+    <div class="row" style="margin-top:8px">
+      <button id="applyManual">Aplicar JSON</button>
+    </div>
+  `;
+  document.getElementById('applyManual').addEventListener('click', ()=>{
+    try{
+      const val = JSON.parse(document.getElementById('manualJson').value);
+      if(!isLikelyUser(val)) return alert('JSON inválido');
+      usuarioSesion = val;
+      localStorage.setItem('currentUser', JSON.stringify(val));
+      updateSessionUI();
+      alert('Usuario aplicado.');
+    }catch(e){ alert('JSON inválido'); }
+  });
+});
 
+// --- SCAN LOCALSTORAGE ---
+function scanLocalStorage(){
+  scanResults.innerHTML = '';
+  for(let i=0;i<localStorage.length;i++){
+    const k = localStorage.key(i);
+    const val = localStorage.getItem(k);
+    let parsed=null;
+    try{ parsed=JSON.parse(val); }catch(e){ continue; }
+    if(isLikelyUser(parsed)){
+      const div = document.createElement('div'); div.className='kitem';
+      div.innerHTML = `<span>${k}: ${JSON.stringify(parsed)}</span> <button>Aplicar</button>`;
+      div.querySelector('button').addEventListener('click', ()=>{
+        usuarioSesion = parsed;
+        localStorage.setItem('currentUser', JSON.stringify(parsed));
+        updateSessionUI();
+        alert(`Usuario ${parsed.username||parsed.user||'n/a'} aplicado`);
+      });
+      scanResults.appendChild(div);
+    }
+  }
+}
+
+window.addEventListener('DOMContentLoaded', async ()=>{
+  loadUserFromLocal();
+  await mostrarSalas();
+});
 </script>
 </body>
 </html>
