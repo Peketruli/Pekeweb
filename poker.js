@@ -388,7 +388,7 @@ function getCardSrc(rank, suit) {
         rank = 9;
     else if (rank == "ten")
         rank = 10;
-    return "url('static/images/" + rank + "_of_" + suit.toLowerCase() + ".png')";
+    return "url('" + rank + "_of_" + suit.toLowerCase() + ".png')";
 }
 
 function setHeroCards(hand) {
