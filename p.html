@@ -357,26 +357,35 @@ async function crearSala(){
 }
 crearSalaBtn.addEventListener('click', crearSala);
 
+
 // --- UNIRSE ---
 async function unirseASala(roomId, roomName){
   if(!usuarioSesion) return alert('Debes iniciar sesión (usa Detectar sesión si no estás detectado).');
+
   // contar jugadores en esa room (por name)
   const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', roomName);
-  if(jugadores.length >= maxJugadoresPorSala) return alert('Sala llena');
-  if(jugadores.some(j=> j.user_id === (usuarioSesion.id || usuarioSesion.user_id))) return alert('Ya estás en la sala');
-  // insertar
+  if(jugadores && jugadores.length >= maxJugadoresPorSala) return alert('Sala llena');
+  if(jugadores && jugadores.some(j=> j.user_id === (usuarioSesion.id || usuarioSesion.user_id))) return alert('Ya estás en la sala');
+
+  // 🔧 inserción segura: evitar cadenas vacías o tipos erróneos
   const inserir = {
     user_id: usuarioSesion.id || usuarioSesion.user_id || null,
     player: usuarioSesion.username || usuarioSesion.nombre || 'Jugador',
     room: roomName,
-    hand: '',
+    hand: null, // ✅ evita "malformed array literal"
     points: usuarioSesion.pekepuntos ?? usuarioSesion.points ?? 0
   };
+
   const { error } = await supabase.from('card_game').insert([inserir]);
-  if(error) return alert('Error al unirse: '+(error.message||error));
+  if(error) {
+    console.error('Error al unirse:', error);
+    return alert('Error al unirse: ' + (error.message || error));
+  }
+
   salaActual = roomName;
   mostrarSalaActiva(roomName);
 }
+
 
 // --- MOSTRAR SALA ACTIVA ---
 async function mostrarSalaActiva(roomName){
