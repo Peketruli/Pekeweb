@@ -8,10 +8,11 @@
 body { font-family: Arial, sans-serif; background:#1a1a1a; color:#fff; margin:0; padding:20px; display:flex; flex-direction:column; align-items:center;}
 h1, h2 { text-align:center; margin:10px 0;}
 .crear-sala, .salas-container, .sala-activa { margin:20px; text-align:center; }
-.sala, .jugador { background:#333; padding:15px; border-radius:10px; margin:10px; cursor:pointer; }
+.sala, .jugador { background:#333; padding:15px; border-radius:10px; margin:10px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;}
 button, input { padding:10px; border-radius:5px; border:none; margin:5px; }
 button { cursor:pointer; background:#ff6600; color:#fff; }
 button:disabled { opacity:0.4; cursor:default; }
+.fichas button { margin:5px; }
 </style>
 </head>
 <body>
@@ -20,7 +21,7 @@ button:disabled { opacity:0.4; cursor:default; }
 
 <!-- Contenedor de iniciar sesión -->
 <div id="authContainer">
-  <button onclick="window.location.href='l.html'">Iniciar sesión / Registrarse</button>
+  <button id="loginBtn">Iniciar sesión / Registrarse</button>
 </div>
 
 <!-- Contenedor de usuario logueado -->
@@ -31,7 +32,7 @@ button:disabled { opacity:0.4; cursor:default; }
 <!-- Crear sala -->
 <div class="crear-sala" id="crearSalaContainer" style="display:none;">
   <input type="text" id="nombreSala" placeholder="Nombre de la sala">
-  <button onclick="crearSala()">Crear Sala</button>
+  <button id="crearSalaBtn">Crear Sala</button>
 </div>
 
 <h2>Salas disponibles</h2>
@@ -41,17 +42,13 @@ button:disabled { opacity:0.4; cursor:default; }
   <h2 id="nombreSalaActiva"></h2>
   <div id="jugadoresSala"></div>
   <h3>Apostar fichas</h3>
-  <div class="fichas">
-      <button onclick="apostar(1)">Blanca (1)</button>
-      <button onclick="apostar(5)">Roja (5)</button>
-      <button onclick="apostar(25)">Azul (25)</button>
-      <button onclick="apostar(100)">Verde (100)</button>
-  </div>
-  <button id="startBtn" onclick="iniciarPartida()" disabled>Iniciar Partida</button>
+  <div class="fichas" id="fichasContainer"></div>
+  <button id="startBtn" disabled>Iniciar Partida</button>
 </div>
 
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
 const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
 const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
 const supabase = createClient(supabaseUrl, supabaseKey);
@@ -60,7 +57,7 @@ let usuarioSesion = null;
 const maxJugadoresPorSala = 5;
 let salaActual = null;
 
-// Comprobar si hay sesión guardada
+// ---------- CARGAR USUARIO ----------
 function loadUser() {
     usuarioSesion = JSON.parse(localStorage.getItem("currentUser"));
     const authContainer = document.getElementById("authContainer");
@@ -69,7 +66,7 @@ function loadUser() {
     if(usuarioSesion) {
         authContainer.style.display = "none";
         userInfo.style.display = "block";
-        userInfo.innerText = `Bienvenido, ${usuarioSesion.username || usuarioSesion.nombre || "Usuario"}`;
+        document.getElementById("userName").innerText = `Bienvenido, ${usuarioSesion.username || usuarioSesion.nombre || "Usuario"}`;
         crearSalaContainer.style.display = "block";
     } else {
         authContainer.style.display = "block";
@@ -78,7 +75,7 @@ function loadUser() {
     }
 }
 
-// Mostrar salas disponibles
+// ---------- MOSTRAR SALAS ----------
 async function mostrarSalas() {
     const { data: salas } = await supabase.from('rooms').select('*').order('created_at', {ascending:true});
     const container = document.getElementById('salasContainer');
@@ -86,22 +83,31 @@ async function mostrarSalas() {
     salas.forEach(sala => {
         const salaDiv = document.createElement('div');
         salaDiv.classList.add('sala');
-        salaDiv.innerHTML = `<strong>${sala.name}</strong> <button onclick="unirseASala('${sala.id}','${sala.name}')">Unirse</button>`;
+
+        const nombre = document.createElement('span');
+        nombre.innerText = sala.name;
+
+        const boton = document.createElement('button');
+        boton.innerText = 'Unirse';
+        boton.addEventListener('click', () => unirseASala(sala.id, sala.name));
+
+        salaDiv.appendChild(nombre);
+        salaDiv.appendChild(boton);
         container.appendChild(salaDiv);
     });
 }
 
-// Crear sala
+// ---------- CREAR SALA ----------
 async function crearSala() {
     const nombre = document.getElementById('nombreSala').value.trim();
     if(!nombre) return alert("Introduce un nombre de sala");
-    const { data } = await supabase.from('rooms').insert([{name}]).select().single();
+    const { data } = await supabase.from('rooms').insert([{name: nombre}]).select().single();
     document.getElementById('nombreSala').value = '';
     await unirseASala(data.id, data.name);
     mostrarSalas();
 }
 
-// Unirse a sala
+// ---------- UNIRSE A SALA ----------
 async function unirseASala(salaId, salaName) {
     if(!usuarioSesion) return alert("Debes iniciar sesión primero");
     const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaName);
@@ -120,12 +126,13 @@ async function unirseASala(salaId, salaName) {
     mostrarSalaActiva();
 }
 
-// Mostrar jugadores y apuestas
+// ---------- MOSTRAR SALA ACTIVA ----------
 async function mostrarSalaActiva() {
     if(!salaActual) return;
     const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaActual);
     document.getElementById('salaActiva').style.display = 'block';
     document.getElementById('nombreSalaActiva').innerText = `Sala: ${salaActual}`;
+
     const cont = document.getElementById('jugadoresSala');
     cont.innerHTML = '';
     jugadores.forEach(j => {
@@ -134,10 +141,24 @@ async function mostrarSalaActiva() {
         div.innerText = `${j.player} - Pekepuntos: ${j.points} - Apuesta: ${j.apuesta || 0}`;
         cont.appendChild(div);
     });
+
+    // Mostrar botones de apuestas
+    const fichasContainer = document.getElementById('fichasContainer');
+    fichasContainer.innerHTML = '';
+    [1,5,25,100].forEach(valor => {
+        const btn = document.createElement('button');
+        btn.innerText = valor === 1 ? 'Blanca (1)' :
+                        valor === 5 ? 'Roja (5)' :
+                        valor === 25 ? 'Azul (25)' :
+                        'Verde (100)';
+        btn.addEventListener('click', () => apostar(valor));
+        fichasContainer.appendChild(btn);
+    });
+
     verificarApuestas(jugadores);
 }
 
-// Apostar fichas
+// ---------- APOSTAR ----------
 async function apostar(valor) {
     if(!salaActual) return;
     const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaActual);
@@ -149,22 +170,33 @@ async function apostar(valor) {
     mostrarSalaActiva();
 }
 
-// Verificar apuestas
+// ---------- VERIFICAR APUESTAS ----------
 function verificarApuestas(jugadores) {
     const todosApostaron = jugadores.length>0 && jugadores.every(j => j.apuesta && j.apuesta>0);
     document.getElementById('startBtn').disabled = !todosApostaron;
 }
 
-// Iniciar partida
+// ---------- INICIAR PARTIDA ----------
 function iniciarPartida() {
     alert("¡La partida comienza!");
     // Aquí irá la lógica del juego de cartas
 }
 
-// Inicializar
+// ---------- EVENTOS ----------
+document.getElementById('crearSalaBtn').addEventListener('click', crearSala);
+document.getElementById('startBtn').addEventListener('click', iniciarPartida);
+document.getElementById('loginBtn').addEventListener('click', () => window.location.href='l.html');
+
+// ---------- INICIALIZACIÓN ----------
 loadUser();
 mostrarSalas();
-</script>
 
+// Hacer funciones globales (por si las quieres usar fuera)
+window.crearSala = crearSala;
+window.unirseASala = unirseASala;
+window.apostar = apostar;
+window.iniciarPartida = iniciarPartida;
+</script>
 </body>
 </html>
+
