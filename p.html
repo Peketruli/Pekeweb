@@ -9,24 +9,43 @@ body { font-family: Arial, sans-serif; background:#1a1a1a; color:#fff; margin:0;
 h1, h2 { text-align:center; margin:10px 0;}
 .crear-sala, .salas-container, .sala-activa { margin:20px; text-align:center; }
 .sala, .jugador { background:#333; padding:15px; border-radius:10px; margin:10px; cursor:pointer; display:flex; justify-content:space-between; align-items:center;}
-button, input { padding:10px; border-radius:5px; border:none; margin:5px; }
+button, input, select { padding:10px; border-radius:5px; border:none; margin:5px; }
 button { cursor:pointer; background:#ff6600; color:#fff; }
 button:disabled { opacity:0.4; cursor:default; }
 .fichas button { margin:5px; }
+#conversionContainer { background:#222; padding:15px; border-radius:10px; margin-bottom:20px; width:90%; max-width:500px; text-align:center; }
+.fichaResumen span { margin:0 10px; }
 </style>
 </head>
 <body>
 
 <h1>Juego de Cartas - Salas</h1>
 
-<!-- Contenedor de iniciar sesión -->
+<!-- Iniciar sesión -->
 <div id="authContainer">
   <button id="loginBtn">Iniciar sesión / Registrarse</button>
 </div>
 
-<!-- Contenedor de usuario logueado -->
+<!-- Usuario logueado -->
 <div id="userInfo" style="display:none;">
   <span id="userName"></span>
+</div>
+
+<!-- Conversión de pekepuntos -->
+<div id="conversionContainer" style="display:none;">
+  <h3>Canjear Pekepuntos por Fichas</h3>
+  <p>Pekepuntos actuales: <span id="pekepuntosActuales">0</span></p>
+  <select id="tipoFicha">
+    <option value="1">Blanca (1)</option>
+    <option value="5">Roja (5)</option>
+    <option value="25">Azul (25)</option>
+    <option value="100">Verde (100)</option>
+  </select>
+  <input type="number" id="cantidadFichas" placeholder="Cantidad" min="1">
+  <button id="canjearBtn">Canjear</button>
+
+  <h4>Mis Fichas</h4>
+  <div class="fichaResumen" id="fichaResumen"></div>
 </div>
 
 <!-- Crear sala -->
@@ -54,8 +73,9 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 let usuarioSesion = null;
-const maxJugadoresPorSala = 5;
+let fichas = { blanca: 0, roja: 0, azul: 0, verde: 0 };
 let salaActual = null;
+const maxJugadoresPorSala = 5;
 
 // ---------- CARGAR USUARIO ----------
 function loadUser() {
@@ -63,19 +83,80 @@ function loadUser() {
     const authContainer = document.getElementById("authContainer");
     const userInfo = document.getElementById("userInfo");
     const crearSalaContainer = document.getElementById("crearSalaContainer");
+    const conversionContainer = document.getElementById("conversionContainer");
+
     if(usuarioSesion) {
         authContainer.style.display = "none";
         userInfo.style.display = "block";
-        document.getElementById("userName").innerText = `Bienvenido, ${usuarioSesion.username || usuarioSesion.nombre || "Usuario"}`;
+        userInfo.innerText = `Bienvenido, ${usuarioSesion.username || usuarioSesion.nombre || "Usuario"}`;
         crearSalaContainer.style.display = "block";
+        conversionContainer.style.display = "block";
+        document.getElementById("pekepuntosActuales").innerText = usuarioSesion.pekepuntos || 1000;
+        cargarFichas();
     } else {
         authContainer.style.display = "block";
         userInfo.style.display = "none";
         crearSalaContainer.style.display = "none";
+        conversionContainer.style.display = "none";
     }
 }
 
-// ---------- MOSTRAR SALAS ----------
+// ---------- CARGAR FICHAS ----------
+function cargarFichas() {
+    const guardadas = JSON.parse(localStorage.getItem("fichas"));
+    if(guardadas) fichas = guardadas;
+    mostrarFichas();
+}
+
+function guardarFichas() {
+    localStorage.setItem("fichas", JSON.stringify(fichas));
+}
+
+function mostrarFichas() {
+    const resumen = document.getElementById("fichaResumen");
+    resumen.innerHTML = `
+        <span>⚪ Blancas: ${fichas.blanca}</span>
+        <span>🔴 Rojas: ${fichas.roja}</span>
+        <span>🔵 Azules: ${fichas.azul}</span>
+        <span>🟢 Verdes: ${fichas.verde}</span>
+    `;
+}
+
+// ---------- CANJEAR PEKEPUNTOS ----------
+function canjearFichas() {
+    const tipo = parseInt(document.getElementById("tipoFicha").value);
+    const cantidad = parseInt(document.getElementById("cantidadFichas").value);
+    if(!cantidad || cantidad <= 0) return alert("Introduce una cantidad válida");
+
+    const totalCosto = tipo * cantidad;
+    const pekepuntosActuales = usuarioSesion.pekepuntos || 1000;
+    if(pekepuntosActuales < totalCosto) return alert("No tienes suficientes pekepuntos");
+
+    usuarioSesion.pekepuntos -= totalCosto;
+    localStorage.setItem("currentUser", JSON.stringify(usuarioSesion));
+    document.getElementById("pekepuntosActuales").innerText = usuarioSesion.pekepuntos;
+
+    if(tipo === 1) fichas.blanca += cantidad;
+    if(tipo === 5) fichas.roja += cantidad;
+    if(tipo === 25) fichas.azul += cantidad;
+    if(tipo === 100) fichas.verde += cantidad;
+
+    guardarFichas();
+    mostrarFichas();
+    document.getElementById("cantidadFichas").value = '';
+}
+
+// ---------- EVENTOS ----------
+document.getElementById('canjearBtn').addEventListener('click', canjearFichas);
+document.getElementById('loginBtn').addEventListener('click', () => window.location.href='l.html');
+
+// ---------- EXISTENTES ----------
+window.crearSala = crearSala;
+window.unirseASala = unirseASala;
+window.apostar = apostar;
+window.iniciarPartida = iniciarPartida;
+
+// ---------- SUPABASE Y SALAS ----------
 async function mostrarSalas() {
     const { data: salas } = await supabase.from('rooms').select('*').order('created_at', {ascending:true});
     const container = document.getElementById('salasContainer');
@@ -97,7 +178,6 @@ async function mostrarSalas() {
     });
 }
 
-// ---------- CREAR SALA ----------
 async function crearSala() {
     const nombre = document.getElementById('nombreSala').value.trim();
     if(!nombre) return alert("Introduce un nombre de sala");
@@ -107,7 +187,6 @@ async function crearSala() {
     mostrarSalas();
 }
 
-// ---------- UNIRSE A SALA ----------
 async function unirseASala(salaId, salaName) {
     if(!usuarioSesion) return alert("Debes iniciar sesión primero");
     const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaName);
@@ -119,84 +198,16 @@ async function unirseASala(salaId, salaName) {
         player: usuarioSesion.username || usuarioSesion.nombre,
         room: salaName,
         hand: '',
-        points: usuarioSesion.pekepuntos || 1000
+        points: usuarioSesion.pekepuntos
     }]);
 
     salaActual = salaName;
     mostrarSalaActiva();
 }
 
-// ---------- MOSTRAR SALA ACTIVA ----------
-async function mostrarSalaActiva() {
-    if(!salaActual) return;
-    const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaActual);
-    document.getElementById('salaActiva').style.display = 'block';
-    document.getElementById('nombreSalaActiva').innerText = `Sala: ${salaActual}`;
-
-    const cont = document.getElementById('jugadoresSala');
-    cont.innerHTML = '';
-    jugadores.forEach(j => {
-        const div = document.createElement('div');
-        div.classList.add('jugador');
-        div.innerText = `${j.player} - Pekepuntos: ${j.points} - Apuesta: ${j.apuesta || 0}`;
-        cont.appendChild(div);
-    });
-
-    // Mostrar botones de apuestas
-    const fichasContainer = document.getElementById('fichasContainer');
-    fichasContainer.innerHTML = '';
-    [1,5,25,100].forEach(valor => {
-        const btn = document.createElement('button');
-        btn.innerText = valor === 1 ? 'Blanca (1)' :
-                        valor === 5 ? 'Roja (5)' :
-                        valor === 25 ? 'Azul (25)' :
-                        'Verde (100)';
-        btn.addEventListener('click', () => apostar(valor));
-        fichasContainer.appendChild(btn);
-    });
-
-    verificarApuestas(jugadores);
-}
-
-// ---------- APOSTAR ----------
-async function apostar(valor) {
-    if(!salaActual) return;
-    const { data: jugadores } = await supabase.from('card_game').select('*').eq('room', salaActual);
-    const jugador = jugadores.find(j => j.user_id === usuarioSesion.id && (!j.apuesta || j.apuesta === 0));
-    if(!jugador) return alert("Ya apostaste o no estás en la sala");
-    if(jugador.points < valor) return alert("No tienes suficientes pekepuntos");
-
-    await supabase.from('card_game').update({apuesta:valor, points: jugador.points - valor}).eq('id', jugador.id);
-    mostrarSalaActiva();
-}
-
-// ---------- VERIFICAR APUESTAS ----------
-function verificarApuestas(jugadores) {
-    const todosApostaron = jugadores.length>0 && jugadores.every(j => j.apuesta && j.apuesta>0);
-    document.getElementById('startBtn').disabled = !todosApostaron;
-}
-
-// ---------- INICIAR PARTIDA ----------
-function iniciarPartida() {
-    alert("¡La partida comienza!");
-    // Aquí irá la lógica del juego de cartas
-}
-
-// ---------- EVENTOS ----------
-document.getElementById('crearSalaBtn').addEventListener('click', crearSala);
-document.getElementById('startBtn').addEventListener('click', iniciarPartida);
-document.getElementById('loginBtn').addEventListener('click', () => window.location.href='l.html');
-
-// ---------- INICIALIZACIÓN ----------
+// Inicializar
 loadUser();
 mostrarSalas();
-
-// Hacer funciones globales (por si las quieres usar fuera)
-window.crearSala = crearSala;
-window.unirseASala = unirseASala;
-window.apostar = apostar;
-window.iniciarPartida = iniciarPartida;
 </script>
 </body>
 </html>
-
