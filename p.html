@@ -5,63 +5,52 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Juego de Cartas - Salas</title>
 <style>
-    body {
-        margin: 0;
-        padding: 0;
-        font-family: 'Arial', sans-serif;
-        background: #1a1a1a; /* Gris oscuro */
-        color: #fff;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-    }
-
-    h1, h2 {
-        margin-top: 20px;
-        text-align: center;
-    }
-
-    .salas-container, .crear-sala, .sala-activa {
-        margin: 20px;
-        text-align: center;
-    }
-
-    .sala, .jugador {
-        background: #333;
-        padding: 15px;
-        border-radius: 10px;
-        margin: 10px;
-        cursor: pointer;
-        box-shadow: 0 0 10px #ff6600; /* toque Halloween */
-        transition: 0.3s;
-    }
-
-    .sala:hover, .jugador:hover {
-        transform: scale(1.05);
-    }
-
-    input, button {
-        padding: 10px;
-        border-radius: 5px;
-        border: none;
-        margin: 5px;
-    }
-
-    button {
-        cursor: pointer;
-        background: #ff6600;
-        color: #fff;
-        transition: 0.3s;
-    }
-
-    button:hover {
-        transform: scale(1.05);
-    }
-
-    .fichas button {
-        margin: 5px;
-    }
-
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Arial', sans-serif;
+    background: #1a1a1a;
+    color: #fff;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+h1, h2 {
+    margin-top: 20px;
+    text-align: center;
+}
+.crear-sala, .salas-container, .sala-activa {
+    margin: 20px;
+    text-align: center;
+}
+.sala, .jugador {
+    background: #333;
+    padding: 15px;
+    border-radius: 10px;
+    margin: 10px;
+    cursor: pointer;
+    box-shadow: 0 0 10px #ff6600;
+    transition: 0.3s;
+}
+.sala:hover, .jugador:hover {
+    transform: scale(1.05);
+}
+button, input {
+    padding: 10px;
+    border-radius: 5px;
+    border: none;
+    margin: 5px;
+}
+button {
+    cursor: pointer;
+    background: #ff6600;
+    color: #fff;
+    transition: 0.3s;
+}
+button:hover {
+    transform: scale(1.05);
+}
+.fichas button { margin:5px; }
 </style>
 </head>
 <body>
@@ -74,14 +63,11 @@
 </div>
 
 <h2>Salas disponibles</h2>
-<div class="salas-container" id="salasContainer">
-    <!-- Salas se mostrarán aquí -->
-</div>
+<div class="salas-container" id="salasContainer"></div>
 
 <div class="sala-activa" id="salaActiva" style="display:none;">
     <h2 id="nombreSalaActiva"></h2>
     <div id="jugadoresSala"></div>
-
     <h3>Apostar fichas</h3>
     <div class="fichas">
         <button onclick="apostar(1)">Blanca (1)</button>
@@ -92,116 +78,144 @@
     <button id="startBtn" onclick="iniciarPartida()" disabled>Iniciar Partida</button>
 </div>
 
-<script>
+<script type="module">
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+
+const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Obtener usuario de localStorage
+const usuarioSesion = JSON.parse(localStorage.getItem('usuario'));
+if(!usuarioSesion) {
+    alert("Debes iniciar sesión primero.");
+}
+
+// Variables
 const maxJugadoresPorSala = 5;
+let salaActual = null;
 
+// Mostrar salas disponibles
+async function mostrarSalas() {
+    const { data: salas, error } = await supabase
+        .from('rooms')
+        .select('*')
+        .order('created_at', {ascending:true});
+    if(error) { console.error(error); return; }
 
-let salas = []; // Lista de salas
-let salaActual = null; // Sala en la que estamos
-
-function mostrarSalas() {
     const container = document.getElementById('salasContainer');
     container.innerHTML = '';
-    salas.forEach((sala, index) => {
-        const div = document.createElement('div');
-        div.classList.add('sala');
-        div.innerHTML = `<strong>${sala.nombre}</strong> - ${sala.jugadores.length}/${maxJugadoresPorSala} jugadores`;
-        div.onclick = () => unirseSala(index);
-        container.appendChild(div);
+    salas.forEach(sala => {
+        const salaDiv = document.createElement('div');
+        salaDiv.classList.add('sala');
+        salaDiv.innerHTML = `<strong>${sala.name}</strong> <button onclick="unirseASala('${sala.id}', '${sala.name}')">Unirse</button>`;
+        container.appendChild(salaDiv);
     });
 }
 
-function crearSala() {
+// Crear nueva sala
+async function crearSala() {
     const nombre = document.getElementById('nombreSala').value.trim();
-    if(nombre === '') {
-        alert("Introduce un nombre para la sala");
-        return;
-    }
-    const nuevaSala = { nombre: nombre, jugadores: [] };
-    salas.push(nuevaSala);
+    if(!nombre) return alert("Introduce un nombre de sala");
+    const { data, error } = await supabase.from('rooms').insert([{name:nombre}]).select().single();
+    if(error) { console.error(error); return; }
     document.getElementById('nombreSala').value = '';
+    await unirseASala(data.id, data.name);
     mostrarSalas();
 }
 
-function unirseSala(index) {
-    const sala = salas[index];
-    if(sala.jugadores.length >= maxJugadoresPorSala) {
-        alert("La sala está llena");
-        return;
-    }
+// Unirse a sala
+async function unirseASala(salaId, salaName) {
+    if(!usuarioSesion) return;
 
-    // Usar automáticamente el usuario de la sesión
-    const jugadorNombre = usuarioSesion;
+    // Contar cuántos jugadores hay en la sala
+    const { data: jugadoresSala, error } = await supabase
+        .from('card_game')
+        .select('*')
+        .eq('room', salaName);
+    if(error) { console.error(error); return; }
 
-    // Verificar que el jugador existe en todosJugadores
-    const jugadorExistente = todosJugadores.find(j => j.nombre === jugadorNombre);
-    if(!jugadorExistente) {
-        alert("Jugador no encontrado en el sistema.");
-        return;
-    }
+    if(jugadoresSala.length >= maxJugadoresPorSala) return alert("Sala llena");
 
-    // Evitar duplicados en la misma sala
-    if(sala.jugadores.some(j => j.nombre === jugadorNombre)) {
-        alert("Ya estás en esta sala");
-        return;
-    }
+    // Verificar si ya está en la sala
+    if(jugadoresSala.some(j => j.user_id === usuarioSesion.id)) return alert("Ya estás en la sala");
 
-    // Unirse a la sala
-    sala.jugadores.push({ nombre: jugadorNombre, apuesta: 0 });
-    salaActual = sala;
+    // Insertar jugador
+    const { error: insertError } = await supabase.from('card_game').insert([{
+        user_id: usuarioSesion.id,
+        player: usuarioSesion.nombre,
+        room: salaName,
+        hand: '',
+        points: usuarioSesion.pekepuntos || 1000
+    }]);
+    if(insertError) { console.error(insertError); return; }
+
+    salaActual = salaName;
     mostrarSalaActiva();
-    mostrarSalas();
 }
 
-function mostrarSalaActiva() {
+// Mostrar jugadores de la sala actual
+async function mostrarSalaActiva() {
     if(!salaActual) return;
-    document.getElementById('salaActiva').style.display = 'block';
-    document.getElementById('nombreSalaActiva').innerText = `Sala: ${salaActual.nombre}`;
 
+    const { data: jugadoresSala, error } = await supabase
+        .from('card_game')
+        .select('*')
+        .eq('room', salaActual);
+    if(error) { console.error(error); return; }
+
+    document.getElementById('salaActiva').style.display = 'block';
+    document.getElementById('nombreSalaActiva').innerText = `Sala: ${salaActual}`;
     const cont = document.getElementById('jugadoresSala');
     cont.innerHTML = '';
-    salaActual.jugadores.forEach(j => {
-        const jugadorInfo = todosJugadores.find(t => t.nombre === j.nombre);
+    jugadoresSala.forEach(j => {
         const div = document.createElement('div');
         div.classList.add('jugador');
-        div.innerHTML = `<strong>${j.nombre}</strong> - Pekepuntos: ${jugadorInfo.pekepuntos} - Apuesta: ${j.apuesta}`;
+        div.innerText = `${j.player} - Pekepuntos: ${j.points} - Apuesta: ${j.apuesta || 0}`;
         cont.appendChild(div);
     });
 
-    verificarApuestas();
+    verificarApuestas(jugadoresSala);
 }
 
-function apostar(valor) {
+// Apostar fichas
+async function apostar(valor) {
     if(!salaActual) return;
 
-    // Apostar para el primer jugador de la sala que no haya apostado
-    for(let i=0; i < salaActual.jugadores.length; i++) {
-        const j = salaActual.jugadores[i];
-        if(j.apuesta === 0) {
-            const jugadorInfo = todosJugadores.find(t => t.nombre === j.nombre);
-            if(jugadorInfo.pekepuntos >= valor) {
-                j.apuesta += valor;
-                jugadorInfo.pekepuntos -= valor;
-            } else {
-                alert(`${j.nombre} no tiene suficientes pekepuntos`);
-            }
-            break;
-        }
-    }
+    // Tomar al primer jugador sin apuesta
+    const { data: jugadoresSala } = await supabase
+        .from('card_game')
+        .select('*')
+        .eq('room', salaActual);
+
+    const jugador = jugadoresSala.find(j => j.user_id === usuarioSesion.id && (!j.apuesta || j.apuesta === 0));
+    if(!jugador) return alert("Ya apostaste o no estás en la sala");
+
+    if(jugador.points < valor) return alert("No tienes suficientes pekepuntos");
+
+    const newPoints = jugador.points - valor;
+    const { error } = await supabase
+        .from('card_game')
+        .update({apuesta:valor, points:newPoints})
+        .eq('id', jugador.id);
+    if(error) { console.error(error); return; }
+
     mostrarSalaActiva();
 }
 
-function verificarApuestas() {
-    if(!salaActual) return;
-    const todosApostaron = salaActual.jugadores.length > 0 && salaActual.jugadores.every(j => j.apuesta > 0);
+// Verificar si todos apostaron
+function verificarApuestas(jugadoresSala) {
+    const todosApostaron = jugadoresSala.length > 0 && jugadoresSala.every(j => j.apuesta && j.apuesta > 0);
     document.getElementById('startBtn').disabled = !todosApostaron;
 }
 
+// Iniciar partida (solo placeholder)
 function iniciarPartida() {
     alert("¡La partida comienza!");
-    // Aquí se añadirá la lógica del juego de cartas
+    // Aquí se implementará la lógica del juego de cartas
 }
 
+// Inicializar
 mostrarSalas();
 </script>
 
