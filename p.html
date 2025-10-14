@@ -110,8 +110,7 @@ input, select {
   transform:translate(-50%, -50%) rotate(0deg);
   border-radius:8px;
   box-shadow:0 2px 8px rgba(0,0,0,0.5);
-  transition:transform 0.3s ease;
-  background:#fff;
+  transition:all 0.6s ease;
 }
 @keyframes barajar {
   0% { transform:translate(-50%, -50%) rotate(0deg); }
@@ -119,10 +118,6 @@ input, select {
   50% { transform:translate(-52%, -48%) rotate(-6deg); }
   75% { transform:translate(-49%, -51%) rotate(4deg); }
   100% { transform:translate(-50%, -50%) rotate(0deg); }
-}
-@keyframes repartir {
-  from { opacity:0; transform:translate(-50%, -50%) scale(0.6) rotate(0deg); }
-  to { opacity:1; transform:translate(var(--x), var(--y)) scale(1) rotate(var(--r)); }
 }
 .cartaReverso {
   background:#b02;
@@ -324,6 +319,33 @@ async function actualizarPanel(){
         mesa.appendChild(carta);
       });
     }
+    // mostrar cartas de otros jugadores como reverso
+    jugadores.forEach(j=>{
+      if(j.id!==usuario.id){
+        const otrasCartas=sala.game_state.manos[j.id];
+        if(otrasCartas){
+          otrasCartas.forEach((c,i)=>{
+            const pos=document.getElementById('pos'+(jugadores.indexOf(j)+1));
+            const carta=document.createElement('div');
+            carta.className='carta cartaReverso';
+            carta.style.top='50%';
+            carta.style.left='50%';
+            mesa.appendChild(carta);
+            requestAnimationFrame(()=>{
+              const rectJugador=pos.getBoundingClientRect();
+              const rectMesa=mesa.getBoundingClientRect();
+              const destX=rectJugador.left+rectJugador.width/2-rectMesa.left;
+              const destY=rectJugador.top+rectJugador.height/2-rectMesa.top;
+              requestAnimationFrame(()=>{
+                carta.style.left=destX+'px';
+                carta.style.top=destY+'px';
+                carta.style.opacity=1;
+              });
+            });
+          });
+        }
+      }
+    });
   }
 }
 
@@ -337,79 +359,83 @@ document.getElementById('crearSalaBtn').onclick=async()=>{
 };
 document.getElementById('refreshSalas').onclick=mostrarSalas;
 
-// === INICIAR PARTIDA ANIMADA ===
-iniciarPartidaBtn.onclick=async()=>{
-  const {data:sala}=await supabase.from('rooms').select('*').eq('id',salaActual.id).single();
-  const jugadores=sala.players||[];
-  if(jugadores[0].id!==usuario.id) return alert('Solo el creador puede iniciar');
+/* === INICIAR PARTIDA ANIMADA === */
+iniciarPartidaBtn.onclick = async () => {
+  const { data: sala } = await supabase.from('rooms').select('*').eq('id', salaActual.id).single();
+  const jugadores = sala.players || [];
+  if (jugadores[0].id !== usuario.id) return alert('Solo el creador puede iniciar');
 
-  const mesa=document.getElementById('mesa-cartas');
-  mesa.innerHTML='';
+  const mesa = document.getElementById('mesa-cartas');
+  mesa.innerHTML = '';
 
-  // barajar visual
-  const reversos=[];
-  for(let i=0;i<6;i++){
-    const carta=document.createElement('div');
-    carta.className='carta cartaReverso';
-    carta.style.top='50%';
-    carta.style.left='50%';
-    carta.style.animation=`barajar 0.5s ${i*0.1}s infinite alternate`;
+  // Barajar visual
+  const reversos = [];
+  for (let i = 0; i < 6; i++) {
+    const carta = document.createElement('div');
+    carta.className = 'carta cartaReverso';
+    carta.style.top = '50%';
+    carta.style.left = '50%';
+    carta.style.animation = `barajar 0.5s ${i * 0.1}s infinite alternate`;
     mesa.appendChild(carta);
     reversos.push(carta);
   }
-  await new Promise(r=>setTimeout(r,2000));
-  reversos.forEach(c=>c.remove());
+  await new Promise(r => setTimeout(r, 2000));
+  reversos.forEach(c => c.remove());
 
-  // baraja real
-  const palos=['♠','♥','♦','♣'];
-  const valores=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  let baraja=[];
-  for(let p of palos) for(let v of valores) baraja.push({valor:v,palo:p});
-  baraja.sort(()=>Math.random()-0.5);
+  // Baraja real
+  const palos = ['♠','♥','♦','♣'];
+  const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  let baraja = [];
+  for (let p of palos) for (let v of valores) baraja.push({ valor: v, palo: p });
+  baraja.sort(() => Math.random() - 0.5);
 
-  const manos={};
-  for(let j of jugadores) manos[j.id]=[baraja.pop(),baraja.pop()];
-  await supabase.from('rooms').update({game_state:{fase:'reparto',manos,baraja}}).eq('id',salaActual.id);
+  const manos = {};
+  for (let j of jugadores) manos[j.id] = [baraja.pop(), baraja.pop()];
+  await supabase.from('rooms').update({ game_state: { fase: 'reparto', manos, baraja } }).eq('id', salaActual.id);
 
-  // Repartir cartas a cada jugador
-  for(let i=0;i<jugadores.length;i++){
-    const jugador=jugadores[i];
-    const posEl=document.getElementById('pos'+(i+1));
-    for(let c=0;c<2;c++){
-      const carta=document.createElement('div');
-      carta.className='carta cartaReverso';
-      carta.style.top='50%';
-      carta.style.left='50%';
-      carta.style.opacity=0;
-      carta.style.transition='all 0.6s ease';
+  // Mostrar tablero antes de calcular posiciones
+  tableroContainer.style.display = 'flex';
+  await new Promise(r => requestAnimationFrame(r));
 
-      // calcular destino relativo al contenedor del jugador
-      const rectJugador=posEl.getBoundingClientRect();
-      const rectMesa=mesa.getBoundingClientRect();
-      const destX=rectJugador.left+rectJugador.width/2-rectMesa.left;
-      const destY=rectJugador.top+rectJugador.height/2-rectMesa.top;
+  // Repartir cartas
+  for (let i = 0; i < jugadores.length; i++) {
+    const jugador = jugadores[i];
+    const posEl = document.getElementById('pos' + (i + 1));
 
+    for (let c = 0; c < 2; c++) {
+      const carta = document.createElement('div');
+      carta.className = 'carta cartaReverso';
+      carta.style.top = '50%';
+      carta.style.left = '50%';
+      carta.style.opacity = 0;
+      carta.style.transition = 'all 0.6s ease';
       mesa.appendChild(carta);
 
-      // animación
-      setTimeout(()=>{
-        carta.style.left=destX+'px';
-        carta.style.top=destY+'px';
-        carta.style.opacity=1;
-      }, 50 + c*150 + i*300);
+      // Calculamos posición después de render
+      requestAnimationFrame(() => {
+        const rectJugador = posEl.getBoundingClientRect();
+        const rectMesa = mesa.getBoundingClientRect();
+        const destX = rectJugador.left + rectJugador.width / 2 - rectMesa.left;
+        const destY = rectJugador.top + rectJugador.height / 2 - rectMesa.top;
 
-      // al finalizar animación, si es tu carta se muestra el frente
-      if(jugador.id===usuario.id){
-        setTimeout(()=>{
-          carta.className='carta cartaFrente';
-          carta.textContent=`${manos[jugador.id][c].valor}${manos[jugador.id][c].palo}`;
-        }, 700 + c*150 + i*300);
+        requestAnimationFrame(() => {
+          carta.style.left = destX + 'px';
+          carta.style.top = destY + 'px';
+          carta.style.opacity = 1;
+        });
+      });
+
+      // Si es tu carta, se revela
+      if (jugador.id === usuario.id) {
+        setTimeout(() => {
+          carta.className = 'carta cartaFrente';
+          carta.textContent = `${manos[jugador.id][c].valor}${manos[jugador.id][c].palo}`;
+        }, 700 + c * 150 + i * 300);
       }
     }
   }
 
-  // actualizar panel después de repartir
-  setTimeout(()=>actualizarPanel(), 2000);
+  setTimeout(() => actualizarPanel(), 2000);
 };
 </script>
 </body>
