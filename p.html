@@ -287,6 +287,15 @@ async function actualizarPanel(){
       else el.textContent = '';
     }
   } catch(e) { mostrarError(e); }
+  // Mostrar cartas del jugador si existe un game_state
+if (sala.game_state && sala.game_state.manos) {
+  const misCartas = sala.game_state.manos[usuario.id];
+  if (misCartas) {
+    const cartasHTML = misCartas
+      .map(c => `<div style="display:inline-block;border:1px solid #fff;padding:6px 8px;margin:4px;border-radius:6px;background:#333;">${c.valor}${c.palo}</div>`)
+      .join('');
+    infoJugador.innerHTML += `<div style="margin-top:10px;">Mis cartas: ${cartasHTML}</div>`;
+  }
 }
 
 salirBtn.addEventListener('click', async ()=>{
@@ -342,6 +351,48 @@ window.addEventListener('DOMContentLoaded', async () => {
       }
     }
   } catch (e) { mostrarError(e); }
+});
+
+  // === Iniciar partida ===
+iniciarPartidaBtn.addEventListener('click', async ()=>{
+  try {
+    if(!salaActual) return;
+    const { data: sala, error } = await supabase.from('rooms').select('*').eq('id', salaActual.id).single();
+    if(error) throw error;
+    const jugadores = sala.players || [];
+
+    // Solo el creador puede iniciar (el que esté en la primera posición del array)
+    if(jugadores[0].id !== usuario.id){
+      alert("Solo el creador de la sala puede iniciar la partida");
+      return;
+    }
+
+    // Crear baraja
+    const palos = ['♠', '♥', '♦', '♣'];
+    const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+    let baraja = [];
+    for (let p of palos) for (let v of valores) baraja.push({ valor:v, palo:p });
+
+    // Barajar
+    baraja.sort(()=>Math.random() - 0.5);
+
+    // Repartir 2 cartas a cada jugador
+    const manos = {};
+    for (let j of jugadores){
+      manos[j.id] = [baraja.pop(), baraja.pop()];
+    }
+
+    // Guardar estado del juego
+    const nuevoEstado = {
+      fase: 'reparto',
+      manos,
+      baraja
+    };
+
+    await supabase.from('rooms').update({ game_state: nuevoEstado }).eq('id', salaActual.id);
+    alert('¡Cartas repartidas!');
+    actualizarPanel();
+  } catch(e) { mostrarError(e); }
 });
 
 </script>
