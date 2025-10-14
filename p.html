@@ -31,6 +31,7 @@
     display:flex; align-items:center; justify-content:center;
   }
 
+  /* Posiciones jugadores */
   .jugador { position:absolute; text-align:center; font-size:14px; color:#fff; }
   .jugador span { color:#ffb866; }
   .jugador1 { bottom:10px; left:50%; transform:translateX(-50%); }
@@ -38,6 +39,22 @@
   .jugador3 { left:10px; top:50%; transform:translateY(-50%); }
   .jugador4 { right:10px; top:50%; transform:translateY(-50%); }
   .jugador5 { top:25%; left:50%; transform:translateX(-50%); }
+
+  /* Ranuras cartas en centro */
+  #cartasCentro {
+    position:absolute;
+    display:flex;
+    gap:10px;
+    justify-content:center;
+    align-items:center;
+  }
+  .cartaSlot {
+    width:60px;
+    height:90px;
+    background:#222;
+    border:2px dashed #555;
+    border-radius:6px;
+  }
 
   #panelLateral {
     width:280px; background:#181818; border-radius:10px;
@@ -75,11 +92,21 @@
 <!-- === Tablero === -->
 <div id="tableroContainer">
   <div id="mesa">
+    <!-- Posiciones jugadores -->
     <div class="jugador jugador1" id="pos1"></div>
     <div class="jugador jugador2" id="pos2"></div>
     <div class="jugador jugador3" id="pos3"></div>
     <div class="jugador jugador4" id="pos4"></div>
     <div class="jugador jugador5" id="pos5"></div>
+
+    <!-- Ranuras cartas -->
+    <div id="cartasCentro">
+      <div class="cartaSlot" id="carta1"></div>
+      <div class="cartaSlot" id="carta2"></div>
+      <div class="cartaSlot" id="carta3"></div>
+      <div class="cartaSlot" id="carta4"></div>
+      <div class="cartaSlot" id="carta5"></div>
+    </div>
   </div>
 
   <div id="panelLateral">
@@ -99,16 +126,18 @@
 <script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImF4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Simulación de login (puedes usar supabase.auth luego)
-let usuario = JSON.parse(localStorage.getItem('currentUser')) || { id: crypto.randomUUID(), username: "Jugador"+Math.floor(Math.random()*1000) };
+// Sesión local
+let usuario = JSON.parse(localStorage.getItem('currentUser')) || { 
+  id: crypto.randomUUID(), 
+  username: "Jugador"+Math.floor(Math.random()*1000) 
+};
 localStorage.setItem('currentUser', JSON.stringify(usuario));
-
 let salaActual = null;
 
-// === ELEMENTOS ===
+// ELEMENTOS
 const salasContainer = document.getElementById('salasContainer');
 const salasCard = document.getElementById('salasCard');
 const tableroContainer = document.getElementById('tableroContainer');
@@ -121,6 +150,21 @@ const jugadoresSala = document.getElementById('jugadoresSala');
 const iniciarPartidaBtn = document.getElementById('iniciarPartidaBtn');
 const salirBtn = document.getElementById('salirBtn');
 
+// Obtener datos usuario
+async function obtenerDatosUsuario(){
+  const { data } = await supabase.from('usuarios').select('*').eq('id', usuario.id).maybeSingle();
+  if(!data){
+    await supabase.from('usuarios').insert([{ 
+      id: usuario.id, 
+      username: usuario.username, 
+      pekepuntos: 500,
+      ficha_blanca: 0, ficha_roja: 0, ficha_azul: 0, ficha_verde: 0
+    }]);
+    return obtenerDatosUsuario();
+  }
+  return data;
+}
+
 // Render fichas
 async function renderFichas(){
   const user = await obtenerDatosUsuario();
@@ -128,7 +172,7 @@ async function renderFichas(){
   pekepuntosActualesEl.textContent = user.pekepuntos||0;
 }
 
-// Canjear
+// Canjear fichas
 document.getElementById('canjearBtn').addEventListener('click', async ()=>{
   const tipo = Number(document.getElementById('tipoFicha').value);
   const cantidad = parseInt(document.getElementById('cantidadFichas').value);
@@ -147,7 +191,7 @@ document.getElementById('canjearBtn').addEventListener('click', async ()=>{
   if(tipo===5) cambios.ficha_roja += cantidad;
   if(tipo===25) cambios.ficha_azul += cantidad;
   if(tipo===100) cambios.ficha_verde += cantidad;
-  await supabase.from('users').update(cambios).eq('id', usuario.id);
+  await supabase.from('usuarios').update(cambios).eq('id', usuario.id);
   renderFichas();
 });
 
@@ -155,7 +199,8 @@ document.getElementById('canjearBtn').addEventListener('click', async ()=>{
 async function mostrarSalas(){
   const { data: salas } = await supabase.from('rooms').select('*');
   salasContainer.innerHTML = '';
-  salas.forEach(s=>{
+  if (!salas || salas.length === 0) salasContainer.innerHTML = '<p>No hay salas disponibles.</p>';
+  else salas.forEach(s=>{
     const players = s.players ? s.players.length : 0;
     const div = document.createElement('div');
     div.style = 'background:#222;padding:10px;margin:6px 0;border-radius:8px;display:flex;justify-content:space-between;align-items:center;';
@@ -175,22 +220,7 @@ document.getElementById('crearSalaBtn').addEventListener('click', async ()=>{
   await unirseASala(data, true);
 });
 
-async function obtenerDatosUsuario(){
-  const { data } = await supabase.from('usuarios').select('*').eq('id', usuario.id).maybeSingle();
-  if(!data){
-    await supabase.from('usuarios').insert([{ 
-      id: usuario.id, 
-      username: usuario.username, 
-      pekepuntos: 500,
-      ficha_blanca: 0, ficha_roja: 0, ficha_azul: 0, ficha_verde: 0
-    }]);
-    return obtenerDatosUsuario();
-  }
-  return data;
-}
-
-// ...
-
+// Unirse a sala
 async function unirseASala(room, esCreador=false){
   salaActual = room;
   const lista = Array.isArray(room.players) ? room.players : [];
@@ -205,21 +235,42 @@ async function unirseASala(room, esCreador=false){
   actualizarPanel();
 }
 
-// ...
-
+// Actualizar panel lateral y posiciones
 async function actualizarPanel(){
   const { data: sala } = await supabase.from('rooms').select('*').eq('id', salaActual.id).single();
   const jugadores = Array.isArray(sala.players) ? sala.players : [];
+
   infoJugador.innerHTML = `<strong>${usuario.username}</strong><br>Sala: ${sala.name}`;
   fichasPanel.innerHTML = fichaResumen.textContent;
+
   jugadoresSala.innerHTML = `<h4>Jugadores (${jugadores.length})</h4>` +
     jugadores.map(j=>`<div>👤 ${j.username}</div>`).join('');
+
+  // Mostrar jugadores en posiciones
+  for(let i=1;i<=5;i++){
+    const el = document.getElementById('pos'+i);
+    if(jugadores[i-1]) el.textContent = jugadores[i-1].username;
+    else el.textContent = '';
+  }
 }
 
+// Salir de sala
+salirBtn.addEventListener('click', async ()=>{
+  if(!salaActual) return;
+  const { data: sala } = await supabase.from('rooms').select('*').eq('id', salaActual.id).single();
+  const nuevos = (sala.players||[]).filter(p=>p.id!==usuario.id);
+  await supabase.from('rooms').update({ players:nuevos }).eq('id', salaActual.id);
+  salaActual = null;
+  tableroContainer.style.display='none';
+  salasCard.style.display='block';
+  conversionCard.style.display='block';
+  mostrarSalas();
+});
 
+// Refrescar salas
 document.getElementById('refreshSalas').addEventListener('click', mostrarSalas);
 
-// === INIT ===
+// INIT
 window.addEventListener('DOMContentLoaded', async ()=>{
   await renderFichas();
   await mostrarSalas();
