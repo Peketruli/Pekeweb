@@ -191,7 +191,6 @@ input, select {
 <!-- === TABLERO === -->
 <div id="tableroContainer">
   <div id="mesa">
-    <!-- huecos del centro -->
     <div id="centro">
       <div class="hueco"></div>
       <div class="hueco"></div>
@@ -199,17 +198,13 @@ input, select {
       <div class="hueco"></div>
       <div class="hueco"></div>
     </div>
-
-    <!-- posiciones de jugadores -->
     <div class="jugador jugador1" id="pos1"></div>
     <div class="jugador jugador2" id="pos2"></div>
     <div class="jugador jugador3" id="pos3"></div>
     <div class="jugador jugador4" id="pos4"></div>
     <div class="jugador jugador5" id="pos5"></div>
-
     <div id="mesa-cartas"></div>
   </div>
-
   <div id="panelLateral">
     <div>
       <h3>Información</h3>
@@ -226,17 +221,19 @@ input, select {
 
 <div id="debugErrors"></div>
 
-<script type="module">
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
-const supabase = createClient(
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+<script>
+const supabase = supabase.createClient(
   'https://jdvwlfogkzrzovepzjqa.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'
 );
 
 const debugErrorsEl = document.getElementById('debugErrors');
-function mostrarError(e){console.error(e);debugErrorsEl.innerHTML += `<div>${new Date().toLocaleTimeString()} → ${e.message||e}</div>`;}
+function mostrarError(e){ console.error(e); debugErrorsEl.innerHTML += `<div>${new Date().toLocaleTimeString()} → ${e.message||e}</div>`; }
 
-let usuario = JSON.parse(localStorage.getItem('currentUser')) || {id:crypto.randomUUID(), username:"Jugador"+Math.floor(Math.random()*1000)};
+// ID compatible
+function generarID(){ return 'id-'+Math.floor(Math.random()*1e16); }
+let usuario = JSON.parse(localStorage.getItem('currentUser')) || {id:generarID(), username:"Jugador"+Math.floor(Math.random()*1000)};
 localStorage.setItem('currentUser', JSON.stringify(usuario));
 let salaActual=null;
 
@@ -249,32 +246,38 @@ const tableroContainer=document.getElementById('tableroContainer');
 const salasCard=document.getElementById('salasCard');
 const conversionCard=document.getElementById('conversionCard');
 
-/* === FUNCIONES BÁSICAS === */
+/* === FUNCIONES === */
 async function obtenerDatosUsuario(){
-  const {data,error}=await supabase.from('usuarios').select('*').eq('id',usuario.id).maybeSingle();
-  if(error) throw error;
-  if(!data){
-    await supabase.from('usuarios').insert([{id:usuario.id,username:usuario.username,pekepuntos:500,ficha_blanca:0,ficha_roja:0,ficha_azul:0,ficha_verde:0}]);
-    return obtenerDatosUsuario();
-  }
-  return data;
+  try{
+    const {data,error}=await supabase.from('usuarios').select('*').eq('id',usuario.id).single();
+    if(error && error.code !== 'PGRST116') throw error;
+    if(!data){
+      await supabase.from('usuarios').insert([{id:usuario.id,username:usuario.username,pekepuntos:500,ficha_blanca:0,ficha_roja:0,ficha_azul:0,ficha_verde:0}]);
+      return obtenerDatosUsuario();
+    }
+    return data;
+  } catch(e){ mostrarError(e); return {ficha_blanca:0,ficha_roja:0,ficha_azul:0,ficha_verde:0}; }
 }
+
 async function renderFichas(){
-  const user=await obtenerDatosUsuario();
+  const user = await obtenerDatosUsuario();
   fichaResumen.textContent=`⚪ ${user.ficha_blanca||0} 🔴 ${user.ficha_roja||0} 🔵 ${user.ficha_azul||0} 🟢 ${user.ficha_verde||0}`;
 }
+
 async function mostrarSalas(){
-  const {data:salas,error}=await supabase.from('rooms').select('*');
-  if(error) throw error;
-  const cont=document.getElementById('salasContainer');
-  cont.innerHTML='';
-  salas?.forEach(s=>{
-    const div=document.createElement('div');
-    div.style='background:#222;padding:10px;margin:6px 0;border-radius:8px;display:flex;justify-content:space-between;align-items:center;';
-    div.innerHTML=`<strong>${s.name}</strong><span>${s.players?.length||0}/5</span><button>Unirse</button>`;
-    div.querySelector('button').onclick=()=>unirseASala(s);
-    cont.appendChild(div);
-  });
+  try{
+    const {data:salas,error}=await supabase.from('rooms').select('*');
+    if(error) throw error;
+    const cont=document.getElementById('salasContainer');
+    cont.innerHTML='';
+    salas?.forEach(s=>{
+      const div=document.createElement('div');
+      div.style='background:#222;padding:10px;margin:6px 0;border-radius:8px;display:flex;justify-content:space-between;align-items:center;';
+      div.innerHTML=`<strong>${s.name}</strong><span>${s.players?.length||0}/5</span><button>Unirse</button>`;
+      div.querySelector('button').onclick=()=>unirseASala(s);
+      cont.appendChild(div);
+    });
+  }catch(e){ mostrarError(e); }
 }
 
 /* === UNIRSE A SALA === */
@@ -294,149 +297,157 @@ async function unirseASala(room,creador=false){
 
 /* === ACTUALIZAR PANEL === */
 async function actualizarPanel(){
-  const {data:sala}=await supabase.from('rooms').select('*').eq('id',salaActual.id).single();
-  const jugadores=sala.players||[];
-  infoJugador.innerHTML=`<strong>${usuario.username}</strong><br>Sala: ${sala.name}`;
-  fichasPanel.innerHTML=fichaResumen.textContent;
-  jugadoresSala.innerHTML=jugadores.map(j=>`<div>👤 ${j.username}</div>`).join('');
-  for(let i=1;i<=5;i++){
-    const el=document.getElementById('pos'+i);
-    el.textContent=jugadores[i-1]?jugadores[i-1].username:'';
-  }
-
-  const mesa=document.getElementById('mesa-cartas');
-  mesa.innerHTML='';
-  if(sala.game_state?.manos){
-    const misCartas=sala.game_state.manos[usuario.id];
-    if(misCartas){
-      misCartas.forEach((c,i)=>{
-        const carta=document.createElement('div');
-        carta.className='carta cartaFrente';
-        carta.textContent=`${c.valor}${c.palo}`;
-        carta.style.left=`calc(50% + ${i*70-35}px)`;
-        carta.style.bottom='30px';
-        carta.style.transform='translateX(-50%)';
-        mesa.appendChild(carta);
-      });
+  try{
+    const {data:sala}=await supabase.from('rooms').select('*').eq('id',salaActual.id).single();
+    const jugadores=sala.players||[];
+    infoJugador.innerHTML=`<strong>${usuario.username}</strong><br>Sala: ${sala.name}`;
+    fichasPanel.innerHTML=fichaResumen.textContent;
+    jugadoresSala.innerHTML=jugadores.map(j=>`<div>👤 ${j.username}</div>`).join('');
+    for(let i=1;i<=5;i++){
+      const el=document.getElementById('pos'+i);
+      if(el) el.textContent=jugadores[i-1]?jugadores[i-1].username:'';
     }
-    // mostrar cartas de otros jugadores como reverso
-    jugadores.forEach(j=>{
-      if(j.id!==usuario.id){
-        const otrasCartas=sala.game_state.manos[j.id];
-        if(otrasCartas){
-          otrasCartas.forEach((c,i)=>{
-            const pos=document.getElementById('pos'+(jugadores.indexOf(j)+1));
-            const carta=document.createElement('div');
-            carta.className='carta cartaReverso';
-            carta.style.top='50%';
-            carta.style.left='50%';
-            mesa.appendChild(carta);
-            requestAnimationFrame(()=>{
-              const rectJugador=pos.getBoundingClientRect();
-              const rectMesa=mesa.getBoundingClientRect();
-              const destX=rectJugador.left+rectJugador.width/2-rectMesa.left;
-              const destY=rectJugador.top+rectJugador.height/2-rectMesa.top;
+
+    const mesa=document.getElementById('mesa-cartas');
+    mesa.innerHTML='';
+    if(sala.game_state?.manos){
+      const misCartas=sala.game_state.manos[usuario.id];
+      if(misCartas){
+        misCartas.forEach((c,i)=>{
+          const carta=document.createElement('div');
+          carta.className='carta cartaFrente';
+          carta.textContent=`${c.valor}${c.palo}`;
+          carta.style.left=`calc(50% + ${i*70-35}px)`;
+          carta.style.bottom='30px';
+          carta.style.transform='translateX(-50%)';
+          mesa.appendChild(carta);
+        });
+      }
+      jugadores.forEach(j=>{
+        if(j.id!==usuario.id){
+          const otrasCartas=sala.game_state.manos[j.id];
+          if(otrasCartas){
+            otrasCartas.forEach((c,i)=>{
+              const pos=document.getElementById('pos'+(jugadores.indexOf(j)+1));
+              if(!pos) return;
+              const carta=document.createElement('div');
+              carta.className='carta cartaReverso';
+              carta.style.top='50%';
+              carta.style.left='50%';
+              carta.style.opacity=0;
+              mesa.appendChild(carta);
               requestAnimationFrame(()=>{
-                carta.style.left=destX+'px';
-                carta.style.top=destY+'px';
-                carta.style.opacity=1;
+                const rectJugador=pos.getBoundingClientRect();
+                const rectMesa=mesa.getBoundingClientRect();
+                const destX=rectJugador.left+rectJugador.width/2-rectMesa.left;
+                const destY=rectJugador.top+rectJugador.height/2-rectMesa.top;
+                requestAnimationFrame(()=>{
+                  carta.style.left=destX+'px';
+                  carta.style.top=destY+'px';
+                  carta.style.opacity=1;
+                });
               });
             });
-          });
+          }
         }
-      }
-    });
-  }
+      });
+    }
+  }catch(e){ mostrarError(e); }
 }
 
 /* === CREAR SALA === */
 document.getElementById('crearSalaBtn').onclick=async()=>{
   const nombre=document.getElementById('nombreSala').value.trim();
   if(!nombre) return alert('Nombre vacío');
-  const room={name:nombre,players:[{id:usuario.id,username:usuario.username}]};
-  const {data}=await supabase.from('rooms').insert([room]).select().single();
-  unirseASala(data,true);
+  try{
+    const room={name:nombre,players:[{id:usuario.id,username:usuario.username}]};
+    const {data}=await supabase.from('rooms').insert([room]).select().single();
+    unirseASala(data,true);
+  }catch(e){ mostrarError(e); }
 };
 document.getElementById('refreshSalas').onclick=mostrarSalas;
 
 /* === INICIAR PARTIDA ANIMADA === */
 iniciarPartidaBtn.onclick = async () => {
-  const { data: sala } = await supabase.from('rooms').select('*').eq('id', salaActual.id).single();
-  const jugadores = sala.players || [];
-  if (jugadores[0].id !== usuario.id) return alert('Solo el creador puede iniciar');
+  try{
+    const { data: sala } = await supabase.from('rooms').select('*').eq('id', salaActual.id).single();
+    const jugadores = sala.players || [];
+    if(jugadores[0].id !== usuario.id) return alert('Solo el creador puede iniciar');
+    const mesa = document.getElementById('mesa-cartas');
+    mesa.innerHTML = '';
 
-  const mesa = document.getElementById('mesa-cartas');
-  mesa.innerHTML = '';
-
-  // Barajar visual
-  const reversos = [];
-  for (let i = 0; i < 6; i++) {
-    const carta = document.createElement('div');
-    carta.className = 'carta cartaReverso';
-    carta.style.top = '50%';
-    carta.style.left = '50%';
-    carta.style.animation = `barajar 0.5s ${i * 0.1}s infinite alternate`;
-    mesa.appendChild(carta);
-    reversos.push(carta);
-  }
-  await new Promise(r => setTimeout(r, 2000));
-  reversos.forEach(c => c.remove());
-
-  // Baraja real
-  const palos = ['♠','♥','♦','♣'];
-  const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  let baraja = [];
-  for (let p of palos) for (let v of valores) baraja.push({ valor: v, palo: p });
-  baraja.sort(() => Math.random() - 0.5);
-
-  const manos = {};
-  for (let j of jugadores) manos[j.id] = [baraja.pop(), baraja.pop()];
-  await supabase.from('rooms').update({ game_state: { fase: 'reparto', manos, baraja } }).eq('id', salaActual.id);
-
-  // Mostrar tablero antes de calcular posiciones
-  tableroContainer.style.display = 'flex';
-  await new Promise(r => requestAnimationFrame(r));
-
-  // Repartir cartas
-  for (let i = 0; i < jugadores.length; i++) {
-    const jugador = jugadores[i];
-    const posEl = document.getElementById('pos' + (i + 1));
-
-    for (let c = 0; c < 2; c++) {
+    // Barajar visual
+    const reversos = [];
+    for (let i = 0; i < 6; i++) {
       const carta = document.createElement('div');
       carta.className = 'carta cartaReverso';
       carta.style.top = '50%';
       carta.style.left = '50%';
-      carta.style.opacity = 0;
-      carta.style.transition = 'all 0.6s ease';
+      carta.style.animation = `barajar 0.5s ${i * 0.1}s infinite alternate`;
       mesa.appendChild(carta);
+      reversos.push(carta);
+    }
+    await new Promise(r => setTimeout(r, 2000));
+    reversos.forEach(c => c.remove());
 
-      // Calculamos posición después de render
-      requestAnimationFrame(() => {
-        const rectJugador = posEl.getBoundingClientRect();
-        const rectMesa = mesa.getBoundingClientRect();
-        const destX = rectJugador.left + rectJugador.width / 2 - rectMesa.left;
-        const destY = rectJugador.top + rectJugador.height / 2 - rectMesa.top;
+    // Baraja real
+    const palos = ['♠','♥','♦','♣'];
+    const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+    let baraja = [];
+    for (let p of palos) for (let v of valores) baraja.push({ valor: v, palo: p });
+    baraja.sort(() => Math.random() - 0.5);
+
+    const manos = {};
+    for (let j of jugadores) manos[j.id] = [baraja.pop(), baraja.pop()];
+    await supabase.from('rooms').update({ game_state: { fase: 'reparto', manos, baraja } }).eq('id', salaActual.id);
+
+    tableroContainer.style.display = 'flex';
+    await new Promise(r => requestAnimationFrame(r));
+
+    // Repartir cartas
+    for (let i = 0; i < jugadores.length; i++) {
+      const jugador = jugadores[i];
+      const posEl = document.getElementById('pos' + (i + 1));
+      if(!posEl) continue;
+
+      for (let c = 0; c < 2; c++) {
+        const carta = document.createElement('div');
+        carta.className = 'carta cartaReverso';
+        carta.style.top = '50%';
+        carta.style.left = '50%';
+        carta.style.opacity = 0;
+        carta.style.transition = 'all 0.6s ease';
+        mesa.appendChild(carta);
 
         requestAnimationFrame(() => {
-          carta.style.left = destX + 'px';
-          carta.style.top = destY + 'px';
-          carta.style.opacity = 1;
-        });
-      });
+          const rectJugador = posEl.getBoundingClientRect();
+          const rectMesa = mesa.getBoundingClientRect();
+          const destX = rectJugador.left + rectJugador.width / 2 - rectMesa.left;
+          const destY = rectJugador.top + rectJugador.height / 2 - rectMesa.top;
 
-      // Si es tu carta, se revela
-      if (jugador.id === usuario.id) {
-        setTimeout(() => {
-          carta.className = 'carta cartaFrente';
-          carta.textContent = `${manos[jugador.id][c].valor}${manos[jugador.id][c].palo}`;
-        }, 700 + c * 150 + i * 300);
+          requestAnimationFrame(() => {
+            carta.style.left = destX + 'px';
+            carta.style.top = destY + 'px';
+            carta.style.opacity = 1;
+          });
+        });
+
+        if (jugador.id === usuario.id) {
+          setTimeout(() => {
+            carta.className = 'carta cartaFrente';
+            carta.textContent = `${manos[jugador.id][c].valor}${manos[jugador.id][c].palo}`;
+          }, 700 + c * 150 + i * 300);
+        }
       }
     }
-  }
 
-  setTimeout(() => actualizarPanel(), 2000);
+    setTimeout(() => actualizarPanel(), 2000);
+  }catch(e){ mostrarError(e); }
 };
+
+// Inicializamos
+renderFichas();
+mostrarSalas();
 </script>
 </body>
 </html>
