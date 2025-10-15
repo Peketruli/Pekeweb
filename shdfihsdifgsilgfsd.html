@@ -160,6 +160,17 @@ input, select {
   padding:10px;
   z-index:9999;
 }
+  #mesa .fichaCentral {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffcc33, #ff9900);
+  transition: all 0.8s ease;
+}
+
 </style>
 </head>
 <body>
@@ -804,6 +815,120 @@ iniciarPartidaBtn.onclick = async () => {
   setTimeout(() => iniciarApuestas(), 2000);
 };
 
+  /* Inicializa pozo y rondas */
+async function iniciarApuestas() {
+  if (!salaActual) return;
+  const gs = salaActual.game_state || {};
+  gs.fase = "apuestas";
+  gs.turno_actual = 0;
+  gs.apuestas = {};
+  gs.pozo = gs.pozo || 0;
+  gs.rondas_jugadas = gs.rondas_jugadas || 0;
+
+  await supabaseClient.from("rooms").update({ game_state: gs }).eq("id", salaActual.id);
+  mostrarTurno();
+}
+
+/* Sumar apuestas al pozo */
+async function apostarFicha(cantidad) {
+  const gs = salaActual.game_state;
+  gs.apuestas = gs.apuestas || {};
+  gs.apuestas[usuario.id] = (gs.apuestas[usuario.id] || 0) + cantidad;
+
+  // Restar fichas del jugador
+  await restarFichas(usuario.id, cantidad);
+
+  // Guardar cambios
+  await supabaseClient.from("rooms").update({ game_state: gs }).eq("id", salaActual.id);
+  await siguienteTurno();
+}
+
+/* Pasar al siguiente turno */
+async function siguienteTurno() {
+  const jugadores = salaActual.players || [];
+  const gs = salaActual.game_state;
+  gs.turno_actual = (gs.turno_actual + 1) % jugadores.length;
+
+  // Si todos apostaron, finalizar ronda
+  if (Object.keys(gs.apuestas).length === jugadores.length) {
+    await finalizarRonda();
+  } else {
+    await supabaseClient.from("rooms").update({ game_state: gs }).eq("id", salaActual.id);
+  }
+}
+
+/* Finalizar una ronda */
+async function finalizarRonda() {
+  const gs = salaActual.game_state;
+  const jugadores = salaActual.players;
+
+  // Calcular pozo
+  let sumaApuestas = 0;
+  for (const id in gs.apuestas) sumaApuestas += gs.apuestas[id];
+  gs.pozo = (gs.pozo || 0) + sumaApuestas;
+
+  // Mostrar fichas en el centro (animación)
+  mostrarFichasEnCentro(gs.apuestas);
+
+  // Resetear apuestas para la siguiente ronda
+  gs.apuestas = {};
+  gs.rondas_jugadas = (gs.rondas_jugadas || 0) + 1;
+
+  if (gs.rondas_jugadas < 4) {
+    // Nueva ronda: repartir cartas
+    await repartirCartas();
+    gs.fase = "apuestas";
+  } else {
+    // Fin de la partida: determinar ganador
+    const ganador = determinarGanador();
+    await moverPozoAlGanador(ganador);
+    gs.pozo = 0;
+    gs.rondas_jugadas = 0;
+    gs.fase = "finRonda";
+  }
+
+  await supabaseClient.from("rooms").update({ game_state: gs }).eq("id", salaActual.id);
+}
+
+/* Determinar ganador (ejemplo simple: random) */
+function determinarGanador() {
+  const jugadores = salaActual.players;
+  if (!jugadores.length) return null;
+  return jugadores[Math.floor(Math.random() * jugadores.length)];
+}
+
+/* Mover pozo al ganador (visual + actualizar fichas) */
+async function moverPozoAlGanador(ganador) {
+  if (!ganador) return;
+  const gs = salaActual.game_state;
+  const pozoTotal = gs.pozo || 0;
+
+  // Aquí animación CSS: fichas del centro → ganador
+  animarFichasAlGanador(ganador.id);
+
+  // Sumar fichas al ganador
+  await sumarFichas(ganador.id, pozoTotal);
+}
+
+/* Funciones de fichas: sumar/restar */
+async function restarFichas(userId, cantidad) {
+  // Aquí restar las fichas del jugador según color/valor
+  // ...
+}
+
+async function sumarFichas(userId, cantidad) {
+  // Aquí sumar fichas al ganador según lógica de conversión
+  // ...
+}
+
+/* Animaciones */
+function mostrarFichasEnCentro(apuestas) {
+  // Añade visual en el centro de la mesa según apuestas
+}
+
+function animarFichasAlGanador(userId) {
+  // Animación de CSS de fichas moviéndose al jugador
+}
 
 /* === llamada iniciales en caso de carga fuera de DOMContentLoaded (seguridad) === */
 </script>
