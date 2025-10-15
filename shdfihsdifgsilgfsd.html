@@ -660,6 +660,151 @@ window.addEventListener('DOMContentLoaded', async () => {
   }catch(e){ mostrarError(e); }
 });
 
+  /* === SISTEMA DE APUESTAS Y TURNOS === */
+const botonesHTML = `
+  <div id="zonaAcciones" style="margin-top:10px;text-align:center;display:none;">
+    <h4 id="turnoTexto" style="margin-bottom:10px;color:#ffb866;"></h4>
+    <input type="number" id="apuestaInput" placeholder="Cantidad a apostar" min="1" style="width:80px;">
+    <button id="apostarBtn">Apostar</button>
+    <button id="pasarBtn" class="secondary">Pasar</button>
+    <button id="retirarseBtn" class="secondary">Retirarse</button>
+  </div>
+`;
+panelLateral.insertAdjacentHTML("beforeend", botonesHTML);
+
+const zonaAcciones = document.getElementById("zonaAcciones");
+const turnoTexto = document.getElementById("turnoTexto");
+const apostarBtn = document.getElementById("apostarBtn");
+const pasarBtn = document.getElementById("pasarBtn");
+const retirarseBtn = document.getElementById("retirarseBtn");
+
+/* === Mostrar turno actual === */
+function mostrarTurno() {
+  if (!salaActual || !salaActual.game_state) return;
+  const gs = salaActual.game_state;
+  const jugadores = salaActual.players || [];
+  const turno = gs.turno_actual;
+
+  const jugadorTurno = jugadores[turno] ? jugadores[turno].username : "—";
+  turnoTexto.textContent = `Turno de: ${jugadorTurno}`;
+
+  // Mostrar botones solo si soy yo y estamos en apuestas
+  if (gs.fase === "apuestas" && jugadores[turno] && jugadores[turno].id === usuario.id) {
+    zonaAcciones.style.display = "block";
+  } else {
+    zonaAcciones.style.display = "none";
+  }
+}
+
+/* === Iniciar ronda de apuestas === */
+async function iniciarApuestas() {
+  try {
+    const jugadores = salaActual.players || [];
+    const gs = salaActual.game_state || {};
+    gs.fase = "apuestas";
+    gs.turno_actual = 0;
+    gs.apuestas = {}; // objeto donde guardamos las apuestas de cada jugador
+
+    await supabaseClient.from("rooms").update({ game_state: gs }).eq("id", salaActual.id);
+  } catch (e) { mostrarError(e); }
+}
+
+/* === Pasar al siguiente turno === */
+async function siguienteTurno() {
+  try {
+    const jugadores = salaActual.players || [];
+    const gs = salaActual.game_state;
+    gs.turno_actual = (gs.turno_actual + 1) % jugadores.length;
+    await supabaseClient.from("rooms").update({ game_state: gs }).eq("id", salaActual.id);
+  } catch (e) { mostrarError(e); }
+}
+
+/* === Apostar === */
+apostarBtn.onclick = async () => {
+  try {
+    const cantidad = parseInt(document.getElementById("apuestaInput").value);
+    if (!cantidad || cantidad <= 0) return alert("Cantidad inválida.");
+
+    const gs = salaActual.game_state;
+    gs.apuestas = gs.apuestas || {};
+    gs.apuestas[usuario.id] = cantidad;
+
+    await supabaseClient.from("rooms").update({ game_state: gs }).eq("id", salaActual.id);
+    await siguienteTurno();
+  } catch (e) { mostrarError(e); }
+};
+
+/* === Pasar === */
+pasarBtn.onclick = async () => {
+  try {
+    await siguienteTurno();
+  } catch (e) { mostrarError(e); }
+};
+
+/* === Retirarse === */
+retirarseBtn.onclick = async () => {
+  try {
+    const jugadores = salaActual.players.filter(p => p.id !== usuario.id);
+    const gs = salaActual.game_state;
+    delete gs.manos[usuario.id];
+    await supabaseClient.from("rooms").update({ players: jugadores, game_state: gs }).eq("id", salaActual.id);
+    alert("Te has retirado de la ronda.");
+  } catch (e) { mostrarError(e); }
+};
+
+/* === Integrar mostrarTurno en las actualizaciones === */
+async function actualizarPanel() {
+  try {
+    if (!salaActual) return;
+    const res = await supabaseClient.from("rooms").select("*").eq("id", salaActual.id);
+    if (res.error) throw res.error;
+    if (!res.data || res.data.length === 0) return;
+    salaActual = res.data[0];
+    const jugadores = salaActual.players || [];
+
+    infoJugador.innerHTML = `<strong>${escapeHtml(usuario.username)}</strong><br>Sala: ${escapeHtml(salaActual.name || '')}`;
+    fichasPanel.innerHTML = fichaResumen.textContent;
+    jugadoresSala.innerHTML = jugadores.map(j => `<div>👤 ${escapeHtml(j.username)}</div>`).join("");
+
+    for (let i = 1; i <= 5; i++) {
+      const el = document.getElementById("pos" + i);
+      if (!el) continue;
+      el.textContent = jugadores[i - 1] ? jugadores[i - 1].username : "";
+    }
+
+    // Mostrar cartas
+    const mesa = document.getElementById("mesa-cartas");
+    mesa.innerHTML = "";
+    if (salaActual.game_state && salaActual.game_state.manos) {
+      const manos = salaActual.game_state.manos;
+      const misCartas = manos[usuario.id];
+      if (misCartas) {
+        misCartas.forEach((c, i) => {
+          const carta = document.createElement("div");
+          carta.className = "carta cartaFrente";
+          carta.textContent = `${c.valor}${c.palo}`;
+          carta.style.left = `calc(50% + ${i * 70 - 35}px)`;
+          carta.style.bottom = "30px";
+          carta.style.transform = "translateX(-50%)";
+          mesa.appendChild(carta);
+        });
+      }
+    }
+
+    // Mostrar turno (nuevo)
+    mostrarTurno();
+  } catch (e) { mostrarError(e); }
+}
+
+/* === Integrar apuestas tras el reparto === */
+const oldIniciarPartida = iniciarPartidaBtn.onclick;
+iniciarPartidaBtn.onclick = async () => {
+  await oldIniciarPartida();
+  // iniciar apuestas automáticamente al terminar el reparto
+  setTimeout(() => iniciarApuestas(), 2000);
+};
+
+
 /* === llamada iniciales en caso de carga fuera de DOMContentLoaded (seguridad) === */
 </script>
 </body>
