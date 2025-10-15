@@ -252,7 +252,7 @@ let usuario = JSON.parse(localStorage.getItem('currentUser')) || { id: generarID
 localStorage.setItem('currentUser', JSON.stringify(usuario));
 let salaActual = null;
 
-/* Elementos del DOM */
+/* DOM */
 const fichaResumen = document.getElementById('fichaResumen');
 const infoJugador = document.getElementById('infoJugador');
 const fichasPanel = document.getElementById('fichasPanel');
@@ -262,6 +262,8 @@ const tableroContainer = document.getElementById('tableroContainer');
 const salasCard = document.getElementById('salasCard');
 const conversionCard = document.getElementById('conversionCard');
 const panelLateral = document.getElementById('panelLateral');
+const mesaCartasEl = () => document.getElementById('mesa-cartas');
+const mesaEl = () => document.getElementById('mesa');
 
 /* -------------------- Supabase -------------------- */
 const supabaseClient = window.supabase?.createClient(
@@ -278,7 +280,7 @@ async function obtenerDatosUsuario(){
     if(res.error) throw res.error;
     const data = res.data;
     if(!data || data.length === 0){
-      await supabaseClient.from('usuarios').insert([{
+      const insert = await supabaseClient.from('usuarios').insert([{
         id: usuario.id,
         username: usuario.username,
         pekepuntos: 500,
@@ -287,6 +289,7 @@ async function obtenerDatosUsuario(){
         ficha_azul: 0,
         ficha_verde: 0
       }]);
+      if(insert.error) throw insert.error;
       return await obtenerDatosUsuario();
     }
     return data[0];
@@ -302,6 +305,8 @@ async function renderFichas(){
     fichaResumen.textContent = `⚪ ${user.ficha_blanca||0} 🔴 ${user.ficha_roja||0} 🔵 ${user.ficha_azul||0} 🟢 ${user.ficha_verde||0}`;
     const p = document.getElementById('pekepuntosActuales');
     if(p) p.textContent = user.pekepuntos || 0;
+    // actualizar botones de ficha si existen
+    updateChipButtons(user);
   }catch(e){ mostrarError(e); }
 }
 
@@ -318,13 +323,12 @@ async function mostrarSalas(){
     const salas = res.data || [];
     const cont = document.getElementById('salasContainer');
     cont.innerHTML = '';
-    if(!salas.length){ cont.innerHTML='<p>No hay salas disponibles.</p>'; return; }
-
+    if(!salas.length){ cont.innerHTML = '<p>No hay salas disponibles.</p>'; return; }
     salas.forEach(s=>{
-      const div = document.createElement('div');
+      const div=document.createElement('div');
       div.style='background:#222;padding:10px;margin:6px 0;border-radius:8px;display:flex;justify-content:space-between;align-items:center;';
       const playersCount = Array.isArray(s.players)? s.players.length : 0;
-      const nameSafe = s.name||'Sala';
+      const nameSafe = s.name || 'Sala';
       div.innerHTML = `<div><strong>${escapeHtml(nameSafe)}</strong></div><div style="display:flex;gap:8px;align-items:center;"><span>${playersCount}/5</span><button class="joinBtn">Unirse</button></div>`;
       div.querySelector('.joinBtn').onclick = ()=> unirseASala(s);
       cont.appendChild(div);
@@ -368,135 +372,178 @@ async function unirseASala(room, creador=false){
       const upd = await supabaseClient.from('rooms').update({players:jugadores}).eq('id',room.id);
       if(upd.error) throw upd.error;
       const {data} = await supabaseClient.from('rooms').select('*').eq('id',room.id);
-      if(data && data.length) salaActual=data[0];
+      if(data && data.length) salaActual = data[0];
     }
     salasCard.style.display='none';
     conversionCard.style.display='none';
     tableroContainer.style.display='flex';
-    iniciarPartidaBtn.style.display = creador?'block':'none';
+    iniciarPartidaBtn.style.display = creador ? 'block' : 'none';
     await actualizarPanel();
     suscribirseASala(room.id);
   }catch(e){ mostrarError(e); }
 }
 
-/* -------------------- PANEL -------------------- */
+/* -------------------- PANEL / CARTAS -------------------- */
 async function actualizarPanel(){
   try{
     if(!salaActual || !supabaseClient) return;
     const res = await supabaseClient.from('rooms').select('*').eq('id',salaActual.id);
     if(res.error) throw res.error;
-    if(!res.data||!res.data.length) return;
+    if(!res.data || !res.data.length) return;
     salaActual = res.data[0];
     const jugadores = salaActual.players || [];
 
-    infoJugador.innerHTML=`<strong>${escapeHtml(usuario.username)}</strong><br>Sala: ${escapeHtml(salaActual.name||'')}`;
-    fichasPanel.innerHTML=fichaResumen.textContent;
-    jugadoresSala.innerHTML=jugadores.map(j=>`<div>👤 ${escapeHtml(j.username)}</div>`).join('');
+    infoJugador.innerHTML = `<strong>${escapeHtml(usuario.username)}</strong><br>Sala: ${escapeHtml(salaActual.name || '')}`;
+    fichasPanel.innerHTML = fichaResumen.textContent;
+    jugadoresSala.innerHTML = jugadores.map(j=>`<div>👤 ${escapeHtml(j.username)}</div>`).join('');
 
     for(let i=1;i<=5;i++){
-      const el=document.getElementById('pos'+i);
+      const el = document.getElementById('pos'+i);
       if(!el) continue;
-      el.textContent = jugadores[i-1]? jugadores[i-1].username : '';
+      el.textContent = jugadores[i-1] ? jugadores[i-1].username : '';
     }
 
-    const mesa=document.getElementById('mesa-cartas');
-    mesa.innerHTML='';
+    // Mostrar cartas (tuyas delante, resto reverso)
+    const mesa = mesaCartasEl();
+    mesa.innerHTML = '';
     if(salaActual.game_state?.manos){
       const manos = salaActual.game_state.manos;
       const misCartas = manos[usuario.id];
       if(misCartas){
         misCartas.forEach((c,i)=>{
-          const carta=document.createElement('div');
-          carta.className='carta cartaFrente';
-          carta.textContent=`${c.valor}${c.palo}`;
-          carta.style.left=`calc(50% + ${i*70-35}px)`;
-          carta.style.bottom='30px';
-          carta.style.transform='translateX(-50%)';
+          const carta = document.createElement('div');
+          carta.className = 'carta cartaFrente';
+          carta.textContent = `${c.valor}${c.palo}`;
+          carta.style.left = `calc(50% + ${i*70-35}px)`;
+          carta.style.bottom = '30px';
+          carta.style.transform = 'translateX(-50%)';
           mesa.appendChild(carta);
         });
       }
+      // reversos hacia otros jugadores (posiciones)
+      jugadores.forEach((j,idx)=>{
+        if(j.id === usuario.id) return;
+        const otras = manos[j.id] || [];
+        otras.forEach((c,i)=>{
+          const pos = document.getElementById('pos' + (idx+1));
+          if(!pos) return;
+          const carta = document.createElement('div');
+          carta.className = 'carta cartaReverso';
+          carta.style.top = '50%';
+          carta.style.left = '50%';
+          carta.style.opacity = 0;
+          mesa.appendChild(carta);
+          requestAnimationFrame(()=>{
+            const rectJugador = pos.getBoundingClientRect();
+            const rectMesa = mesa.getBoundingClientRect();
+            const destX = rectJugador.left + rectJugador.width/2 - rectMesa.left;
+            const destY = rectJugador.top + rectJugador.height/2 - rectMesa.top;
+            requestAnimationFrame(()=>{
+              carta.style.left = destX + 'px';
+              carta.style.top = destY + 'px';
+              carta.style.opacity = 1;
+            });
+          });
+        });
+      });
     }
 
+    // actualiza UI de apuestas
+    ensureActionZone();
     mostrarTurno();
+    await renderFichas();
   }catch(e){ mostrarError(e); }
 }
 
 /* -------------------- CREAR SALA -------------------- */
-document.getElementById('crearSalaBtn').onclick=async ()=>{
+document.getElementById('crearSalaBtn').onclick = async ()=>{
   try{
-    const nombre=document.getElementById('nombreSala').value.trim();
+    const nombre = document.getElementById('nombreSala').value.trim();
     if(!nombre) return alert('Nombre vacío');
-    const room={name:nombre,players:[{id:usuario.id,username:usuario.username}]};
-    const res=await supabaseClient.from('rooms').insert([room]).select();
+    const room = { name:nombre, players:[{id:usuario.id,username:usuario.username}] };
+    const res = await supabaseClient.from('rooms').insert([room]).select();
     if(res.error) throw res.error;
-    const nueva=res.data?.[0];
+    const nueva = res.data?.[0];
     if(nueva) unirseASala(nueva,true);
   }catch(e){ mostrarError(e); alert('Error creando sala'); }
 };
-
-document.getElementById('refreshSalas').onclick=mostrarSalas;
+document.getElementById('refreshSalas').onclick = mostrarSalas;
 
 /* -------------------- INICIAR PARTIDA -------------------- */
-iniciarPartidaBtn.onclick = async () => {
+iniciarPartidaBtn.onclick = async ()=>{
   try{
     if(!salaActual) return alert('No hay sala actual');
-    const resSala=await supabaseClient.from('rooms').select('*').eq('id',salaActual.id);
+    const resSala = await supabaseClient.from('rooms').select('*').eq('id',salaActual.id);
     if(resSala.error) throw resSala.error;
-    const sala=resSala.data?.[0];
+    const sala = resSala.data?.[0];
     if(!sala) return alert('Sala no encontrada');
-    const jugadores=sala.players || [];
+    const jugadores = sala.players || [];
     if(!jugadores.length) return alert('No hay jugadores');
-    if(jugadores[0].id!==usuario.id) return alert('Solo el creador puede iniciar');
+    if(jugadores[0].id !== usuario.id) return alert('Solo el creador puede iniciar');
 
-    // crear baraja y repartir cartas
-    const palos=['♠','♥','♦','♣'];
-    const valores=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-    let baraja=[];
+    // Baraja y repartir
+    const palos = ['♠','♥','♦','♣'];
+    const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+    let baraja = [];
     for(let p of palos) for(let v of valores) baraja.push({valor:v,palo:p});
     baraja.sort(()=>Math.random()-0.5);
 
-    const manos={};
-    jugadores.forEach(j=> manos[j.id]=[baraja.pop(),baraja.pop()]);
-    const updateRes=await supabaseClient.from('rooms').update({game_state:{fase:'apuestas',manos,baraja,turno_actual:0,apuestas:{},pozo:0,rondas_jugadas:0}}).eq('id',salaActual.id);
+    const manos = {};
+    jugadores.forEach(j => manos[j.id] = [baraja.pop(), baraja.pop()]);
+
+    const game_state = {
+      fase: 'apuestas',
+      manos,
+      baraja,
+      turno_actual: 0,
+      apuestas: {},
+      acted: {},
+      pozo: 0,
+      rondas_jugadas: 0
+    };
+
+    const updateRes = await supabaseClient.from('rooms').update({ game_state }).eq('id', salaActual.id);
     if(updateRes.error) throw updateRes.error;
 
-    tableroContainer.style.display='flex';
+    tableroContainer.style.display = 'flex';
     await actualizarPanel();
   }catch(e){ mostrarError(e); alert('Error al iniciar partida'); }
 };
 
 /* -------------------- CANJEAR FICHAS -------------------- */
-document.getElementById('canjearBtn').onclick = async () => {
+document.getElementById('canjearBtn').onclick = async ()=>{
   try{
     const tipo = document.getElementById('tipoFicha').value;
     const cantidad = parseInt(document.getElementById('cantidadFichas').value,10);
     if(!cantidad||cantidad<=0) return alert('Cantidad inválida');
     const user = await obtenerDatosUsuario();
-    const costoTotal = cantidad*parseInt(tipo,10);
-    if(user.pekepuntos<costoTotal) return alert('No tienes suficientes pekepuntos');
-    const update={pekepuntos:user.pekepuntos-costoTotal};
-    if(tipo==='1') update.ficha_blanca=(user.ficha_blanca||0)+cantidad;
-    if(tipo==='5') update.ficha_roja=(user.ficha_roja||0)+cantidad;
-    if(tipo==='25') update.ficha_azul=(user.ficha_azul||0)+cantidad;
-    if(tipo==='100') update.ficha_verde=(user.ficha_verde||0)+cantidad;
-    const res=await supabaseClient.from('usuarios').update(update).eq('id',usuario.id);
+    const costoTotal = cantidad * parseInt(tipo,10);
+    if(user.pekepuntos < costoTotal) return alert('No tienes suficientes pekepuntos');
+
+    const update = { pekepuntos: user.pekepuntos - costoTotal };
+    if(tipo === '1') update.ficha_blanca = (user.ficha_blanca||0) + cantidad;
+    if(tipo === '5') update.ficha_roja = (user.ficha_roja||0) + cantidad;
+    if(tipo === '25') update.ficha_azul = (user.ficha_azul||0) + cantidad;
+    if(tipo === '100') update.ficha_verde = (user.ficha_verde||0) + cantidad;
+
+    const res = await supabaseClient.from('usuarios').update(update).eq('id', usuario.id);
     if(res.error) throw res.error;
     await renderFichas();
     alert('Canje realizado');
   }catch(e){ mostrarError(e); alert('Error al canjear'); }
 };
 
-/* -------------------- SALIR DE SALA -------------------- */
+/* -------------------- SALIR SALA -------------------- */
 document.getElementById('salirBtn').onclick = async ()=>{
   try{
     if(!salaActual) return;
-    const res=await supabaseClient.from('rooms').select('*').eq('id',salaActual.id);
+    const res = await supabaseClient.from('rooms').select('*').eq('id', salaActual.id);
     if(res.error) throw res.error;
-    const sala=res.data?.[0];
+    const sala = res.data?.[0];
     if(!sala) return;
-    const nuevos=(sala.players||[]).filter(p=>p.id!==usuario.id);
-    await supabaseClient.from('rooms').update({players:nuevos}).eq('id',sala.id);
-    salaActual=null;
+    const nuevos = (sala.players || []).filter(p => p.id !== usuario.id);
+    await supabaseClient.from('rooms').update({ players: nuevos }).eq('id', sala.id);
+    salaActual = null;
     tableroContainer.style.display='none';
     salasCard.style.display='block';
     conversionCard.style.display='block';
@@ -505,25 +552,496 @@ document.getElementById('salirBtn').onclick = async ()=>{
   }catch(e){ mostrarError(e); alert('Error al salir de la sala'); }
 };
 
-/* -------------------- DOMContentLoaded -------------------- */
-window.addEventListener('DOMContentLoaded',async ()=>{
-  await renderFichas();
-  await mostrarSalas();
-  iniciarSuscripciones();
+/* -------------------- ZONA DE ACCIONES (chips / pasar / retirarse) -------------------- */
+let zonaAccionesEl = null;
+function ensureActionZone(){
+  if(zonaAccionesEl) return;
+  const html = `
+    <div id="zonaAcciones" style="margin-top:10px;text-align:center;">
+      <h4 id="turnoTexto" style="margin-bottom:8px;color:#ffb866;"></h4>
+      <div id="chipButtons" style="display:flex;gap:6px;justify-content:center;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:8px;justify-content:center;">
+        <button id="btnPasar" class="secondary">Pasar</button>
+        <button id="btnRetirarse" class="secondary">Retirarse</button>
+      </div>
+    </div>
+  `;
+  panelLateral.insertAdjacentHTML('beforeend', html);
+  zonaAccionesEl = document.getElementById('zonaAcciones');
 
-  // reconectar si ya estabas en sala
+  // crear botones de ficha (se actualizarán con cantidades)
+  const chipButtons = document.getElementById('chipButtons');
+  // definición: [value, key, labelStyle]
+  const chips = [
+    {value:1, key:'ficha_blanca', label:'⚪1'},
+    {value:5, key:'ficha_roja', label:'🔴5'},
+    {value:25, key:'ficha_azul', label:'🔵25'},
+    {value:100, key:'ficha_verde', label:'🟢100'}
+  ];
+  chips.forEach(ch=>{
+    const b = document.createElement('button');
+    b.className='chipBtn';
+    b.dataset.color = ch.key;
+    b.dataset.value = ch.value;
+    b.style.minWidth='48px';
+    b.textContent = ch.label;
+    b.onclick = async ()=> {
+      await apostarFicha(parseInt(b.dataset.value,10), b.dataset.color);
+    };
+    chipButtons.appendChild(b);
+  });
+
+  document.getElementById('btnPasar').onclick = async ()=> { await pasarAccion(); };
+  document.getElementById('btnRetirarse').onclick = async ()=> { await retirarseAccion(); };
+}
+
+async function updateChipButtons(user){
+  const btns = document.querySelectorAll('.chipBtn');
+  if(!btns || !user) return;
+  btns.forEach(b=>{
+    const key = b.dataset.color;
+    const count = user[key] || 0;
+    b.disabled = (count <= 0) || !isMyTurn();
+    b.title = `${count} disponibles`;
+    b.textContent = `${b.textContent.split(' ')[0]} ${count>0? `(${count})` : '(0)'}`;
+  });
+}
+
+/* -------------------- TURNOS / MOSTRAR -------------------- */
+function isMyTurn(){
+  const gs = salaActual?.game_state;
+  if(!gs) return false;
+  const jugadores = salaActual.players || [];
+  const turno = gs.turno_actual ?? 0;
+  return jugadores[turno] && jugadores[turno].id === usuario.id && gs.fase === 'apuestas';
+}
+
+function mostrarTurno(){
+  // se llama desde actualizarPanel
+  if(!salaActual || !salaActual.game_state) return;
+  const gs = salaActual.game_state;
+  const jugadores = salaActual.players || [];
+  const turno = gs.turno_actual ?? 0;
+  const jugadorTurno = jugadores[turno] ? jugadores[turno].username : '—';
+  const turnoTexto = document.getElementById('turnoTexto');
+  if(turnoTexto) turnoTexto.textContent = `Turno de: ${escapeHtml(jugadorTurno)}`;
+
+  // mostrar/ocultar zonaAcciones según si es mi turno
+  ensureActionZone();
+  const zona = document.getElementById('zonaAcciones');
+  if(gs.fase === 'apuestas' && jugadores[turno] && jugadores[turno].id === usuario.id){
+    zona.style.display = 'block';
+    const userData = null; // we'll re-render chip buttons via renderFichas which calls updateChipButtons
+    renderFichas();
+  } else {
+    zona.style.display = 'none';
+  }
+}
+
+/* -------------------- ACCIONES: apostar, pasar, retirarse -------------------- */
+async function apostarFicha(value, colorKey){
   try{
-    const {data:salas} = await supabaseClient.from('rooms').select('*');
-    const salaEncontrada = salas.find(s=> (s.players||[]).some(p=>p.id===usuario.id));
-    if(salaEncontrada){
-      salaActual=salaEncontrada;
-      salasCard.style.display='none';
-      conversionCard.style.display='none';
-      tableroContainer.style.display='flex';
-      await actualizarPanel();
-      suscribirseASala(salaEncontrada.id);
+    if(!salaActual || !supabaseClient) return;
+    // comprobar que tienes esa ficha
+    const user = await obtenerDatosUsuario();
+    const have = user[colorKey] || 0;
+    if(!have || have <= 0) return alert('No tienes esa ficha');
+
+    // restar 1 unidad de esa ficha
+    const updateUser = {};
+    updateUser[colorKey] = have - 1;
+    const res = await supabaseClient.from('usuarios').update(updateUser).eq('id', usuario.id);
+    if(res.error) throw res.error;
+
+    // actualizar game_state: sumar apuesta y marcar acted
+    const resRoom = await supabaseClient.from('rooms').select('*').eq('id', salaActual.id);
+    if(resRoom.error) throw resRoom.error;
+    const room = resRoom.data?.[0];
+    if(!room) return;
+    const gs = room.game_state || {};
+    gs.apuestas = gs.apuestas || {};
+    gs.acted = gs.acted || {};
+    gs.apuestas[usuario.id] = (gs.apuestas[usuario.id] || 0) + value;
+    gs.acted[usuario.id] = true;
+
+    // crear ficha visual en el centro (apilada)
+    mostrarFichaCentro({playerId: usuario.id, value, colorKey});
+
+    // actualizar room
+    const upd = await supabaseClient.from('rooms').update({ game_state: gs }).eq('id', room.id);
+    if(upd.error) throw upd.error;
+
+    // avanzar turno (o finalizar si todos actuaron)
+    await avanzarTurnoOLiquidar(room.id);
+    await renderFichas();
+  }catch(e){ mostrarError(e); }
+}
+
+async function pasarAccion(){
+  try{
+    if(!salaActual) return;
+    const resRoom = await supabaseClient.from('rooms').select('*').eq('id', salaActual.id);
+    if(resRoom.error) throw resRoom.error;
+    const room = resRoom.data?.[0];
+    if(!room) return;
+    const gs = room.game_state || {};
+    gs.acted = gs.acted || {};
+    gs.apuestas = gs.apuestas || {};
+    // marcar como actúo (pasó) sin sumar apuesta
+    gs.acted[usuario.id] = true;
+    const upd = await supabaseClient.from('rooms').update({ game_state: gs }).eq('id', room.id);
+    if(upd.error) throw upd.error;
+    await avanzarTurnoOLiquidar(room.id);
+  }catch(e){ mostrarError(e); }
+}
+
+async function retirarseAccion(){
+  try{
+    if(!salaActual) return;
+    // quitar jugador de players y borrar sus cartas
+    const resRoom = await supabaseClient.from('rooms').select('*').eq('id', salaActual.id);
+    if(resRoom.error) throw resRoom.error;
+    const room = resRoom.data?.[0];
+    if(!room) return;
+    const nuevosPlayers = (room.players||[]).filter(p => p.id !== usuario.id);
+    const gs = room.game_state || {};
+    if(gs.manos) delete gs.manos[usuario.id];
+    // marcar como retirado (opcional)
+    gs.retired = gs.retired || [];
+    if(!gs.retired.includes(usuario.id)) gs.retired.push(usuario.id);
+
+    const upd = await supabaseClient.from('rooms').update({ players: nuevosPlayers, game_state: gs }).eq('id', room.id);
+    if(upd.error) throw upd.error;
+
+    // ocultar UI de acciones para este jugador
+    const zona = document.getElementById('zonaAcciones');
+    if(zona) zona.style.display = 'none';
+    alert('Te has retirado de la ronda.');
+  }catch(e){ mostrarError(e); }
+}
+
+/* -------------------- TURNOS / FINALIZAR RONDA -------------------- */
+async function avanzarTurnoOLiquidar(roomId){
+  // recarga room
+  const resRoom = await supabaseClient.from('rooms').select('*').eq('id', roomId);
+  if(resRoom.error) throw resRoom.error;
+  const room = resRoom.data?.[0];
+  if(!room) return;
+  const gs = room.game_state || {};
+  const jugadores = room.players || [];
+  gs.acted = gs.acted || {};
+
+  // buscar siguiente jugador que no haya sido eliminado (players array already reflects)
+  let idx = gs.turno_actual ?? 0;
+  // marcar current as acted already done by caller
+  // avanzar a siguiente no-removed
+  let attempts = 0;
+  do {
+    idx = (idx + 1) % Math.max(1, jugadores.length);
+    attempts++;
+    if(attempts > 10) break;
+  } while(false);
+
+  gs.turno_actual = idx;
+
+  // comprobar si todos los jugadores activos han actuado (present in gs.acted)
+  const activeIds = jugadores.map(p=>p.id);
+  const todosActuaron = activeIds.every(id => !!gs.acted[id]);
+
+  if(todosActuaron){
+    // finalizar ronda (sumar apuestas al pozo y animar)
+    await finalizarRonda(room, gs);
+  } else {
+    // actualizar turno y salvar
+    const upd = await supabaseClient.from('rooms').update({ game_state: gs }).eq('id', roomId);
+    if(upd.error) mostrarError(upd.error);
+  }
+}
+
+/* -------------------- FINALIZAR RONDA / MULTI-RONDAS -------------------- */
+async function finalizarRonda(room, gsProvided){
+  try{
+    // aceptar room param or use salaActual
+    let roomData = room;
+    if(!roomData){
+      const r = await supabaseClient.from('rooms').select('*').eq('id', salaActual.id);
+      if(r.error) throw r.error;
+      roomData = r.data?.[0];
     }
-  }catch{}
+    const gs = gsProvided || roomData.game_state || {};
+    const jugadores = roomData.players || [];
+
+    // sumar apuestas de esta ronda al pozo total
+    let suma = 0;
+    for(const id in gs.apuestas) suma += gs.apuestas[id] || 0;
+    gs.pozo = (gs.pozo || 0) + suma;
+
+    // animar fichas en centro según gs.apuestas
+    mostrarFichasEnCentro(gs.apuestas || {});
+
+    // reset acted & apuestas (pero conservar pozo)
+    gs.apuestas = {};
+    gs.acted = {};
+    gs.rondas_jugadas = (gs.rondas_jugadas || 0) + 1;
+
+    if(gs.rondas_jugadas < 4){
+      // repartir nuevas cartas (simple: robar 2 nuevas a cada jugador de baraja)
+      // si no hay baraja, crear de nuevo
+      if(!gs.baraja || !gs.baraja.length){
+        const palos=['♠','♥','♦','♣'];
+        const valores=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+        let nuevaBaraja=[];
+        for(let p of palos) for(let v of valores) nuevaBaraja.push({valor:v,palo:p});
+        nuevaBaraja.sort(()=>Math.random()-0.5);
+        gs.baraja = nuevaBaraja;
+      }
+      gs.manos = gs.manos || {};
+      jugadores.forEach(p=>{
+        gs.manos[p.id] = [ gs.baraja.pop(), gs.baraja.pop() ];
+      });
+      gs.fase = 'apuestas';
+      gs.turno_actual = 0;
+      // guardar
+      const upd = await supabaseClient.from('rooms').update({ game_state: gs }).eq('id', roomData.id);
+      if(upd.error) throw upd.error;
+      // dejar 1s para animación y luego actualizar cliente
+      setTimeout(()=> actualizarPanel(), 800);
+    } else {
+      // fin de partida: elegir ganador (aquí simple random; puedes sustituir por lógica real)
+      const ganador = determinarGanador(roomData.players);
+      await animarFichasAlGanador(ganador?.id);
+      await sumarFichas(ganador?.id, gs.pozo || 0);
+      // reset estado de ronda
+      gs.pozo = 0;
+      gs.rondas_jugadas = 0;
+      gs.fase = 'finRonda';
+      gs.manos = {};
+      gs.baraja = gs.baraja || [];
+      gs.turno_actual = 0;
+      gs.apuestas = {};
+      gs.acted = {};
+      const upd2 = await supabaseClient.from('rooms').update({ game_state: gs }).eq('id', roomData.id);
+      if(upd2.error) throw upd2.error;
+      setTimeout(()=> actualizarPanel(), 800);
+    }
+  }catch(e){ mostrarError(e); }
+}
+
+/* -------------------- DETERMINAR GANADOR (placeholder) -------------------- */
+function determinarGanador(players){
+  if(!players || !players.length) return null;
+  // placeholder random: sustituir por evaluación real de manos
+  return players[Math.floor(Math.random()*players.length)];
+}
+
+/* -------------------- FICHAS CENTRO VISUAL + ANIMACIÓN -------------------- */
+function mostrarFichaCentro({playerId, value, colorKey}){
+  // crea un div .fichaCentral y lo apila en el centro
+  const mesa = mesaEl();
+  const centro = mesa.querySelector('.fichaCentralLayer') || (()=>{
+    const layer = document.createElement('div');
+    layer.className = 'fichaCentralLayer';
+    layer.style.position = 'absolute';
+    layer.style.top = '50%';
+    layer.style.left = '50%';
+    layer.style.transform = 'translate(-50%,-50%)';
+    layer.style.pointerEvents = 'none';
+    mesa.appendChild(layer);
+    return layer;
+  })();
+
+  const ficha = document.createElement('div');
+  ficha.className = 'fichaCentral';
+  ficha.dataset.owner = playerId;
+  ficha.dataset.value = value;
+  // estilo según colorKey
+  const map = {
+    'ficha_blanca': 'linear-gradient(circle,#fff,#ddd)',
+    'ficha_roja': 'linear-gradient(circle,#ff6b6b,#c0392b)',
+    'ficha_azul': 'linear-gradient(circle,#6bb6ff,#2a77c2)',
+    'ficha_verde': 'linear-gradient(circle,#b6ff6b,#3bb13b)'
+  };
+  ficha.style.background = map[colorKey] || 'radial-gradient(circle,#ffcc33,#ff9900)';
+  ficha.style.width = '34px';
+  ficha.style.height = '34px';
+  ficha.style.borderRadius = '50%';
+  ficha.style.marginTop = (centro.children.length * -6) + 'px'; // apilado leve
+  ficha.style.transition = 'transform 0.8s ease, opacity 0.5s ease, left 0.8s ease, top 0.8s ease';
+  centro.appendChild(ficha);
+}
+
+/* Mostrar múltiples fichas en centro (cuando finalizar ronda) */
+function mostrarFichasEnCentro(apuestas){
+  // limpiar capa y recrear fichas por cada apuesta (apilar)
+  const mesa = mesaEl();
+  let layer = mesa.querySelector('.fichaCentralLayer');
+  if(layer) layer.remove();
+  layer = document.createElement('div');
+  layer.className = 'fichaCentralLayer';
+  layer.style.position='absolute';
+  layer.style.top='50%';
+  layer.style.left='50%';
+  layer.style.transform='translate(-50%,-50%)';
+  layer.style.pointerEvents='none';
+  mesa.appendChild(layer);
+
+  // convertir apuestas en fichas visuales: intentamos descomponer por valores
+  for(const id in apuestas){
+    let amount = apuestas[id] || 0;
+    const breakdown = [];
+    // greedy breakdown 100,25,5,1
+    const vals = [{v:100,k:'ficha_verde'},{v:25,k:'ficha_azul'},{v:5,k:'ficha_roja'},{v:1,k:'ficha_blanca'}];
+    for(const v of vals){
+      while(amount >= v.v){
+        breakdown.push({value:v.v, colorKey:v.k});
+        amount -= v.v;
+      }
+    }
+    // crear fichas visuales
+    breakdown.forEach((f, i)=>{
+      const ficha = document.createElement('div');
+      ficha.className='fichaCentral';
+      ficha.style.width='30px';
+      ficha.style.height='30px';
+      ficha.style.borderRadius='50%';
+      ficha.style.marginTop = (layer.children.length * -6) + 'px';
+      ficha.style.transition='transform 0.8s ease, opacity 0.5s ease, left 0.8s ease, top 0.8s ease';
+      const map = {
+        'ficha_blanca': 'linear-gradient(circle,#fff,#ddd)',
+        'ficha_roja': 'linear-gradient(circle,#ff6b6b,#c0392b)',
+        'ficha_azul': 'linear-gradient(circle,#6bb6ff,#2a77c2)',
+        'ficha_verde': 'linear-gradient(circle,#b6ff6b,#3bb13b)'
+      };
+      ficha.style.background = map[f.colorKey] || '#ffcc33';
+      layer.appendChild(ficha);
+    });
+  }
+}
+
+/* ANIMACIÓN: mover fichas centro -> jugador */
+async function animarFichasAlGanador(ganadorId){
+  try{
+    if(!ganadorId) return;
+    const mesa = mesaEl();
+    const layer = mesa.querySelector('.fichaCentralLayer');
+    if(!layer) return;
+    const posEl = Array.from(document.querySelectorAll('.jugador')).find(el=> el && el.textContent && salaActual.players?.some(p=>p.id===ganadorId && p.username===el.textContent.trim()));
+    let targetRect;
+    if(posEl) targetRect = posEl.getBoundingClientRect();
+    else targetRect = mesa.getBoundingClientRect(); // fallback
+
+    const rectMesa = mesa.getBoundingClientRect();
+    const destX = targetRect.left + targetRect.width/2 - rectMesa.left;
+    const destY = targetRect.top + targetRect.height/2 - rectMesa.top;
+
+    Array.from(layer.children).forEach((f, idx)=>{
+      // animate to dest
+      f.style.position = 'absolute';
+      f.style.left = '50%';
+      f.style.top = '50%';
+      requestAnimationFrame(()=>{
+        f.style.transform = `translate(${destX - rectMesa.width/2}px, ${destY - rectMesa.height/2}px) scale(0.4)`;
+        f.style.opacity = '0.8';
+      });
+      // remove later
+      setTimeout(()=> f.remove(), 1100 + idx*30);
+    });
+    // remove layer after animation
+    setTimeout(()=> layer.remove(), 1400);
+  }catch(e){ mostrarError(e); }
+}
+
+/* -------------------- FICHAS: sumar/restar DB -------------------- */
+async function restarFichasDB(userId, colorKey, amount=1){
+  // resta `amount` fichas del tipo colorKey (ficha_blanca, ficha_roja, ficha_azul, ficha_verde)
+  try{
+    const { data, error } = await supabaseClient.from('usuarios').select('*').eq('id', userId).single();
+    if(error) throw error;
+    const user = data;
+    const current = user[colorKey] || 0;
+    const nuevo = Math.max(0, current - amount);
+    const upd = await supabaseClient.from('usuarios').update({ [colorKey]: nuevo }).eq('id', userId);
+    if(upd.error) throw upd.error;
+    if(userId === usuario.id) await renderFichas();
+    return true;
+  }catch(e){ mostrarError(e); return false; }
+}
+
+async function sumarFichas(userId, cantidadTotal){
+  // convierto cantidadTotal en fichas y sumo en DB (greedy)
+  try{
+    const { data, error } = await supabaseClient.from('usuarios').select('*').eq('id', userId).single();
+    if(error) throw error;
+    const user = data;
+    let remaining = cantidadTotal;
+    const add = { ficha_verde:0, ficha_azul:0, ficha_roja:0, ficha_blanca:0 };
+    const vals = [{v:100,k:'ficha_verde'},{v:25,k:'ficha_azul'},{v:5,k:'ficha_roja'},{v:1,k:'ficha_blanca'}];
+    for(const v of vals){
+      while(remaining >= v.v){
+        add[v.k]++;
+        remaining -= v.v;
+      }
+    }
+    const update = {};
+    for(const k in add) update[k] = (user[k] || 0) + add[k];
+    const upd = await supabaseClient.from('usuarios').update(update).eq('id', userId);
+    if(upd.error) throw upd.error;
+    if(userId === usuario.id) await renderFichas();
+    return true;
+  }catch(e){ mostrarError(e); return false; }
+}
+
+/* -------------------- REPARTIR CARTAS (aux) -------------------- */
+async function repartirCartas(){
+  try{
+    const resRoom = await supabaseClient.from('rooms').select('*').eq('id', salaActual.id);
+    if(resRoom.error) throw resRoom.error;
+    const room = resRoom.data?.[0];
+    if(!room) return;
+    const gs = room.game_state || {};
+    if(!gs.baraja || !gs.baraja.length){
+      const palos=['♠','♥','♦','♣'];
+      const valores=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+      let nuevaBaraja = [];
+      for(let p of palos) for(let v of valores) nuevaBaraja.push({valor:v,palo:p});
+      nuevaBaraja.sort(()=>Math.random()-0.5);
+      gs.baraja = nuevaBaraja;
+    }
+    gs.manos = gs.manos || {};
+    (room.players || []).forEach(p=>{
+      gs.manos[p.id] = [ gs.baraja.pop(), gs.baraja.pop() ];
+    });
+    gs.fase = 'apuestas';
+    gs.turno_actual = 0;
+    gs.apuestas = {};
+    gs.acted = {};
+    const upd = await supabaseClient.from('rooms').update({ game_state: gs }).eq('id', room.id);
+    if(upd.error) throw upd.error;
+    await actualizarPanel();
+  }catch(e){ mostrarError(e); }
+}
+
+/* -------------------- INICIALIZACIÓN -------------------- */
+window.addEventListener('DOMContentLoaded', async ()=>{
+  try{
+    await renderFichas();
+    await mostrarSalas();
+    iniciarSuscripciones();
+
+    // rejoin if in a room
+    try{
+      const { data: salas } = await supabaseClient.from('rooms').select('*');
+      const salaEncontrada = salas.find(s => (s.players || []).some(p => p.id === usuario.id));
+      if(salaEncontrada){
+        salaActual = salaEncontrada;
+        salasCard.style.display='none';
+        conversionCard.style.display='none';
+        tableroContainer.style.display='flex';
+        await actualizarPanel();
+        suscribirseASala(salaEncontrada.id);
+      }
+    }catch(e){}
+  }catch(e){ mostrarError(e); }
 });
 </script>
 </body>
