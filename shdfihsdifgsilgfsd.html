@@ -574,6 +574,7 @@ iniciarPartidaBtn.onclick = async () => {
 
     // refrescar panel para que muestre cartas en sus posiciones (reversos + tuyas)
     setTimeout(()=> actualizarPanel(), 600);
+    setTimeout(() => iniciarRondaApuestas(), 1200);
   }catch(e){ mostrarError(e); alert('Error al iniciar partida'); }
 };
 
@@ -660,7 +661,107 @@ window.addEventListener('DOMContentLoaded', async () => {
   }catch(e){ mostrarError(e); }
 });
 
-/* === llamada iniciales en caso de carga fuera de DOMContentLoaded (seguridad) === */
+  
+/* === RONDA DE APUESTAS === */
+
+async function iniciarRondaApuestas() {
+  try {
+    if (!salaActual) return;
+    const jugadores = salaActual.players || [];
+    const apuestas = {};
+    jugadores.forEach(j => apuestas[j.id] = 0);
+
+    // fase de apuestas inicial
+    const upd = await supabaseClient.from('rooms')
+      .update({ game_state: { ...salaActual.game_state, fase: 'apuestas', apuestas, turnoActual: 0 } })
+      .eq('id', salaActual.id);
+    if (upd.error) throw upd.error;
+    mostrarTurno();
+  } catch (e) { mostrarError(e); }
+}
+
+function mostrarTurno() {
+  try {
+    const estado = salaActual.game_state;
+    if (!estado || estado.fase !== 'apuestas') return;
+
+    const jugadores = salaActual.players || [];
+    const jugadorActual = jugadores[estado.turnoActual];
+    const esMiTurno = jugadorActual.id === usuario.id;
+
+    const panel = document.getElementById('panelLateral');
+    const contBotones = document.createElement('div');
+    contBotones.id = 'accionesApuesta';
+    contBotones.style.marginTop = '10px';
+
+    // limpiar botones previos
+    const viejo = document.getElementById('accionesApuesta');
+    if (viejo) viejo.remove();
+
+    if (!esMiTurno) {
+      panel.appendChild(contBotones);
+      contBotones.innerHTML = `<p>Esperando a <strong>${jugadorActual.username}</strong>...</p>`;
+      return;
+    }
+
+    // si es tu turno:
+    contBotones.innerHTML = `
+      <h4>Tu turno de apostar</h4>
+      <input id="cantidadApuesta" type="number" min="1" placeholder="Cantidad">
+      <button id="btnApostar">Apostar</button>
+      <button id="btnPasar" class="secondary">Pasar</button>
+      <button id="btnRetirarse" class="secondary">Retirarse</button>
+    `;
+    panel.appendChild(contBotones);
+
+    document.getElementById('btnApostar').onclick = async () => {
+      const cantidad = parseInt(document.getElementById('cantidadApuesta').value, 10);
+      if (!cantidad || cantidad <= 0) return alert('Cantidad inválida');
+      await hacerAccionApuesta('apostar', cantidad);
+    };
+
+    document.getElementById('btnPasar').onclick = () => hacerAccionApuesta('pasar');
+    document.getElementById('btnRetirarse').onclick = () => hacerAccionApuesta('retirarse');
+  } catch (e) { mostrarError(e); }
+}
+
+async function hacerAccionApuesta(accion, cantidad = 0) {
+  try {
+    const estado = salaActual.game_state;
+    const jugadores = salaActual.players || [];
+    const idJugador = usuario.id;
+    const apuestas = estado.apuestas || {};
+
+    if (accion === 'apostar') {
+      apuestas[idJugador] = (apuestas[idJugador] || 0) + cantidad;
+    } else if (accion === 'pasar') {
+      // pasar no cambia apuesta
+    } else if (accion === 'retirarse') {
+      // eliminar del juego
+      salaActual.players = jugadores.filter(j => j.id !== idJugador);
+    }
+
+    // determinar si todos han apostado lo mismo o se retiraron
+    const activos = salaActual.players.map(j => j.id);
+    const activas = activos.map(id => apuestas[id] || 0);
+    const maxApuesta = Math.max(...activas);
+    const todosIguales = activas.every(a => a === maxApuesta);
+
+    let nuevaFase = 'apuestas';
+    let turnoActual = estado.turnoActual + 1;
+    if (turnoActual >= salaActual.players.length) turnoActual = 0;
+
+    if (todosIguales || salaActual.players.length === 1) {
+      nuevaFase = 'finApuestas';
+    }
+
+    await supabaseClient.from('rooms').update({
+      game_state: { ...estado, apuestas, turnoActual, fase: nuevaFase },
+      players: salaActual.players
+    }).eq('id', salaActual.id);
+  } catch (e) { mostrarError(e); }
+}
+
 </script>
 </body>
 </html>
