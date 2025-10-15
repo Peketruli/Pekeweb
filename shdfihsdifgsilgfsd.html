@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Juego de Cartas - Online</title>
 <style>
-/* --- tu CSS prácticamente igual al original --- */
 body {
   font-family: Arial, sans-serif;
   background:#111;
@@ -225,340 +224,168 @@ input, select {
 
 <div id="debugErrors"></div>
 
-<!-- cargamos la versión UMD del cliente Supabase -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
 <script>
-/* ------------- Inicialización segura ------------- */
-if (!window.supabase) {
-  document.getElementById('debugErrors').innerText = 'ERROR: no se ha cargado la librería de Supabase desde CDN.';
-} 
-
+/* === CONFIGURACIÓN SUPABASE === */
 const supabaseClient = window.supabase.createClient(
   'https://jdvwlfogkzrzovepzjqa.supabase.co',
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'
 );
-
 const debugErrorsEl = document.getElementById('debugErrors');
-function mostrarError(e){
-  console.error(e);
-  const txt = e && e.message ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
-  debugErrorsEl.innerHTML += `<div>${new Date().toLocaleTimeString()} → ${txt}</div>`;
-}
+function mostrarError(e){console.error(e);debugErrorsEl.innerHTML += `<div>${new Date().toLocaleTimeString()} → ${e.message||e}</div>`;}
 
-/* ID seguro para navegadores antiguos */
-function generarID(){ return 'id-'+Math.floor(Math.random()*1e16); }
-let usuario = JSON.parse(localStorage.getItem('currentUser')) || { id: generarID(), username: "Jugador" + Math.floor(Math.random()*1000) };
+/* === VARIABLES === */
+function generarID(){return 'id-'+Math.floor(Math.random()*1e16);}
+let usuario = JSON.parse(localStorage.getItem('currentUser')) || { id: generarID(), username: "Jugador"+Math.floor(Math.random()*1000)};
 localStorage.setItem('currentUser', JSON.stringify(usuario));
-let salaActual = null;
+let salaActual=null;
+let canalRealtime=null;
 
-/* Elementos */
-const fichaResumen = document.getElementById('fichaResumen');
-const infoJugador = document.getElementById('infoJugador');
-const fichasPanel = document.getElementById('fichasPanel');
-const jugadoresSala = document.getElementById('jugadoresSala');
-const iniciarPartidaBtn = document.getElementById('iniciarPartidaBtn');
-const tableroContainer = document.getElementById('tableroContainer');
-const salasCard = document.getElementById('salasCard');
-const conversionCard = document.getElementById('conversionCard');
+/* === ELEMENTOS === */
+const fichaResumen=document.getElementById('fichaResumen');
+const infoJugador=document.getElementById('infoJugador');
+const fichasPanel=document.getElementById('fichasPanel');
+const jugadoresSala=document.getElementById('jugadoresSala');
+const iniciarPartidaBtn=document.getElementById('iniciarPartidaBtn');
+const tableroContainer=document.getElementById('tableroContainer');
+const salasCard=document.getElementById('salasCard');
+const conversionCard=document.getElementById('conversionCard');
 
-/* ========== FUNCIONES ========= */
-
+/* === FUNCIONES AUX === */
 async function obtenerDatosUsuario(){
   try{
-    const res = await supabaseClient.from('usuarios').select('*').eq('id', usuario.id);
-    if (res.error) throw res.error;
-    const data = res.data;
-    if (!data || data.length === 0) {
-      // crear usuario
-      const insert = await supabaseClient.from('usuarios').insert([{
-        id: usuario.id,
-        username: usuario.username,
-        pekepuntos: 500,
-        ficha_blanca: 0,
-        ficha_roja: 0,
-        ficha_azul: 0,
-        ficha_verde: 0
-      }]);
-      if (insert.error) throw insert.error;
-      return (await obtenerDatosUsuario());
+    const res=await supabaseClient.from('usuarios').select('*').eq('id',usuario.id);
+    if(res.error)throw res.error;
+    if(!res.data.length){
+      await supabaseClient.from('usuarios').insert([{id:usuario.id,username:usuario.username,pekepuntos:500,ficha_blanca:0,ficha_roja:0,ficha_azul:0,ficha_verde:0}]);
+      return obtenerDatosUsuario();
     }
-    return data[0];
-  }catch(e){
-    mostrarError(e);
-    // devolver un objeto por defecto para no romper la UI
-    return { pekepuntos:0, ficha_blanca:0, ficha_roja:0, ficha_azul:0, ficha_verde:0 };
-  }
+    return res.data[0];
+  }catch(e){mostrarError(e);return{pekepuntos:0,ficha_blanca:0,ficha_roja:0,ficha_azul:0,ficha_verde:0};}
 }
-
 async function renderFichas(){
-  const user = await obtenerDatosUsuario();
-  fichaResumen.textContent = `⚪ ${user.ficha_blanca||0} 🔴 ${user.ficha_roja||0} 🔵 ${user.ficha_azul||0} 🟢 ${user.ficha_verde||0}`;
-  const p = document.getElementById('pekepuntosActuales');
-  if(p) p.textContent = user.pekepuntos || 0;
+  const u=await obtenerDatosUsuario();
+  fichaResumen.textContent=`⚪ ${u.ficha_blanca} 🔴 ${u.ficha_roja} 🔵 ${u.ficha_azul} 🟢 ${u.ficha_verde}`;
+  document.getElementById('pekepuntosActuales').textContent=u.pekepuntos;
 }
 
+/* === MOSTRAR SALAS === */
 async function mostrarSalas(){
-  try{
-    const res = await supabaseClient.from('rooms').select('*');
-    if (res.error) throw res.error;
-    const salas = res.data || [];
-    const cont = document.getElementById('salasContainer');
-    cont.innerHTML = '';
-    if (!salas.length){
-      cont.innerHTML = '<p>No hay salas disponibles.</p>';
-      return;
-    }
-    salas.forEach(s=>{
-      const div = document.createElement('div');
-      div.style = 'background:#222;padding:10px;margin:6px 0;border-radius:8px;display:flex;justify-content:space-between;align-items:center;';
-      const playersCount = Array.isArray(s.players) ? s.players.length : 0;
-      div.innerHTML = `<div><strong>${s.name}</strong></div><div style="display:flex;gap:8px;align-items:center;"><span>${playersCount}/5</span><button class="joinBtn">Unirse</button></div>`;
-      const btn = div.querySelector('.joinBtn');
-      btn.onclick = ()=> unirseASala(s);
-      cont.appendChild(div);
-    });
-  }catch(e){ mostrarError(e); }
+  const {data,error}=await supabaseClient.from('rooms').select('*');
+  if(error)return mostrarError(error);
+  const cont=document.getElementById('salasContainer');
+  cont.innerHTML='';
+  if(!data.length)return cont.innerHTML='<p>No hay salas.</p>';
+  data.forEach(s=>{
+    const div=document.createElement('div');
+    div.style='background:#222;padding:10px;margin:6px 0;border-radius:8px;display:flex;justify-content:space-between;align-items:center;';
+    div.innerHTML=`<div><strong>${s.name}</strong></div><div>${(s.players||[]).length}/5 <button>Unirse</button></div>`;
+    div.querySelector('button').onclick=()=>unirseASala(s);
+    cont.appendChild(div);
+  });
 }
 
 /* === UNIRSE A SALA === */
-async function unirseASala(room, creador=false){
-  try{
-    salaActual = room;
-    const jugadores = Array.isArray(room.players) ? room.players.slice() : [];
-    if (!jugadores.some(p=>p.id===usuario.id)){
-      jugadores.push({ id: usuario.id, username: usuario.username });
-      const upd = await supabaseClient.from('rooms').update({ players: jugadores }).eq('id', room.id);
-      if (upd.error) throw upd.error;
-      // traer room actualizada
-      const { data } = await supabaseClient.from('rooms').select('*').eq('id', room.id);
-      if (data && data.length) salaActual = data[0];
-    }
-    salasCard.style.display = 'none';
-    conversionCard.style.display = 'none';
-    tableroContainer.style.display = 'flex';
-    iniciarPartidaBtn.style.display = creador ? 'block' : 'none';
-    await actualizarPanel();
-  }catch(e){ mostrarError(e); }
+async function unirseASala(room,creador=false){
+  const jugadores=room.players||[];
+  if(!jugadores.some(p=>p.id===usuario.id)){
+    jugadores.push({id:usuario.id,username:usuario.username});
+    await supabaseClient.from('rooms').update({players:jugadores}).eq('id',room.id);
+  }
+  salaActual=room;
+  salasCard.style.display='none';
+  conversionCard.style.display='none';
+  tableroContainer.style.display='flex';
+  iniciarPartidaBtn.style.display=creador?'block':'none';
+  await actualizarPanel();
+  suscribirseRealtime(room.id);
+}
+
+/* === SUSCRIPCIÓN EN TIEMPO REAL === */
+function suscribirseRealtime(roomId){
+  if(canalRealtime){supabaseClient.removeChannel(canalRealtime);}
+  canalRealtime=supabaseClient.channel('room-'+roomId)
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'rooms',filter:`id=eq.${roomId}`},payload=>{
+      salaActual=payload.new;
+      actualizarPanel();
+    })
+    .subscribe();
 }
 
 /* === ACTUALIZAR PANEL === */
 async function actualizarPanel(){
-  try{
-    if(!salaActual) return;
-    const res = await supabaseClient.from('rooms').select('*').eq('id', salaActual.id);
-    if(res.error) throw res.error;
-    if(!res.data || res.data.length===0) return;
-    const sala = res.data[0];
-    salaActual = sala; // actualizar referencia
-    const jugadores = sala.players || [];
+  const {data}=await supabaseClient.from('rooms').select('*').eq('id',salaActual.id);
+  if(!data||!data.length)return;
+  salaActual=data[0];
+  const jugadores=salaActual.players||[];
+  infoJugador.innerHTML=`<strong>${usuario.username}</strong><br>Sala: ${salaActual.name}`;
+  fichasPanel.innerHTML=fichaResumen.textContent;
+  jugadoresSala.innerHTML=jugadores.map(j=>`<div>👤 ${j.username}</div>`).join('');
+  for(let i=1;i<=5;i++){
+    document.getElementById('pos'+i).textContent=jugadores[i-1]?jugadores[i-1].username:'';
+  }
 
-    infoJugador.innerHTML = `<strong>${usuario.username}</strong><br>Sala: ${sala.name}`;
-    fichasPanel.innerHTML = fichaResumen.textContent;
-    jugadoresSala.innerHTML = jugadores.map(j=>`<div>👤 ${j.username}</div>`).join('');
-
-    for (let i=1;i<=5;i++){
-      const el = document.getElementById('pos'+i);
-      if(!el) continue;
-      el.textContent = jugadores[i-1] ? jugadores[i-1].username : '';
-    }
-
-    // Mostrar cartas en la mesa (propias y reversos de los demás)
-    const mesa = document.getElementById('mesa-cartas');
-    mesa.innerHTML = '';
-    if (sala.game_state && sala.game_state.manos){
-      const manos = sala.game_state.manos;
-      // mostrar tus cartas delante
-      const misCartas = manos[usuario.id];
-      if (misCartas){
-        misCartas.forEach((c,i)=>{
-          const carta = document.createElement('div');
-          carta.className = 'carta cartaFrente';
-          carta.textContent = `${c.valor}${c.palo}`;
-          carta.style.left = `calc(50% + ${i*70-35}px)`;
-          carta.style.bottom = '30px';
-          carta.style.transform = 'translateX(-50%)';
-          mesa.appendChild(carta);
-        });
-      }
-      // mostrar reversos en las posiciones de los demás
-      jugadores.forEach((j, idx)=>{
-        if (j.id === usuario.id) return;
-        const otras = manos[j.id] || [];
-        otras.forEach((c,i)=>{
-          const pos = document.getElementById('pos'+(idx+1));
-          if(!pos) return;
-          const carta = document.createElement('div');
-          carta.className = 'carta cartaReverso';
-          carta.style.top = '50%';
-          carta.style.left = '50%';
-          carta.style.opacity = 0;
-          mesa.appendChild(carta);
-          requestAnimationFrame(()=>{
-            const rectJugador = pos.getBoundingClientRect();
-            const rectMesa = mesa.getBoundingClientRect();
-            const destX = rectJugador.left + rectJugador.width/2 - rectMesa.left;
-            const destY = rectJugador.top + rectJugador.height/2 - rectMesa.top;
-            requestAnimationFrame(()=>{
-              carta.style.left = destX + 'px';
-              carta.style.top = destY + 'px';
-              carta.style.opacity = 1;
-            });
-          });
-        });
+  const mesa=document.getElementById('mesa-cartas');
+  mesa.innerHTML='';
+  if(salaActual.game_state&&salaActual.game_state.manos){
+    const manos=salaActual.game_state.manos;
+    jugadores.forEach((j,idx)=>{
+      const pos=document.getElementById('pos'+(idx+1));
+      const cartas=manos[j.id]||[];
+      cartas.forEach((c,i)=>{
+        const carta=document.createElement('div');
+        carta.className=(j.id===usuario.id)?'carta cartaFrente':'carta cartaReverso';
+        if(j.id===usuario.id)carta.textContent=`${c.valor}${c.palo}`;
+        const rectJugador=pos.getBoundingClientRect();
+        const rectMesa=mesa.getBoundingClientRect();
+        const x=rectJugador.left+rectJugador.width/2-rectMesa.left;
+        const y=rectJugador.top+rectJugador.height/2-rectMesa.top;
+        carta.style.left=x+'px'; carta.style.top=y+'px';
+        mesa.appendChild(carta);
       });
-    }
-  }catch(e){ mostrarError(e); }
+    });
+  }
 }
 
 /* === CREAR SALA === */
-document.getElementById('crearSalaBtn').onclick = async () => {
-  const nombre = document.getElementById('nombreSala').value.trim();
-  if (!nombre) return alert('Nombre vacío');
-  try{
-    const room = { name: nombre, players: [{ id: usuario.id, username: usuario.username }] };
-    const res = await supabaseClient.from('rooms').insert([room]).select();
-    if (res.error) throw res.error;
-    const nueva = res.data && res.data.length ? res.data[0] : null;
-    if (nueva) unirseASala(nueva, true);
-  }catch(e){ mostrarError(e); }
+document.getElementById('crearSalaBtn').onclick=async()=>{
+  const nombre=document.getElementById('nombreSala').value.trim();
+  if(!nombre)return alert('Nombre vacío');
+  const {data,error}=await supabaseClient.from('rooms').insert([{name:nombre,players:[{id:usuario.id,username:usuario.username}]}]).select();
+  if(error)return mostrarError(error);
+  unirseASala(data[0],true);
+};
+document.getElementById('refreshSalas').onclick=mostrarSalas;
+
+/* === INICIAR PARTIDA === */
+iniciarPartidaBtn.onclick=async()=>{
+  const {data}=await supabaseClient.from('rooms').select('*').eq('id',salaActual.id);
+  const sala=data[0];const jugadores=sala.players||[];
+  if(jugadores[0].id!==usuario.id)return alert('Solo el creador puede iniciar.');
+  const palos=['♠','♥','♦','♣'],valores=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  let baraja=[];for(let p of palos)for(let v of valores)baraja.push({valor:v,palo:p});
+  baraja.sort(()=>Math.random()-0.5);
+  const manos={};jugadores.forEach(j=>manos[j.id]=[baraja.pop(),baraja.pop()]);
+  await supabaseClient.from('rooms').update({game_state:{fase:'reparto',manos,baraja}}).eq('id',sala.id);
 };
 
-document.getElementById('refreshSalas').onclick = mostrarSalas;
-
-/* === INICIAR PARTIDA (animada) === */
-iniciarPartidaBtn.onclick = async () => {
-  try{
-    if(!salaActual) return alert('No hay sala actual');
-    const resSala = await supabaseClient.from('rooms').select('*').eq('id', salaActual.id);
-    if (resSala.error) throw resSala.error;
-    const sala = resSala.data && resSala.data.length ? resSala.data[0] : null;
-    if(!sala) return alert('Sala no encontrada');
-    const jugadores = sala.players || [];
-    if (!jugadores.length) return alert('No hay jugadores');
-    if (jugadores[0].id !== usuario.id) return alert('Solo el creador puede iniciar');
-
-    const mesa = document.getElementById('mesa-cartas');
-    mesa.innerHTML = '';
-
-    // Animación de barajar visual
-    const reversos = [];
-    for (let i=0;i<6;i++){
-      const r = document.createElement('div');
-      r.className = 'carta cartaReverso';
-      r.style.top = '50%';
-      r.style.left = '50%';
-      r.style.animation = `barajar 0.45s ${i*0.08}s infinite alternate`;
-      mesa.appendChild(r);
-      reversos.push(r);
-    }
-    await new Promise(r=>setTimeout(r, 1800));
-    reversos.forEach(x=>x.remove());
-
-    // Crear baraja y repartir lógicamente
-    const palos = ['♠','♥','♦','♣'];
-    const valores = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-    let baraja = [];
-    for (let p of palos) for (let v of valores) baraja.push({valor:v, palo:p});
-    baraja.sort(()=>Math.random()-0.5);
-
-    const manos = {};
-    jugadores.forEach(j => { manos[j.id] = [baraja.pop(), baraja.pop()]; });
-
-    // Guardar estado (como JSON serializable)
-    const updateRes = await supabaseClient.from('rooms').update({ game_state: { fase: 'reparto', manos, baraja } }).eq('id', salaActual.id);
-    if (updateRes.error) throw updateRes.error;
-
-    // Forzar mostrar tablero y calcular posiciones
-    tableroContainer.style.display = 'flex';
-    await new Promise(r => requestAnimationFrame(r));
-
-    // Repartir animado: creamos cartas en centro y las movemos a cada pos
-    for (let i=0;i<jugadores.length;i++){
-      const jugador = jugadores[i];
-      const posEl = document.getElementById('pos' + (i+1));
-      if (!posEl) continue;
-
-      for (let c=0;c<2;c++){
-        const carta = document.createElement('div');
-        carta.className = 'carta cartaReverso';
-        carta.style.top = '50%';
-        carta.style.left = '50%';
-        carta.style.opacity = 0;
-        carta.style.transition = 'all 0.55s ease';
-        mesa.appendChild(carta);
-
-        // animar hacia la posición (calculamos en next frame)
-        requestAnimationFrame(()=>{
-          const rectJugador = posEl.getBoundingClientRect();
-          const rectMesa = mesa.getBoundingClientRect();
-          const destX = rectJugador.left + rectJugador.width/2 - rectMesa.left;
-          const destY = rectJugador.top + rectJugador.height/2 - rectMesa.top;
-
-          requestAnimationFrame(()=>{
-            carta.style.left = destX + 'px';
-            carta.style.top = destY + 'px';
-            carta.style.opacity = 1;
-          });
-        });
-
-        // Si la carta es tuya, revelarla después
-        if (jugador.id === usuario.id){
-          setTimeout(()=>{
-            carta.className = 'carta cartaFrente';
-            const cardObj = manos[jugador.id][c];
-            carta.textContent = `${cardObj.valor}${cardObj.palo}`;
-          }, 700 + c*120 + i*250);
-        }
-        // espera pequeña entre cartas para efecto reparto secuencial
-        await new Promise(r=>setTimeout(r, 120));
-      }
-    }
-
-    // refrescar panel para que muestre cartas en sus posiciones (reversos + tuyas)
-    setTimeout(()=> actualizarPanel(), 600);
-  }catch(e){ mostrarError(e); }
+/* === SALIR === */
+document.getElementById('salirBtn').onclick=async()=>{
+  const {data}=await supabaseClient.from('rooms').select('*').eq('id',salaActual.id);
+  const sala=data[0];const nuevos=(sala.players||[]).filter(p=>p.id!==usuario.id);
+  await supabaseClient.from('rooms').update({players:nuevos}).eq('id',sala.id);
+  supabaseClient.removeChannel(canalRealtime);
+  salaActual=null;
+  tableroContainer.style.display='none';
+  salasCard.style.display='block';
+  conversionCard.style.display='block';
+  mostrarSalas();
 };
 
-/* === SALIR SALA === */
-document.getElementById('salirBtn').onclick = async () => {
-  try{
-    if(!salaActual) return;
-    const res = await supabaseClient.from('rooms').select('*').eq('id', salaActual.id);
-    if(res.error) throw res.error;
-    const sala = res.data && res.data.length ? res.data[0] : null;
-    if(!sala) return;
-    const nuevos = (sala.players || []).filter(p => p.id !== usuario.id);
-    await supabaseClient.from('rooms').update({ players: nuevos }).eq('id', sala.id);
-    salaActual = null;
-    tableroContainer.style.display = 'none';
-    salasCard.style.display = 'block';
-    conversionCard.style.display = 'block';
-    mostrarSalas();
-  }catch(e){ mostrarError(e); }
-};
-
-/* === INICIO (DOMContentLoaded) === */
-window.addEventListener('DOMContentLoaded', async () => {
-  try{
-    await renderFichas();
-    await mostrarSalas();
-
-    // reconectar si ya estabas en una sala (opcional)
-    try{
-      const { data: salas } = await supabaseClient.from('rooms').select('*');
-      if (salas && salas.length){
-        const salaEncontrada = salas.find(s => (s.players || []).some(p => p.id === usuario.id));
-        if (salaEncontrada){
-          // unir sin preguntar (para simplificar)
-          salaActual = salaEncontrada;
-          salasCard.style.display='none';
-          conversionCard.style.display='none';
-          tableroContainer.style.display='flex';
-          await actualizarPanel();
-        }
-      }
-    }catch(e){ /* no crítico */ }
-  }catch(e){ mostrarError(e); }
+/* === INICIO === */
+window.addEventListener('DOMContentLoaded',async()=>{
+  await renderFichas();
+  await mostrarSalas();
 });
 </script>
 </body>
