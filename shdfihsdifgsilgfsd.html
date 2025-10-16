@@ -265,6 +265,9 @@ const conversionCard = document.getElementById('conversionCard');
 const mesa = document.getElementById('mesa');
 const mesaCartas = document.getElementById('mesa-cartas');
 const panelLateral = document.getElementById('panelLateral');
+const salasContainer = document.getElementById('salasContainer');
+const crearSalaBtn = document.getElementById('crearSalaBtn');
+const nombreSalaInput = document.getElementById('nombreSalaInput');
 
 /* ===================== SUPABASE ===================== */
 const supabaseClient = window.supabase?.createClient(
@@ -296,7 +299,7 @@ async function renderFichas(){
   document.getElementById('pekepuntosActuales').textContent = user.pekepuntos||0;
 }
 
-/* Canjear pekepuntos por fichas */
+/* ===================== CANJEAR FICHAS ===================== */
 document.getElementById('canjearBtn').addEventListener('click', async ()=>{
   try{
     const tipo = parseInt(document.getElementById('tipoFicha').value);
@@ -320,9 +323,8 @@ async function mostrarSalas(){
   try{
     const { data: salas, error } = await supabaseClient.from('room').select('*').order('created_at',{ascending:false});
     if(error) throw error;
-    const cont = document.getElementById('salasContainer');
-    cont.innerHTML = '';
-    if(!salas.length){ cont.innerHTML='<p>No hay salas disponibles.</p>'; return; }
+    salasContainer.innerHTML = '';
+    if(!salas.length){ salasContainer.innerHTML='<p>No hay salas disponibles.</p>'; return; }
     salas.forEach(s=>{
       const div = document.createElement('div');
       div.style = 'background:#222;padding:10px;margin:6px 0;border-radius:8px;display:flex;justify-content:space-between;align-items:center;';
@@ -332,11 +334,30 @@ async function mostrarSalas(){
                          <span>${playersCount}/5</span><button class="joinBtn">Unirse</button>
                        </div>`;
       div.querySelector('.joinBtn').onclick = ()=> unirseASala(s);
-      cont.appendChild(div);
+      salasContainer.appendChild(div);
     });
   }catch(e){ mostrarError(e); }
 }
 
+/* ===================== CREAR SALA ===================== */
+crearSalaBtn.addEventListener('click', async ()=>{
+  const nombre = nombreSalaInput.value.trim();
+  if(!nombre) return alert('Ingresa un nombre de sala');
+  try{
+    const { data, error } = await supabaseClient.from('room').insert([{
+      id: generarID(),
+      name: nombre,
+      players: [],
+      game_state: {}
+    }]).select();
+    if(error) throw error;
+    mostrarSalas();
+    alert('Sala creada correctamente!');
+    nombreSalaInput.value='';
+  }catch(e){ mostrarError(e); alert('Error creando sala'); }
+});
+
+/* ===================== UNIRSE A SALA ===================== */
 async function unirseASala(room){
   try{
     salaActual = room;
@@ -349,6 +370,7 @@ async function unirseASala(room){
   }catch(e){ mostrarError(e); }
 }
 
+/* ===================== SUSCRIPCIONES ===================== */
 async function suscribirseASala(idSala){
   if(canalSala) await supabaseClient.removeChannel(canalSala);
   canalSala = supabaseClient.channel(`room-${idSala}`)
@@ -368,9 +390,6 @@ async function actualizarPanel(){
   infoJugador.innerHTML=`<strong>${escapeHtml(usuario.username)}</strong><br>Sala: ${escapeHtml(salaActual.name||'')}`;
   fichasPanel.innerHTML=fichaResumen.textContent;
   jugadoresSala.innerHTML = jugadores.map(j=>`<div>👤 ${escapeHtml(j.username)}</div>`).join('');
-
-  // posiciones
-  for(let i=1;i<=5;i++){ document.getElementById('pos'+i).textContent = jugadores[i-1]?jugadores[i-1].username:''; }
 
   // cartas
   mesaCartas.innerHTML='';
@@ -417,7 +436,6 @@ iniciarPartidaBtn.addEventListener('click', async ()=>{
   await renderFichas();
   await mostrarSalas();
 
-  // suscripción global de cambios de salas
   canalGlobal = supabaseClient.channel('salas-global')
     .on('postgres_changes',{event:'*',schema:'public',table:'room'},payload=>{
       mostrarSalas();
