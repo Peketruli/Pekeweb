@@ -12,33 +12,51 @@
       color: white;
       font-family: sans-serif;
     }
+
     #ui {
       position: absolute;
       top: 10px;
       left: 10px;
       background: rgba(0, 0, 0, 0.6);
-      padding: 10px 15px;
-      border-radius: 8px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .force-bar {
+      width: 150px;
+      height: 14px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 7px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+
+    .force-fill {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(90deg, #00ff88, #ff0000);
+      transition: width 0.05s;
     }
   </style>
 </head>
 <body>
-  <div id="ui">🏌️‍♂️ Arrastra con el ratón y suelta para golpear</div>
+  <div id="ui">
+    <div>🏌️‍♂️ Arrastra con el ratón y suelta para golpear</div>
+    <div>Golpes: <span id="golpes">0</span></div>
+    <div class="force-bar">
+      <div id="force-fill" class="force-fill"></div>
+    </div>
+  </div>
 
-  <!-- Three.js desde CDN -->
   <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
-
   <script>
     // ====== ESCENA Y CÁMARA ======
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x2b7a0b); // verde campo
+    scene.background = new THREE.Color(0x2b7a0b);
 
-    const camera = new THREE.PerspectiveCamera(
-      75,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    );
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 8, 12);
     camera.lookAt(0, 0, 0);
 
@@ -52,7 +70,7 @@
     scene.add(light);
     scene.add(new THREE.AmbientLight(0x808080));
 
-    // ====== CAMPO (SUELO) ======
+    // ====== CAMPO ======
     const fieldGeometry = new THREE.PlaneGeometry(20, 20);
     const fieldMaterial = new THREE.MeshStandardMaterial({ color: 0x3bb143 });
     const field = new THREE.Mesh(fieldGeometry, fieldMaterial);
@@ -86,16 +104,30 @@
     wall4.position.set(10, 0.25, 0);
     scene.add(wall1, wall2, wall3, wall4);
 
-    // ====== FÍSICAS SIMPLES ======
+    // ====== VARIABLES DE JUEGO ======
     let velocity = new THREE.Vector3(0, 0, 0);
     let dragging = false;
     let dragStart = new THREE.Vector2();
     let dragEnd = new THREE.Vector2();
+    let golpes = 0;
 
-    // ====== EVENTOS DE RATÓN ======
+    const forceFill = document.getElementById("force-fill");
+    const golpesDisplay = document.getElementById("golpes");
+
+    // ====== EVENTOS RATÓN ======
     document.addEventListener("mousedown", (e) => {
       dragging = true;
       dragStart.set(e.clientX, e.clientY);
+    });
+
+    document.addEventListener("mousemove", (e) => {
+      if (dragging) {
+        dragEnd.set(e.clientX, e.clientY);
+        const dx = dragStart.x - dragEnd.x;
+        const dy = dragStart.y - dragEnd.y;
+        const strength = Math.min(Math.sqrt(dx * dx + dy * dy) / 5, 100);
+        forceFill.style.width = strength + "%";
+      }
     });
 
     document.addEventListener("mouseup", (e) => {
@@ -103,9 +135,17 @@
         dragEnd.set(e.clientX, e.clientY);
         const dx = dragStart.x - dragEnd.x;
         const dy = dragStart.y - dragEnd.y;
-        const force = 0.02;
-        velocity.x = dx * force;
-        velocity.z = dy * force;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const force = Math.min(distance * 0.02, 3); // límite de fuerza
+
+        const angle = Math.atan2(dy, dx);
+        velocity.x = Math.cos(angle + Math.PI) * force;
+        velocity.z = Math.sin(angle + Math.PI) * force;
+
+        golpes++;
+        golpesDisplay.textContent = golpes;
+
+        forceFill.style.width = "0%";
       }
       dragging = false;
     });
@@ -114,27 +154,27 @@
     function animate() {
       requestAnimationFrame(animate);
 
-      // Movimiento de la bola
+      // Movimiento bola
       ball.position.x += velocity.x;
       ball.position.z += velocity.z;
 
       // Fricción
       velocity.multiplyScalar(0.98);
 
-      // Rebotes con bordes
+      // Rebotes
       if (ball.position.x > 9.5 || ball.position.x < -9.5) velocity.x *= -0.8;
       if (ball.position.z > 9.5 || ball.position.z < -9.5) velocity.z *= -0.8;
 
-      // Limitar posición dentro del campo
       ball.position.x = Math.max(-9.5, Math.min(9.5, ball.position.x));
       ball.position.z = Math.max(-9.5, Math.min(9.5, ball.position.z));
 
-      // Detección del agujero
+      // Comprobar agujero
       const dist = ball.position.distanceTo(hole.position);
       if (dist < 0.5 && velocity.length() < 0.1) {
         ball.position.copy(hole.position);
         velocity.set(0, 0, 0);
-        document.getElementById("ui").innerHTML = "⛳ ¡Has metido la bola!";
+        document.getElementById("ui").innerHTML =
+          "⛳ ¡Has metido la bola!<br>Golpes totales: " + golpes;
       }
 
       renderer.render(scene, camera);
@@ -150,4 +190,4 @@
     });
   </script>
 </body>
-</html>
+</html>  
