@@ -3,148 +3,101 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mini Golf 3D</title>
+<title>F1 3D</title>
 <style>
-body { margin:0; overflow:hidden; background:#2b7a0b; font-family:sans-serif; }
-#ui {
-  position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.6);
-  padding:10px 15px; border-radius:8px; color:#fff; font-size:14px;
-}
-.force-bar { width:200px; height:14px; background:rgba(255,255,255,0.2); border-radius:7px; overflow:hidden; margin-top:4px; }
-.force-fill { width:0%; height:100%; background:linear-gradient(90deg,#00ff88,#ff0000); transition:width 0.05s; }
+body { margin:0; overflow:hidden; background:#87CEEB; }
+#ui { position:absolute; top:10px; left:10px; color:white; font-family:sans-serif; font-size:16px; background:rgba(0,0,0,0.5); padding:8px; border-radius:6px;}
 </style>
 </head>
 <body>
-<div id="ui">
-  <div>Arrastra hacia atrás y suelta para golpear</div>
-  <div>Golpes: <span id="golpes">0</span></div>
-  <div class="force-bar"><div id="force-fill" class="force-fill"></div></div>
-</div>
-
+<div id="ui">Velocidad: <span id="speed">0</span></div>
 <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
-
 <script>
-/* ESCENA */
+// ===== ESCENA Y CÁMARA =====
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
-camera.position.set(0, 6, 12);
-camera.lookAt(0,0,0);
-
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* LUCES */
+// ===== LUCES =====
 const light = new THREE.DirectionalLight(0xffffff,1);
 light.position.set(10,20,10); scene.add(light);
 scene.add(new THREE.AmbientLight(0x404040));
 
-/* PISTA */
-const pistaGeom = new THREE.PlaneGeometry(20,8,1,1);
-const pistaMat = new THREE.MeshStandardMaterial({color:0x3bb143});
-const pista = new THREE.Mesh(pistaGeom, pistaMat);
+// ===== PISTA =====
+const pistaGeom = new THREE.PlaneGeometry(20,200);
+const pistaMat = new THREE.MeshStandardMaterial({color:0x333333});
+const pista = new THREE.Mesh(pistaGeom,pistaMat);
 pista.rotation.x = -Math.PI/2;
 scene.add(pista);
 
-/* BORDES */
-const bordes = [];
-const wallMat = new THREE.MeshStandardMaterial({color:0x228b22});
-bordes.push(new THREE.Mesh(new THREE.BoxGeometry(0.5,1,8),wallMat));
-bordes.push(new THREE.Mesh(new THREE.BoxGeometry(0.5,1,8),wallMat));
-bordes.push(new THREE.Mesh(new THREE.BoxGeometry(20,1,0.5),wallMat));
-bordes.push(new THREE.Mesh(new THREE.BoxGeometry(20,1,0.5),wallMat));
-bordes[0].position.set(-10,0.5,0);
-bordes[1].position.set(10,0.5,0);
-bordes[2].position.set(0,0.5,-4);
-bordes[3].position.set(0,0.5,4);
-bordes.forEach(b=>scene.add(b));
+// Bordes
+const wallMat = new THREE.MeshStandardMaterial({color:0x228B22});
+const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.5,2,200), wallMat);
+leftWall.position.set(-10,1,0);
+const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.5,2,200), wallMat);
+rightWall.position.set(10,1,0);
+scene.add(leftWall,rightWall);
 
-/* AGUJERO */
-const holeGeom = new THREE.CylinderGeometry(0.3,0.3,0.1,32);
-const holeMat = new THREE.MeshStandardMaterial({color:0x000000});
-const hole = new THREE.Mesh(holeGeom,holeMat);
-hole.position.set(8,0.05,0);
-scene.add(hole);
+// ===== COCHE =====
+const carGeom = new THREE.BoxGeometry(1,0.5,2);
+const carMat = new THREE.MeshStandardMaterial({color:0xff0000});
+const car = new THREE.Mesh(carGeom,carMat);
+car.position.y = 0.25;
+car.position.z = -90;
+scene.add(car);
 
-/* BOLA */
-const ballGeom = new THREE.SphereGeometry(0.3,32,32);
-const ballMat = new THREE.MeshStandardMaterial({color:0xffffff});
-const ball = new THREE.Mesh(ballGeom,ballMat);
-ball.position.set(-8,0.3,0);
-scene.add(ball);
+// ===== VARIABLES JUEGO =====
+let speed = 0;
+const maxSpeed = 1.5;
+const accel = 0.02;
+const brake = 0.04;
+const friction = 0.98;
+let turn = 0;
 
-/* JUEGO */
-let golpes = 0;
-let velocity = new THREE.Vector3(0,0,0);
-let dragging=false, dragStart=new THREE.Vector2(), dragEnd=new THREE.Vector2();
-const forceFill = document.getElementById("force-fill");
-const golpesDisp = document.getElementById("golpes");
+// Teclas
+const keys = {};
+document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
 
-document.addEventListener("mousedown",(e)=>{
-  if(velocity.length()<0.01){
-    dragging=true; dragStart.set(e.clientX,e.clientY);
-  }
-});
+// UI
+const speedUI = document.getElementById("speed");
 
-document.addEventListener("mousemove",(e)=>{
-  if(dragging){
-    dragEnd.set(e.clientX,e.clientY);
-    const dx = dragStart.x - dragEnd.x;
-    const dy = dragStart.y - dragEnd.y;
-    const fuerza = Math.min(Math.sqrt(dx*dx + dy*dy)/3,100);
-    forceFill.style.width=fuerza+"%";
-  }
-});
-
-document.addEventListener("mouseup",(e)=>{
-  if(dragging){
-    dragging=false;
-    dragEnd.set(e.clientX,e.clientY);
-    const dx = dragStart.x - dragEnd.x;
-    const dy = dragStart.y - dragEnd.y;
-    const fuerza = Math.min(Math.sqrt(dx*dx + dy*dy)/3,3);
-
-    // 🔹 Dirección opuesta al arrastre
-    const angle = Math.atan2(dy, dx);
-    velocity.x = -Math.cos(angle) * fuerza;  // 🔹 invertir
-    velocity.z = -Math.sin(angle) * fuerza;  // 🔹 invertir
-
-    golpes++;
-    golpesDisp.textContent = golpes;
-    forceFill.style.width="0%";
-  }
-});
-
-/* LOOP */
+// ===== LOOP =====
 function animate(){
   requestAnimationFrame(animate);
 
-  // mover bola
-  ball.position.add(velocity);
+  // Aceleración
+  if(keys['arrowup']) speed += accel;
+  if(keys['arrowdown']) speed -= brake;
+  speed *= friction;
+  speed = Math.max(Math.min(speed,maxSpeed),-maxSpeed);
+  speedUI.textContent = speed.toFixed(2);
 
-  // fricción
-  velocity.multiplyScalar(0.95);
-  if(velocity.length()<0.001) velocity.set(0,0,0);
+  // Giro
+  if(keys['arrowleft']) car.rotation.y += 0.03 * (speed/maxSpeed);
+  if(keys['arrowright']) car.rotation.y -= 0.03 * (speed/maxSpeed);
 
-  // rebotes
-  if(ball.position.x<-10||ball.position.x>10) velocity.x*=-0.7;
-  if(ball.position.z<-4||ball.position.z>4) velocity.z*=-0.7;
-  ball.position.x = Math.max(-10,Math.min(10,ball.position.x));
-  ball.position.z = Math.max(-4,Math.min(4,ball.position.z));
+  // Movimiento
+  car.position.x -= Math.sin(car.rotation.y)*speed;
+  car.position.z -= Math.cos(car.rotation.y)*speed;
 
-  // comprobar agujero
-  const dist = ball.position.distanceTo(hole.position);
-  if(dist<0.35 && velocity.length()<0.1){
-    alert("¡Hoyo en "+golpes+" golpes!");
-    location.reload();
-  }
+  // Cámara detrás del coche
+  camera.position.x = car.position.x - Math.sin(car.rotation.y)*5;
+  camera.position.y = car.position.y + 3;
+  camera.position.z = car.position.z - Math.cos(car.rotation.y)*5;
+  camera.lookAt(car.position);
+
+  // Mantener coche dentro pista
+  car.position.x = Math.max(-9.5,Math.min(9.5,car.position.x));
 
   renderer.render(scene,camera);
 }
 animate();
 
 window.addEventListener("resize",()=>{
-  camera.aspect=innerWidth/innerHeight;
+  camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 });
