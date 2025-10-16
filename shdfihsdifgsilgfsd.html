@@ -1093,6 +1093,123 @@ window.addEventListener('DOMContentLoaded', async ()=>{
     }catch(e){ /* no crítico */ }
   }catch(e){ mostrarError(e); }
 });
+
+  /* animación de cartas comunitarias (aparecen en centro y se quedan) */
+async function animarAparicionCartasComunitarias(cartas){
+  try{
+    mesaCartas.innerHTML = '';
+    cartas.forEach((card, idx)=>{
+      const div = crearCartaElemento(card,'carta cartaFrente carta-comunitaria');
+      div.style.left = '50%';
+      div.style.top = '50%';
+      div.style.opacity = 0;
+      mesaCartas.appendChild(div);
+      setTimeout(()=>{
+        div.style.left = `calc(50% + ${(idx-2)*70}px)`;
+        div.style.top = '40%';
+        div.style.opacity = 1;
+      }, idx * 250);
+    });
+    await new Promise(r=>setTimeout(r, cartas.length*300 + 500));
+  }catch(e){ mostrarError(e); }
+}
+
+/* revelar manos de todos los jugadores restantes */
+async function revelarManosTodos(){
+  try{
+    mesaCartas.innerHTML = '';
+    const { data } = await supabaseClient.from('room').select('*').eq('id', salaActual.id).limit(1);
+    salaActual = data[0];
+    const gs = salaActual.game_state || {};
+    const jugadores = salaActual.players || [];
+
+    // mostrar comunitarias
+    if (Array.isArray(gs.community)){
+      gs.community.forEach((card, idx)=>{
+        const div = crearCartaElemento(card,'carta cartaFrente carta-comunitaria');
+        div.style.left = `calc(50% + ${(idx-2)*70}px)`;
+        div.style.top = '40%';
+        mesaCartas.appendChild(div);
+      });
+    }
+
+    // mostrar todas las manos de los jugadores activos
+    jugadores.forEach((j, idx)=>{
+      if (playerFolded(j.id, jugadores)) return;
+      const mano = gs.manos[j.id];
+      if (!mano) return;
+      mano.forEach((c,i)=>{
+        const carta = crearCartaElemento(c,'carta cartaFrente');
+        carta.style.left = `calc(50% + ${(i*70 - 35)}px)`;
+        carta.style.bottom = `${20 + idx*30}px`;
+        carta.style.transform = 'translateX(-50%)';
+        mesaCartas.appendChild(carta);
+      });
+    });
+
+    await new Promise(r=>setTimeout(r, 1500));
+  }catch(e){ mostrarError(e); }
+}
+
+/* determinar ganador de forma simple (random entre los no folded) */
+function determinarGanador(){
+  const jugadores = salaActual.players || [];
+  const activos = jugadores.filter(p=>!p.folded);
+  if (activos.length === 0) return jugadores[0] || {id:usuario.id, username:usuario.username};
+  const ganador = activos[Math.floor(Math.random()*activos.length)];
+  console.log('GANADOR:', ganador.username);
+  return ganador;
+}
+
+/* animar fichas hacia el ganador */
+async function animarChipsToWinner(ganadorId){
+  try{
+    const fichas = Array.from(document.querySelectorAll('.fichaCentral'));
+    if (!fichas.length) return;
+    const jugadores = salaActual.players || [];
+    const idx = jugadores.findIndex(p=>p.id===ganadorId);
+    if (idx<0) return;
+    const posEl = document.getElementById('pos'+(idx+1));
+    if (!posEl) return;
+
+    const rectJugador = posEl.getBoundingClientRect();
+    const rectMesa = mesa.getBoundingClientRect();
+    const destX = rectJugador.left + rectJugador.width/2 - rectMesa.left;
+    const destY = rectJugador.top + rectJugador.height/2 - rectMesa.top;
+
+    fichas.forEach((chip,i)=>{
+      setTimeout(()=>{
+        chip.style.transition = 'all 0.7s ease';
+        chip.style.left = destX + 'px';
+        chip.style.top = destY + 'px';
+        chip.style.opacity = 0;
+      }, i*80);
+    });
+    await new Promise(r=>setTimeout(r, 1500));
+    fichas.forEach(f=>f.remove());
+  }catch(e){ mostrarError(e); }
+}
+
+/* Crear elemento carta visual */
+function crearCartaElemento(card, className){
+  const div = document.createElement('div');
+  div.className = className;
+  div.textContent = card ? `${card.valor}${card.palo}` : '';
+  div.style.position = 'absolute';
+  div.style.transition = 'all 0.4s ease';
+  div.style.opacity = 1;
+  return div;
+}
+
+/* Inicialización automática al cargar */
+window.addEventListener('DOMContentLoaded', async ()=>{
+  try{
+    await renderFichas();
+    await mostrarSalas();
+    await iniciarSuscripciones();
+  }catch(e){ mostrarError(e); }
+});
+
 </script>
 </body>
 </html>
