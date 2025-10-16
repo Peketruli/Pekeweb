@@ -146,74 +146,96 @@ let selectedNumbers = new Set();
 let selectedColor = null;
 let selectedParity = null;
 
-const numbers = Array.from({length:37},(_,i)=>i);
+const numbers = Array.from({ length: 37 }, (_, i) => i);
 const redNumbers = [1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36];
 function getColor(num){ return num===0?'green':redNumbers.includes(num)?'red':'black'; }
 
 const canvas = document.getElementById("roulette");
 const ctx = canvas.getContext("2d");
 const radius = canvas.width/2;
-let currentAngle=0, spinning=false, finalNumber=null;
+let currentAngle = 0, spinning = false, finalNumber = null;
 
-// --- Dibujar ruleta ---
-function drawRoulette(){
-    const step = 2*Math.PI/numbers.length;
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.save();
-    ctx.translate(radius,radius);
-    ctx.rotate(currentAngle);
-    numbers.forEach((num,i)=>{
-        const start=i*step, end=start+step;
-        ctx.beginPath();
-        ctx.moveTo(0,0);
-        ctx.arc(0,0,radius,start,end);
-        ctx.fillStyle=getColor(num);
-        ctx.fill();
-        ctx.strokeStyle="white";
-        ctx.stroke();
-        ctx.save();
-        ctx.rotate(start+step/2);
-        ctx.fillStyle="white";
-        ctx.textAlign="right";
-        ctx.font="14px Arial";
-        ctx.fillText(num,num<10?radius-15:radius-20,5);
-        ctx.restore();
-    });
-    ctx.restore();
+/* 🎨 Dibujar la ruleta */
+function drawRoulette() {
+  const step = 2 * Math.PI / numbers.length;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.save();
+  ctx.translate(radius, radius);
+  ctx.rotate(currentAngle);
+
+  numbers.forEach((num, i) => {
+    const start = i * step, end = start + step;
     ctx.beginPath();
-    ctx.moveTo(radius-10,0); ctx.lineTo(radius+10,0);
-    ctx.lineWidth=4; ctx.strokeStyle="yellow"; ctx.stroke();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, radius, start, end);
+    ctx.fillStyle = getColor(num);
+    ctx.fill();
+    ctx.strokeStyle = "white";
+    ctx.stroke();
+
+    ctx.save();
+    ctx.rotate(start + step / 2);
+    ctx.fillStyle = "white";
+    ctx.textAlign = "right";
+    ctx.font = "14px Arial";
+    ctx.fillText(num, num < 10 ? radius - 15 : radius - 20, 5);
+    ctx.restore();
+  });
+
+  ctx.restore();
+
+  // marcador
+  ctx.beginPath();
+  ctx.moveTo(radius - 10, 0);
+  ctx.lineTo(radius + 10, 0);
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = "yellow";
+  ctx.stroke();
 }
 
-// --- Girar ruleta ---
-function spinRoulette(){
-    if(spinning) return;
-    if(currentBet<=0){ alert("Debes confirmar la apuesta"); return; }
-    spinning=true;
-    let velocity=Math.random()*0.2+0.25;
-    let deceleration=0.002+Math.random()*0.002;
-    function animate(){
-        if(velocity<=0){
-            spinning=false;
-            const step=2*Math.PI/numbers.length;
-            let idx=Math.floor(((2*Math.PI-(currentAngle%(2*Math.PI)))/step))%numbers.length;
-            finalNumber=numbers[idx];
-            const color=getColor(finalNumber);
-            const parity=finalNumber===0?null:(finalNumber%2===0?"even":"odd");
-            document.getElementById("result").textContent=`Número: ${finalNumber} (${color})`;
-            calculateWinnings(finalNumber,color,parity);
-            return;
-        }
-        currentAngle+=velocity;
-        velocity-=deceleration;
-        drawRoulette();
-        requestAnimationFrame(animate);
+/* 🎯 Girar la ruleta */
+function spinRoulette() {
+  if (spinning) return;
+
+  // Comprobación de conexión
+  if (!navigator.onLine) {
+    alert("No tienes conexión a Internet. No puedes girar la ruleta.");
+    return;
+  }
+
+  if (currentBet <= 0) {
+    alert("Debes confirmar la apuesta");
+    return;
+  }
+
+  spinning = true;
+  let velocity = Math.random() * 0.15 + 0.18;  // velocidad más baja → menos probabilidad de parar justo donde conviene
+  let deceleration = 0.0025 + Math.random() * 0.003;
+
+  function animate() {
+    if (velocity <= 0) {
+      spinning = false;
+      const step = 2 * Math.PI / numbers.length;
+      let idx = Math.floor(((2 * Math.PI - (currentAngle % (2 * Math.PI))) / step)) % numbers.length;
+      finalNumber = numbers[idx];
+      const color = getColor(finalNumber);
+      const parity = finalNumber === 0 ? null : (finalNumber % 2 === 0 ? "even" : "odd");
+
+      document.getElementById("result").textContent = `Número: ${finalNumber} (${color})`;
+      calculateWinnings(finalNumber, color, parity);
+      return;
     }
-    animate();
+
+    currentAngle += velocity;
+    velocity -= deceleration;
+    drawRoulette();
+    requestAnimationFrame(animate);
+  }
+
+  animate();
 }
 
-// --- Cargar Pekepuntos ---
-// --- Cargar Pekepuntos y verificar baneo ---
+/* 💰 Cargar Pekepuntos + verificar baneo */
 async function loadPekePuntos() {
   try {
     currentUser = JSON.parse(localStorage.getItem("currentUser"));
@@ -229,144 +251,134 @@ async function loadPekePuntos() {
       .eq("id", currentUser.id)
       .single();
 
-    if (error) {
-      console.error("Error al cargar Pekepuntos:", error.message);
-      alert("No se han podido cargar los Pekepuntos.");
+    if (error) throw error;
+
+    if (data.banned === true) {
+      alert("Has sido baneado y no puedes jugar a la ruleta.");
+      document.getElementById("confirm-bet-button").disabled = true;
+      document.getElementById("spin-button").disabled = true;
       return;
     }
 
-    if (data) {
-      // ⚡ comprobar si está baneado
-      if (data.banned === true) {
-        alert("Has sido baneado y no puedes jugar a la ruleta.");
-        document.getElementById("confirm-bet-button").disabled = true;
-        document.getElementById("spin-button").disabled = true;
-        return; // no seguimos
-      }
-
-      // ✅ si no está baneado, cargar puntos normalmente
-      currentUser.pekepuntos = data.pekepuntos;
-      document.getElementById("pekePuntos").textContent = `Pekepuntos: ${data.pekepuntos}`;
-      localStorage.setItem("currentUser", JSON.stringify(currentUser));
-    }
+    currentUser.pekepuntos = data.pekepuntos;
+    document.getElementById("pekePuntos").textContent = `Pekepuntos: ${data.pekepuntos}`;
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
   } catch (err) {
-    console.error("Error inesperado:", err);
-    alert("Ha ocurrido un error inesperado al cargar los Pekepuntos.");
+    console.error("Error al cargar Pekepuntos:", err);
+    alert("No se han podido cargar los Pekepuntos.");
   }
 }
 
+/* 🎯 Confirmar apuesta */
+document.getElementById("confirm-bet-button").addEventListener("click", () => {
+  if (!navigator.onLine) {
+    alert("No tienes conexión a Internet.");
+    return;
+  }
 
-// --- Confirmar apuesta ---
-document.getElementById("confirm-bet-button").addEventListener("click",()=>{
-    const amount = parseInt(document.getElementById("bet-amount").value);
-    if(isNaN(amount) || amount <= 0 || amount > currentUser.pekepuntos){
-        alert("Cantidad inválida");
-        return;
-    }
+  const amount = parseInt(document.getElementById("bet-amount").value);
+  if (isNaN(amount) || amount <= 0 || amount > currentUser.pekepuntos) {
+    alert("Cantidad inválida");
+    return;
+  }
 
-    if(selectedNumbers.size===0 && !selectedColor && !selectedParity){
-        alert("Debes seleccionar al menos un número, color o paridad");
-        return;
-    }
+  if (selectedNumbers.size === 0 && !selectedColor && !selectedParity) {
+    alert("Debes seleccionar al menos un número, color o paridad");
+    return;
+  }
 
-    currentBet = amount;
-    currentUser.pekepuntos -= currentBet;
-    document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
+  currentBet = amount;
+  currentUser.pekepuntos -= currentBet;
+  document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
 
-    // Guardar cambios
-    localStorage.setItem("currentUser", JSON.stringify(currentUser));
-    supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
 
-    document.getElementById("spin-button").disabled = false;
+  document.getElementById("spin-button").disabled = false;
 });
 
-// --- Actualizar Pekepuntos ---
-async function updatePoints(wonAmount){
-    if(wonAmount>0) currentUser.pekepuntos += wonAmount;
-    document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
-    await supabase.from("usuarios").update({pekepuntos:currentUser.pekepuntos}).eq("id",currentUser.id);
-    localStorage.setItem("currentUser",JSON.stringify(currentUser));
-    resetSelections();
+/* 🔁 Actualizar puntos */
+async function updatePoints(wonAmount) {
+  if (wonAmount > 0) currentUser.pekepuntos += wonAmount;
+  document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
+  await supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  resetSelections();
 }
 
-// --- Calcular ganancias (ajustado para no dar demasiado) ---
-// --- Calcular ganancias (ahora da el doble de la apuesta al ganar) ---
-function calculateWinnings(number, color, parity){
-    let won = 0;
+/* 🎲 Calcular ganancias (más difícil ganar) */
+function calculateWinnings(number, color, parity) {
+  let won = 0;
 
-    // Calcular cuántas selecciones activas hay
-    let activeBets = selectedNumbers.size + (selectedColor ? 1 : 0) + (selectedParity ? 1 : 0);
+  const activeBets = selectedNumbers.size + (selectedColor ? 1 : 0) + (selectedParity ? 1 : 0);
+  if (activeBets === 0) return;
 
-    if(activeBets === 0) return;
+  const betPerOption = currentBet / activeBets;
 
-    // Dividir la apuesta total entre todas las selecciones
-    let betPerOption = currentBet / activeBets;
+  // 🔸 Recompensas más ajustadas (más difícil)
+  if (selectedNumbers.has(number)) won += betPerOption * 20; // antes 36
+  if (selectedColor && color === selectedColor) won += betPerOption * 1.5; // antes 2
+  if (selectedParity && ((parity === "even" && selectedParity === "even") || (parity === "odd" && selectedParity === "odd")))
+    won += betPerOption * 1.5;
 
-    // Pagar en base a cada acierto
-    if(selectedNumbers.has(number)) won += betPerOption * 36;  // pago estándar número directo
-    if(selectedColor && color === selectedColor) won += betPerOption * 2;  // pago x2
-    if(selectedParity && ((parity==="even" && selectedParity==="even") || (parity==="odd" && selectedParity==="odd"))) 
-        won += betPerOption * 2;
-
-    alert(won > 0 ? `¡Ganaste ${Math.floor(won)} PekePuntos!` : "Perdiste la apuesta");
-
-    updatePoints(Math.floor(won));
+  alert(won > 0 ? `¡Ganaste ${Math.floor(won)} PekePuntos!` : "Perdiste la apuesta");
+  updatePoints(Math.floor(won));
 }
 
+/* 🎯 Crear botones */
+function createBetButtons() {
+  const container = document.getElementById("bet-buttons");
+  numbers.forEach(num => {
+    const btn = document.createElement("button");
+    btn.textContent = num;
+    btn.className = "bet-btn";
+    btn.style.backgroundColor = getColor(num);
+    btn.style.color = num === 0 ? "black" : "white";
+    btn.onclick = () => {
+      if (selectedNumbers.has(num)) { selectedNumbers.delete(num); btn.style.border = ""; }
+      else { selectedNumbers.add(num); btn.style.border = "2px solid yellow"; }
+    };
+    container.appendChild(btn);
+  });
 
+  const optionsContainer = document.getElementById("bet-options");
+  ["red", "black"].forEach(c => {
+    const btn = document.createElement("button");
+    btn.textContent = c;
+    btn.className = "option-btn";
+    btn.style.backgroundColor = c;
+    btn.style.color = "white";
+    btn.onclick = () => { selectedColor = selectedColor === c ? null : c; btn.style.border = selectedColor === c ? "2px solid yellow" : ""; };
+    optionsContainer.appendChild(btn);
+  });
 
-// --- Crear botones de apuesta ---
-function createBetButtons(){
-    const container=document.getElementById("bet-buttons");
-    numbers.forEach(num=>{
-        const btn=document.createElement("button");
-        btn.textContent=num;
-        btn.className="bet-btn";
-        btn.style.backgroundColor=getColor(num);
-        btn.style.color=num===0?'black':'white';
-        btn.onclick=()=> {
-            if(selectedNumbers.has(num)) { selectedNumbers.delete(num); btn.style.border=""; }
-            else { selectedNumbers.add(num); btn.style.border="2px solid yellow"; }
-        };
-        container.appendChild(btn);
-    });
-
-    const optionsContainer=document.getElementById("bet-options");
-    ["red","black"].forEach(c=>{
-        const btn=document.createElement("button");
-        btn.textContent=c;
-        btn.className="option-btn";
-        btn.style.backgroundColor=c;
-        btn.style.color="white";
-        btn.onclick=()=> { selectedColor = selectedColor===c?null:c; btn.style.border=selectedColor===c?"2px solid yellow":""; };
-        optionsContainer.appendChild(btn);
-    });
-
-    ["even","odd"].forEach(p=>{
-        const btn=document.createElement("button");
-        btn.textContent=p==="even"?"Par":"Impar";
-        btn.className="option-btn";
-        btn.style.backgroundColor="#444";
-        btn.style.color="white";
-        btn.onclick=()=> { selectedParity = selectedParity===p?null:p; btn.style.border=selectedParity===p?"2px solid yellow":""; };
-        optionsContainer.appendChild(btn);
-    });
+  ["even", "odd"].forEach(p => {
+    const btn = document.createElement("button");
+    btn.textContent = p === "even" ? "Par" : "Impar";
+    btn.className = "option-btn";
+    btn.style.backgroundColor = "#444";
+    btn.style.color = "white";
+    btn.onclick = () => { selectedParity = selectedParity === p ? null : p; btn.style.border = selectedParity === p ? "2px solid yellow" : ""; };
+    optionsContainer.appendChild(btn);
+  });
 }
 
-// --- Resetear selección ---
-function resetSelections(){
-    selectedNumbers.clear(); selectedColor=null; selectedParity=null; currentBet=0;
-    document.getElementById("spin-button").disabled=true;
-    document.getElementById("bet-amount").value="";
-    document.querySelectorAll(".bet-btn,.option-btn").forEach(b=>b.style.border="");
+/* 🔄 Resetear */
+function resetSelections() {
+  selectedNumbers.clear(); 
+  selectedColor = null; 
+  selectedParity = null; 
+  currentBet = 0;
+  document.getElementById("spin-button").disabled = true;
+  document.getElementById("bet-amount").value = "";
+  document.querySelectorAll(".bet-btn, .option-btn").forEach(b => b.style.border = "");
 }
 
-// --- Inicializar ---
+/* 🚀 Iniciar */
 drawRoulette();
 loadPekePuntos();
 createBetButtons();
-document.getElementById("spin-button").addEventListener("click",spinRoulette);
-
+document.getElementById("spin-button").addEventListener("click", spinRoulette);
 </script>
 </body>
 </html>
