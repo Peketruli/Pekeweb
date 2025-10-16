@@ -385,35 +385,44 @@ async function sumarFichasDB(userId, amount){
 let canalGlobal = null;
 let canalSala = null;
 
-async function iniciarSuscripciones(){
-  try{
-    if (!supabaseClient) return;
-    canalGlobal = supabaseClient
-      .channel('salas-global')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room' }, payload => mostrarSalas())
-      .subscribe();
-  }catch(e){ mostrarError(e); }
+async function iniciarSuscripciones() {
+  if (!supabaseClient) return;
+  
+  canalGlobal = supabaseClient
+    .channel('salas-global')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'room' },
+      () => mostrarSalas()
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') console.log('📡 Subscrito a salas-global');
+    });
 }
 
-async function suscribirseASala(idSala){
-  try{
-    if (!supabaseClient) return;
-    if (canalSala) {
-      try { await supabaseClient.removeChannel(canalSala); } catch(e){/*ignore*/ }
-      canalSala=null;
-    }
-    canalSala = supabaseClient
-      .channel('sala-'+idSala)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'room', filter: `id=eq.${idSala}` }, payload=>{
-        if (payload.new) {
-          salaActual = payload.new;
-          // actualizar UI con la sala nueva
-          actualizarPanel();
-        }
-      })
-      .subscribe();
-  }catch(e){ mostrarError(e); }
+async function suscribirseASala(idSala) {
+  if (!supabaseClient) return;
+
+  if (canalSala) {
+    try { await supabaseClient.removeChannel(canalSala); } catch(e){}
+  }
+
+  canalSala = supabaseClient
+    .channel(`room-${idSala}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'room', filter: `id=eq.${idSala}` },
+      payload => {
+        console.log('📨 Actualización sala recibida', payload);
+        salaActual = payload.new;
+        actualizarPanel(); // refresca la interfaz
+      }
+    )
+    .subscribe((status) => {
+      if (status === 'SUBSCRIBED') console.log(`📡 Subscrito a sala ${idSala}`);
+    });
 }
+
 
 /* ===================== SALAS UI ===================== */
 async function mostrarSalas(){
@@ -1192,7 +1201,7 @@ async function animarChipsToWinner(ganadorId){
 
 /* Crear elemento carta visual */
 function crearCartaElemento(card, className){
-  const div = document.createElement('div');
+  const div = document.creatFeElement('div');
   div.className = className;
   div.textContent = card ? `${card.valor}${card.palo}` : '';
   div.style.position = 'absolute';
