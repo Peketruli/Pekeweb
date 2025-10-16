@@ -164,7 +164,7 @@ input:focus, .poll-option:hover, .back-button:hover, .submit-button:hover, .add-
 <button class="back-button" onclick="goToMainPage()">Volver a la Página Principal</button>
 
 <script>
-// --- Configuración de Supabase solo para almacenar encuestas ---
+// --- Configuración de Supabase ---
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co"; 
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; 
 const { createClient } = supabase;
@@ -172,6 +172,7 @@ const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentPoll = null;
 let pollInterval = null;
+let pollEnded = false;
 
 // Usuario actual (para permisos de crear/eliminar)
 const user = JSON.parse(localStorage.getItem("currentUser"));
@@ -179,6 +180,7 @@ const user = JSON.parse(localStorage.getItem("currentUser"));
 // ID de encuesta que el usuario ya votó (localStorage)
 let votedPollId = localStorage.getItem("votedPollId");
 
+// --- Inicialización ---
 document.addEventListener("DOMContentLoaded", async () => {
   if(user && (user.username === "Peketruli" || user.username === "SabinoArana")){
     document.getElementById("createPoll").style.display = "block";
@@ -187,7 +189,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadActivePoll();
 });
 
-// --- Función para añadir opción al crear encuesta ---
+// --- Añadir opción al crear encuesta ---
 function addOption() {
   const optionsContainer = document.getElementById("optionsContainer");
   const optionCount = optionsContainer.getElementsByClassName("option-input").length + 1;
@@ -218,9 +220,9 @@ async function createPoll() {
   // Limpiar voto previo para nueva encuesta
   localStorage.removeItem("votedPollId");
 
-  // Guardar encuesta en Supabase (solo para mostrar)
+  // Guardar encuesta en Supabase
   const { data, error } = await db.from("polls").insert([
-    { question, options: options.map(o=>({text:o})), duration, creator:user.username, start_time: new Date() }
+    { question, options: options.map(o=>({text:o})), votes: new Array(options.length).fill(0), duration, creator:user.username, start_time: new Date() }
   ]).select().single();
 
   if(error){ 
@@ -231,9 +233,13 @@ async function createPoll() {
   loadPoll(data.id);
 }
 
+// --- Votar ---
 async function vote(optionIndex){
   if(!currentPoll) return;
-
+  if(pollEnded){
+    alert("La encuesta ha terminado. Ya no puedes votar.");
+    return;
+  }
   if(localStorage.getItem("votedPollId") === currentPoll.id){
     alert("Ya votaste en esta encuesta");
     return;
@@ -243,9 +249,8 @@ async function vote(optionIndex){
   localStorage.setItem("votedPollId", currentPoll.id);
 
   // Contar el voto localmente
-  if(!currentPoll.votes) currentPoll.votes = new Array(currentPoll.options.length).fill(0);
   currentPoll.votes[optionIndex]++;
-
+  
   // Guardar votos en Supabase
   const { error } = await db.from("polls").update({ votes: currentPoll.votes }).eq("id", currentPoll.id);
   if(error) alert("Error al registrar el voto: " + error.message);
@@ -254,9 +259,7 @@ async function vote(optionIndex){
   showResults();       // Mostrar resultados
 }
 
-
-
-// --- Cargar la encuesta activa ---
+// --- Cargar encuesta activa ---
 async function loadActivePoll(){
   const { data: polls } = await db.from("polls").select("*").order("created_at",{ascending:false}).limit(1);
   if(polls && polls.length>0) loadPoll(polls[0].id);
@@ -270,7 +273,6 @@ async function loadPoll(pollId){
   // Inicializar votos correctamente
   if(!currentPoll.votes || currentPoll.votes.length !== currentPoll.options.length){
     currentPoll.votes = new Array(currentPoll.options.length).fill(0);
-    // Actualizar la base de datos para no tener problemas al recargar
     await db.from("polls").update({ votes: currentPoll.votes }).eq("id", currentPoll.id);
   }
 
@@ -279,19 +281,34 @@ async function loadPoll(pollId){
   document.getElementById("pollContainer").style.display="block";
 
   if(pollInterval) clearInterval(pollInterval);
+  pollEnded = false;
   startTimer(new Date(poll.start_time).getTime(), poll.duration);
 }
-
 
 // --- Mostrar opciones y votos ---
 function renderPollOptions(){
   const pollOptions = document.getElementById("pollOptions");
   pollOptions.innerHTML = "";
+
+  // Encontrar índice del ganador
+  const maxVotes = Math.max(...currentPoll.votes);
+  const winnerIndex = currentPoll.votes.indexOf(maxVotes);
+
   currentPoll.options.forEach((opt,i)=>{
     const btn = document.createElement("button");
-    btn.className="poll-option";
+    btn.className = "poll-option";
     const votes = currentPoll.votes[i] || 0;
     btn.textContent = `${opt.text} (${votes} votos)`;
+
+    // Resaltar ganador
+    if(pollEnded && i === winnerIndex){
+      btn.style.backgroundColor = "green";
+      btn.style.color = "#fff";
+    }
+
+    // Deshabilitar si la encuesta terminó
+    btn.disabled = pollEnded;
+
     btn.onclick = ()=>vote(i);
     pollOptions.appendChild(btn);
   });
@@ -304,9 +321,11 @@ function startTimer(startTime,duration){
   pollInterval=setInterval(()=>{
     timeLeft--;
     timerElement.textContent = `Tiempo restante: ${timeLeft}s`;
-    if(timeLeft<=0){ 
+    if(timeLeft <= 0){ 
       clearInterval(pollInterval); 
+      pollEnded = true;
       showResults(); 
+      renderPollOptions(); // Bloquear botones y resaltar ganador
     }
   },1000);
 }
