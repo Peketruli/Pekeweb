@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>F1 3D</title>
+<title>F1 3D Circuito</title>
 <style>
 body { margin:0; overflow:hidden; background:#87CEEB; }
 #ui { position:absolute; top:10px; left:10px; color:white; font-family:sans-serif; font-size:16px; background:rgba(0,0,0,0.5); padding:8px; border-radius:6px;}
@@ -22,58 +22,73 @@ document.body.appendChild(renderer.domElement);
 
 // ===== LUCES =====
 const light = new THREE.DirectionalLight(0xffffff,1);
-light.position.set(10,20,10); scene.add(light);
+light.position.set(20,40,20); scene.add(light);
 scene.add(new THREE.AmbientLight(0x404040));
 
 // ===== PISTA =====
-const pistaGeom = new THREE.PlaneGeometry(20,200);
-const pistaMat = new THREE.MeshStandardMaterial({color:0x333333});
-const pista = new THREE.Mesh(pistaGeom,pistaMat);
-pista.rotation.x = -Math.PI/2;
-scene.add(pista);
+// Pista central en S usando varias secciones rectas y curvas
+const pistaMaterial = new THREE.MeshStandardMaterial({color:0x333333});
+const pistas = [];
 
-// Bordes
-const wallMat = new THREE.MeshStandardMaterial({color:0x228B22});
-const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.5,2,200), wallMat);
-leftWall.position.set(-10,1,0);
-const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.5,2,200), wallMat);
-rightWall.position.set(10,1,0);
-scene.add(leftWall,rightWall);
+// Secciones rectas
+for(let i=0;i<5;i++){
+  const seg = new THREE.Mesh(new THREE.BoxGeometry(10,0.2,40), pistaMaterial);
+  seg.position.set(i*8-16,0,0);
+  pistas.push(seg);
+  scene.add(seg);
+}
+
+// Curvas (simples, usando planos inclinados lateralmente)
+for(let i=0;i<4;i++){
+  const curve = new THREE.Mesh(new THREE.BoxGeometry(8,0.2,10), pistaMaterial);
+  curve.rotation.y = (i%2===0?0.5:-0.5);
+  curve.position.set(i*8-12,0,(i%2===0?15:-15));
+  pistas.push(curve);
+  scene.add(curve);
+}
+
+// Bordes (límite de pista)
+const wallMaterial = new THREE.MeshStandardMaterial({color:0x228B22});
+const walls = [];
+for(let i=-100;i<100;i+=10){
+  walls.push(new THREE.Mesh(new THREE.BoxGeometry(0.5,2,10), wallMaterial));
+  walls[walls.length-1].position.set(-5,1,i);
+  scene.add(walls[walls.length-1]);
+  walls.push(new THREE.Mesh(new THREE.BoxGeometry(0.5,2,10), wallMaterial));
+  walls[walls.length-1].position.set(5,1,i);
+  scene.add(walls[walls.length-1]);
+}
 
 // ===== COCHE =====
 const carGeom = new THREE.BoxGeometry(1,0.5,2);
 const carMat = new THREE.MeshStandardMaterial({color:0xff0000});
 const car = new THREE.Mesh(carGeom,carMat);
 car.position.y = 0.25;
-car.position.z = -90;
+car.position.z = -80;
 scene.add(car);
 
 // ===== VARIABLES JUEGO =====
 let speed = 0;
-const maxSpeed = 1.5;
-const accel = 0.02;
-const brake = 0.04;
-const friction = 0.98;
-let turn = 0;
+const maxSpeed = 2;
+const accel = 0.05;
+const brake = 0.07;
+const friction = 0.96;
 
-// Teclas
 const keys = {};
 document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
 document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
 
-// UI
 const speedUI = document.getElementById("speed");
 
 // ===== LOOP =====
 function animate(){
   requestAnimationFrame(animate);
 
-  // Aceleración
+  // Controles
   if(keys['arrowup']) speed += accel;
   if(keys['arrowdown']) speed -= brake;
   speed *= friction;
   speed = Math.max(Math.min(speed,maxSpeed),-maxSpeed);
-  speedUI.textContent = speed.toFixed(2);
 
   // Giro
   if(keys['arrowleft']) car.rotation.y += 0.03 * (speed/maxSpeed);
@@ -83,21 +98,22 @@ function animate(){
   car.position.x -= Math.sin(car.rotation.y)*speed;
   car.position.z -= Math.cos(car.rotation.y)*speed;
 
-  // Cámara detrás del coche
+  // Cámara
   camera.position.x = car.position.x - Math.sin(car.rotation.y)*5;
   camera.position.y = car.position.y + 3;
   camera.position.z = car.position.z - Math.cos(car.rotation.y)*5;
   camera.lookAt(car.position);
 
-  // Mantener coche dentro pista
-  car.position.x = Math.max(-9.5,Math.min(9.5,car.position.x));
+  // Mantener dentro de los bordes
+  car.position.x = Math.max(-4.5,Math.min(4.5,car.position.x));
 
+  speedUI.textContent = speed.toFixed(2);
   renderer.render(scene,camera);
 }
 animate();
 
 window.addEventListener("resize",()=>{
-  camera.aspect = innerWidth/innerHeight;
+  camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 });
