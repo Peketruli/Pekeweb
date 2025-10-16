@@ -280,7 +280,49 @@ const supabaseClient = window.supabase && window.supabase.createClient
 if (!supabaseClient) {
   mostrarError('ERROR: No se pudo crear supabaseClient. Comprueba la inclusión del CDN.');
 }
+  
+document.getElementById('canjearBtn').addEventListener('click', async () => {
+  try {
+    const tipo = document.getElementById('tipoFicha').value;      // 1,5,25,100
+    const cantidad = parseInt(document.getElementById('cantidadFichas').value) || 0;
 
+    if (cantidad <= 0) return alert('Cantidad inválida');
+
+    // obtener usuario actual
+    const user = await obtenerDatosUsuario();
+    if (!user) throw new Error('Usuario no encontrado');
+
+    // comprobar que tenga suficientes pekepuntos
+    if ((user.pekepuntos || 0) < cantidad * tipo) {
+      return alert('No tienes suficientes pekepuntos');
+    }
+
+    // restar pekepuntos
+    const { error } = await supabaseClient.from('usuarios')
+      .update({ pekepuntos: user.pekepuntos - (cantidad * tipo) })
+      .eq('id', usuario.id);
+    if (error) throw error;
+
+    // sumar fichas correspondientes
+    const campoFicha = tipo == 1 ? 'ficha_blanca' :
+                       tipo == 5 ? 'ficha_roja' :
+                       tipo == 25 ? 'ficha_azul' :
+                       'ficha_verde';
+    const { error: err2 } = await supabaseClient.from('usuarios')
+      .update({ [campoFicha]: (user[campoFicha] || 0) + cantidad })
+      .eq('id', usuario.id);
+    if (err2) throw err2;
+
+    await renderFichas();
+    alert('Canje realizado correctamente!');
+  } catch(e) {
+    mostrarError(e);
+    alert('Error canjeando fichas');
+  }
+});
+
+
+  
 /* === UTIL: escape html simple === */
 function escapeHtml(str){ return String(str).replace(/[&<>"'`=\/]/g, s => '&#'+s.charCodeAt(0)+';'); }
 
