@@ -231,7 +231,6 @@ async function createPoll() {
   loadPoll(data.id);
 }
 
-// --- Votar en encuesta usando localStorage ---
 async function vote(optionIndex){
   if(!currentPoll) return;
 
@@ -243,26 +242,18 @@ async function vote(optionIndex){
   // Guardar que ya votó
   localStorage.setItem("votedPollId", currentPoll.id);
 
-  // Inicializar votos si no existen
+  // Contar el voto localmente
   if(!currentPoll.votes) currentPoll.votes = new Array(currentPoll.options.length).fill(0);
-
-  // Sumar el voto localmente
   currentPoll.votes[optionIndex]++;
 
-  // Guardar los votos en Supabase
-  const { error } = await db.from("polls")
-    .update({ votes: currentPoll.votes })
-    .eq("id", currentPoll.id);
-
-  if(error){
-    alert("Error al registrar el voto: " + error.message);
-    currentPoll.votes[optionIndex]--; // revertir si falla
-    return;
-  }
+  // Guardar votos en Supabase
+  const { error } = await db.from("polls").update({ votes: currentPoll.votes }).eq("id", currentPoll.id);
+  if(error) alert("Error al registrar el voto: " + error.message);
 
   renderPollOptions(); // Actualizar botones
   showResults();       // Mostrar resultados
 }
+
 
 
 // --- Cargar la encuesta activa ---
@@ -276,7 +267,12 @@ async function loadPoll(pollId){
   const { data: poll } = await db.from("polls").select("*").eq("id", pollId).single();
   currentPoll = poll;
 
-  if(!currentPoll.votes) currentPoll.votes = new Array(currentPoll.options.length).fill(0);
+  // Inicializar votos correctamente
+  if(!currentPoll.votes || currentPoll.votes.length !== currentPoll.options.length){
+    currentPoll.votes = new Array(currentPoll.options.length).fill(0);
+    // Actualizar la base de datos para no tener problemas al recargar
+    await db.from("polls").update({ votes: currentPoll.votes }).eq("id", currentPoll.id);
+  }
 
   document.getElementById("question").textContent = poll.question;
   renderPollOptions();
@@ -285,6 +281,7 @@ async function loadPoll(pollId){
   if(pollInterval) clearInterval(pollInterval);
   startTimer(new Date(poll.start_time).getTime(), poll.duration);
 }
+
 
 // --- Mostrar opciones y votos ---
 function renderPollOptions(){
