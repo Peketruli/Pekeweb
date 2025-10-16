@@ -232,7 +232,7 @@ async function createPoll() {
 }
 
 // --- Votar en encuesta usando localStorage ---
-function vote(optionIndex){
+async function vote(optionIndex){
   if(!currentPoll) return;
 
   if(localStorage.getItem("votedPollId") === currentPoll.id){
@@ -243,13 +243,27 @@ function vote(optionIndex){
   // Guardar que ya votó
   localStorage.setItem("votedPollId", currentPoll.id);
 
-  // Contar el voto localmente
+  // Inicializar votos si no existen
   if(!currentPoll.votes) currentPoll.votes = new Array(currentPoll.options.length).fill(0);
+
+  // Sumar el voto localmente
   currentPoll.votes[optionIndex]++;
+
+  // Guardar los votos en Supabase
+  const { error } = await db.from("polls")
+    .update({ votes: currentPoll.votes })
+    .eq("id", currentPoll.id);
+
+  if(error){
+    alert("Error al registrar el voto: " + error.message);
+    currentPoll.votes[optionIndex]--; // revertir si falla
+    return;
+  }
 
   renderPollOptions(); // Actualizar botones
   showResults();       // Mostrar resultados
 }
+
 
 // --- Cargar la encuesta activa ---
 async function loadActivePoll(){
