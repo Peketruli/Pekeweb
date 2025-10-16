@@ -407,7 +407,10 @@ const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZ
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-document.addEventListener("DOMContentLoaded", () => {
+// ============================
+// Gestión de usuario y UI
+// ============================
+document.addEventListener("DOMContentLoaded", async () => {
   const authContainer = document.getElementById("authContainer");
   const userInfo = document.getElementById("userInfo");
   const dropdownMenu = document.getElementById("dropdownMenu");
@@ -417,97 +420,124 @@ document.addEventListener("DOMContentLoaded", () => {
   const closeUpdatesButton = document.getElementById("closeUpdatesButton");
   const downloadButton = document.getElementById("downloadButton");
 
-  // Cargar info de usuario desde localStorage (tu flujo original)
-  function loadUserInfo() {
-    try {
-      const user = JSON.parse(localStorage.getItem("currentUser"));
-      if (user) {
-        // Mostrar UI de usuario
-        userInfo.style.display = "flex";
-        authContainer.style.display = "none";
-        document.getElementById("userName").textContent = user.username || "Usuario";
-        document.getElementById("userLogo").src = user.logo || "logoDefault.png";
+  // ============================
+  // Cargar info de usuario
+  // ============================
+  async function loadUserInfo() {
+    let user = null;
 
-        // Mostrar botón de descargar solo para usuarios concretos
-        if (user.username === "Peketruli" || user.username === "SabinoArana") {
+    // 1️⃣ Intentar desde Supabase
+    if (window.supabase) {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        user = {
+          username: session.user.user_metadata?.username || session.user.email,
+          email: session.user.email,
+          logo: session.user.user_metadata?.logo || "logoDefault.png"
+        };
+        // Guardamos en localStorage para persistencia simple
+        localStorage.setItem("currentUser", JSON.stringify(user));
+      }
+    }
+
+    // 2️⃣ Si no hay sesión, intentar desde localStorage
+    if (!user) {
+      try {
+        const stored = JSON.parse(localStorage.getItem("currentUser"));
+        if (stored) user = stored;
+      } catch(e) { console.warn("Error parseando currentUser", e); }
+    }
+
+    // ============================
+    // Actualizar UI
+    // ============================
+    if (user) {
+      userInfo.style.display = "flex";
+      authContainer.style.display = "none";
+      document.getElementById("userName").textContent = user.username || "Usuario";
+      document.getElementById("userLogo").src = user.logo || "logoDefault.png";
+
+      if (user.username === "Peketruli" || user.username === "SabinoArana") {
+        if (downloadButton) {
           downloadButton.style.display = "inline-flex";
           downloadButton.textContent = "📥 Descargar registros";
-        } else {
-          downloadButton.style.display = "none";
         }
-      } else {
-        userInfo.style.display = "none";
-        authContainer.style.display = "flex";
+      } else if (downloadButton) {
+        downloadButton.style.display = "none";
       }
-    } catch (err) {
-      console.error("Error al parsear currentUser:", err);
+    } else {
       userInfo.style.display = "none";
       authContainer.style.display = "flex";
+      if (downloadButton) downloadButton.style.display = "none";
     }
   }
 
-  loadUserInfo();
+  await loadUserInfo();
 
-  // Toggle dropdown
-  userInfo.addEventListener("click", (e) => {
+  // ============================
+  // Dropdown menu
+  // ============================
+  userInfo.addEventListener("click", () => {
     const isOpen = dropdownMenu.style.display === "block";
     dropdownMenu.style.display = isOpen ? "none" : "block";
     dropdownMenu.setAttribute("aria-hidden", isOpen ? "true" : "false");
   });
 
-  document.addEventListener("click", (event) => {
-    const userEl = document.getElementById("userInfo");
-    const menuEl = document.getElementById("dropdownMenu");
-    if (userEl && menuEl && !userEl.contains(event.target) && !menuEl.contains(event.target)) {
-      menuEl.style.display = "none";
-      menuEl.setAttribute("aria-hidden", "true");
+  document.addEventListener("click", (e) => {
+    if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target)) {
+      dropdownMenu.style.display = "none";
+      dropdownMenu.setAttribute("aria-hidden", "true");
     }
   });
 
-  // Modal updates
-  updatesButton.addEventListener("click", () => {
+  // ============================
+  // Modal de actualizaciones
+  // ============================
+  if (updatesButton) updatesButton.addEventListener("click", () => {
     updatesModal.style.display = "block";
     modalOverlay.style.display = "block";
     updatesModal.style.transform = "translate(-50%,-50%) scale(1)";
   });
-  closeUpdatesButton.addEventListener("click", () => {
+  if (closeUpdatesButton) closeUpdatesButton.addEventListener("click", () => {
     updatesModal.style.display = "none";
     modalOverlay.style.display = "none";
   });
-  modalOverlay.addEventListener("click", () => {
+  if (modalOverlay) modalOverlay.addEventListener("click", () => {
     updatesModal.style.display = "none";
     modalOverlay.style.display = "none";
   });
 
+  // ============================
   // Logout
+  // ============================
   window.logout = async function() {
-    try {
-      await supabase.auth.signOut();
-    } catch (err) {
-      console.warn("supabase signOut error (si es que no hay sesión):", err);
+    if (window.supabase) {
+      try { await supabase.auth.signOut(); } 
+      catch(e){ console.warn("Supabase logout error", e); }
     }
     localStorage.removeItem("currentUser");
     window.location.href = "l.html";
   };
 
-  // Download PDF (admin)
+  // ============================
+  // Download PDF (solo admin)
+  // ============================
   window.downloadPDF = function() {
+    if (!downloadButton) return;
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
-    let users = JSON.parse(localStorage.getItem("users")) || [];
+    const users = JSON.parse(localStorage.getItem("users")) || [];
     let content = "Datos de los registros:\n\n";
-    users.forEach(user => {
-      content += `Nombre de usuario: ${user.username || "N/A"}\nCorreo electrónico: ${user.email || "N/A"}\nLogo: ${user.logo ? "Sí" : "No"}\n\n`;
+    users.forEach(u => {
+      content += `Nombre: ${u.username || "N/A"}\nCorreo: ${u.email || "N/A"}\nLogo: ${u.logo ? "Sí" : "No"}\n\n`;
     });
-    doc.setFontSize(10);
     const lines = doc.splitTextToSize(content, 180);
     doc.text(lines, 10, 10);
     doc.save("registros.pdf");
   };
 
-  downloadButton.addEventListener("click", downloadPDF);
-
-}); // DOMContentLoaded end
+  if (downloadButton) downloadButton.addEventListener("click", downloadPDF);
+});
 </script>
 </body>
 </html>
