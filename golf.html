@@ -1,61 +1,20 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Zona de Juegos - Pac-Man</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Pac-Man — Física y fantasmas mejorados</title>
 <style>
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: #000;
-  color: #fff;
-  overflow: hidden;
-}
-#menu, #playScreen, #gameArea {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-direction: column;
-}
-#menu { background: radial-gradient(circle at center,#111,#000); }
-.card {
-  background: #222;
-  padding: 20px;
-  margin: 10px;
-  border-radius: 10px;
-  cursor: pointer;
-  width: 200px;
-  text-align: center;
-  transition: 0.2s;
-}
-.card:hover { background: #444; transform: scale(1.05); }
-#gameArea { display: none; flex-direction: column; }
-#playScreen { display: none; background: rgba(0,0,0,0.9); }
-button {
-  margin-top: 10px;
-  padding: 10px 25px;
-  border: none;
-  border-radius: 8px;
-  background: #0af;
-  color: #fff;
-  font-weight: bold;
-  cursor: pointer;
-  transition: 0.2s;
-}
-button:hover { background: #09f; }
-#scoreBoard {
-  position: absolute;
-  top: 10px; left: 10px;
-  font-size: 18px;
-  background: rgba(0,0,0,0.4);
-  padding: 6px 10px;
-  border-radius: 6px;
-}
-canvas { background: #000; border: 2px solid #333; border-radius: 10px; }
+  body{margin:0;font-family:Inter,Arial,system-ui;background:#000;color:#fff;overflow:hidden}
+  #menu,#playScreen,#gameArea{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column}
+  #menu{background:radial-gradient(circle at center,#111,#000)}
+  .card{background:#222;padding:18px;border-radius:10px;margin:8px;cursor:pointer;width:220px;text-align:center}
+  .card:hover{transform:scale(1.03);background:#333}
+  #playScreen{display:none;background:rgba(0,0,0,.9)}
+  #gameArea{display:none}
+  button{padding:10px 16px;border-radius:8px;border:0;background:#0af;color:#001;font-weight:700;cursor:pointer}
+  #scoreBoard{position:fixed;left:12px;top:12px;background:rgba(0,0,0,.45);padding:6px 10px;border-radius:6px}
+  canvas{image-rendering:pixelated;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.6)}
 </style>
 </head>
 <body>
@@ -67,58 +26,103 @@ canvas { background: #000; border: 2px solid #333; border-radius: 10px; }
 
 <div id="playScreen">
   <h2 id="gameTitle">Pac-Man</h2>
-  <button id="playBtn">Play</button>
-  <button onclick="backToMenu()">Volver</button>
+  <div style="display:flex;gap:12px">
+    <button id="btnPlay">Play</button>
+    <button id="btnBackFromPlay">Volver</button>
+  </div>
 </div>
 
 <div id="gameArea">
-  <div id="scoreBoard"></div>
+  <div id="scoreBoard">Puntuación: 0 | Vidas: 3</div>
   <div id="gameContainer"></div>
-  <button onclick="backToMenu()" style="position:absolute;bottom:15px;">Volver al menú</button>
+  <button id="btnBack" style="position:fixed;right:12px;bottom:12px">Volver al menú</button>
 </div>
 
 <script>
+/* ----------------- UI / flow ----------------- */
 let currentGame = null;
-let gameRunning = false;
+let stopGame = null;
 
-function loadGame(game){
-  currentGame = game;
+function loadGame(name){
+  currentGame = name;
   document.getElementById('menu').style.display='none';
   document.getElementById('playScreen').style.display='flex';
   document.getElementById('gameArea').style.display='none';
+  document.getElementById('gameTitle').innerText = name==='pacman' ? 'Pac-Man' : name;
 }
 
-document.getElementById('playBtn').addEventListener('click', startGame);
-
-function startGame(){
-  if (gameRunning) return;
-  gameRunning = true;
-  document.getElementById('playScreen').style.display='none';
-  document.getElementById('gameArea').style.display='flex';
-  const container=document.getElementById('gameContainer');
-  container.innerHTML='';
-  document.getElementById('scoreBoard').innerText='';
-  if(currentGame==='pacman') initPacman(container);
-}
+document.getElementById('btnPlay').addEventListener('click', ()=>{
+  if(currentGame==='pacman'){
+    if(stopGame) { stopGame(); stopGame = null; }
+    startPacman();
+  }
+});
+document.getElementById('btnBackFromPlay').addEventListener('click', backToMenu);
+document.getElementById('btnBack').addEventListener('click', backToMenu);
 
 function backToMenu(){
-  gameRunning = false;
+  if(typeof stopGame === 'function'){ stopGame(); stopGame = null; }
+  currentGame = null;
   document.getElementById('menu').style.display='flex';
-  document.getElementById('gameArea').style.display='none';
   document.getElementById('playScreen').style.display='none';
+  document.getElementById('gameArea').style.display='none';
   document.getElementById('gameContainer').innerHTML='';
   document.getElementById('scoreBoard').innerText='';
 }
 
-/* ----------------- PAC-MAN ------------------ */
+/* ----------------- Pac-Man improved ----------------- */
+function startPacman(){
+  document.getElementById('playScreen').style.display='none';
+  document.getElementById('gameArea').style.display='flex';
+  document.getElementById('gameContainer').innerHTML = '';
+  stopGame = initPacman(document.getElementById('gameContainer'));
+}
+
+/* Utility: BFS shortest path on grid */
+function bfsShortest(grid, cols, rows, start, goal){
+  // grid[y][x] === '#' blocked
+  const q = [start];
+  const prev = Array.from({length:rows},()=>Array(cols).fill(null));
+  prev[start.y][start.x] = {x:-1,y:-1}; // visited
+  const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+  while(q.length){
+    const cur = q.shift();
+    if(cur.x === goal.x && cur.y === goal.y) break;
+    for(const d of dirs){
+      const nx = cur.x + d.x, ny = cur.y + d.y;
+      if(nx<0 || nx>=cols || ny<0 || ny>=rows) continue;
+      if(prev[ny][nx]) continue;
+      if(grid[ny][nx] === '#') continue;
+      prev[ny][nx] = cur;
+      q.push({x:nx,y:ny});
+    }
+  }
+  // reconstruct first step from start -> goal
+  if(!prev[goal.y][goal.x]) return null; // no path
+  // walk backwards to start
+  let cur = {x: goal.x, y: goal.y};
+  let prevNode = prev[cur.y][cur.x];
+  while(prevNode.x !== -1 || prevNode.y !== -1){
+    if(prevNode.x === start.x && prevNode.y === start.y) return cur;
+    cur = prevNode;
+    prevNode = prev[cur.y][cur.x];
+  }
+  return null;
+}
+
 function initPacman(container){
-  const canvas=document.createElement('canvas');
-  const ctx=canvas.getContext('2d');
-  canvas.width=448; canvas.height=496;
+  // constants
+  const TILE = 16;
+  const COLS = 28, ROWS = 31;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = COLS * TILE;
+  canvas.height = ROWS * TILE;
+  canvas.style.width = (canvas.width * 1.2) + 'px';
+  canvas.style.height = (canvas.height * 1.2) + 'px';
   container.appendChild(canvas);
-  
-  const tile=16;
-  const map=[
+
+  const raw = [
 "############################",
 "#............##............#",
 "#.####.#####.##.#####.####.#",
@@ -150,156 +154,311 @@ function initPacman(container){
 "#.##########.##.##########.#",
 "#..........................#",
 "############################"
-];
-
-  let score=0;
-  let lives=3;
-  let pac = {x:13, y:23, dir:'left', nextDir:'left', speed:0.1};
-  const ghosts=[
-    {x:13, y:11, dir:'left', color:'red'},
-    {x:14, y:11, dir:'right', color:'pink'},
-    {x:12, y:11, dir:'up', color:'cyan'},
-    {x:15, y:11, dir:'down', color:'orange'}
   ];
 
-  document.addEventListener('keydown', e=>{
-    if(e.key.includes('Arrow')){
-      pac.nextDir = e.key.replace('Arrow','').toLowerCase();
-    }
-  });
+  // play map (mutable)
+  let map = raw.map(r => r.split(''));
 
-  function canMove(x,y){
-    const gx=Math.floor(x), gy=Math.floor(y);
-    if(!map[gy] || !map[gy][gx]) return false;
-    return map[gy][gx]!=='#';
+  // state
+  let score = 0;
+  let lives = 3;
+  // pac uses pixel coords for smooth movement
+  const pac = {
+    px: (13 * TILE) + TILE/2,
+    py: (23 * TILE) + TILE/2,
+    dir: {x:0,y:0},       // current normalized direction
+    nextDir: {x:0,y:0},   // buffered desired direction
+    speed: 1.1,           // px per frame (tweakable)
+    radius: TILE*0.45
+  };
+
+  // ghosts with pixel pos and speed; speeds slightly lower than pac
+  const ghosts = [
+    { px: (13*TILE)+TILE/2, py:(11*TILE)+TILE/2, dir:{x:0,y:0}, color:'red', speed:0.95 },
+    { px: (14*TILE)+TILE/2, py:(11*TILE)+TILE/2, dir:{x:0,y:0}, color:'pink', speed:0.875 },
+    { px: (12*TILE)+TILE/2, py:(11*TILE)+TILE/2, dir:{x:0,y:0}, color:'cyan', speed:0.9 },
+    { px: (15*TILE)+TILE/2, py:(11*TILE)+TILE/2, dir:{x:0,y:0}, color:'orange', speed:0.85 }
+  ];
+
+  // input
+  const keyMap = { ArrowUp:{x:0,y:-1}, ArrowDown:{x:0,y:1}, ArrowLeft:{x:-1,y:0}, ArrowRight:{x:1,y:0} };
+  function onKey(e){
+    if(keyMap[e.key]){
+      pac.nextDir = keyMap[e.key];
+      e.preventDefault();
+    }
+    if(e.key.toLowerCase()==='r'){ restartLevel(); }
+  }
+  window.addEventListener('keydown', onKey);
+
+  function updateHUD(){ document.getElementById('scoreBoard').innerText = `Puntuación: ${score} | Vidas: ${lives}`; }
+  updateHUD();
+
+  // helpers: pixel <-> grid
+  const pixelToGrid = (px,py) => ({ gx: Math.floor(px / TILE), gy: Math.floor(py / TILE) });
+  const gridCenter = (gx,gy) => ({ cx: gx*TILE + TILE/2, cy: gy*TILE + TILE/2 });
+  const isWall = (gx,gy) => {
+    if(gy<0 || gy>=ROWS || gx<0 || gx>=COLS) return false;
+    return map[gy][gx] === '#';
+  };
+
+  // can move slightly ahead from px,py towards dir
+  function canStep(px,py,dir){
+    // check cell slightly ahead (half tile)
+    const testX = px + dir.x * (TILE*0.49);
+    const testY = py + dir.y * (TILE*0.49);
+    const { gx, gy } = pixelToGrid(testX,testY);
+    return !isWall(gx,gy);
   }
 
-  function updatePac(){
-    // sólo cambiar dirección si está centrado y libre
-    const cx=Math.round(pac.x), cy=Math.round(pac.y);
-    if(Math.abs(pac.x-cx)<0.05 && Math.abs(pac.y-cy)<0.05){
-      if(pac.nextDir==='up' && canMove(cx,cy-1)) pac.dir='up';
-      else if(pac.nextDir==='down' && canMove(cx,cy+1)) pac.dir='down';
-      else if(pac.nextDir==='left' && canMove(cx-1,cy)) pac.dir='left';
-      else if(pac.nextDir==='right' && canMove(cx+1,cy)) pac.dir='right';
-      pac.x=cx; pac.y=cy;
-    }
-
-    let nx=pac.x, ny=pac.y;
-    if(pac.dir==='up') ny-=pac.speed;
-    else if(pac.dir==='down') ny+=pac.speed;
-    else if(pac.dir==='left') nx-=pac.speed;
-    else if(pac.dir==='right') nx+=pac.speed;
-
-    if(canMove(nx,ny)){ pac.x=nx; pac.y=ny; }
-    // túnel
-    if(pac.x<0) pac.x=map[0].length-1;
-    if(pac.x>=map[0].length) pac.x=0;
+  // tunnel handling (left-right wrap)
+  function handleTunnel(entity){
+    if(entity.px < -TILE/2) entity.px = (COLS-0.5)*TILE;
+    if(entity.px > (COLS-0.5)*TILE) entity.px = -TILE/2;
   }
 
-  function updateGhosts(){
-    ghosts.forEach(g=>{
-      const gx=Math.round(g.x), gy=Math.round(g.y);
-      // posible cambio de dirección sólo en centro
-      if(Math.abs(g.x-gx)<0.05 && Math.abs(g.y-gy)<0.05){
-        const dirs=['up','down','left','right'].filter(d=>{
-          let tx=gx, ty=gy;
-          if(d==='up') ty--; else if(d==='down') ty++; else if(d==='left') tx--; else if(d==='right') tx++;
-          return canMove(tx,ty);
-        });
-        // persecución básica
-        const dist=Math.hypot(pac.x-gx,pac.y-gy);
-        if(dist<6){
-          if(pac.x>gx && dirs.includes('right')) g.dir='right';
-          else if(pac.x<gx && dirs.includes('left')) g.dir='left';
-          else if(pac.y>gy && dirs.includes('down')) g.dir='down';
-          else if(pac.y<gy && dirs.includes('up')) g.dir='up';
-        } else {
-          g.dir=dirs[Math.floor(Math.random()*dirs.length)];
+  // eat pellets when sufficiently centered in cell
+  function tryEatPellet(){
+    const { gx, gy } = pixelToGrid(pac.px, pac.py);
+    const ch = map[gy] && map[gy][gx];
+    if(!ch) return;
+    if(ch === '.'){ score += 10; map[gy][gx] = ' '; updateHUD(); }
+    if(ch === 'o'){ score += 50; map[gy][gx] = ' '; updateHUD(); /* could trigger frightened */ }
+  }
+
+  // apply buffered direction when near center of cell (tolerance)
+  function tryApplyBufferedDir(){
+    const { gx, gy } = pixelToGrid(pac.px, pac.py);
+    const center = gridCenter(gx,gy);
+    const dist = Math.hypot(pac.px - center.cx, pac.py - center.cy);
+    const tolerance = 6; // px tolerance to allow turn a bit off-center
+    if(dist <= tolerance){
+      // if desired direction leads to a non-wall cell, apply
+      if(pac.nextDir && (pac.nextDir.x !== pac.dir.x || pac.nextDir.y !== pac.dir.y)){
+        if(canStep(pac.px, pac.py, pac.nextDir)){
+          pac.dir = { x: pac.nextDir.x, y: pac.nextDir.y };
+          // snap to center to avoid drift
+          pac.px = center.cx; pac.py = center.cy;
         }
-        g.x=gx; g.y=gy;
       }
+    }
+  }
 
-      const speed=0.08;
-      if(g.dir==='up' && canMove(g.x,g.y-speed)) g.y-=speed;
-      else if(g.dir==='down' && canMove(g.x,g.y+speed)) g.y+=speed;
-      else if(g.dir==='left' && canMove(g.x-speed,g.y)) g.x-=speed;
-      else if(g.dir==='right' && canMove(g.x+speed,g.y)) g.x+=speed;
-      if(g.x<0) g.x=map[0].length-1;
-      if(g.x>=map[0].length) g.x=0;
+  // move pac with pixel displacement and collision check
+  function movePac(stepFactor){
+    tryApplyBufferedDir();
+    if(pac.dir.x === 0 && pac.dir.y === 0) return;
+    // check next step possible
+    if(!canStep(pac.px, pac.py, pac.dir)){
+      // snap to center of current cell and stop (prevents sliding into wall)
+      const { gx, gy } = pixelToGrid(pac.px, pac.py);
+      const c = gridCenter(gx,gy);
+      pac.px = c.cx; pac.py = c.cy;
+      pac.dir = {x:0,y:0};
+      return;
+    }
+    pac.px += pac.dir.x * pac.speed * stepFactor;
+    pac.py += pac.dir.y * pac.speed * stepFactor;
+    handleTunnel(pac);
+  }
+
+  // ghost chooses next dir using BFS when close, else random non-reverse
+  function ghostDecide(ghost){
+    const { gx, gy } = pixelToGrid(ghost.px, ghost.py);
+    const center = gridCenter(gx,gy);
+    const aligned = Math.hypot(ghost.px - center.cx, ghost.py - center.cy) < 6;
+    if(!aligned) return; // only decide at centers
+    // compute pac grid
+    const pgrid = pixelToGrid(pac.px, pac.py);
+    const distGrid = Math.hypot(pgrid.gx - gx, pgrid.gy - gy);
+    // build simple grid of walkable cells for BFS
+    if(distGrid < 8){
+      // BFS for shortest path, get next cell towards pac
+      const next = bfsShortest(map, COLS, ROWS, {x:gx,y:gy}, {x:pgrid.gx,y:pgrid.gy});
+      if(next){
+        // set dir towards next
+        ghost.dir = { x: Math.sign(next.x - gx), y: Math.sign(next.y - gy) };
+        return;
+      }
+    }
+    // otherwise choose random but avoid immediate reverse
+    const options = [];
+    [['left',-1,0],['right',1,0],['up',0,-1],['down',0,1]].forEach(([n,dx,dy])=>{
+      if(!isWall(gx+dx, gy+dy)) options.push({dx,dy});
     });
+    if(options.length===0){ ghost.dir = {x:0,y:0}; return; }
+    // filter to avoid reverse
+    const filtered = options.filter(o => !(ghost.dir.x === -o.dx && ghost.dir.y === -o.dy));
+    const pick = (filtered.length ? filtered : options)[Math.floor(Math.random()* (filtered.length ? filtered.length : options.length))];
+    ghost.dir = { x: pick.dx, y: pick.dy };
   }
 
-  function eatPellets(){
-    const gx=Math.round(pac.x), gy=Math.round(pac.y);
-    const c=map[gy][gx];
-    if(c==='.'||c==='o'){
-      score+=(c==='o'?50:10);
-      map[gy]=map[gy].substring(0,gx)+' '+map[gy].substring(gx+1);
+  // move ghost pixelwise
+  function moveGhost(ghost, stepFactor){
+    if(ghost.dir.x === 0 && ghost.dir.y === 0) return;
+    // check can step
+    if(!canStep(ghost.px, ghost.py, ghost.dir)){
+      // snap to center and clear dir to recalc next frame
+      const { gx, gy } = pixelToGrid(ghost.px, ghost.py);
+      const c = gridCenter(gx,gy);
+      ghost.px = c.cx; ghost.py = c.cy;
+      ghost.dir = {x:0,y:0};
+      return;
     }
+    ghost.px += ghost.dir.x * (ghost.speed * stepFactor * 1.0);
+    ghost.py += ghost.dir.y * (ghost.speed * stepFactor * 1.0);
+    handleTunnel(ghost);
   }
 
-  function checkCollision(){
+  // check ghost collisions by pixel distance
+  function checkGhostCollision(){
     for(const g of ghosts){
-      if(Math.abs(pac.x-g.x)<0.5 && Math.abs(pac.y-g.y)<0.5){
+      const d = Math.hypot(g.px - pac.px, g.py - pac.py);
+      if(d < TILE*0.6){
+        // death
         lives--;
-        if(lives<=0){
-          alert('Game Over! Puntuación: '+score);
+        updateHUD();
+        if(lives <= 0){
+          // game over
+          alert(`Game Over\nPuntuación: ${score}`);
+          stop();
           backToMenu();
-          return;
+          return true;
         }
+        // reset pac & ghosts positions and pause briefly
         resetPositions();
+        return true;
       }
     }
+    return false;
   }
 
   function resetPositions(){
-    pac.x=13; pac.y=23; pac.dir='left'; pac.nextDir='left';
-    ghosts[0].x=13; ghosts[0].y=11;
-    ghosts[1].x=14; ghosts[1].y=11;
-    ghosts[2].x=12; ghosts[2].y=11;
-    ghosts[3].x=15; ghosts[3].y=11;
+    // reset map pellets? we keep progress; only reposition entities
+    pac.px = (13*TILE) + TILE/2; pac.py = (23*TILE) + TILE/2;
+    pac.dir = {x:0,y:0}; pac.nextDir = {x:0,y:0};
+    ghosts[0].px = (13*TILE)+TILE/2; ghosts[0].py = (11*TILE)+TILE/2; ghosts[0].dir = {x:0,y:0};
+    ghosts[1].px = (14*TILE)+TILE/2; ghosts[1].py = (11*TILE)+TILE/2; ghosts[1].dir = {x:0,y:0};
+    ghosts[2].px = (12*TILE)+TILE/2; ghosts[2].py = (11*TILE)+TILE/2; ghosts[2].dir = {x:0,y:0};
+    ghosts[3].px = (15*TILE)+TILE/2; ghosts[3].py = (11*TILE)+TILE/2; ghosts[3].dir = {x:0,y:0};
+    // small pause by skipping a couple frames is implemented by stopFlag timer
+    pauseTicks = 12;
   }
 
+  // drawing
+  let mouth = 0;
   function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
+    // draw map
     for(let y=0;y<map.length;y++){
       for(let x=0;x<map[y].length;x++){
-        const c=map[y][x];
-        if(c==='#'){ ctx.fillStyle='#1919A6'; ctx.fillRect(x*tile,y*tile,tile,tile);}
-        else if(c==='.'||c==='o'){
-          ctx.fillStyle='orange';
+        const ch = map[y][x];
+        const sx = x*TILE, sy = y*TILE;
+        if(ch === '#'){
+          ctx.fillStyle = '#001f6f';
+          ctx.fillRect(sx,sy,TILE,TILE);
+          ctx.fillStyle = 'rgba(255,255,255,0.03)';
+          ctx.fillRect(sx+2,sy+2,TILE-4,TILE-4);
+        } else if(ch === '.' || ch === 'o'){
+          ctx.fillStyle = (ch==='o') ? '#ff8b8b' : '#ffd54d';
           ctx.beginPath();
-          ctx.arc(x*tile+tile/2,y*tile+tile/2,c==='o'?4:2,0,Math.PI*2);
+          ctx.arc(sx + TILE/2, sy + TILE/2, (ch==='o'?4:2), 0, Math.PI*2);
           ctx.fill();
         }
       }
     }
-    ctx.fillStyle='yellow';
+    // pac mouth animate
+    mouth += 0.12;
+    const mouthOpen = 0.18 + Math.abs(Math.sin(mouth))*0.22;
+    let start = 0, end = Math.PI*2;
+    if(pac.dir.x === 1){ start = mouthOpen*Math.PI; end = (2 - mouthOpen)*Math.PI; }
+    else if(pac.dir.x === -1){ start = Math.PI + mouthOpen*Math.PI; end = Math.PI - mouthOpen*Math.PI; }
+    else if(pac.dir.y === -1){ start = -Math.PI/2 + mouthOpen*Math.PI; end = -Math.PI/2 - mouthOpen*Math.PI; }
+    else if(pac.dir.y === 1){ start = Math.PI/2 + mouthOpen*Math.PI; end = Math.PI/2 - mouthOpen*Math.PI; }
+
+    ctx.fillStyle = '#ffeb3b';
     ctx.beginPath();
-    ctx.arc(pac.x*tile+tile/2,pac.y*tile+tile/2,tile/2,0,Math.PI*2);
+    ctx.moveTo(pac.px, pac.py);
+    ctx.arc(pac.px, pac.py, pac.radius, start, end);
+    ctx.closePath();
     ctx.fill();
 
-    ghosts.forEach(g=>{
-      ctx.fillStyle=g.color;
+    // ghosts
+    for(const g of ghosts){
+      // body
+      ctx.fillStyle = g.color;
       ctx.beginPath();
-      ctx.arc(g.x*tile+tile/2,g.y*tile+tile/2,tile/2,0,Math.PI*2);
+      ctx.arc(g.px, g.py - 3, TILE*0.42, Math.PI, 0); // head
+      ctx.lineTo(g.px + TILE*0.42, g.py + TILE*0.42);
+      ctx.lineTo(g.px - TILE*0.42, g.py + TILE*0.42);
+      ctx.closePath();
       ctx.fill();
-    });
-
-    document.getElementById('scoreBoard').innerText=`Puntuación: ${score} | Vidas: ${lives}`;
+      // eyes
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(g.px - 5, g.py - 6, 4, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(g.px + 5, g.py - 6, 4, 0, Math.PI*2); ctx.fill();
+      ctx.fillStyle = '#000';
+      ctx.beginPath(); ctx.arc(g.px - 5 + g.dir.x*2, g.py - 6 + g.dir.y*2, 2, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(g.px + 5 + g.dir.x*2, g.py - 6 + g.dir.y*2, 2, 0, Math.PI*2); ctx.fill();
+    }
   }
 
-  function loop(){
-    if(!gameRunning) return;
-    updatePac();
-    updateGhosts();
-    eatPellets();
-    checkCollision();
+  // main loop with dt scaling and small pause on death
+  let last = performance.now();
+  let pauseTicks = 0;
+  let running = true;
+  updateHUD();
+
+  function frame(now){
+    if(!running) return;
+    const dt = Math.min(40, now - last); // ms
+    last = now;
+    const stepFactor = dt / 16; // scale movement to frame delta
+
+    if(pauseTicks > 0){
+      pauseTicks--;
+      draw();
+      requestAnimationFrame(frame);
+      return;
+    }
+
+    // pac movement
+    movePac(stepFactor);
+
+    // ghosts decisions & movement
+    for(const g of ghosts) ghostDecide(g);
+    for(const g of ghosts) moveGhost(g, stepFactor);
+
+    // pellet eating
+    tryEatPellet();
+
+    // collisions
+    checkGhostCollision();
+
+    // draw
     draw();
-    requestAnimationFrame(loop);
+
+    requestAnimationFrame(frame);
   }
-  loop();
+
+  // start
+  requestAnimationFrame(frame);
+
+  function restartLevel(){
+    map = raw.map(r => r.split(''));
+    score = 0;
+    lives = 3;
+    updateHUD();
+    resetPositions();
+  }
+
+  function stop(){
+    running = false;
+    window.removeEventListener('keydown', onKey);
+  }
+
+  // expose stop to caller so UI can stop the game
+  return stop;
 }
 </script>
 </body>
