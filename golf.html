@@ -42,53 +42,14 @@
 </div>
 
 <script>
-/* -------------------------
-   Vista / navegación básica
-   ------------------------- */
-let currentGame = null;
-function loadGame(name){
-  currentGame = name;
-  document.getElementById('menu').style.display='none';
-  document.getElementById('playScreen').style.display='flex';
-  document.getElementById('gameTitle').innerText = (name==='pacman') ? 'Pac-Man' : name;
-}
-function startGame(){
-  document.getElementById('playScreen').style.display='none';
-  document.getElementById('gameArea').style.display='flex';
-  document.getElementById('gameContainer').innerHTML='';
-  document.getElementById('scoreBoard').innerText = 'Puntuación: 0';
-  if(currentGame==='pacman') initPacmanImproved(document.getElementById('gameContainer'));
-}
-function backToMenu(){
-  // stop any running loops by emptying container (games should clean themselves on unload)
-  document.getElementById('menu').style.display='flex';
-  document.getElementById('playScreen').style.display='none';
-  document.getElementById('gameArea').style.display='none';
-  document.getElementById('gameContainer').innerHTML='';
-}
-
-/* ------------------------------------
-   Pac-Man — versión con física mejorada
-   ------------------------------------ */
-function initPacmanImproved(container){
-  // parameters
-  const TILE = 16;                     // px per cell
-  const COLS = 28, ROWS = 31;
-  const CANVAS_W = COLS * TILE;
-  const CANVAS_H = ROWS * TILE;
-  const SPEED = 1.6;                   // pixels per frame (constant)
-  const FRAME_MS = 1000/60;
-
-  // create canvas
-  const canvas = document.createElement('canvas');
-  canvas.width = CANVAS_W; canvas.height = CANVAS_H;
-  canvas.style.width = (CANVAS_W*1.2)+'px'; // scale for visibility
-  canvas.style.height = (CANVAS_H*1.2)+'px';
+function initPacman(container){
+  const canvas=document.createElement('canvas');
+  const ctx=canvas.getContext('2d');
+  canvas.width=448; canvas.height=496;
   container.appendChild(canvas);
-  const ctx = canvas.getContext('2d');
-
-  // simplified map (28 x 31) - '#' wall, '.' pellet, 'o' power, ' ' empty, 'P' start
-  const raw = [
+  
+  const tileSize=16;
+  const map=[
 "############################",
 "#............##............#",
 "#.####.#####.##.#####.####.#",
@@ -120,231 +81,163 @@ function initPacmanImproved(container){
 "#.##########.##.##########.#",
 "#..........................#",
 "############################"
+];
+
+  let score=0;
+  let px=13*tileSize, py=23*tileSize;
+  let vx=0, vy=0, nextVx=0, nextVy=0;
+  let mouthAngle=0, mouthDir=1;
+  const speed=1.5;
+  let lives=3;
+
+  // Fantasmas
+  const ghosts=[
+    {x:13*tileSize, y:11*tileSize, color:'red', dir:{x:1,y:0}},
+    {x:14*tileSize, y:11*tileSize, color:'pink', dir:{x:-1,y:0}},
+    {x:12*tileSize, y:11*tileSize, color:'cyan', dir:{x:0,y:1}},
+    {x:15*tileSize, y:11*tileSize, color:'orange', dir:{x:0,y:-1}},
   ];
 
-  // normalize map to array of arrays
-  const map = raw.map(r => r.split(''));
-
-  // initial pac state (grid-based but pixel pos used for drawing)
-  const pac = {
-    px: 13 * TILE + TILE/2,   // pixel pos
-    py: 23 * TILE + TILE/2,
-    dir: {x:0,y:0},           // current movement direction (unit vector in grid terms)
-    nextDir: {x:0,y:0},       // buffered desired direction
-    speed: SPEED,
-    radius: TILE/2 - 1
-  };
-
-  // helper: is a map cell walkable?
-  function isWalkable(cellX, cellY){
-    if(cellY < 0 || cellY >= ROWS || cellX < 0 || cellX >= COLS) return false;
-    const ch = map[cellY][cellX];
-    return ch !== '#';
+  function canMove(nx,ny){
+    const cx=Math.floor(nx/tileSize);
+    const cy=Math.floor(ny/tileSize);
+    const char=map[cy]?.[cx];
+    return char && char!=='#';
   }
 
-  // helper: cell center coordinates (pixels)
-  function cellCenterX(cx){ return cx * TILE + TILE/2; }
-  function cellCenterY(cy){ return cy * TILE + TILE/2; }
-
-  // keyboard input buffering
-  window.addEventListener('keydown', onKeyDown);
-  function onKeyDown(e){
-    let nx = 0, ny = 0;
-    if(e.key === 'ArrowUp' || e.key === 'w') { nx = 0; ny = -1; }
-    if(e.key === 'ArrowDown' || e.key === 's') { nx = 0; ny = 1; }
-    if(e.key === 'ArrowLeft' || e.key === 'a') { nx = -1; ny = 0; }
-    if(e.key === 'ArrowRight' || e.key === 'd') { nx = 1; ny = 0; }
-    if(nx!==0 || ny!==0){
-      // buffer desired direction; it will be applied when aligned or possible
-      pac.nextDir.x = nx; pac.nextDir.y = ny;
-      e.preventDefault();
+  document.addEventListener('keydown', e=>{
+    switch(e.key){
+      case 'ArrowUp': nextVx=0; nextVy=-speed; break;
+      case 'ArrowDown': nextVx=0; nextVy=speed; break;
+      case 'ArrowLeft': nextVx=-speed; nextVy=0; break;
+      case 'ArrowRight': nextVx=speed; nextVy=0; break;
     }
-    if(e.key === 'r'){ // restart map
-      reset();
-    }
+  });
+
+  function resetPositions(){
+    px=13*tileSize; py=23*tileSize;
+    vx=vy=nextVx=nextVy=0;
+    ghosts.forEach((g,i)=>{
+      g.x=(13+i%2)*tileSize;
+      g.y=(11+i)*tileSize/2;
+    });
   }
 
-  // pellet/power handling
-  let score = 0;
-  function eatAtCell(cx,cy){
-    const ch = map[cy][cx];
-    if(ch === '.' ){ map[cy][cx] = ' '; score += 10; updateScore(); }
-    if(ch === 'o' ){ map[cy][cx] = ' '; score += 50; updateScore(); /* could trigger power mode */ }
-  }
-  function updateScore(){ document.getElementById('scoreBoard').innerText = 'Puntuación: ' + score; }
-
-  // movement helper: returns true if pac is approximately at cell center
-  function isAlignedToGrid(){
-    const cx = (pac.px - TILE/2) / TILE;
-    const cy = (pac.py - TILE/2) / TILE;
-    const ax = Math.abs(cx - Math.round(cx));
-    const ay = Math.abs(cy - Math.round(cy));
-    // tolerance for considering "centered" (in cell fractions)
-    return ax < 0.08 && ay < 0.08;
-  }
-
-  // try to apply buffered direction when possible
-  function tryApplyBufferedDir(){
-    if(pac.nextDir.x === pac.dir.x && pac.nextDir.y === pac.dir.y) return;
-    // only change direction if aligned (or we allow immediate if next cell not blocked and no wall ahead)
-    if(isAlignedToGrid()){
-      const gridX = Math.round((pac.px - TILE/2) / TILE);
-      const gridY = Math.round((pac.py - TILE/2) / TILE);
-      const tx = gridX + pac.nextDir.x;
-      const ty = gridY + pac.nextDir.y;
-      if(isWalkable(tx, ty)){
-        pac.dir.x = pac.nextDir.x;
-        pac.dir.y = pac.nextDir.y;
-        // snap perfectly to center to avoid drift
-        pac.px = cellCenterX(gridX);
-        pac.py = cellCenterY(gridY);
+  function moveGhosts(){
+    ghosts.forEach(g=>{
+      const options=[];
+      const dirs=[{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+      dirs.forEach(d=>{
+        if(canMove(g.x+d.x*speed,g.y+d.y*speed)) options.push(d);
+      });
+      // Si Pacman está cerca, persíguelo
+      const dist=Math.hypot(px-g.x,py-g.y);
+      if(dist<80){
+        g.dir.x=Math.sign(px-g.x);
+        g.dir.y=Math.sign(py-g.y);
+      }else if(Math.random()<0.05 && options.length>0){
+        g.dir=options[Math.floor(Math.random()*options.length)];
       }
-    } else {
-      // not aligned — also allow immediate apply if current dir is zero and the next cell in desired dir is walkable
-      if(pac.dir.x === 0 && pac.dir.y === 0){
-        const approxGridX = Math.round((pac.px - TILE/2) / TILE);
-        const approxGridY = Math.round((pac.py - TILE/2) / TILE);
-        const tx = approxGridX + pac.nextDir.x;
-        const ty = approxGridY + pac.nextDir.y;
-        if(isWalkable(tx, ty)){
-          pac.dir.x = pac.nextDir.x; pac.dir.y = pac.nextDir.y;
-        }
+      // Movimiento
+      if(canMove(g.x+g.dir.x*speed,g.y+g.dir.y*speed)){
+        g.x+=g.dir.x*speed;
+        g.y+=g.dir.y*speed;
       }
-    }
+      // Túnel fantasma también
+      if(g.x<-tileSize) g.x=canvas.width;
+      if(g.x>canvas.width) g.x=-tileSize;
+    });
   }
 
-  // safe move with collision prevention: check ahead for walls before moving full step
-  function stepMove(){
-    // if there's no direction, do nothing
-    if(pac.dir.x === 0 && pac.dir.y === 0) return;
+  function loop(){
+    // Cambiar dirección
+    if(canMove(px+nextVx,py+nextVy)) { vx=nextVx; vy=nextVy; }
 
-    // compute intended next pixel position
-    const nextPx = pac.px + pac.dir.x * pac.speed;
-    const nextPy = pac.py + pac.dir.y * pac.speed;
+    // Movimiento Pacman
+    if(canMove(px+vx,py+vy)){ px+=vx; py+=vy; }
 
-    // compute grid cells crossed (current center grid and target cell)
-    const curGridX = Math.round((pac.px - TILE/2) / TILE);
-    const curGridY = Math.round((pac.py - TILE/2) / TILE);
-    const nextGridX = Math.round((nextPx - TILE/2) / TILE);
-    const nextGridY = Math.round((nextPy - TILE/2) / TILE);
+    // Teletransporte túnel
+    if(px<-tileSize) px=canvas.width;
+    if(px>canvas.width) px=-tileSize;
 
-    // if intended next grid cell is walkable, move freely
-    if(isWalkable(nextGridX, nextGridY)){
-      pac.px = nextPx;
-      pac.py = nextPy;
-      return;
+    // Comer puntos
+    const cx=Math.floor(px/tileSize);
+    const cy=Math.floor(py/tileSize);
+    if(map[cy]?.[cx]==='.'){
+      map[cy]=map[cy].substring(0,cx)+' '+map[cy].substring(cx+1);
+      score+=10;
+    } else if(map[cy]?.[cx]==='o'){
+      map[cy]=map[cy].substring(0,cx)+' '+map[cy].substring(cx+1);
+      score+=50;
     }
 
-    // if blocked: snap to nearest center of cur grid cell and zero velocity (prevent penetration)
-    pac.px = cellCenterX(curGridX);
-    pac.py = cellCenterY(curGridY);
-    pac.dir.x = 0; pac.dir.y = 0;
-  }
+    // Fantasmas
+    moveGhosts();
 
-  // pellet eating check should happen when at/near center to avoid misses
-  function tryEatPellet(){
-    if(!isAlignedToGrid()) return;
-    const gx = Math.round((pac.px - TILE/2) / TILE);
-    const gy = Math.round((pac.py - TILE/2) / TILE);
-    if(map[gy] && map[gy][gx] && (map[gy][gx] === '.' || map[gy][gx] === 'o')){
-      eatAtCell(gx, gy);
-    }
-  }
-
-  // drawing
-  function draw(){
-    // background
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0,0,CANVAS_W,CANVAS_H);
-
-    // draw map: walls and pellets
-    for(let r=0;r<map.length;r++){
-      for(let c=0;c<map[r].length;c++){
-        const ch = map[r][c];
-        const x = c * TILE, y = r * TILE;
-        if(ch === '#'){
-          ctx.fillStyle = '#001f3f';
-          ctx.fillRect(x, y, TILE, TILE);
-          // small inner shade
-          ctx.fillStyle = 'rgba(255,255,255,0.03)';
-          ctx.fillRect(x+2, y+2, TILE-4, TILE-4);
-        } else if(ch === '.' ){
-          ctx.fillStyle = '#ffd54d';
-          ctx.beginPath(); ctx.arc(x + TILE/2, y + TILE/2, 2.2, 0, Math.PI*2); ctx.fill();
-        } else if(ch === 'o'){
-          ctx.fillStyle = '#ff6b6b';
-          ctx.beginPath(); ctx.arc(x + TILE/2, y + TILE/2, 5, 0, Math.PI*2); ctx.fill();
+    // Colisión con fantasmas
+    for(const g of ghosts){
+      const dist=Math.hypot(px-g.x,py-g.y);
+      if(dist<tileSize/1.2){
+        lives--;
+        if(lives<=0){
+          alert('¡Game Over! Puntuación: '+score);
+          backToMenu();
+          return;
         } else {
-          // optional floor rendering skipped to keep contrast
+          resetPositions();
+          return;
         }
       }
     }
 
-    // draw Pac: animated mouth based on frame/time and dir
-    const mouthOpen = 0.2 + 0.15 * Math.sin(performance.now() / 80);
-    const cx = pac.px, cy = pac.py;
-    ctx.fillStyle = '#ffeb3b';
-    let startAng = 0, endAng = Math.PI*2;
-    if(pac.dir.x === 1){ startAng = mouthOpen * Math.PI; endAng = (2 - mouthOpen) * Math.PI; }
-    else if(pac.dir.x === -1){ startAng = Math.PI + mouthOpen * Math.PI; endAng = Math.PI - mouthOpen * Math.PI; }
-    else if(pac.dir.y === -1){ startAng = -Math.PI/2 + mouthOpen * Math.PI; endAng = -Math.PI/2 - mouthOpen * Math.PI; }
-    else if(pac.dir.y === 1){ startAng = Math.PI/2 + mouthOpen * Math.PI; endAng = Math.PI/2 - mouthOpen * Math.PI; }
-    else { startAng = 0; endAng = Math.PI*2; }
+    // Animación boca
+    mouthAngle+=mouthDir*0.2;
+    if(mouthAngle>1 || mouthAngle<0) mouthDir*=-1;
 
+    // Dibujo
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    for(let y=0;y<map.length;y++){
+      for(let x=0;x<map[y].length;x++){
+        const c=map[y][x];
+        if(c==='#'){ ctx.fillStyle='#1919A6'; ctx.fillRect(x*tileSize,y*tileSize,tileSize,tileSize); }
+        else if(c==='.'||c==='o'){
+          ctx.fillStyle='orange';
+          const r=(c==='o')?4:2;
+          ctx.beginPath();
+          ctx.arc(x*tileSize+tileSize/2,y*tileSize+tileSize/2,r,0,Math.PI*2);
+          ctx.fill();
+        }
+      }
+    }
+    // Pac-Man
+    ctx.fillStyle='yellow';
     ctx.beginPath();
-    ctx.moveTo(cx, cy);
-    ctx.arc(cx, cy, pac.radius, startAng, endAng, false);
+    let angleStart, angleEnd;
+    if(vx>0){ angleStart=mouthAngle; angleEnd=2*Math.PI-mouthAngle; }
+    else if(vx<0){ angleStart=Math.PI+mouthAngle; angleEnd=Math.PI-mouthAngle; }
+    else if(vy>0){ angleStart=Math.PI/2+mouthAngle; angleEnd=Math.PI/2-mouthAngle; }
+    else if(vy<0){ angleStart=-Math.PI/2+mouthAngle; angleEnd=-Math.PI/2-mouthAngle; }
+    else { angleStart=0; angleEnd=2*Math.PI; }
+    ctx.moveTo(px+tileSize/2,py+tileSize/2);
+    ctx.arc(px+tileSize/2,py+tileSize/2,tileSize/2,angleStart,angleEnd);
     ctx.closePath();
     ctx.fill();
-  }
 
-  // main loop (frame-timed)
-  let running = true;
-  function frame(){
-    if(!running) return;
-    // try to change direction using buffered input when possible
-    tryApplyBufferedDir();
-    // step movement with collision prevention
-    stepMove();
-    // eat pellet if aligned
-    tryEatPellet();
-    // draw everything
-    draw();
-    requestAnimationFrame(frame);
-  }
-
-  // reset function
-  function reset(){
-    // restore map from raw (deep copy)
-    for(let r=0;r<raw.length;r++) map[r] = raw[r].split('');
-    pac.px = 13 * TILE + TILE/2;
-    pac.py = 23 * TILE + TILE/2;
-    pac.dir.x = 0; pac.dir.y = 0;
-    pac.nextDir.x = 0; pac.nextDir.y = 0;
-    score = 0; updateScore();
-  }
-
-  // expose reset to outside (used by 'r' key)
-  window.resetPacman = reset;
-
-  // initialize
-  reset();
-  frame();
-
-  // cleanup when leaving gameArea: when user clicks backToMenu, container is cleared — stop loop
-  const observer = new MutationObserver((m)=>{
-    m.forEach(rec=>{
-      if(rec.removedNodes.length){
-        // if canvas was removed, stop the loop
-        if(!document.body.contains(canvas)){
-          running = false;
-          observer.disconnect();
-          window.removeEventListener('keydown', onKeyDown);
-        }
-      }
+    // Fantasmas
+    ghosts.forEach(g=>{
+      ctx.fillStyle=g.color;
+      ctx.beginPath();
+      ctx.arc(g.x+tileSize/2,g.y+tileSize/2,tileSize/2,Math.PI,0);
+      ctx.lineTo(g.x+tileSize,g.y+tileSize);
+      ctx.lineTo(g.x,g.y+tileSize);
+      ctx.closePath();
+      ctx.fill();
     });
-  });
-  observer.observe(container, {childList:true});
+
+    document.getElementById('scoreBoard').innerText=`Puntuación: ${score} | Vidas: ${lives}`;
+    requestAnimationFrame(loop);
+  }
+  loop();
 }
 </script>
 </body>
