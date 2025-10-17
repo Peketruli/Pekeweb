@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Zona de Juegos - Pac-Man</title>
+<title>Pac-Man Fluido</title>
 <style>
 body { margin:0; font-family:Arial, sans-serif; background:#000; color:#fff; overflow:hidden; }
 #menu, #playScreen, #gameArea {
@@ -64,7 +64,7 @@ function backToMenu(){
   document.getElementById('scoreBoard').innerText='';
 }
 
-// --- PAC-MAN ---
+// --- PAC-MAN FLUIDO ---
 function initPacman(container){
   const canvas=document.createElement('canvas');
   const ctx=canvas.getContext('2d');
@@ -108,105 +108,109 @@ function initPacman(container){
 
   let score=0;
   let lives=3;
-  let pac={x:13,y:23,dir:'',nextDir:''};
   let powerMode=false;
   let powerTimer=0;
-  let tick=0;
 
-  const speed = 6; // Cuanto más alto, más lento (frames por movimiento)
+  const speed = 2; // px/frame
+
+  // Pac-Man
+  let pac = {
+    x: 13*tileSize, y: 23*tileSize, // posición en píxeles
+    dir:'', nextDir:'',
+    radius: tileSize/2
+  };
 
   const ghosts=[
-    {x:13,y:11, color:'red', dir:'left', home:{x:13,y:11}, frightened:false},
-    {x:14,y:11, color:'pink', dir:'right', home:{x:14,y:11}, frightened:false},
-    {x:12,y:11, color:'cyan', dir:'up', home:{x:12,y:11}, frightened:false},
-    {x:15,y:11, color:'orange', dir:'down', home:{x:15,y:11}, frightened:false},
+    {x:13*tileSize, y:11*tileSize, dir:'left', home:{x:13*tileSize,y:11*tileSize}, color:'red', frightened:false},
+    {x:14*tileSize, y:11*tileSize, dir:'right', home:{x:14*tileSize,y:11*tileSize}, color:'pink', frightened:false},
+    {x:12*tileSize, y:11*tileSize, dir:'up', home:{x:12*tileSize,y:11*tileSize}, color:'cyan', frightened:false},
+    {x:15*tileSize, y:11*tileSize, dir:'down', home:{x:15*tileSize,y:11*tileSize}, color:'orange', frightened:false},
   ];
 
   document.addEventListener('keydown', e=>{
     if(e.key.includes('Arrow')){
-      pac.nextDir=e.key.replace('Arrow','').toLowerCase();
+      pac.nextDir = e.key.replace('Arrow','').toLowerCase();
     }
   });
 
-  function canMove(x,y){
-    if(!map[y] || !map[y][x]) return false;
-    return map[y][x]!=='#';
+  function getTile(px, py){
+    let tx=Math.floor(px/tileSize);
+    let ty=Math.floor(py/tileSize);
+    return {tx, ty};
+  }
+
+  function canMovePixel(px, py, dir){
+    let nx=px, ny=py;
+    if(dir==='up') ny-=speed;
+    else if(dir==='down') ny+=speed;
+    else if(dir==='left') nx-=speed;
+    else if(dir==='right') nx+=speed;
+    let {tx, ty}=getTile(nx, ny);
+    if(!map[ty] || !map[ty][tx]) return false;
+    return map[ty][tx]!=='#';
   }
 
   function movePac(){
-    let nx=pac.x, ny=pac.y;
-    switch(pac.nextDir){
-      case 'up': if(canMove(pac.x,pac.y-1)) pac.dir='up'; break;
-      case 'down': if(canMove(pac.x,pac.y+1)) pac.dir='down'; break;
-      case 'left': if(canMove(pac.x-1,pac.y)) pac.dir='left'; break;
-      case 'right': if(canMove(pac.x+1,pac.y)) pac.dir='right'; break;
-    }
-    switch(pac.dir){
-      case 'up': if(canMove(pac.x,pac.y-1)) pac.y--; break;
-      case 'down': if(canMove(pac.x,pac.y+1)) pac.y++; break;
-      case 'left': if(canMove(pac.x-1,pac.y)) pac.x--; break;
-      case 'right': if(canMove(pac.x+1,pac.y)) pac.x++; break;
+    // Cambiar dirección si posible
+    if(pac.nextDir && canMovePixel(pac.x, pac.y, pac.nextDir)) pac.dir=pac.nextDir;
+    // Mover en dirección actual
+    if(pac.dir && canMovePixel(pac.x, pac.y, pac.dir)){
+      if(pac.dir==='up') pac.y-=speed;
+      else if(pac.dir==='down') pac.y+=speed;
+      else if(pac.dir==='left') pac.x-=speed;
+      else if(pac.dir==='right') pac.x+=speed;
     }
     // túnel lateral
-    if(pac.x < 0) pac.x = map[0].length - 1;
-    if(pac.x >= map[0].length) pac.x = 0;
+    if(pac.x<0) pac.x = canvas.width-1;
+    if(pac.x>canvas.width-1) pac.x = 0;
   }
 
   function moveGhosts(){
     ghosts.forEach(g=>{
-      let dirs=['up','down','left','right'].filter(d=>{
-        let tx=g.x, ty=g.y;
-        if(d==='up') ty--; else if(d==='down') ty++; else if(d==='left') tx--; else if(d==='right') tx++;
-        return canMove(tx,ty);
-      });
-      if(powerMode && g.frightened){
-        // huye de Pac-Man
-        if(pac.x>g.x && dirs.includes('left')) g.dir='left';
-        else if(pac.x<g.x && dirs.includes('right')) g.dir='right';
-        else if(pac.y>g.y && dirs.includes('up')) g.dir='up';
-        else if(pac.y<pac.y && dirs.includes('down')) g.dir='down';
-        else g.dir=dirs[Math.floor(Math.random()*dirs.length)];
-      } else {
-        // persecución simple
-        let dist=Math.hypot(pac.x-g.x,pac.y-g.y);
-        if(dist<6){
-          if(pac.x>g.x && dirs.includes('right')) g.dir='right';
-          else if(pac.x<g.x && dirs.includes('left')) g.dir='left';
-          else if(pac.y>g.y && dirs.includes('down')) g.dir='down';
-          else if(pac.y<g.y && dirs.includes('up')) g.dir='up';
-          else g.dir=dirs[Math.floor(Math.random()*dirs.length)];
-        } else g.dir=dirs[Math.floor(Math.random()*dirs.length)];
+      // Cambiar dirección si toca el centro de la casilla
+      let {tx, ty}=getTile(g.x, g.y);
+      let cx=tx*tileSize+tileSize/2;
+      let cy=ty*tileSize+tileSize/2;
+      if(Math.abs(g.x-cx)<speed && Math.abs(g.y-cy)<speed){
+        let dirs=['up','down','left','right'].filter(d=>{
+          let nx=g.x, ny=g.y;
+          if(d==='up') ny-=speed;
+          else if(d==='down') ny+=speed;
+          else if(d==='left') nx-=speed;
+          else if(d==='right') nx+=speed;
+          return canMovePixel(nx, ny, d);
+        });
+        g.dir=dirs[Math.floor(Math.random()*dirs.length)];
       }
-
-      switch(g.dir){
-        case 'up': g.y--; break;
-        case 'down': g.y++; break;
-        case 'left': g.x--; break;
-        case 'right': g.x++; break;
-      }
-      if(g.x<0) g.x=map[0].length-1;
-      if(g.x>=map[0].length) g.x=0;
+      if(g.dir==='up') g.y-=speed;
+      else if(g.dir==='down') g.y+=speed;
+      else if(g.dir==='left') g.x-=speed;
+      else if(g.dir==='right') g.x+=speed;
+      // túnel lateral
+      if(g.x<0) g.x=canvas.width-1;
+      if(g.x>canvas.width-1) g.x=0;
     });
   }
 
   function checkPellets(){
-    let c=map[pac.y][pac.x];
-    if(c==='.') {
-      score+=10;
-      map[pac.y]=map[pac.y].substring(0,pac.x)+' '+map[pac.y].substring(pac.x+1);
-    }
-    if(c==='o') {
-      score+=50;
-      powerMode=true;
-      powerTimer=600;
-      ghosts.forEach(g=>g.frightened=true);
-      map[pac.y]=map[pac.y].substring(0,pac.x)+' '+map[pac.y].substring(pac.x+1);
+    let {tx, ty}=getTile(pac.x, pac.y);
+    let c = map[ty][tx];
+    if(c==='.' || c==='o'){
+      if(c==='.') score+=10;
+      if(c==='o'){
+        score+=50;
+        powerMode=true;
+        powerTimer=600;
+        ghosts.forEach(g=>g.frightened=true);
+      }
+      map[ty]=map[ty].substring(0,tx)+' '+map[ty].substring(tx+1);
     }
   }
 
   function checkCollisions(){
     ghosts.forEach(g=>{
-      if(g.x===pac.x && g.y===pac.y){
+      let dx=pac.x-g.x, dy=pac.y-g.y;
+      if(Math.hypot(dx, dy)<tileSize/1.5){
         if(powerMode && g.frightened){
           score+=200;
           g.x=g.home.x; g.y=g.home.y;
@@ -214,8 +218,8 @@ function initPacman(container){
         } else if(!powerMode){
           lives--;
           if(lives<=0){ alert('Game Over! Puntuación: '+score); backToMenu(); return; }
-          pac={x:13,y:23,dir:'',nextDir:''};
-          ghosts.forEach(g=>{g.x=g.home.x; g.y=g.home.y;});
+          pac={x:13*tileSize,y:23*tileSize,dir:'',nextDir:''};
+          ghosts.forEach(g=>{g.x=g.home.x; g.y=g.home.y; g.frightened=false;});
         }
       }
     });
@@ -230,32 +234,31 @@ function initPacman(container){
         else if(c==='.'||c==='o'){
           ctx.fillStyle='orange';
           ctx.beginPath();
-          ctx.arc(x*tileSize+tileSize/2,y*tileSize+tileSize/2,(c==='o'?4:2),0,Math.PI*2);
+          ctx.arc(x*tileSize+tileSize/2, y*tileSize+tileSize/2, c==='o'?4:2,0,Math.PI*2);
           ctx.fill();
         }
       }
     }
+    // Pac-Man
     ctx.fillStyle='yellow';
     ctx.beginPath();
-    ctx.arc(pac.x*tileSize+tileSize/2,pac.y*tileSize+tileSize/2,tileSize/2,0,Math.PI*2);
+    ctx.arc(pac.x, pac.y, pac.radius,0,Math.PI*2);
     ctx.fill();
+    // Fantasmas
     ghosts.forEach(g=>{
       ctx.fillStyle=(powerMode && g.frightened)?'blue':g.color;
       ctx.beginPath();
-      ctx.arc(g.x*tileSize+tileSize/2,g.y*tileSize+tileSize/2,tileSize/2,0,Math.PI*2);
+      ctx.arc(g.x, g.y, pac.radius,0,Math.PI*2);
       ctx.fill();
     });
     document.getElementById('scoreBoard').innerText=`Puntuación: ${score} | Vidas: ${lives}`;
   }
 
   function loop(){
-    tick++;
-    if(tick % speed === 0){ // controla la velocidad
-      movePac();
-      moveGhosts();
-      checkPellets();
-      checkCollisions();
-    }
+    movePac();
+    moveGhosts();
+    checkPellets();
+    checkCollisions();
     if(powerMode){
       powerTimer--;
       if(powerTimer<=0){
@@ -266,6 +269,7 @@ function initPacman(container){
     draw();
     requestAnimationFrame(loop);
   }
+
   loop();
 }
 </script>
