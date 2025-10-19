@@ -45,168 +45,120 @@ input, textarea { width: 100%; margin-bottom: 8px; padding: 6px; border-radius: 
 <ul id="noticiasList"></ul>
 
 <script>
-// ==================== JS SUPABASE ====================
+/* ===== Supabase (usa tu URL y KEY originales) ===== */
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let currentUser = null;
-let permisosPublicar = [];
-
-// ------------------ INIT ------------------
 document.addEventListener("DOMContentLoaded", async () => {
-    await initUser();
-    await loadPermisos();
-    await loadNoticias();
+  const authContainer = document.getElementById("authContainer");
+  const userInfo = document.getElementById("userInfo");
+  const dropdownMenu = document.getElementById("dropdownMenu");
+  const golfButton = document.getElementById("golfButton");
+  const ajustesButton = document.getElementById("ajustesButton");
+  const noticiasContainer = document.getElementById("noticiasContainer");
+  const publicarNoticiaBtn = document.getElementById("publicarNoticiaBtn");
+
+  // ===== Cargar información de usuario =====
+  async function loadUserInfo() {
+    let user = null;
+
+    // 1️⃣ Intentar obtener desde Supabase
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.user) {
+      user = {
+        username: session.user.user_metadata?.username || session.user.email,
+        email: session.user.email,
+        logo: session.user.user_metadata?.logo || "logoDefault.png"
+      };
+      localStorage.setItem("currentUser", JSON.stringify(user));
+    }
+
+    // 2️⃣ Si no hay sesión, cargar del localStorage
+    if (!user) {
+      const stored = JSON.parse(localStorage.getItem("currentUser"));
+      if (stored) user = stored;
+    }
+
+    // ===== Actualizar UI =====
+    if (user) {
+      userInfo.style.display = "flex";
+      authContainer.style.display = "none";
+      document.getElementById("userName").textContent = user.username;
+      document.getElementById("userLogo").src = user.logo || "logoDefault.png";
+
+      // Solo Peketruli puede ver los botones especiales
+      if (user.username === "Peketruli") {
+        if (golfButton) golfButton.style.display = "inline-flex";
+        if (ajustesButton) ajustesButton.style.display = "inline-flex";
+        if (publicarNoticiaBtn) publicarNoticiaBtn.style.display = "inline-flex";
+      } else {
+        if (golfButton) golfButton.style.display = "none";
+        if (ajustesButton) ajustesButton.style.display = "none";
+        if (publicarNoticiaBtn) publicarNoticiaBtn.style.display = "none";
+      }
+
+      // Cargar las noticias
+      await cargarNoticias();
+
+    } else {
+      userInfo.style.display = "none";
+      authContainer.style.display = "flex";
+    }
+  }
+
+  await loadUserInfo();
+
+  // ===== Logout =====
+  window.logout = async function() {
+    await supabase.auth.signOut();
+    localStorage.removeItem("currentUser");
+    window.location.href = "l.html";
+  };
+
+  // ===== Noticias =====
+  async function cargarNoticias() {
+    const { data, error } = await supabase.from("noticias").select("*").order("id", { ascending: false });
+    if (error) {
+      console.warn("Error cargando noticias:", error);
+      noticiasContainer.innerHTML = "<p>Error al cargar las noticias.</p>";
+      return;
+    }
+
+    noticiasContainer.innerHTML = "";
+    data.forEach(noticia => {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.innerHTML = `
+        <h3 style="color:orange;">${noticia.titulo}</h3>
+        <p>${noticia.contenido}</p>
+        <p style="font-size:12px;color:gray;">Por ${noticia.autor}</p>
+      `;
+      noticiasContainer.appendChild(div);
+    });
+  }
+
+  // ===== Publicar nueva noticia =====
+  if (publicarNoticiaBtn) {
+    publicarNoticiaBtn.addEventListener("click", async () => {
+      const titulo = prompt("Título de la noticia:");
+      const contenido = prompt("Contenido de la noticia:");
+      if (!titulo || !contenido) return alert("Faltan datos");
+
+      const currentUser = JSON.parse(localStorage.getItem("currentUser"));
+      const autor = currentUser?.username || "Anónimo";
+
+      const { error } = await supabase.from("noticias").insert([{ titulo, contenido, autor }]);
+      if (error) {
+        alert("Error al publicar: " + error.message);
+      } else {
+        alert("✅ Noticia publicada correctamente.");
+        await cargarNoticias();
+      }
+    });
+  }
 });
-
-// ------------------ INIT USER ------------------
-async function initUser() {
-    // MODO PRUEBA: Peketruli siempre logueado
-    currentUser = { id: "88dfe118-dba2-4a86-85b7-6cba6b069ba1", username: "Peketruli" };
-    renderUserUI();
-}
-
-// ------------------ RENDER UI ------------------
-function renderUserUI() {
-    const ajustesBtnContainer = document.getElementById("ajustesContainer");
-    const publicarDiv = document.getElementById("publicarContainer");
-
-    if (!currentUser) return;
-
-    // Botón ajustes solo para Peketruli
-    ajustesBtnContainer.style.display = currentUser.username === "Peketruli" ? "block" : "none";
-
-    // Formulario publicar solo si tiene permiso
-    publicarDiv.style.display = (permisosPublicar.includes(currentUser.id) || currentUser.username === "Peketruli") ? "block" : "none";
-}
-
-// ------------------ PERMISOS ------------------
-async function loadPermisos() {
-    try {
-        const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
-        if (error) return console.error(error);
-
-        permisosPublicar = data.filter(u => u.puede_publicar).map(u => u.id);
-        renderUserUI();
-    } catch (err) {
-        console.error(err);
-    }
-}
-
-async function togglePermiso(usuarioId) {
-    try {
-        const tienePermiso = permisosPublicar.includes(usuarioId);
-        const { error } = await supabase
-            .from("usuarios")
-            .update({ puede_publicar: !tienePermiso })
-            .eq("id", usuarioId);
-
-        if (error) return alert("Error actualizando permiso: " + error.message);
-
-        await loadPermisos();
-        mostrarAjustes();
-    } catch (err) {
-        console.error(err);
-    }
-}
-
-// ------------------ AJUSTES ------------------
-async function mostrarAjustes() {
-    const ajustesDiv = document.getElementById("ajustesDiv");
-    ajustesDiv.style.display = ajustesDiv.style.display === "block" ? "none" : "block";
-
-    if (ajustesDiv.style.display === "block") {
-        try {
-            const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
-            if (error) return console.error(error);
-
-            const lista = document.getElementById("listaUsuariosPermisos");
-            lista.innerHTML = "";
-
-            data.forEach(u => {
-                const esPeketruli = u.username === "Peketruli";
-                const li = document.createElement("li");
-                li.innerHTML = `
-                    ${u.username} 
-                    ${!esPeketruli ? `<button onclick="togglePermiso('${u.id}')">
-                        ${u.puede_publicar ? "Quitar permiso" : "Dar permiso"}
-                    </button>` : "(admin)"}
-                `;
-                lista.appendChild(li);
-            });
-        } catch (err) {
-            console.error(err);
-        }
-    }
-}
-
-// ------------------ NOTICIAS ------------------
-async function loadNoticias() {
-    const noticiasList = document.getElementById("noticiasList");
-    noticiasList.innerHTML = "<li>Cargando noticias...</li>";
-
-    try {
-        const { data, error } = await supabase
-            .from("noticias")
-            .select("id, titulo, contenido, imagen_url, fecha_creacion, autor_id(username)")
-            .eq("publicada", true)
-            .order("fecha_creacion", { ascending: false });
-
-        if (error) return console.error(error);
-
-        if (!data || data.length === 0) {
-            noticiasList.innerHTML = "<li>No hay noticias aún.</li>";
-            return;
-        }
-
-        noticiasList.innerHTML = "";
-        data.forEach(n => {
-            const li = document.createElement("li");
-            li.className = "noticia-item";
-            li.innerHTML = `
-                <h3>${n.titulo}</h3>
-                <p>${n.contenido}</p>
-                ${n.imagen_url ? `<img src="${n.imagen_url}" alt="Imagen noticia">` : ""}
-                <small>Por: ${n.autor_id?.username || "Desconocido"} | ${new Date(n.fecha_creacion).toLocaleString()}</small>
-            `;
-            noticiasList.appendChild(li);
-        });
-    } catch (err) {
-        console.error(err);
-        noticiasList.innerHTML = "<li>Error cargando noticias.</li>";
-    }
-}
-
-// ------------------ PUBLICAR ------------------
-async function publicarNoticia() {
-    const titulo = document.getElementById("noticiaTitulo").value.trim();
-    const contenido = document.getElementById("noticiaContenido").value.trim();
-    const imagen = document.getElementById("noticiaImagen").value.trim();
-
-    if (!titulo || !contenido) return alert("Debes completar título y contenido.");
-
-    try {
-        const { error } = await supabase.from("noticias").insert({
-            titulo,
-            contenido,
-            imagen_url: imagen || null,
-            autor_id: currentUser.id,
-            publicada: true
-        });
-
-        if (error) return alert("Error publicando noticia: " + error.message);
-
-        document.getElementById("noticiaTitulo").value = "";
-        document.getElementById("noticiaContenido").value = "";
-        document.getElementById("noticiaImagen").value = "";
-
-        loadNoticias();
-    } catch (err) {
-        console.error(err);
-    }
-}
 </script>
 </body>
 </html>
