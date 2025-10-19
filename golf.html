@@ -1,47 +1,46 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Pac-Man Original — HTML5</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pac-Man Clásico — HTML5</title>
 <style>
-  body {
-    margin:0;
-    font-family: Arial, sans-serif;
-    background: #000;
-    color: #fff;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    height: 100vh;
-  }
-  #scoreBoard {
-    margin: 10px;
-    font-weight: bold;
-  }
-  #gameContainer {
-    position: relative;
-    width: 800px;
-    height: 600px;
-    background: #000;
-  }
-  canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    image-rendering: pixelated;
-  }
-  button {
-    margin-top: 10px;
-    padding: 8px 12px;
-    border-radius: 6px;
-    border: none;
-    background: #0af;
-    color: #001;
-    font-weight: bold;
-    cursor: pointer;
-  }
+body {
+  margin:0;
+  font-family: Arial, sans-serif;
+  background:#000;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+  color:#fff;
+}
+#scoreBoard {
+  margin:10px;
+  font-weight:bold;
+}
+#gameContainer {
+  position: relative;
+  width: 560px; /* 28 tiles * 20px */
+  height: 620px; /* 31 tiles * 20px */
+  background:#000;
+}
+canvas {
+  width:100%;
+  height:100%;
+  image-rendering: pixelated;
+  display:block;
+}
+button {
+  margin-top:10px;
+  padding:8px 12px;
+  border-radius:6px;
+  border:none;
+  background:#0af;
+  color:#001;
+  font-weight:bold;
+  cursor:pointer;
+}
 </style>
 </head>
 <body>
@@ -51,7 +50,7 @@
 <button id="btnRestart">Reiniciar Juego</button>
 
 <script>
-// ---------------- Configuración ----------------
+// ---------------- MAPA ----------------
 const RAW_MAP = [
 "############################",
 "#............##............#",
@@ -90,20 +89,21 @@ const TILE = 20;
 const COLS = RAW_MAP[0].length;
 const ROWS = RAW_MAP.length;
 
-// ---------------- Utilidades ----------------
+// ---------------- UTILS ----------------
 function cloneMap(raw){ return raw.map(r=>r.split('')); }
 function inside(x,y){ return x>=0 && x<COLS && y>=0 && y<ROWS; }
-function isWall(map, tx,ty){ if(!inside(tx,ty)) return true; return map[ty][tx] === '#'; }
-function tileCenterX(tx){ return tx*TILE + TILE/2; }
-function tileCenterY(ty){ return ty*TILE + TILE/2; }
+function isWall(map,tx,ty){ if(!inside(tx,ty)) return true; return map[ty][tx]==='#'; }
+function tileCenterX(tx){ return tx*TILE+TILE/2; }
+function tileCenterY(ty){ return ty*TILE+TILE/2; }
 function distanceSq(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return dx*dx+dy*dy; }
 
-// ---------------- Juego ----------------
+// ---------------- GAME STATE ----------------
 let map, score, lives, pac, ghosts, powerMode, powerTimer;
 let canvas, ctx, rafId;
 const scoreBoardEl = document.getElementById('scoreBoard');
 const container = document.getElementById('gameContainer');
 
+// ---------------- REINICIAR ----------------
 function resetGame(){
   map = cloneMap(RAW_MAP);
   score = 0;
@@ -111,98 +111,100 @@ function resetGame(){
   powerMode = false;
   powerTimer = 0;
 
-  // Pac-Man
   pac = {
     x: tileCenterX(13),
     y: tileCenterY(23),
-    dir: {x:0,y:0},
-    nextDir: {x:0,y:0},
-    speed: 2,
-    radius: 8,
-    mouth: 0
+    dir:{x:0,y:0},
+    nextDir:{x:0,y:0},
+    speed:2,
+    radius:8,
+    mouth:0
   };
 
-  // Fantasmas
   ghosts = [
     {name:'blinky', color:'#ff0000', x:tileCenterX(13), y:tileCenterY(11), dir:{x:1,y:0}, speed:2, state:'normal'},
-    {name:'pinky',  color:'#ffb8ff', x:tileCenterX(14), y:tileCenterY(11), dir:{x:-1,y:0}, speed:2, state:'normal'},
-    {name:'inky',   color:'#00ffff', x:tileCenterX(12), y:tileCenterY(11), dir:{x:1,y:0}, speed:2, state:'normal'},
-    {name:'clyde',  color:'#ffb852', x:tileCenterX(15), y:tileCenterY(11), dir:{x:-1,y:0}, speed:2, state:'normal'}
+    {name:'pinky', color:'#ffb8ff', x:tileCenterX(14), y:tileCenterY(11), dir:{x:-1,y:0}, speed:2, state:'normal'},
+    {name:'inky', color:'#00ffff', x:tileCenterX(12), y:tileCenterY(11), dir:{x:1,y:0}, speed:2, state:'normal'},
+    {name:'clyde', color:'#ffb852', x:tileCenterX(15), y:tileCenterY(11), dir:{x:-1,y:0}, speed:2, state:'normal'}
   ];
 
   updateScoreBoard();
+  resetPositions();
 }
 
-// ---------------- Input ----------------
-const keyMap = {'ArrowUp': {x:0,y:-1}, 'ArrowDown': {x:0,y:1}, 'ArrowLeft': {x:-1,y:0}, 'ArrowRight': {x:1,y:0}};
+// ---------------- INPUT ----------------
+const keyMap = {'ArrowUp':{x:0,y:-1}, 'ArrowDown':{x:0,y:1}, 'ArrowLeft':{x:-1,y:0}, 'ArrowRight':{x:1,y:0}};
 document.addEventListener('keydown', e=>{
-  if(keyMap[e.key]){ pac.nextDir = {...keyMap[e.key]}; e.preventDefault(); }
+  if(keyMap[e.key]){ pac.nextDir={...keyMap[e.key]}; e.preventDefault(); }
 });
 
-// ---------------- Funciones de movimiento ----------------
-function tileFromPx(x,y){ return {x: Math.floor(x/TILE), y: Math.floor(y/TILE)}; }
-
-function canMoveToTile(tx,ty){ return inside(tx,ty) && !isWall(map,tx,ty); }
+// ---------------- MOVIMIENTO ----------------
+function tileFromPx(x,y){ return {x:Math.floor(x/TILE),y:Math.floor(y/TILE)}; }
+function canMoveToTile(tx,ty){ return inside(tx,ty)&&!isWall(map,tx,ty); }
 
 function movePac(){
-  // Intentar aplicar dirección siguiente
-  const nextTile = tileFromPx(pac.x + pac.nextDir.x*TILE/2, pac.y + pac.nextDir.y*TILE/2);
+  const nextTile = tileFromPx(pac.x+pac.nextDir.x*TILE/2, pac.y+pac.nextDir.y*TILE/2);
   if(canMoveToTile(nextTile.x,nextTile.y)) pac.dir = {...pac.nextDir};
 
-  pac.x += pac.dir.x * pac.speed;
-  pac.y += pac.dir.y * pac.speed;
+  pac.x += pac.dir.x*pac.speed;
+  pac.y += pac.dir.y*pac.speed;
 
-  // túneles laterales
-  if(pac.x < -pac.radius) pac.x = canvas.width + pac.radius;
-  if(pac.x > canvas.width + pac.radius) pac.x = -pac.radius;
+  if(pac.x<-pac.radius) pac.x=canvas.width+pac.radius;
+  if(pac.x>canvas.width+pac.radius) pac.x=-pac.radius;
 
   const t = tileFromPx(pac.x,pac.y);
-  if(isWall(map,t.x,t.y)){ pac.x -= pac.dir.x*pac.speed; pac.y -= pac.dir.y*pac.speed; pac.dir = {x:0,y:0}; }
+  if(isWall(map,t.x,t.y)){ pac.x-=pac.dir.x*pac.speed; pac.y-=pac.dir.y*pac.speed; pac.dir={x:0,y:0}; }
 }
 
 function moveGhosts(){
   ghosts.forEach(g=>{
-    g.x += g.dir.x * g.speed;
-    g.y += g.dir.y * g.speed;
-
-    const t = tileFromPx(g.x,g.y);
-    if(isWall(map,t.x,t.y)){ g.dir.x*=-1; g.dir.y*=-1; }
+    // IA simple: Blinky sigue a Pac-Man
+    let target={x:pac.x,y:pac.y};
+    if(g.name==='pinky'){ target={x:pac.x+pac.dir.x*4* TILE, y:pac.y+pac.dir.y*4*TILE}; }
+    if(g.name==='clyde'){ 
+      const dist=Math.sqrt(distanceSq({x:g.x,y:g.y},{x:pac.x,y:pac.y}));
+      if(dist>120) target={x:pac.x,y:pac.y};
+      else target={x:tileCenterX(0),y:tileCenterY(31)};
+    }
+    // dirección hacia target
+    const dx=target.x-g.x, dy=target.y-g.y, len=Math.sqrt(dx*dx+dy*dy)||1;
+    g.x += (dx/len)*g.speed;
+    g.y += (dy/len)*g.speed;
   });
 }
 
-// ---------------- Pellets ----------------
+// ---------------- PELLETS ----------------
 function checkPelletConsumption(){
-  const t = tileFromPx(pac.x,pac.y);
-  const c = map[t.y][t.x];
-  if(c === '.'){ map[t.y][t.x]=' '; score+=10; }
-  if(c === 'o'){ map[t.y][t.x]=' '; score+=50; powerMode=true; powerTimer=600; }
+  const t=tileFromPx(pac.x,pac.y);
+  const c=map[t.y][t.x];
+  if(c==='.'){ map[t.y][t.x]=' '; score+=10; }
+  if(c==='o'){ map[t.y][t.x]=' '; score+=50; powerMode=true; powerTimer=600; ghosts.forEach(g=>g.state='frightened'); }
 }
 
-// ---------------- Colisiones ----------------
+// ---------------- COLISION ----------------
 function checkCollisions(){
   ghosts.forEach(g=>{
-    const d2 = distanceSq({x:pac.x,y:pac.y},{x:g.x,y:g.y});
-    if(d2 < (pac.radius*2)**2){
-      if(powerMode && g.state==='normal'){ score+=100; g.state='eyes'; }
+    const d2=distanceSq({x:pac.x,y:pac.y},{x:g.x,y:g.y});
+    if(d2<(pac.radius*2)**2){
+      if(powerMode&&g.state==='frightened'){ score+=100; g.state='eyes'; }
       else if(!powerMode){ lives--; if(lives<=0){ alert("GAME OVER "+score); cancelAnimationFrame(rafId); } else resetPositions(); }
     }
   });
 }
 
+// ---------------- RESET POS ----------------
 function resetPositions(){
-  pac.x = tileCenterX(13); pac.y = tileCenterY(23); pac.dir={x:0,y:0}; pac.nextDir={x:0,y:0};
-  ghosts.forEach((g,i)=>{ g.x=tileCenterX(12+i); g.y=tileCenterY(11); g.dir={x:1,y:0}; g.state='normal'; });
+  pac.x=tileCenterX(13); pac.y=tileCenterY(23); pac.dir={x:0,y:0}; pac.nextDir={x:0,y:0};
+  ghosts.forEach((g,i)=>{ g.x=tileCenterX(12+i); g.y=tileCenterY(11); g.state='normal'; });
 }
 
-// ---------------- Dibujo ----------------
+// ---------------- DIBUJO ----------------
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Mapa
   for(let y=0;y<ROWS;y++){
     for(let x=0;x<COLS;x++){
-      const c = map[y][x];
-      const px = x*TILE, py = y*TILE;
+      const c=map[y][x], px=x*TILE, py=y*TILE;
       if(c==='#'){ ctx.fillStyle='#001f6f'; ctx.fillRect(px,py,TILE,TILE); }
       else if(c==='.'){ ctx.fillStyle='#ffd54d'; ctx.beginPath(); ctx.arc(px+TILE/2,py+TILE/2,3,0,Math.PI*2); ctx.fill(); }
       else if(c==='o'){ ctx.fillStyle='#ffd54d'; ctx.beginPath(); ctx.arc(px+TILE/2,py+TILE/2,6,0,Math.PI*2); ctx.fill(); }
@@ -210,20 +212,19 @@ function draw(){
   }
 
   // Pac-Man
-  const mouthAngle = 0.25 + 0.25 * Math.sin(pac.mouth);
-  ctx.fillStyle = '#ffea00';
-  const dirAngle = Math.atan2(pac.dir.y,pac.dir.x)||0;
-  let a1 = -mouthAngle + dirAngle;
-  let a2 = mouthAngle + dirAngle;
+  const mouthAngle=0.25+0.25*Math.sin(pac.mouth);
+  ctx.fillStyle='#ffea00';
+  const dirAngle=Math.atan2(pac.dir.y,pac.dir.x)||0;
+  let a1=-mouthAngle+dirAngle, a2=mouthAngle+dirAngle;
   ctx.beginPath();
-  if(pac.dir.x===0 && pac.dir.y===0) ctx.arc(pac.x,pac.y,pac.radius,0,Math.PI*2);
+  if(pac.dir.x===0&&pac.dir.y===0) ctx.arc(pac.x,pac.y,pac.radius,0,Math.PI*2);
   else { ctx.moveTo(pac.x,pac.y); ctx.arc(pac.x,pac.y,pac.radius,a1,a2,false); ctx.closePath(); }
   ctx.fill();
-  pac.mouth += 0.3;
+  pac.mouth+=0.3;
 
-  // Ghosts
+  // Fantasmas
   ghosts.forEach(g=>{
-    ctx.fillStyle = g.color;
+    ctx.fillStyle=g.state==='frightened'?'#0000cc':g.color;
     ctx.beginPath();
     ctx.arc(g.x,g.y,pac.radius,Math.PI,0,false);
     ctx.lineTo(g.x+pac.radius,g.y+pac.radius);
@@ -233,7 +234,7 @@ function draw(){
   });
 }
 
-// ---------------- Loop ----------------
+// ---------------- UPDATE ----------------
 function update(){
   movePac();
   checkPelletConsumption();
@@ -241,29 +242,29 @@ function update(){
   checkCollisions();
   draw();
   updateScoreBoard();
-  if(powerMode){ powerTimer--; if(powerTimer<=0){ powerMode=false; ghosts.forEach(g=>{ if(g.state==='eyes') g.state='normal'; }); } }
-  rafId = requestAnimationFrame(update);
+
+  if(powerMode){ powerTimer--; if(powerTimer<=0){ powerMode=false; ghosts.forEach(g=>{ if(g.state==='frightened') g.state='normal'; }); } }
+
+  rafId=requestAnimationFrame(update);
 }
 
 function updateScoreBoard(){ scoreBoardEl.innerText=`Puntuación: ${score} | Vidas: ${lives}`; }
 
-// ---------------- Inicialización ----------------
+// ---------------- START ----------------
 function startGame(){
-  canvas = document.createElement('canvas');
-  canvas.width = COLS*TILE;
-  canvas.height = ROWS*TILE;
-  ctx = canvas.getContext('2d');
+  canvas=document.createElement('canvas');
+  canvas.width=COLS*TILE; canvas.height=ROWS*TILE;
+  ctx=canvas.getContext('2d');
   ctx.imageSmoothingEnabled=false;
   container.innerHTML=''; container.appendChild(canvas);
   resetGame();
   if(rafId) cancelAnimationFrame(rafId);
-  rafId = requestAnimationFrame(update);
+  rafId=requestAnimationFrame(update);
 }
 
 document.getElementById('btnRestart').addEventListener('click', startGame);
 
 startGame();
 </script>
-
 </body>
 </html>
