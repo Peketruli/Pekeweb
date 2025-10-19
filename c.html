@@ -279,53 +279,115 @@ table.site-table th, table.site-table td {
   <div id="exclusiveTop1" style="display:none; margin-top:6px;">👑 Top 1 → nombre en <span style="color:gold">oro</span>.</div>  
 </div>  
 
-<script>  
-const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";  
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";  
-const { createClient } = window.supabase;  
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);  
+<script>
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let currentUser = null;  
+let currentUser = null;
 
-document.addEventListener("DOMContentLoaded", async () => {  
-  document.getElementById("reward3Btn").addEventListener("click", () => toggleShow("tableColorPicker"));  
-  document.getElementById("rewardBgBtn").addEventListener("click", () => toggleShow("backgroundPicker"));  
-  document.getElementById("rewardNameBtn").addEventListener("click", () => toggleShow("nameColorPicker"));  
+document.addEventListener("DOMContentLoaded", async () => {
+  document.getElementById("reward3Btn").addEventListener("click", () => toggleShow("tableColorPicker"));
+  document.getElementById("rewardBgBtn").addEventListener("click", () => toggleShow("backgroundPicker"));
+  document.getElementById("rewardNameBtn").addEventListener("click", () => toggleShow("nameColorPicker"));
 
-  document.getElementById("backgroundPicker").addEventListener("input", (e) => setBackgroundColor(e.target.value));  
-  document.getElementById("nameColorPicker").addEventListener("input", (e) => setNameColor(e.target.value));  
-  document.getElementById("tableColorPicker").addEventListener("input", (e) => setTableColor(e.target.value));  
+  document.getElementById("backgroundPicker").addEventListener("input", (e) => setBackgroundColor(e.target.value));
+  document.getElementById("nameColorPicker").addEventListener("input", (e) => setNameColor(e.target.value));
+  document.getElementById("tableColorPicker").addEventListener("input", (e) => setTableColor(e.target.value));
 
-  document.getElementById("userInfo").addEventListener("click", toggleDropdown);  
-  document.addEventListener("click", (e) => {  
-    const ui = document.getElementById("userInfo"), dd = document.getElementById("dropdownMenu");  
-    if (!ui.contains(e.target) && !dd.contains(e.target)) dd.style.display = "none";  
-  });  
+  document.getElementById("userInfo").addEventListener("click", toggleDropdown);
+  document.addEventListener("click", (e) => {
+    const ui = document.getElementById("userInfo"), dd = document.getElementById("dropdownMenu");
+    if (!ui.contains(e.target) && !dd.contains(e.target)) dd.style.display = "none";
+  });
 
-  await initUser();  
-  await loadTop5();  
-});  
+  await initUser();
+  await loadTop5();
+});
+
+// -------------------- NUEVO BOTÓN DIARIO --------------------
+function showDailyButton() {
+  if (!document.getElementById("dailyButton") && currentUser) {
+    const dailyDiv = document.createElement("div");
+    dailyDiv.innerHTML = `
+      <button id="dailyButton" class="reward-button" onclick="claimDaily()">🎁 Reclamar 100 Pekepuntos diarios</button>
+    `;
+    document.getElementById("pekepuntos").after(dailyDiv);
+    checkDailyStatus();
+  }
+}
+
+async function checkDailyStatus() {
+  if (!currentUser) return;
+  const lastClaim = currentUser.ultima_recompensa; // campo en la tabla "usuarios"
+  const btn = document.getElementById("dailyButton");
+  if (!btn) return;
+
+  if (!lastClaim) return; // nunca ha reclamado
+  const last = new Date(lastClaim);
+  const now = new Date();
+  const diffHours = (now - last) / 36e5;
+  if (diffHours < 24) {
+    btn.disabled = true;
+    const remaining = Math.ceil(24 - diffHours);
+    btn.textContent = `⏳ Ya reclamaste — vuelve en ${remaining}h`;
+  }
+}
+
+async function claimDaily() {
+  if (!currentUser) return alert("Inicia sesión para reclamar tus pekepuntos.");
+  const now = new Date();
+  const last = currentUser.ultima_recompensa ? new Date(currentUser.ultima_recompensa) : null;
+
+  if (last && (now - last) < 86400000) {
+    const horas = Math.ceil((86400000 - (now - last)) / 3600000);
+    return alert(`Ya reclamaste hoy. Vuelve en ${horas} hora${horas > 1 ? "s" : ""}.`);
+  }
+
+  const nuevosPekepuntos = (currentUser.pekepuntos || 0) + 100;
+  const { error } = await supabase
+    .from("usuarios")
+    .update({
+      pekepuntos: nuevosPekepuntos,
+      ultima_recompensa: now.toISOString()
+    })
+    .eq("id", currentUser.id);
+
+  if (error) {
+    console.error("Error actualizando recompensa diaria:", error);
+    alert("❌ Error al reclamar la recompensa. Intenta de nuevo.");
+    return;
+  }
+
+  currentUser.pekepuntos = nuevosPekepuntos;
+  currentUser.ultima_recompensa = now.toISOString();
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+
+  document.getElementById("pekepuntos").textContent = `Pekepuntos: ${nuevosPekepuntos.toLocaleString()}`;
+  const btn = document.getElementById("dailyButton");
+  btn.disabled = true;
+  btn.textContent = "✅ Reclamado hoy — vuelve mañana";
+}
+// -------------------------------------------------------------
 
 async function initUser() {
   try {
-    // 1️⃣ Intentar cargar desde localStorage
     const saved = localStorage.getItem("currentUser");
     if (saved) {
       currentUser = JSON.parse(saved);
       renderUserUI();
+      showDailyButton();
       return;
     }
 
-    // 2️⃣ Obtener usuario de Supabase Auth
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      console.log("No hay usuario logueado");
-      document.getElementById("authContainer").style.display = "flex"; // Aseguramos que se vea el botón
+      document.getElementById("authContainer").style.display = "flex";
       document.getElementById("userInfo").style.display = "none";
       return;
     }
 
-    // 3️⃣ Buscar el usuario en la tabla "usuarios"
     const { data, error } = await supabase
       .from("usuarios")
       .select("*")
@@ -333,20 +395,15 @@ async function initUser() {
       .maybeSingle();
 
     if (error) {
-      console.error("Error cargando usuario de la DB:", error);
+      console.error("Error cargando usuario:", error);
       return;
     }
-
-    if (!data) {
-      console.log("Usuario no encontrado en la tabla usuarios");
-      return;
-    }
+    if (!data) return;
 
     currentUser = data;
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
-
-    // 4️⃣ Actualizar UI
     renderUserUI();
+    showDailyButton();
 
   } catch (err) {
     console.error("initUser exception:", err);
@@ -363,8 +420,8 @@ function renderUserUI() {
 
     document.getElementById("userName").textContent = currentUser.username || "Usuario";
     document.getElementById("userLogo").src = currentUser.logo || "logoDefault.png";
-    const puntos = Number(currentUser.pekepuntos || 0);
-    document.getElementById("pekepuntos").textContent = `Pekepuntos: ${puntos.toLocaleString()}`;
+    document.getElementById("pekepuntos").textContent =
+      `Pekepuntos: ${(currentUser.pekepuntos || 0).toLocaleString()}`;
 
     if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
     if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
@@ -379,7 +436,7 @@ function renderUserUI() {
   }
 }
 
-async function loadTop5(){
+async function loadTop5() {
   const top5List = document.getElementById("top5List");
   top5List.innerHTML = '<li style="color:#aaa;">Cargando top 5...</li>';
 
@@ -401,74 +458,66 @@ async function loadTop5(){
       return;
     }
 
-    const fixedData = data.map(u => ({
-      ...u,
-      pekepuntos: u.pekepuntos !== null && u.pekepuntos !== undefined ? parseInt(u.pekepuntos) : 0
-    }));
-
     top5List.innerHTML = "";
-    fixedData.forEach((u, idx) => {
+    data.forEach((u, idx) => {
       const li = document.createElement("li");
       li.className = "top5-item";
-      const nameColor = (idx === 0) ? "gold" : (idx === 1) ? "silver" : (idx === 2) ? "#b87333" : u.nombre_color || "#fff";
-      const imgHtml = u.logo ? `<img src="${u.logo}" alt="logo">` : `<div style="width:36px;height:36px;border-radius:50%;background:#666;"></div>`;
+      const color = (idx === 0) ? "gold" : (idx === 1) ? "silver" : (idx === 2) ? "#b87333" : u.nombre_color || "#fff";
       li.innerHTML = `
-        ${imgHtml}
+        <img src="${u.logo || "logoDefault.png"}" alt="logo">
         <div style="flex:1;text-align:left;">
-          <strong style="color:${nameColor}">${idx+1}. ${u.username || 'Jugador'}</strong>
-          <div style="font-size:0.9rem;color:#ddd;">${u.pekepuntos.toLocaleString()} Pekepuntos</div>
+          <strong style="color:${color}">${idx + 1}. ${u.username}</strong>
+          <div style="font-size:0.9rem;color:#ddd;">${(u.pekepuntos || 0).toLocaleString()} Pekepuntos</div>
         </div>
       `;
       top5List.appendChild(li);
     });
+  } catch (e) {
+    console.error("loadTop5 exception:", e);
+  }
+}
 
-  } catch(e){  
-    console.error("loadTop5 exception:", e);  
-    top5List.innerHTML = '<li style="color:red;">Error cargando Top 5 (revisa consola)</li>';  
-  }  
-}  
+function toggleDropdown() {
+  const dd = document.getElementById("dropdownMenu");
+  dd.style.display = dd.style.display === "block" ? "none" : "block";
+}
 
-function toggleDropdown(){ 
-  const dd=document.getElementById("dropdownMenu"); 
-  dd.style.display = dd.style.display==="block"?"none":"block"; 
-}  
+function toggleShow(id) {
+  const el = document.getElementById(id);
+  el.style.display = el.style.display === "block" ? "none" : "block";
+}
 
-function toggleShow(id){ 
-  const el=document.getElementById(id); 
-  el.style.display = el.style.display==="block"?"none":"block"; 
-}  
+function applyTableColor(color) {
+  document.querySelectorAll(".section").forEach(sec => sec.style.backgroundColor = color);
+  document.querySelectorAll("table").forEach(tbl => tbl.style.backgroundColor = color);
+}
 
-function applyTableColor(color){ 
-  document.querySelectorAll('.section').forEach(sec=>sec.style.backgroundColor=color); 
-  document.querySelectorAll('table').forEach(tbl=>tbl.style.backgroundColor=color); 
-}  
+async function setBackgroundColor(color) {
+  document.body.style.backgroundColor = color;
+  if (currentUser) {
+    await supabase.from("usuarios").update({ fondo_color: color }).eq("id", currentUser.id);
+    currentUser.fondo_color = color;
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  }
+}
 
-async function setBackgroundColor(color){ 
-  document.body.style.backgroundColor=color; 
-  if(currentUser){ 
-    await supabase.from("usuarios").update({fondo_color:color}).eq("id",currentUser.id); 
-    currentUser.fondo_color=color; 
-    localStorage.setItem("currentUser",JSON.stringify(currentUser)); 
-  } 
-}  
+async function setNameColor(color) {
+  document.getElementById("userName").style.color = color;
+  if (currentUser) {
+    await supabase.from("usuarios").update({ nombre_color: color }).eq("id", currentUser.id);
+    currentUser.nombre_color = color;
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  }
+}
 
-async function setNameColor(color){ 
-  document.getElementById("userName").style.color=color; 
-  if(currentUser){ 
-    await supabase.from("usuarios").update({nombre_color:color}).eq("id",currentUser.id); 
-    currentUser.nombre_color=color; 
-    localStorage.setItem("currentUser",JSON.stringify(currentUser)); 
-  } 
-}  
-
-async function setTableColor(color){ 
-  applyTableColor(color); 
-  if(currentUser){ 
-    await supabase.from("usuarios").update({tabla_color:color}).eq("id",currentUser.id); 
-    currentUser.tabla_color=color; 
-    localStorage.setItem("currentUser",JSON.stringify(currentUser)); 
-  } 
-}  
-</script> 
+async function setTableColor(color) {
+  applyTableColor(color);
+  if (currentUser) {
+    await supabase.from("usuarios").update({ tabla_color: color }).eq("id", currentUser.id);
+    currentUser.tabla_color = color;
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  }
+}
+</script>
 </body>  
 </html>
