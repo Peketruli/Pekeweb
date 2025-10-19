@@ -158,15 +158,43 @@ function movePac(){
 
 function moveGhosts(){
   ghosts.forEach(g=>{
-    // IA simple: Blinky sigue a Pac-Man
-    let target={x:pac.x,y:pac.y};
-    if(g.name==='pinky'){ target={x:pac.x+pac.dir.x*4* TILE, y:pac.y+pac.dir.y*4*TILE}; }
-    if(g.name==='clyde'){ 
+    const t = tileFromPx(g.x, g.y); // tile actual
+    // posiciones vecinas posibles
+    const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+    const possibleDirs = dirs.filter(d=>{
+      const nx = t.x + d.x, ny = t.y + d.y;
+      // No ir hacia pared y no retroceder
+      const opposite = {x:-g.dir.x, y:-g.dir.y};
+      if(d.x===opposite.x && d.y===opposite.y) return false;
+      return canMoveToTile(nx,ny);
+    });
+
+    // Elegir la dirección que más acerca al objetivo
+    let target = {x:pac.x, y:pac.y};
+    if(g.name==='pinky') target = {x:pac.x+pac.dir.x*4*TILE, y:pac.y+pac.dir.y*4*TILE};
+    if(g.name==='clyde'){
       const dist=Math.sqrt(distanceSq({x:g.x,y:g.y},{x:pac.x,y:pac.y}));
-      if(dist>120) target={x:pac.x,y:pac.y};
-      else target={x:tileCenterX(0),y:tileCenterY(31)};
+      target = dist>120 ? {x:pac.x,y:pac.y} : {x:tileCenterX(0),y:tileCenterY(31)};
     }
-    // dirección hacia target
+
+    let bestDir = g.dir;
+    let minDist = Infinity;
+    possibleDirs.forEach(d=>{
+      const nx = g.x + d.x*TILE, ny = g.y + d.y*TILE;
+      const dist = distanceSq({x:nx,y:ny}, target);
+      if(dist<minDist){ minDist=dist; bestDir=d; }
+    });
+
+    g.dir = bestDir;
+    g.x += g.dir.x * g.speed;
+    g.y += g.dir.y * g.speed;
+
+    // túnel lateral
+    if(g.x<-TILE) g.x = canvas.width+TILE;
+    if(g.x>canvas.width+TILE) g.x = -TILE;
+  });
+}
+
     const dx=target.x-g.x, dy=target.y-g.y, len=Math.sqrt(dx*dx+dy*dy)||1;
     g.x += (dx/len)*g.speed;
     g.y += (dy/len)*g.speed;
