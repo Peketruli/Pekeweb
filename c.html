@@ -335,40 +335,44 @@ async function checkDailyStatus() {
   }
 }
 
-async function claimDaily() {
-  if (!currentUser) return alert("Inicia sesión para reclamar tus pekepuntos.");
-  const now = new Date();
-  const last = currentUser.ultima_recompensa ? new Date(currentUser.ultima_recompensa) : null;
+async function reclamarRecompensa() {
+  const user = JSON.parse(localStorage.getItem("currentUser"));
+  if (!user) return alert("Debes iniciar sesión.");
 
-  if (last && (now - last) < 86400000) {
-    const horas = Math.ceil((86400000 - (now - last)) / 3600000);
-    return alert(`Ya reclamaste hoy. Vuelve en ${horas} hora${horas > 1 ? "s" : ""}.`);
+  const now = new Date();
+  const lastClaim = user.last_claim ? new Date(user.last_claim) : null;
+  const diffHours = lastClaim ? (now - lastClaim) / 36e5 : 25; // si nunca reclamó, se permite
+
+  if (diffHours < 24) {
+    const horasRestantes = Math.ceil(24 - diffHours);
+    return alert(`Debes esperar ${horasRestantes} horas para volver a reclamar.`);
   }
 
-  const nuevosPekepuntos = (currentUser.pekepuntos || 0) + 100;
+  const nuevosPekepuntos = (user.pekepuntos || 0) + 100;
+
+  // Actualizamos en Supabase
   const { error } = await supabase
     .from("usuarios")
     .update({
       pekepuntos: nuevosPekepuntos,
-      ultima_recompensa: now.toISOString()
+      last_claim: now.toISOString()
     })
-    .eq("id", currentUser.id);
+    .eq("id", user.id);
 
   if (error) {
-    console.error("Error actualizando recompensa diaria:", error);
-    alert("❌ Error al reclamar la recompensa. Intenta de nuevo.");
-    return;
+    console.error(error);
+    return alert("Error al reclamar los pekepuntos.");
   }
 
-  currentUser.pekepuntos = nuevosPekepuntos;
-  currentUser.ultima_recompensa = now.toISOString();
-  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+  // Actualizamos localStorage
+  user.pekepuntos = nuevosPekepuntos;
+  user.last_claim = now.toISOString();
+  localStorage.setItem("currentUser", JSON.stringify(user));
 
-  document.getElementById("pekepuntos").textContent = `Pekepuntos: ${nuevosPekepuntos.toLocaleString()}`;
-  const btn = document.getElementById("dailyButton");
-  btn.disabled = true;
-  btn.textContent = "✅ Reclamado hoy — vuelve mañana";
+  alert("¡Has reclamado 100 pekepuntos!");
+  document.getElementById("pekepuntos").innerText = nuevosPekepuntos;
 }
+
 // -------------------------------------------------------------
 
 async function initUser() {
