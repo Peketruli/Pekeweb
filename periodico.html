@@ -63,109 +63,188 @@ button {
 <script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
 let currentUser = null;
+let permisosPublicar = []; // IDs de usuarios que pueden publicar
 
+document.addEventListener("DOMContentLoaded", async () => {
+    await initUser();
+    await loadPermisos();
+    await loadNoticias();
+});
+
+// ---------------------- INIT USUARIO ----------------------
 async function initUser() {
-  const saved = localStorage.getItem("currentUser");
-  if (saved) currentUser = JSON.parse(saved);
+    try {
+        const saved = localStorage.getItem("currentUser");
+        if (saved) {
+            currentUser = JSON.parse(saved);
+            renderUserUI();
+            return;
+        }
 
-  // Solo Peketruli ve ajustes
-  if (currentUser?.username === "Peketruli") {
-    document.getElementById("ajustesDiv").style.display = "block";
-    cargarUsuarios();
-  }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-  // Usuarios con permisos pueden crear noticias
-  if (currentUser?.puede_publicar) {
-    document.getElementById("crearNoticiaDiv").style.display = "block";
-  }
+        const { data, error } = await supabase
+            .from("usuarios")
+            .select("*")
+            .eq("auth_id", user.id)
+            .maybeSingle();
 
-  cargarNoticias();
+        if (error || !data) return console.error(error || "Usuario no encontrado");
+
+        currentUser = data;
+        localStorage.setItem("currentUser", JSON.stringify(currentUser));
+        renderUserUI();
+
+    } catch (err) {
+        console.error("initUser exception:", err);
+    }
 }
 
-// -------------------- Noticias --------------------
-async function cargarNoticias() {
-  const { data, error } = await supabase
-    .from("noticias")
-    .select("id, titulo, contenido, imagen_url, fecha_creacion, usuarios(username)")
-    .eq("publicada", true)
-    .order("fecha_creacion", { ascending: false });
+function renderUserUI() {
+    const ajustesBtnContainer = document.getElementById("ajustesContainer");
+    if (!ajustesBtnContainer) return;
 
-  if (error) return document.getElementById("noticiasList").innerText = "Error cargando noticias.";
+    if (currentUser?.username === "Peketruli") {
+        ajustesBtnContainer.style.display = "block"; // Mostrar botón de ajustes
+    } else {
+        ajustesBtnContainer.style.display = "none";
+    }
 
-  if (!data || data.length === 0) {
-    document.getElementById("noticiasList").innerText = "No hay noticias todavía.";
-    return;
-  }
-
-  document.getElementById("noticiasList").innerHTML = data.map(n => `
-    <div style="margin-bottom:12px; padding:10px; border:1px solid #ff6f00; border-radius:8px;">
-      <strong>${n.titulo}</strong> <br>
-      <small>${new Date(n.fecha_creacion).toLocaleString()}</small><br>
-      <div>${n.contenido}</div>
-      ${n.imagen_url ? `<img src="${n.imagen_url}" style="max-width:200px; margin-top:8px; border-radius:6px;">` : ""}
-      <br><em>Autor: ${n.usuarios?.username || 'Desconocido'}</em>
-    </div>
-  `).join("");
+    // Si tiene permiso de publicar
+    if (permisosPublicar.includes(currentUser?.id)) {
+        document.getElementById("publicarContainer").style.display = "block";
+    } else {
+        document.getElementById("publicarContainer").style.display = "none";
+    }
 }
 
-// -------------------- Ajustes de Peketruli --------------------
-async function cargarUsuarios() {
-  const { data, error } = await supabase
-    .from("usuarios")
-    .select("id, username, puede_publicar")
-    .neq("username", "Peketruli");
+// ---------------------- PERMISOS ----------------------
+async function loadPermisos() {
+    // Traemos todos los usuarios que tienen permiso de publicar
+    const { data, error } = await supabase
+        .from("usuarios")
+        .select("id, username, puede_publicar")
+        .eq("puede_publicar", true);
 
-  if (error) return document.getElementById("usuariosList").innerText = "Error cargando usuarios.";
+    if (error) return console.error("Error cargando permisos:", error);
 
-  document.getElementById("usuariosList").innerHTML = data.map(u => `
-    <div style="margin-bottom:6px;">
-      ${u.username} 
-      <button onclick="togglePermiso('${u.id}', ${u.puede_publicar})">
-        ${u.puede_publicar ? "Quitar permiso" : "Dar permiso"}
-      </button>
-    </div>
-  `).join("");
+    permisosPublicar = data.map(u => u.id);
+    renderUserUI();
 }
 
-async function togglePermiso(userId, actual) {
-  const { error } = await supabase.from("usuarios").update({ puede_publicar: !actual }).eq("id", userId);
-  if (error) return alert("Error actualizando permiso.");
-  cargarUsuarios();
+async function togglePermiso(usuarioId) {
+    const nuevoValor = !permisosPublicar.includes(usuarioId);
+    const { error } = await supabase
+        .from("usuarios")
+        .update({ puede_publicar: nuevoValor })
+        .eq("id", usuarioId);
+
+    if (error) return alert("Error actualizando permiso: " + error.message);
+
+    await loadPermisos();
+    loadNoticias();
 }
 
-// -------------------- Crear noticia --------------------
-async function crearNoticia() {
-  const titulo = document.getElementById("tituloNoticia").value.trim();
-  const contenido = document.getElementById("contenidoNoticia").value.trim();
-  const archivo = document.getElementById("imagenNoticia").files[0];
+// ---------------------- CARGAR NOTICIAS ----------------------
+async function loadNoticias() {
+    const noticiasList = document.getElementById("noticiasList");
+    if (!noticiasList) return;
 
-  if (!titulo || !contenido) return alert("Completa título y contenido.");
+    noticiasList.innerHTML = "<li>Cargando noticias...</li>";
 
-  let imagen_url = null;
-  if (archivo) {
-    const { data, error } = await supabase.storage.from("periodico").upload(`noticias/${archivo.name}`, archivo, { upsert: true });
-    if (error) return alert("Error subiendo imagen.");
-    imagen_url = supabase.storage.from("periodico").getPublicUrl(`noticias/${archivo.name}`).publicUrl;
-  }
+    try {
+        const { data, error } = await supabase
+            .from("noticias")
+            .select(`
+                id,
+                titulo,
+                contenido,
+                imagen_url,
+                fecha_creacion,
+                autor:autor_id(username)
+            `)
+            .eq("publicada", true)
+            .order("fecha_creacion", { ascending: false });
 
-  const { error } = await supabase.from("noticias").insert([{
-    titulo,
-    contenido,
-    imagen_url,
-    autor_id: currentUser.id
-  }]);
-  if (error) return alert("Error publicando noticia.");
+        if (error) return console.error("Error cargando noticias:", error);
 
-  alert("✅ Noticia publicada.");
-  document.getElementById("tituloNoticia").value = "";
-  document.getElementById("contenidoNoticia").value = "";
-  document.getElementById("imagenNoticia").value = "";
-  cargarNoticias();
+        if (!data || data.length === 0) {
+            noticiasList.innerHTML = "<li>No hay noticias aún.</li>";
+            return;
+        }
+
+        noticiasList.innerHTML = "";
+        data.forEach(n => {
+            const li = document.createElement("li");
+            li.className = "noticia-item";
+            li.innerHTML = `
+                <h3>${n.titulo}</h3>
+                <p>${n.contenido}</p>
+                ${n.imagen_url ? `<img src="${n.imagen_url}" alt="Imagen noticia" style="max-width:200px;">` : ""}
+                <small>Por: ${n.autor?.username || "Desconocido"} | ${new Date(n.fecha_creacion).toLocaleString()}</small>
+            `;
+            noticiasList.appendChild(li);
+        });
+    } catch (err) {
+        console.error("loadNoticias exception:", err);
+        noticiasList.innerHTML = "<li>Error cargando noticias.</li>";
+    }
 }
 
-document.addEventListener("DOMContentLoaded", initUser);
+// ---------------------- PUBLICAR NOTICIAS ----------------------
+async function publicarNoticia() {
+    const titulo = document.getElementById("noticiaTitulo").value.trim();
+    const contenido = document.getElementById("noticiaContenido").value.trim();
+    const imagen = document.getElementById("noticiaImagen").value.trim();
+
+    if (!titulo || !contenido) return alert("Debes completar título y contenido.");
+
+    const { error } = await supabase.from("noticias").insert({
+        titulo,
+        contenido,
+        imagen_url: imagen || null,
+        autor_id: currentUser.id,
+        publicada: true
+    });
+
+    if (error) return alert("Error publicando noticia: " + error.message);
+
+    document.getElementById("noticiaTitulo").value = "";
+    document.getElementById("noticiaContenido").value = "";
+    document.getElementById("noticiaImagen").value = "";
+
+    loadNoticias();
+}
+
+// ---------------------- AJUSTES DE PERMISOS ----------------------
+async function mostrarAjustes() {
+    const ajustesDiv = document.getElementById("ajustesDiv");
+    ajustesDiv.style.display = ajustesDiv.style.display === "block" ? "none" : "block";
+
+    // Cargar todos los usuarios para editar permisos
+    const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
+    if (error) return console.error("Error cargando usuarios:", error);
+
+    const lista = document.getElementById("listaUsuariosPermisos");
+    lista.innerHTML = "";
+
+    data.forEach(u => {
+        const li = document.createElement("li");
+        li.innerHTML = `
+            ${u.username} 
+            <button onclick="togglePermiso('${u.id}')">
+                ${u.puede_publicar ? "Quitar permiso" : "Dar permiso"}
+            </button>
+        `;
+        lista.appendChild(li);
+    });
+}
 </script>
+
 </body>
 </html>
