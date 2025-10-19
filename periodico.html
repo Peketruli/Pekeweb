@@ -1,164 +1,307 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Periódico</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Periódico — Debug</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-body { font-family: Arial, sans-serif; padding: 20px; background: #111; color: #fff; }
-h1 { color: #ff6f00; }
-button { padding: 8px 12px; margin: 4px; border-radius: 6px; border: none; cursor: pointer; }
-#ajustesContainer { display: none; margin-bottom: 12px; }
-#ajustesDiv { display: none; background: #222; padding: 10px; border-radius: 8px; margin-bottom: 20px; }
-#publicarContainer { display: none; background: #222; padding: 10px; border-radius: 8px; margin-bottom: 20px; }
-input, textarea { width: 100%; margin-bottom: 8px; padding: 6px; border-radius: 6px; border: 1px solid #555; background: #333; color: #fff; }
-.noticia-item { background: #222; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
-.noticia-item img { max-width: 200px; display: block; margin-top: 6px; }
+  body{font-family:Arial,Helvetica,sans-serif;background:#111;color:#eee;padding:18px;}
+  .card{background:#1b1b1b;padding:12px;border-radius:8px;margin-bottom:10px;border:1px solid #2b2b2b;}
+  button{padding:8px 12px;border-radius:6px;border:none;background:#ff7a00;color:#111;cursor:pointer}
+  #mensajes{padding:10px;border-radius:8px;margin-bottom:12px}
+  #listaUsuariosPermisos li{margin:6px 0}
+  .hidden{display:none}
+  img.userlogo{width:36px;height:36px;border-radius:50%;vertical-align:middle;margin-right:8px}
 </style>
 </head>
 <body>
 
-<h1>📰 Periódico</h1>
+<div id="mensajes" class="card"></div>
 
-<!-- BOTÓN DE AJUSTES PARA PEKETRULI -->
-<div id="ajustesContainer">
-  <button onclick="mostrarAjustes()">⚙️ Ajustes de Publicación</button>
+<!-- UI mínima necesaria -->
+<div id="topbar" class="card">
+  <span id="userInfoMini">No hay usuario</span>
+  <span style="float:right">
+    <button id="ajustesButton" class="hidden">⚙️ Ajustes (Peketruli)</button>
+    <button id="publicarNoticiaBtn" class="hidden">✍️ Publicar (Peketruli)</button>
+  </span>
 </div>
 
-<!-- DIV AJUSTES -->
-<div id="ajustesDiv">
-  <h3>Gestionar permisos de publicación</h3>
+<div id="ajustesPanel" class="card hidden">
+  <h3>Ajustes — gestionar permisos</h3>
   <ul id="listaUsuariosPermisos"></ul>
+  <button id="cerrarAjustes">Cerrar ajustes</button>
 </div>
 
-<!-- FORMULARIO PARA PUBLICAR -->
-<div id="publicarContainer">
-  <h3>Publicar Noticia</h3>
-  <input type="text" id="noticiaTitulo" placeholder="Título de la noticia">
-  <textarea id="noticiaContenido" rows="4" placeholder="Contenido de la noticia"></textarea>
-  <input type="text" id="noticiaImagen" placeholder="URL de imagen (opcional)">
-  <button onclick="publicarNoticia()">📢 Publicar</button>
+<div id="publicarPanel" class="card hidden">
+  <h3>Publicar noticia</h3>
+  <input id="tituloInput" placeholder="Título" style="width:100%;padding:8px;margin-bottom:8px"><br>
+  <textarea id="contenidoInput" placeholder="Contenido" style="width:100%;padding:8px;margin-bottom:8px" rows="4"></textarea><br>
+  <input id="imagenInput" placeholder="URL imagen (opcional)" style="width:100%;padding:8px;margin-bottom:8px"><br>
+  <button id="publicarEnviar">Publicar</button>
 </div>
 
-<!-- LISTA DE NOTICIAS -->
-<h2>Noticias Recientes</h2>
-<ul id="noticiasList"></ul>
+<div id="noticiasContainer" class="card">
+  <h3>Noticias</h3>
+  <div id="noticiasList">Cargando noticias...</div>
+</div>
 
 <script>
-/* ===== Supabase (usa tu URL y KEY originales) ===== */
+// ---------------- CONFIG ----------------
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-document.addEventListener("DOMContentLoaded", async () => {
-  const authContainer = document.getElementById("authContainer");
-  const userInfo = document.getElementById("userInfo");
-  const dropdownMenu = document.getElementById("dropdownMenu");
-  const golfButton = document.getElementById("golfButton");
-  const ajustesButton = document.getElementById("ajustesButton");
-  const noticiasContainer = document.getElementById("noticiasContainer");
-  const publicarNoticiaBtn = document.getElementById("publicarNoticiaBtn");
+// ---------------- ELEMENTOS ----------------
+const mensajesEl = document.getElementById("mensajes");
+const userInfoMini = document.getElementById("userInfoMini");
+const ajustesButton = document.getElementById("ajustesButton");
+const publicarNoticiaBtn = document.getElementById("publicarNoticiaBtn");
+const ajustesPanel = document.getElementById("ajustesPanel");
+const listaUsuariosPermisos = document.getElementById("listaUsuariosPermisos");
+const cerrarAjustes = document.getElementById("cerrarAjustes");
+const publicarPanel = document.getElementById("publicarPanel");
+const publicarEnviar = document.getElementById("publicarEnviar");
+const noticiasList = document.getElementById("noticiasList");
 
-  // ===== Cargar información de usuario =====
-  async function loadUserInfo() {
-    let user = null;
+let currentUser = null;
+let permisosPublicar = []; // ids
 
-    // 1️⃣ Intentar obtener desde Supabase
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.user) {
-      user = {
-        username: session.user.user_metadata?.username || session.user.email,
-        email: session.user.email,
-        logo: session.user.user_metadata?.logo || "logoDefault.png"
-      };
-      localStorage.setItem("currentUser", JSON.stringify(user));
-    }
+// ---------------- UTIL MENSAJES ----------------
+function mostrarMensaje(msg, isError=false){
+  mensajesEl.style.background = isError ? "#3a1414" : "#132b1a";
+  mensajesEl.style.color = isError ? "#ffbaba" : "#a6f0c4";
+  mensajesEl.innerText = msg;
+}
 
-    // 2️⃣ Si no hay sesión, cargar del localStorage
-    if (!user) {
-      const stored = JSON.parse(localStorage.getItem("currentUser"));
-      if (stored) user = stored;
-    }
+// ---------------- INIT ----------------
+document.addEventListener("DOMContentLoaded", async ()=> {
+  mostrarMensaje("Iniciando...");
 
-    // ===== Actualizar UI =====
-    if (user) {
-      userInfo.style.display = "flex";
-      authContainer.style.display = "none";
-      document.getElementById("userName").textContent = user.username;
-      document.getElementById("userLogo").src = user.logo || "logoDefault.png";
+  // Garantizar elementos (debug safety)
+  if(!ajustesButton) return alert("FATAL: falta 'ajustesButton' en el HTML");
+  if(!publicarNoticiaBtn) return alert("FATAL: falta 'publicarNoticiaBtn' en el HTML");
 
-      // Solo Peketruli puede ver los botones especiales
-      if (user.username === "Peketruli") {
-        if (golfButton) golfButton.style.display = "inline-flex";
-        if (ajustesButton) ajustesButton.style.display = "inline-flex";
-        if (publicarNoticiaBtn) publicarNoticiaBtn.style.display = "inline-flex";
-      } else {
-        if (golfButton) golfButton.style.display = "none";
-        if (ajustesButton) ajustesButton.style.display = "none";
-        if (publicarNoticiaBtn) publicarNoticiaBtn.style.display = "none";
+  await initUser();            // set currentUser (supabase or modo prueba)
+  await loadPermisos();        // traer permisos desde tabla usuarios
+  renderUserUI();              // mostrar/ocultar botones según usuario
+  await loadNoticias();        // cargar noticias existentes
+
+  // event handlers
+  ajustesButton.addEventListener("click", ()=> mostrarAjustes());
+  cerrarAjustes.addEventListener("click", ()=> { ajustesPanel.classList.add("hidden"); });
+  publicarNoticiaBtn.addEventListener("click", ()=> {
+    publicarPanel.classList.toggle("hidden");
+    publicarPanel.scrollIntoView({behavior:"smooth"});
+  });
+  publicarEnviar.addEventListener("click", publicarNoticia);
+});
+
+// ---------------- initUser ----------------
+async function initUser(){
+  try {
+    // 1) intentar sesión supabase si existe
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if(session?.user){
+        const meta = session.user.user_metadata || {};
+        currentUser = {
+          id: session.user.id || meta.id || null,
+          username: meta.username || session.user.email || "usuario",
+          email: session.user.email || null,
+          logo: meta.logo || null
+        };
+        userInfoMini.innerHTML = `<img class="userlogo" src="${currentUser.logo||'logoDefault.png'}"> ${currentUser.username}`;
+        mostrarMensaje("Sesión supabase detectada: " + currentUser.username);
+        return;
       }
+    } catch(e){ console.warn("supabase.getSession fallo:", e); }
 
-      // Cargar las noticias
-      await cargarNoticias();
-
-    } else {
-      userInfo.style.display = "none";
-      authContainer.style.display = "flex";
+    // 2) intentar localStorage
+    const stored = localStorage.getItem("currentUser");
+    if(stored){
+      try{
+        currentUser = JSON.parse(stored);
+        userInfoMini.innerHTML = `<img class="userlogo" src="${currentUser.logo||'logoDefault.png'}"> ${currentUser.username}`;
+        mostrarMensaje("Usuario desde localStorage: " + currentUser.username);
+        return;
+      }catch(e){ console.warn("parse localStorage falla", e); }
     }
+
+    // 3) MODO PRUEBA fallback (para que Peketruli siempre vea el botón)
+    // Si quieres usar este modo, deja username "Peketruli". Cambia el id si quieres que coincida con tu tabla.
+    currentUser = { id: "test-peke-id", username: "Peketruli", email: null, logo: null };
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+    userInfoMini.innerHTML = `<img class="userlogo" src="${currentUser.logo||'logoDefault.png'}"> ${currentUser.username}`;
+    mostrarMensaje("Modo prueba: usuario forzado como Peketruli (para debug).");
+  } catch(err){
+    mostrarMensaje("Error initUser: " + (err.message || err), true);
   }
+}
 
-  await loadUserInfo();
+// ---------------- render UI ----------------
+function renderUserUI(){
+  try {
+    if(!currentUser){
+      ajustesButton.classList.add("hidden");
+      publicarNoticiaBtn.classList.add("hidden");
+      return mostrarMensaje("No hay usuario logueado. (inicia sesión o usa modo prueba)", true);
+    }
+    // Solo Peketruli ve ajustes. También mostramos publicar al mismo tiempo (pero permisos reales se usan desde DB)
+    if(currentUser.username === "Peketruli"){
+      ajustesButton.classList.remove("hidden");
+      publicarNoticiaBtn.classList.remove("hidden");
+      mostrarMensaje("Hola Peketruli — tienes acceso a ajustes y publicación.");
+    } else {
+      ajustesButton.classList.add("hidden");
+      // Mostrar publicar solo si el id está en permisosPublicar
+      if(permisosPublicar.includes(currentUser.id)){
+        publicarNoticiaBtn.classList.remove("hidden");
+        mostrarMensaje("Tienes permiso para publicar.");
+      } else {
+        publicarNoticiaBtn.classList.add("hidden");
+        mostrarMensaje("No eres Peketruli. Solo verás publicar si te das permiso.");
+      }
+    }
+  } catch(e){
+    mostrarMensaje("Error renderUserUI: " + (e.message||e), true);
+  }
+}
 
-  // ===== Logout =====
-  window.logout = async function() {
-    await supabase.auth.signOut();
-    localStorage.removeItem("currentUser");
-    window.location.href = "l.html";
-  };
-
-  // ===== Noticias =====
-  async function cargarNoticias() {
-    const { data, error } = await supabase.from("noticias").select("*").order("id", { ascending: false });
-    if (error) {
-      console.warn("Error cargando noticias:", error);
-      noticiasContainer.innerHTML = "<p>Error al cargar las noticias.</p>";
+// ---------------- PERMISOS ----------------
+async function loadPermisos(){
+  try {
+    const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
+    if(error){
+      mostrarMensaje("Error al cargar usuarios: " + error.message, true);
       return;
     }
-
-    noticiasContainer.innerHTML = "";
-    data.forEach(noticia => {
-      const div = document.createElement("div");
-      div.className = "card";
-      div.innerHTML = `
-        <h3 style="color:orange;">${noticia.titulo}</h3>
-        <p>${noticia.contenido}</p>
-        <p style="font-size:12px;color:gray;">Por ${noticia.autor}</p>
-      `;
-      noticiasContainer.appendChild(div);
-    });
+    if(!data) { mostrarMensaje("No se han retornado usuarios.", true); return; }
+    permisosPublicar = data.filter(u=>u.puede_publicar).map(u=>u.id);
+    console.log("permisosPublicar:", permisosPublicar);
+    // actualizar render UI porque permisos afectan al botón publicar
+    renderUserUI();
+  } catch(err){
+    mostrarMensaje("Error loadPermisos: " + (err.message||err), true);
   }
+}
 
-  // ===== Publicar nueva noticia =====
-  if (publicarNoticiaBtn) {
-    publicarNoticiaBtn.addEventListener("click", async () => {
-      const titulo = prompt("Título de la noticia:");
-      const contenido = prompt("Contenido de la noticia:");
-      if (!titulo || !contenido) return alert("Faltan datos");
+// ---------------- mostrarAjustes ----------------
+async function mostrarAjustes(){
+  try {
+    if(!currentUser) return mostrarMensaje("No hay usuario para mostrar ajustes", true);
+    // toggle panel
+    ajustesPanel.classList.toggle("hidden");
+    if(ajustesPanel.classList.contains("hidden")) return;
 
-      const currentUser = JSON.parse(localStorage.getItem("currentUser"));
-      const autor = currentUser?.username || "Anónimo";
-
-      const { error } = await supabase.from("noticias").insert([{ titulo, contenido, autor }]);
-      if (error) {
-        alert("Error al publicar: " + error.message);
-      } else {
-        alert("✅ Noticia publicada correctamente.");
-        await cargarNoticias();
+    // cargar todos usuarios
+    const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
+    if(error){
+      mostrarMensaje("Error obteniendo usuarios: " + error.message, true);
+      return;
+    }
+    listaUsuariosPermisos.innerHTML = "";
+    data.forEach(u=>{
+      const li = document.createElement("li");
+      const isYou = u.username === "Peketruli";
+      li.innerHTML = `
+        <strong>${u.username}</strong>
+        ${isYou ? ' (admin)' : ''} 
+        ${!isYou ? `<button data-uid="${u.id}">${u.puede_publicar ? 'Quitar permiso' : 'Dar permiso'}</button>` : ''}
+      `;
+      listaUsuariosPermisos.appendChild(li);
+      if(!isYou){
+        const btn = li.querySelector("button");
+        btn.addEventListener("click", async ()=>{
+          await togglePermiso(u.id, !!u.puede_publicar);
+        });
       }
     });
+  } catch(err){
+    mostrarMensaje("Error mostrarAjustes: " + (err.message||err), true);
   }
-});
+}
+
+// ---------------- togglePermiso ----------------
+async function togglePermiso(usuarioId, actual){
+  try {
+    const nuevo = !actual;
+    const { error } = await supabase.from("usuarios").update({ puede_publicar: nuevo }).eq("id", usuarioId);
+    if(error) return mostrarMensaje("Error actualizando permiso: " + error.message, true);
+    mostrarMensaje("Permiso actualizado correctamente.");
+    await loadPermisos();
+    // refrescar lista para reflejar nuevo estado
+    mostrarAjustes();
+  } catch(err){
+    mostrarMensaje("Error togglePermiso: " + (err.message||err), true);
+  }
+}
+
+// ---------------- NOTICIAS ----------------
+async function loadNoticias(){
+  try {
+    noticiasList.innerHTML = "Cargando noticias...";
+    const { data, error } = await supabase
+      .from("noticias")
+      .select("id, titulo, contenido, imagen_url, fecha_creacion, autor_id, autor")
+      .order("fecha_creacion", { ascending:false });
+    if(error){
+      noticiasList.innerHTML = "Error cargando noticias: " + error.message;
+      return;
+    }
+    if(!data || data.length===0){
+      noticiasList.innerHTML = "No hay noticias publicadas.";
+      return;
+    }
+    noticiasList.innerHTML = "";
+    data.forEach(n=>{
+      const div = document.createElement("div");
+      div.style.border = "1px solid #2b2b2b";
+      div.style.padding = "8px";
+      div.style.marginBottom = "8px";
+      div.innerHTML = `<h4 style="color:#ffb86b">${escapeHtml(n.titulo)}</h4>
+                       <div>${escapeHtml(n.contenido)}</div>
+                       ${n.imagen_url?`<img src="${n.imagen_url}" style="max-width:220px;margin-top:6px">`:""}
+                       <div style="font-size:12px;color:#aaa;margin-top:6px">Por: ${escapeHtml(n.autor||n.autor_id||"Desconocido")} — ${new Date(n.fecha_creacion||Date.now()).toLocaleString()}</div>`;
+      noticiasList.appendChild(div);
+    });
+  } catch(err){
+    noticiasList.innerHTML = "Error general cargando noticias: " + (err.message||err);
+  }
+}
+
+// ---------------- PUBLICAR ----------------
+async function publicarNoticia(){
+  try {
+    const titulo = document.getElementById("tituloInput").value.trim();
+    const contenido = document.getElementById("contenidoInput").value.trim();
+    const imagen = document.getElementById("imagenInput").value.trim();
+    if(!titulo || !contenido) return mostrarMensaje("Debes completar título y contenido.", true);
+
+    const { error } = await supabase.from("noticias").insert([{
+      titulo, contenido, imagen_url: imagen||null, autor: currentUser.username, fecha_creacion: new Date().toISOString(), publicada:true
+    }]);
+    if(error) return mostrarMensaje("Error publicando noticia: " + error.message, true);
+    mostrarMensaje("Noticia publicada ✅");
+    // limpiar formulario y recargar noticias
+    document.getElementById("tituloInput").value = "";
+    document.getElementById("contenidoInput").value = "";
+    document.getElementById("imagenInput").value = "";
+    await loadNoticias();
+  } catch(err){
+    mostrarMensaje("Error publicarNoticia: " + (err.message||err), true);
+  }
+}
+
+// ---------------- helpers ----------------
+function escapeHtml(unsafe) {
+  if(!unsafe) return "";
+  return unsafe.replace(/[&<>"'`=\/]/g, function(s){ return ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'
+  })[s]; });
+}
 </script>
 </body>
 </html>
