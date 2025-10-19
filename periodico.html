@@ -2,306 +2,285 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Periódico — Debug</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rebeldía IN.AR — Noticias</title>
+
+<!-- Fuentes -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Creepster&display=swap" rel="stylesheet">
+
+<!-- Dependencias -->
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
+
 <style>
-  body{font-family:Arial,Helvetica,sans-serif;background:#111;color:#eee;padding:18px;}
-  .card{background:#1b1b1b;padding:12px;border-radius:8px;margin-bottom:10px;border:1px solid #2b2b2b;}
-  button{padding:8px 12px;border-radius:6px;border:none;background:#ff7a00;color:#111;cursor:pointer}
-  #mensajes{padding:10px;border-radius:8px;margin-bottom:12px}
-  #listaUsuariosPermisos li{margin:6px 0}
-  .hidden{display:none}
-  img.userlogo{width:36px;height:36px;border-radius:50%;vertical-align:middle;margin-right:8px}
+:root{
+  --text: #f5f3f4;
+  --accent-orange: #ff8a33;
+  --accent-purple: #6b2a7a;
+}
+
+/* Reset base */
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%; font-family:"Inter", Arial, sans-serif; color:var(--text);}
+body { background: linear-gradient(180deg,#1b0b2b 0%,#3a103a 50%,#0b0b0b 100%); padding:50px 20px 140px; }
+
+/* Contenedores y cards */
+.container {text-align: center; max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:26px; align-items:center;}
+.card { background: rgba(255,255,255,0.02); border-radius:14px; padding:18px; box-shadow: 0 6px 30px rgba(0,0,0,0.6); backdrop-filter: blur(4px); border:1px solid rgba(255,255,255,0.03); color: #eae8e8; text-align: center; width:100%; max-width:800px; }
+.lead { font-size:16px; line-height:1.5; color:#eae8e8; }
+
+/* Botones */
+.btn { font-weight:600; padding:12px 22px; border-radius:12px; border:none; cursor:pointer; color:white; background:linear-gradient(180deg,#f39c12,#f57c00); margin:4px; transition:all .25s ease; }
+.btn:hover { transform: scale(1.1) translateY(-3px); box-shadow:0 0 50px 18px rgba(255,160,70,0.9),0 18px 60px rgba(0,0,0,0.7); }
+
+/* Publicar noticia */
+#publicarContainer { display:none; background:#222; padding:10px; border-radius:8px; margin-bottom:20px; }
+#editor { background:#333; padding:10px; border-radius:8px; min-height:150px; border:1px solid #555; text-align:left; overflow:auto; }
+#editorToolbar button { margin:2px; padding:4px 8px; border-radius:4px; border:none; cursor:pointer; }
+#noticiasList { list-style:none; padding:0; margin-top:10px; }
+.noticia-item { background:#222; padding:10px; border-radius:8px; margin-bottom:10px; text-align:left; }
+.noticia-item img { max-width:100%; margin-top:6px; display:block; }
+
+.auth-container, .user-info { position:fixed; top:16px; right:16px; display:flex; align-items:center; gap:10px; z-index:10; }
+.auth-button { padding:10px 18px; font-size:1em; color:white; background-color:#333; border:none; cursor:pointer; border-radius:6px; text-decoration:none; }
+.user-info { display:none; cursor:pointer; }
+#userLogo { width:40px; height:40px; border-radius:50%; }
+#userName { font-weight:600; font-size:1em; color:white; }
+
+.dropdown-menu { display:none; position:absolute; top:56px; right:0; background-color:#000; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.4); width:160px; text-align:left; z-index:10; }
+.dropdown-menu td { padding:10px; cursor:pointer; color:white; }
+.dropdown-menu td:hover { background-color: #333; }
 </style>
 </head>
 <body>
 
-<div id="mensajes" class="card"></div>
+<div class="container">
 
-<!-- UI mínima necesaria -->
-<div id="topbar" class="card">
-  <span id="userInfoMini">No hay usuario</span>
-  <span style="float:right">
-    <button id="ajustesButton" class="hidden">⚙️ Ajustes (Peketruli)</button>
-    <button id="publicarNoticiaBtn" class="hidden">✍️ Publicar (Peketruli)</button>
-  </span>
+  <div class="header card" role="banner">
+    <h1 style="font-family:'Creepster',cursive; color:var(--accent-orange); font-size:48px;">Rebeldía IN.AR</h1>
+    <p class="lead">Un lugar para el alumnado — ahora con noticias y editor estilo documento 📰</p>
+  </div>
+
+  <!-- BOTÓN AJUSTES (solo admin) -->
+  <div id="ajustesContainer" style="display:none; margin-bottom:12px;">
+    <button class="btn" onclick="mostrarAjustes()">⚙️ Ajustes de Publicación</button>
+  </div>
+
+  <!-- DIV AJUSTES -->
+  <div id="ajustesDiv" style="display:none; background:#222; padding:10px; border-radius:8px; margin-bottom:20px;">
+    <h3>Gestionar permisos de publicación</h3>
+    <ul id="listaUsuariosPermisos"></ul>
+  </div>
+
+  <!-- PUBLICAR NOTICIA -->
+  <div id="publicarContainer">
+    <h3>📢 Crear Noticia</h3>
+    <input type="text" id="noticiaTitulo" placeholder="Título de la noticia" style="width:100%; margin-bottom:8px; padding:6px; border-radius:6px; border:1px solid #555; background:#333; color:#fff;">
+    <div id="editorToolbar" style="margin-bottom:8px;">
+      <button data-cmd="bold">B</button>
+      <button data-cmd="italic"><i>I</i></button>
+      <button data-cmd="underline"><u>U</u></button>
+      <button data-cmd="insertOrderedList">1.</button>
+      <button data-cmd="insertUnorderedList">•</button>
+      <button data-cmd="createLink">🔗</button>
+      <button data-cmd="insertImage">🖼️</button>
+      <button data-cmd="formatBlock" onclick="document.execCommand('formatBlock', false, 'h3')">H3</button>
+    </div>
+    <div id="editor" contenteditable="true">✏️ Escribe tu noticia aquí...</div>
+    <button class="btn" style="margin-top:8px;" onclick="publicarNoticia()">Publicar Noticia</button>
+  </div>
+
+  <!-- LISTA DE NOTICIAS -->
+  <h2 style="color:var(--accent-orange)">Noticias Recientes</h2>
+  <ul id="noticiasList"></ul>
+
 </div>
 
-<div id="ajustesPanel" class="card hidden">
-  <h3>Ajustes — gestionar permisos</h3>
-  <ul id="listaUsuariosPermisos"></ul>
-  <button id="cerrarAjustes">Cerrar ajustes</button>
+<!-- AUTH -->
+<div class="auth-container" id="authContainer">
+  <button class="auth-button" onclick="window.location.href='l.html'">Iniciar sesión / Registrarse</button>
 </div>
 
-<div id="publicarPanel" class="card hidden">
-  <h3>Publicar noticia</h3>
-  <input id="tituloInput" placeholder="Título" style="width:100%;padding:8px;margin-bottom:8px"><br>
-  <textarea id="contenidoInput" placeholder="Contenido" style="width:100%;padding:8px;margin-bottom:8px" rows="4"></textarea><br>
-  <input id="imagenInput" placeholder="URL imagen (opcional)" style="width:100%;padding:8px;margin-bottom:8px"><br>
-  <button id="publicarEnviar">Publicar</button>
+<div class="user-info" id="userInfo">
+  <img id="userLogo" src="logoDefault.png" alt="Logo del usuario">
+  <div style="text-align:left">
+    <div id="userName">Usuario</div>
+    <div style="font-size:12px;color:#cfcacd">Ver perfil</div>
+  </div>
 </div>
 
-<div id="noticiasContainer" class="card">
-  <h3>Noticias</h3>
-  <div id="noticiasList">Cargando noticias...</div>
+<div class="dropdown-menu" id="dropdownMenu">
+  <table>
+    <tr><td onclick="logout()">🚪 Cerrar sesión</td></tr>
+  </table>
 </div>
 
 <script>
-// ---------------- CONFIG ----------------
+// ==================== SUPABASE ====================
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ---------------- ELEMENTOS ----------------
-const mensajesEl = document.getElementById("mensajes");
-const userInfoMini = document.getElementById("userInfoMini");
-const ajustesButton = document.getElementById("ajustesButton");
-const publicarNoticiaBtn = document.getElementById("publicarNoticiaBtn");
-const ajustesPanel = document.getElementById("ajustesPanel");
-const listaUsuariosPermisos = document.getElementById("listaUsuariosPermisos");
-const cerrarAjustes = document.getElementById("cerrarAjustes");
-const publicarPanel = document.getElementById("publicarPanel");
-const publicarEnviar = document.getElementById("publicarEnviar");
-const noticiasList = document.getElementById("noticiasList");
-
 let currentUser = null;
-let permisosPublicar = []; // ids
+let permisosPublicar = [];
 
-// ---------------- UTIL MENSAJES ----------------
-function mostrarMensaje(msg, isError=false){
-  mensajesEl.style.background = isError ? "#3a1414" : "#132b1a";
-  mensajesEl.style.color = isError ? "#ffbaba" : "#a6f0c4";
-  mensajesEl.innerText = msg;
-}
-
-// ---------------- INIT ----------------
-document.addEventListener("DOMContentLoaded", async ()=> {
-  mostrarMensaje("Iniciando...");
-
-  // Garantizar elementos (debug safety)
-  if(!ajustesButton) return alert("FATAL: falta 'ajustesButton' en el HTML");
-  if(!publicarNoticiaBtn) return alert("FATAL: falta 'publicarNoticiaBtn' en el HTML");
-
-  await initUser();            // set currentUser (supabase or modo prueba)
-  await loadPermisos();        // traer permisos desde tabla usuarios
-  renderUserUI();              // mostrar/ocultar botones según usuario
-  await loadNoticias();        // cargar noticias existentes
-
-  // event handlers
-  ajustesButton.addEventListener("click", ()=> mostrarAjustes());
-  cerrarAjustes.addEventListener("click", ()=> { ajustesPanel.classList.add("hidden"); });
-  publicarNoticiaBtn.addEventListener("click", ()=> {
-    publicarPanel.classList.toggle("hidden");
-    publicarPanel.scrollIntoView({behavior:"smooth"});
-  });
-  publicarEnviar.addEventListener("click", publicarNoticia);
+document.addEventListener("DOMContentLoaded", async () => {
+    await initUser();
+    await loadPermisos();
+    renderUserUI();
+    await loadNoticias();
+    initEditorTools();
+    setupUserUI();
 });
 
-// ---------------- initUser ----------------
-async function initUser(){
-  try {
-    // 1) intentar sesión supabase si existe
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if(session?.user){
-        const meta = session.user.user_metadata || {};
-        currentUser = {
-          id: session.user.id || meta.id || null,
-          username: meta.username || session.user.email || "usuario",
-          email: session.user.email || null,
-          logo: meta.logo || null
-        };
-        userInfoMini.innerHTML = `<img class="userlogo" src="${currentUser.logo||'logoDefault.png'}"> ${currentUser.username}`;
-        mostrarMensaje("Sesión supabase detectada: " + currentUser.username);
-        return;
-      }
-    } catch(e){ console.warn("supabase.getSession fallo:", e); }
+// ==================== USUARIO ====================
+async function initUser() {
+    const saved = localStorage.getItem("currentUser");
+    if (saved) { currentUser = JSON.parse(saved); return; }
 
-    // 2) intentar localStorage
-    const stored = localStorage.getItem("currentUser");
-    if(stored){
-      try{
-        currentUser = JSON.parse(stored);
-        userInfoMini.innerHTML = `<img class="userlogo" src="${currentUser.logo||'logoDefault.png'}"> ${currentUser.username}`;
-        mostrarMensaje("Usuario desde localStorage: " + currentUser.username);
-        return;
-      }catch(e){ console.warn("parse localStorage falla", e); }
-    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-    // 3) MODO PRUEBA fallback (para que Peketruli siempre vea el botón)
-    // Si quieres usar este modo, deja username "Peketruli". Cambia el id si quieres que coincida con tu tabla.
-    currentUser = { id: "test-peke-id", username: "Peketruli", email: null, logo: null };
-    localStorage.setItem("currentUser", JSON.stringify(currentUser));
-    userInfoMini.innerHTML = `<img class="userlogo" src="${currentUser.logo||'logoDefault.png'}"> ${currentUser.username}`;
-    mostrarMensaje("Modo prueba: usuario forzado como Peketruli (para debug).");
-  } catch(err){
-    mostrarMensaje("Error initUser: " + (err.message || err), true);
-  }
-}
-
-// ---------------- render UI ----------------
-function renderUserUI(){
-  try {
-    if(!currentUser){
-      ajustesButton.classList.add("hidden");
-      publicarNoticiaBtn.classList.add("hidden");
-      return mostrarMensaje("No hay usuario logueado. (inicia sesión o usa modo prueba)", true);
-    }
-    // Solo Peketruli ve ajustes. También mostramos publicar al mismo tiempo (pero permisos reales se usan desde DB)
-    if(currentUser.username === "Peketruli"){
-      ajustesButton.classList.remove("hidden");
-      publicarNoticiaBtn.classList.remove("hidden");
-      mostrarMensaje("Hola Peketruli — tienes acceso a ajustes y publicación.");
-    } else {
-      ajustesButton.classList.add("hidden");
-      // Mostrar publicar solo si el id está en permisosPublicar
-      if(permisosPublicar.includes(currentUser.id)){
-        publicarNoticiaBtn.classList.remove("hidden");
-        mostrarMensaje("Tienes permiso para publicar.");
-      } else {
-        publicarNoticiaBtn.classList.add("hidden");
-        mostrarMensaje("No eres Peketruli. Solo verás publicar si te das permiso.");
-      }
-    }
-  } catch(e){
-    mostrarMensaje("Error renderUserUI: " + (e.message||e), true);
-  }
-}
-
-// ---------------- PERMISOS ----------------
-async function loadPermisos(){
-  try {
-    const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
-    if(error){
-      mostrarMensaje("Error al cargar usuarios: " + error.message, true);
-      return;
-    }
-    if(!data) { mostrarMensaje("No se han retornado usuarios.", true); return; }
-    permisosPublicar = data.filter(u=>u.puede_publicar).map(u=>u.id);
-    console.log("permisosPublicar:", permisosPublicar);
-    // actualizar render UI porque permisos afectan al botón publicar
-    renderUserUI();
-  } catch(err){
-    mostrarMensaje("Error loadPermisos: " + (err.message||err), true);
-  }
-}
-
-// ---------------- mostrarAjustes ----------------
-async function mostrarAjustes(){
-  try {
-    if(!currentUser) return mostrarMensaje("No hay usuario para mostrar ajustes", true);
-    // toggle panel
-    ajustesPanel.classList.toggle("hidden");
-    if(ajustesPanel.classList.contains("hidden")) return;
-
-    // cargar todos usuarios
-    const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
-    if(error){
-      mostrarMensaje("Error obteniendo usuarios: " + error.message, true);
-      return;
-    }
-    listaUsuariosPermisos.innerHTML = "";
-    data.forEach(u=>{
-      const li = document.createElement("li");
-      const isYou = u.username === "Peketruli";
-      li.innerHTML = `
-        <strong>${u.username}</strong>
-        ${isYou ? ' (admin)' : ''} 
-        ${!isYou ? `<button data-uid="${u.id}">${u.puede_publicar ? 'Quitar permiso' : 'Dar permiso'}</button>` : ''}
-      `;
-      listaUsuariosPermisos.appendChild(li);
-      if(!isYou){
-        const btn = li.querySelector("button");
-        btn.addEventListener("click", async ()=>{
-          await togglePermiso(u.id, !!u.puede_publicar);
-        });
-      }
-    });
-  } catch(err){
-    mostrarMensaje("Error mostrarAjustes: " + (err.message||err), true);
-  }
-}
-
-// ---------------- togglePermiso ----------------
-async function togglePermiso(usuarioId, actual){
-  try {
-    const nuevo = !actual;
-    const { error } = await supabase.from("usuarios").update({ puede_publicar: nuevo }).eq("id", usuarioId);
-    if(error) return mostrarMensaje("Error actualizando permiso: " + error.message, true);
-    mostrarMensaje("Permiso actualizado correctamente.");
-    await loadPermisos();
-    // refrescar lista para reflejar nuevo estado
-    mostrarAjustes();
-  } catch(err){
-    mostrarMensaje("Error togglePermiso: " + (err.message||err), true);
-  }
-}
-
-// ---------------- NOTICIAS ----------------
-async function loadNoticias(){
-  try {
-    noticiasList.innerHTML = "Cargando noticias...";
     const { data, error } = await supabase
-      .from("noticias")
-      .select("id, titulo, contenido, imagen_url, fecha_creacion, autor_id, autor")
-      .order("fecha_creacion", { ascending:false });
-    if(error){
-      noticiasList.innerHTML = "Error cargando noticias: " + error.message;
-      return;
+        .from("usuarios")
+        .select("*")
+        .eq("auth_id", user.id)
+        .maybeSingle();
+    if (error || !data) return;
+
+    currentUser = data;
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+}
+
+function renderUserUI() {
+    const ajustesBtnContainer = document.getElementById("ajustesContainer");
+    const publicarDiv = document.getElementById("publicarContainer");
+    if (!currentUser) return;
+    ajustesBtnContainer.style.display = currentUser.username === "Peketruli" ? "block" : "none";
+    publicarDiv.style.display = (permisosPublicar.includes(currentUser.id) || currentUser.username === "Peketruli") ? "block" : "none";
+}
+
+// ==================== PERMISOS ====================
+async function loadPermisos() {
+    const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
+    if (error) return console.error(error);
+    permisosPublicar = data.filter(u => u.puede_publicar).map(u => u.id);
+    renderUserUI();
+}
+
+async function togglePermiso(usuarioId) {
+    const usuario = permisosPublicar.includes(usuarioId);
+    const { error } = await supabase
+        .from("usuarios")
+        .update({ puede_publicar: !usuario })
+        .eq("id", usuarioId);
+    if (error) return alert("Error actualizando permiso: " + error.message);
+    await loadPermisos();
+    mostrarAjustes();
+}
+
+// ==================== AJUSTES ====================
+async function mostrarAjustes() {
+    const ajustesDiv = document.getElementById("ajustesDiv");
+    ajustesDiv.style.display = ajustesDiv.style.display === "block" ? "none" : "block";
+    if (ajustesDiv.style.display === "block") {
+        const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
+        if (error) return console.error(error);
+        const lista = document.getElementById("listaUsuariosPermisos");
+        lista.innerHTML = "";
+        data.forEach(u => {
+            const esPeketruli = u.username === "Peketruli";
+            const li = document.createElement("li");
+            li.innerHTML = `${u.username} ${!esPeketruli ? `<button onclick="togglePermiso('${u.id}')">${u.puede_publicar ? "Quitar permiso" : "Dar permiso"}</button>` : "(admin)"}`;
+            lista.appendChild(li);
+        });
     }
-    if(!data || data.length===0){
-      noticiasList.innerHTML = "No hay noticias publicadas.";
-      return;
-    }
+}
+
+// ==================== NOTICIAS ====================
+async function loadNoticias() {
+    const noticiasList = document.getElementById("noticiasList");
+    noticiasList.innerHTML = "<li>Cargando noticias...</li>";
+    const { data, error } = await supabase
+        .from("noticias")
+        .select("id, titulo, contenido, fecha_creacion, autor_id(username)")
+        .eq("publicada", true)
+        .order("fecha_creacion", { ascending: false });
+    if (error) return console.error(error);
     noticiasList.innerHTML = "";
-    data.forEach(n=>{
-      const div = document.createElement("div");
-      div.style.border = "1px solid #2b2b2b";
-      div.style.padding = "8px";
-      div.style.marginBottom = "8px";
-      div.innerHTML = `<h4 style="color:#ffb86b">${escapeHtml(n.titulo)}</h4>
-                       <div>${escapeHtml(n.contenido)}</div>
-                       ${n.imagen_url?`<img src="${n.imagen_url}" style="max-width:220px;margin-top:6px">`:""}
-                       <div style="font-size:12px;color:#aaa;margin-top:6px">Por: ${escapeHtml(n.autor||n.autor_id||"Desconocido")} — ${new Date(n.fecha_creacion||Date.now()).toLocaleString()}</div>`;
-      noticiasList.appendChild(div);
+    if (!data || data.length === 0) { noticiasList.innerHTML = "<li>No hay noticias aún.</li>"; return; }
+    data.forEach(n => {
+        const li = document.createElement("li");
+        li.className = "noticia-item";
+        li.innerHTML = `<h3>${n.titulo}</h3><div>${n.contenido}</div><small>Por: ${n.autor_id?.username || "Desconocido"} | ${new Date(n.fecha_creacion).toLocaleString()}</small>`;
+        noticiasList.appendChild(li);
     });
-  } catch(err){
-    noticiasList.innerHTML = "Error general cargando noticias: " + (err.message||err);
-  }
 }
 
-// ---------------- PUBLICAR ----------------
-async function publicarNoticia(){
-  try {
-    const titulo = document.getElementById("tituloInput").value.trim();
-    const contenido = document.getElementById("contenidoInput").value.trim();
-    const imagen = document.getElementById("imagenInput").value.trim();
-    if(!titulo || !contenido) return mostrarMensaje("Debes completar título y contenido.", true);
-
-    const { error } = await supabase.from("noticias").insert([{
-      titulo, contenido, imagen_url: imagen||null, autor: currentUser.username, fecha_creacion: new Date().toISOString(), publicada:true
-    }]);
-    if(error) return mostrarMensaje("Error publicando noticia: " + error.message, true);
-    mostrarMensaje("Noticia publicada ✅");
-    // limpiar formulario y recargar noticias
-    document.getElementById("tituloInput").value = "";
-    document.getElementById("contenidoInput").value = "";
-    document.getElementById("imagenInput").value = "";
-    await loadNoticias();
-  } catch(err){
-    mostrarMensaje("Error publicarNoticia: " + (err.message||err), true);
-  }
+// ==================== EDITOR ====================
+function initEditorTools() {
+    const editor = document.getElementById("editor");
+    const toolbar = document.getElementById("editorToolbar");
+    toolbar.querySelectorAll("button[data-cmd]").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const cmd = btn.dataset.cmd;
+            if (cmd === "createLink") {
+                const url = prompt("Introduce la URL del enlace:");
+                if (url) document.execCommand(cmd, false, url);
+            } else if (cmd === "insertImage") {
+                const url = prompt("Introduce la URL de la imagen:");
+                if (url) document.execCommand(cmd, false, url);
+            } else {
+                document.execCommand(cmd, false, null);
+            }
+            editor.focus();
+        });
+    });
 }
 
-// ---------------- helpers ----------------
-function escapeHtml(unsafe) {
-  if(!unsafe) return "";
-  return unsafe.replace(/[&<>"'`=\/]/g, function(s){ return ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','/':'&#x2F;','`':'&#x60;','=':'&#x3D;'
-  })[s]; });
+// ==================== PUBLICAR ====================
+async function publicarNoticia() {
+    const titulo = document.getElementById("noticiaTitulo").value.trim();
+    const contenido = document.getElementById("editor").innerHTML.trim();
+    if (!titulo || !contenido) return alert("Debes completar el título y la noticia.");
+    const { error } = await supabase.from("noticias").insert({ titulo, contenido, autor_id: currentUser.id, publicada:true });
+    if (error) return alert("Error publicando noticia: " + error.message);
+    document.getElementById("noticiaTitulo").value = "";
+    document.getElementById("editor").innerHTML = "";
+    loadNoticias();
+    alert("📰 Noticia publicada con éxito");
+}
+
+// ==================== LOGOUT ====================
+function setupUserUI() {
+    const userInfo = document.getElementById("userInfo");
+    const authContainer = document.getElementById("authContainer");
+    const dropdownMenu = document.getElementById("dropdownMenu");
+
+    if (currentUser) {
+        userInfo.style.display = "flex";
+        authContainer.style.display = "none";
+        document.getElementById("userName").textContent = currentUser.username;
+        document.getElementById("userLogo").src = currentUser.logo || "logoDefault.png";
+    }
+
+    userInfo.addEventListener("click", () => {
+        const isOpen = dropdownMenu.style.display === "block";
+        dropdownMenu.style.display = isOpen ? "none" : "block";
+    });
+
+    document.addEventListener("click", (e) => {
+        if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target)) {
+            dropdownMenu.style.display = "none";
+        }
+    });
+}
+
+function logout() {
+    localStorage.removeItem("currentUser");
+    window.location.href = "l.html";
 }
 </script>
+
 </body>
 </html>
