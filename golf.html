@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pac-Man (Versión Clásica)</title>
+<title>Pac-Man (Arcade Físicas Correctas)</title>
 <style>
   body {
     background: black;
@@ -11,13 +11,17 @@
     font-family: Arial, sans-serif;
     text-align: center;
     margin: 0;
-    overflow: hidden;
   }
-  #score { position: absolute; top: 10px; left: 10px; font-size: 18px; }
+  #score {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 18px;
+  }
   canvas {
-    background: black;
     display: block;
     margin: 40px auto;
+    background: black;
     image-rendering: pixelated;
   }
 </style>
@@ -34,6 +38,7 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const scoreEl = document.getElementById("score");
 
+// Mapa original del Pac-Man
 const map = [
 "############################",
 "#............##............#",
@@ -68,107 +73,137 @@ const map = [
 "############################"
 ].map(r => r.split(''));
 
-const directions = {
-  ArrowUp: {x: 0, y: -1},
-  ArrowDown: {x: 0, y: 1},
-  ArrowLeft: {x: -1, y: 0},
-  ArrowRight: {x: 1, y: 0}
+const dirs = {
+  up: {x: 0, y: -1},
+  down: {x: 0, y: 1},
+  left: {x: -1, y: 0},
+  right: {x: 1, y: 0}
 };
 
 let score = 0;
 let lives = 3;
 let powerTimer = 0;
 
+// --- ENTIDADES ---
 const pacman = {
   x: 13, y: 23,
-  dir: {x: 0, y: 0},
-  nextDir: {x: 0, y: 0},
-  speed: 0.1,
-  radius: 7
+  dir: "left",
+  nextDir: "left",
+  speed: 6, // tiles por segundo
 };
 
 const ghosts = [
-  {x: 13, y: 11, color: "#ff0000", dir: {x:1,y:0}},
-  {x: 14, y: 11, color: "#ffb8ff", dir: {x:-1,y:0}},
-  {x: 12, y: 11, color: "#00ffff", dir: {x:0,y:1}},
-  {x: 15, y: 11, color: "#ffb852", dir: {x:0,y:-1}}
+  {x: 13, y: 11, dir: "left", color: "#ff0000"},
+  {x: 14, y: 11, dir: "right", color: "#ffb8ff"},
+  {x: 12, y: 11, dir: "up", color: "#00ffff"},
+  {x: 15, y: 11, dir: "down", color: "#ffb852"},
 ];
 
-function isWall(x, y) {
-  if (y < 0 || y >= ROWS || x < 0 || x >= COLS) return true;
-  return map[Math.floor(y)][Math.floor(x)] === "#";
-}
+let lastTime = 0;
 
 document.addEventListener("keydown", e => {
-  if (directions[e.key]) pacman.nextDir = directions[e.key];
+  if (e.key === "ArrowUp") pacman.nextDir = "up";
+  if (e.key === "ArrowDown") pacman.nextDir = "down";
+  if (e.key === "ArrowLeft") pacman.nextDir = "left";
+  if (e.key === "ArrowRight") pacman.nextDir = "right";
 });
 
-function move(entity) {
-  const nextX = entity.x + entity.dir.x * entity.speed;
-  const nextY = entity.y + entity.dir.y * entity.speed;
-  if (!isWall(nextX, nextY)) {
+function isWall(tx, ty) {
+  if (tx < 0 || tx >= COLS || ty < 0 || ty >= ROWS) return true;
+  return map[ty][tx] === "#";
+}
+
+function moveEntity(entity, dt) {
+  const dir = dirs[entity.dir];
+  const step = entity.speed * dt / 1000; // tiles por frame
+  const nextX = entity.x + dir.x * step;
+  const nextY = entity.y + dir.y * step;
+
+  const nextTileX = Math.round(nextX);
+  const nextTileY = Math.round(nextY);
+
+  if (!isWall(nextTileX, nextTileY)) {
     entity.x = nextX;
     entity.y = nextY;
   } else {
-    entity.dir = {x:0, y:0};
+    entity.x = Math.round(entity.x);
+    entity.y = Math.round(entity.y);
   }
+
+  // túneles laterales
+  if (entity.x < 0) entity.x = COLS - 1;
+  if (entity.x >= COLS) entity.x = 0;
 }
 
-function update() {
-  // aplicar dirección de Pac-Man si puede girar
-  const tx = Math.round(pacman.x);
-  const ty = Math.round(pacman.y);
-  if (Math.abs(pacman.x - tx) < 0.1 && Math.abs(pacman.y - ty) < 0.1) {
-    if (!isWall(tx + pacman.nextDir.x, ty + pacman.nextDir.y))
-      pacman.dir = {...pacman.nextDir};
+function canMove(entity, dirKey) {
+  const dir = dirs[dirKey];
+  const tx = Math.round(entity.x) + dir.x;
+  const ty = Math.round(entity.y) + dir.y;
+  return !isWall(tx, ty);
+}
+
+function update(time = 0) {
+  const dt = time - lastTime;
+  lastTime = time;
+
+  // actualizar dirección solo si está centrado en celda
+  const cx = Math.round(pacman.x);
+  const cy = Math.round(pacman.y);
+  if (Math.abs(pacman.x - cx) < 0.1 && Math.abs(pacman.y - cy) < 0.1) {
+    if (canMove(pacman, pacman.nextDir)) pacman.dir = pacman.nextDir;
   }
 
-  move(pacman);
-  // túnel
-  if (pacman.x < 0) pacman.x = COLS - 1;
-  if (pacman.x >= COLS) pacman.x = 0;
+  moveEntity(pacman, dt);
 
   // comer puntos
-  const cx = Math.floor(pacman.x);
-  const cy = Math.floor(pacman.y);
-  const cell = map[cy][cx];
+  const px = Math.round(pacman.x);
+  const py = Math.round(pacman.y);
+  const cell = map[py][px];
   if (cell === ".") {
+    map[py][px] = " ";
     score += 10;
-    map[cy][cx] = " ";
   } else if (cell === "o") {
+    map[py][px] = " ";
     score += 50;
-    map[cy][cx] = " ";
     powerTimer = 600;
   }
 
   // mover fantasmas
   for (const g of ghosts) {
-    // IA simple: moverse hacia Pac-Man si posible
-    const dirs = [
-      {x:1,y:0}, {x:-1,y:0}, {x:0,y:1}, {x:0,y:-1}
-    ].filter(d => !isWall(Math.floor(g.x + d.x), Math.floor(g.y + d.y)));
-
-    // elige la dirección que acerque más a Pac-Man
-    let bestDir = g.dir, bestDist = Infinity;
-    for (const d of dirs) {
-      const dx = (g.x + d.x) - pacman.x;
-      const dy = (g.y + d.y) - pacman.y;
-      const dist = dx*dx + dy*dy;
-      if (dist < bestDist) { bestDist = dist; bestDir = d; }
+    if (Math.abs(g.x - Math.round(g.x)) < 0.1 && Math.abs(g.y - Math.round(g.y)) < 0.1) {
+      const possible = Object.keys(dirs).filter(d => canMove(g, d));
+      // Evitar volver hacia atrás
+      const opposite = {
+        up: "down", down: "up", left: "right", right: "left"
+      };
+      const valid = possible.filter(d => d !== opposite[g.dir]);
+      // Buscar dirección más cercana a Pac-Man
+      let best = g.dir;
+      let bestDist = Infinity;
+      for (const d of valid) {
+        const nx = Math.round(g.x) + dirs[d].x;
+        const ny = Math.round(g.y) + dirs[d].y;
+        const dx = pacman.x - nx;
+        const dy = pacman.y - ny;
+        const dist = dx*dx + dy*dy;
+        if (dist < bestDist) { bestDist = dist; best = d; }
+      }
+      g.dir = best;
     }
-    g.dir = bestDir;
-    g.x += g.dir.x * 0.1;
-    g.y += g.dir.y * 0.1;
+    moveEntity(g, dt);
 
-    // colisión con Pac-Man
-    const dx = g.x - pacman.x, dy = g.y - pacman.y;
-    if (dx*dx + dy*dy < 0.3) {
+    const dx = g.x - pacman.x;
+    const dy = g.y - pacman.y;
+    if (dx*dx + dy*dy < 0.25) {
       if (powerTimer > 0) {
+        g.x = 13; g.y = 11;
         score += 200;
-        g.x = 13; g.y = 11; // reset fantasma
       } else {
         lives--;
-        if (lives <= 0) return gameOver();
+        if (lives <= 0) {
+          alert("GAME OVER\nPuntos: " + score);
+          location.reload();
+        }
         resetPositions();
       }
     }
@@ -177,60 +212,57 @@ function update() {
   if (powerTimer > 0) powerTimer--;
 
   draw();
+  scoreEl.textContent = `Puntos: ${score} | Vidas: ${lives}`;
   requestAnimationFrame(update);
 }
 
 function resetPositions() {
   pacman.x = 13; pacman.y = 23;
-  pacman.dir = {x:0,y:0}; pacman.nextDir = {x:0,y:0};
+  pacman.dir = "left"; pacman.nextDir = "left";
   ghosts[0].x = 13; ghosts[0].y = 11;
   ghosts[1].x = 14; ghosts[1].y = 11;
   ghosts[2].x = 12; ghosts[2].y = 11;
   ghosts[3].x = 15; ghosts[3].y = 11;
 }
 
-function gameOver() {
-  alert("GAME OVER\nPuntos: "+score);
-  location.reload();
-}
-
 function draw() {
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  for (let y=0;y<ROWS;y++){
-    for (let x=0;x<COLS;x++){
-      if (map[y][x]==="#"){
-        ctx.fillStyle="#001f6f";
+  for (let y=0; y<ROWS; y++){
+    for (let x=0; x<COLS; x++){
+      if (map[y][x] === "#"){
+        ctx.fillStyle = "#001f6f";
         ctx.fillRect(x*TILE, y*TILE, TILE, TILE);
-      } else if (map[y][x]==="."){
-        ctx.fillStyle="#ffd54d";
+      } else if (map[y][x] === "."){
+        ctx.fillStyle = "#ffd54d";
         ctx.beginPath();
         ctx.arc(x*TILE+TILE/2, y*TILE+TILE/2, 2, 0, Math.PI*2);
         ctx.fill();
-      } else if (map[y][x]==="o"){
-        ctx.fillStyle="#ffd54d";
+      } else if (map[y][x] === "o"){
+        ctx.fillStyle = "#ffd54d";
         ctx.beginPath();
         ctx.arc(x*TILE+TILE/2, y*TILE+TILE/2, 5, 0, Math.PI*2);
         ctx.fill();
       }
     }
   }
+
   // Pac-Man
-  ctx.fillStyle="#ffea00";
+  ctx.fillStyle = "#ffea00";
   ctx.beginPath();
-  ctx.arc(pacman.x*TILE+TILE/2, pacman.y*TILE+TILE/2, pacman.radius, 0, Math.PI*2);
+  ctx.arc(pacman.x*TILE+TILE/2, pacman.y*TILE+TILE/2, 7, 0, Math.PI*2);
   ctx.fill();
+
   // Fantasmas
-  for (const g of ghosts){
+  for (const g of ghosts) {
     ctx.fillStyle = powerTimer>0 ? "#0000cc" : g.color;
     ctx.beginPath();
-    ctx.arc(g.x*TILE+TILE/2, g.y*TILE+TILE/2, pacman.radius, 0, Math.PI*2);
+    ctx.arc(g.x*TILE+TILE/2, g.y*TILE+TILE/2, 7, 0, Math.PI*2);
     ctx.fill();
   }
-  scoreEl.textContent = `Puntos: ${score} | Vidas: ${lives}`;
 }
 
 resetPositions();
-update();
+requestAnimationFrame(update);
 </script>
 </body>
 </html>
