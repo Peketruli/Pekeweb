@@ -33,18 +33,30 @@ button {
   cursor: pointer;
   background: #b517ff;
   color: #fff;
+  margin: 5px;
 }
 </style>
 </head>
 <body>
+
 <h1>📰 Periódico</h1>
 
+<!-- Lista de noticias -->
 <div id="noticiasList" class="section">Cargando noticias...</div>
 
-<div id="nuevaNoticiaDiv" class="section" style="display:none;">
+<!-- Ajustes de Peketruli -->
+<div id="ajustesDiv" class="section" style="display:none;">
+  <h3>⚙️ Ajustes del Periódico</h3>
+  <p>Otorga o quita permisos de publicación:</p>
+  <div id="usuariosList">Cargando usuarios...</div>
+</div>
+
+<!-- Crear noticia para usuarios con permisos -->
+<div id="crearNoticiaDiv" class="section" style="display:none;">
   <h3>🖊 Crear noticia</h3>
   <input type="text" id="tituloNoticia" placeholder="Título"><br>
   <textarea id="contenidoNoticia" rows="4" placeholder="Contenido"></textarea><br>
+  <input type="file" id="imagenNoticia"><br>
   <button onclick="crearNoticia()">Publicar noticia</button>
 </div>
 
@@ -57,16 +69,26 @@ let currentUser = null;
 async function initUser() {
   const saved = localStorage.getItem("currentUser");
   if (saved) currentUser = JSON.parse(saved);
-  if (currentUser?.puede_publicar) {
-    document.getElementById("nuevaNoticiaDiv").style.display = "block";
+
+  // Solo Peketruli ve ajustes
+  if (currentUser?.username === "Peketruli") {
+    document.getElementById("ajustesDiv").style.display = "block";
+    cargarUsuarios();
   }
+
+  // Usuarios con permisos pueden crear noticias
+  if (currentUser?.puede_publicar) {
+    document.getElementById("crearNoticiaDiv").style.display = "block";
+  }
+
   cargarNoticias();
 }
 
+// -------------------- Noticias --------------------
 async function cargarNoticias() {
   const { data, error } = await supabase
     .from("noticias")
-    .select("id, titulo, contenido, fecha_creacion, usuarios(username)")
+    .select("id, titulo, contenido, imagen_url, fecha_creacion, usuarios(username)")
     .eq("publicada", true)
     .order("fecha_creacion", { ascending: false });
 
@@ -82,19 +104,56 @@ async function cargarNoticias() {
       <strong>${n.titulo}</strong> <br>
       <small>${new Date(n.fecha_creacion).toLocaleString()}</small><br>
       <div>${n.contenido}</div>
-      <em>Autor: ${n.usuarios?.username || 'Desconocido'}</em>
+      ${n.imagen_url ? `<img src="${n.imagen_url}" style="max-width:200px; margin-top:8px; border-radius:6px;">` : ""}
+      <br><em>Autor: ${n.usuarios?.username || 'Desconocido'}</em>
     </div>
   `).join("");
 }
 
+// -------------------- Ajustes de Peketruli --------------------
+async function cargarUsuarios() {
+  const { data, error } = await supabase
+    .from("usuarios")
+    .select("id, username, puede_publicar")
+    .neq("username", "Peketruli");
+
+  if (error) return document.getElementById("usuariosList").innerText = "Error cargando usuarios.";
+
+  document.getElementById("usuariosList").innerHTML = data.map(u => `
+    <div style="margin-bottom:6px;">
+      ${u.username} 
+      <button onclick="togglePermiso('${u.id}', ${u.puede_publicar})">
+        ${u.puede_publicar ? "Quitar permiso" : "Dar permiso"}
+      </button>
+    </div>
+  `).join("");
+}
+
+async function togglePermiso(userId, actual) {
+  const { error } = await supabase.from("usuarios").update({ puede_publicar: !actual }).eq("id", userId);
+  if (error) return alert("Error actualizando permiso.");
+  cargarUsuarios();
+}
+
+// -------------------- Crear noticia --------------------
 async function crearNoticia() {
   const titulo = document.getElementById("tituloNoticia").value.trim();
   const contenido = document.getElementById("contenidoNoticia").value.trim();
+  const archivo = document.getElementById("imagenNoticia").files[0];
+
   if (!titulo || !contenido) return alert("Completa título y contenido.");
+
+  let imagen_url = null;
+  if (archivo) {
+    const { data, error } = await supabase.storage.from("periodico").upload(`noticias/${archivo.name}`, archivo, { upsert: true });
+    if (error) return alert("Error subiendo imagen.");
+    imagen_url = supabase.storage.from("periodico").getPublicUrl(`noticias/${archivo.name}`).publicUrl;
+  }
 
   const { error } = await supabase.from("noticias").insert([{
     titulo,
     contenido,
+    imagen_url,
     autor_id: currentUser.id
   }]);
   if (error) return alert("Error publicando noticia.");
@@ -102,6 +161,7 @@ async function crearNoticia() {
   alert("✅ Noticia publicada.");
   document.getElementById("tituloNoticia").value = "";
   document.getElementById("contenidoNoticia").value = "";
+  document.getElementById("imagenNoticia").value = "";
   cargarNoticias();
 }
 
