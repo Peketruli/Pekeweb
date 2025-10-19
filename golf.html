@@ -151,335 +151,230 @@ function initPacman(container){
 "############################"
   ];
 
-  // mutable map
-  let map = raw.map(r => r.split(''));
+const mapWidth = map[0].length;
+const mapHeight = map.length;
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = mapWidth * tileSize;
+canvas.height = mapHeight * tileSize;
 
-  // state
-  let score = 0;
-  let lives = 3;
-  let powerMode = false;
-  let powerTimer = 0;
+const pac = {
+  x: 13 * tileSize + tileSize/2,
+  y: 17 * tileSize + tileSize/2,
+  dir: {x:0, y:0},
+  nextDir: {x:0, y:0},
+  speed: 1.2,
+  radius: 6
+};
 
-  // pac uses pixel coordinates
-  const pac = {
-    px: 13*TILE + TILE/2,
-    py: 23*TILE + TILE/2,
-    dir: {x:0,y:0},     // normalized: -1,0,1
-    nextDir: {x:0,y:0},
-    speed: 1.6,         // px per frame
-    radius: TILE*0.45
-  };
+let lives = 3;
+let score = 0;
+let powerMode = false;
+let powerTimer = 0;
 
-  // ghosts: pixel coords, speed slightly less than pac
-  const ghosts = [
-    { px:13*TILE+TILE/2, py:11*TILE+TILE/2, dir:{x:0,y:0}, color:'red', speed:1.0, frightened:false },
-    { px:14*TILE+TILE/2, py:11*TILE+TILE/2, dir:{x:0,y:0}, color:'pink', speed:0.95, frightened:false },
-    { px:12*TILE+TILE/2, py:11*TILE+TILE/2, dir:{x:0,y:0}, color:'cyan', speed:0.98, frightened:false },
-    { px:15*TILE+TILE/2, py:11*TILE+TILE/2, dir:{x:0,y:0}, color:'orange', speed:0.9, frightened:false }
-  ];
+const ghosts = [
+  {name:'blinky', color:'red', x:13*tileSize, y:11*tileSize, dir:{x:-1,y:0}, speed:1.1, mode:'chase'},
+  {name:'pinky', color:'pink', x:14*tileSize, y:11*tileSize, dir:{x:1,y:0}, speed:1.1, mode:'chase'},
+  {name:'inky', color:'cyan', x:12*tileSize, y:11*tileSize, dir:{x:0,y:-1}, speed:1.1, mode:'chase'},
+  {name:'clyde', color:'orange', x:15*tileSize, y:11*tileSize, dir:{x:0,y:1}, speed:1.1, mode:'chase'}
+];
 
-  // helpers
-  const pixelToGrid = (px,py) => ({ gx: Math.floor(px / TILE), gy: Math.floor(py / TILE) });
-  const gridCenter = (gx,gy) => ({ cx: gx*TILE + TILE/2, cy: gy*TILE + TILE/2 });
-  const isWall = (gx,gy) => {
-    if(gy<0||gy>=ROWS||gx<0||gx>=COLS) return true;
-    return map[gy][gx] === '#';
-  };
-
-  function updateHUD(){ document.getElementById('scoreBoard').innerText = `Puntuación: ${score} | Vidas: ${lives}`; }
-  updateHUD();
-
-  // input handling
-  const keyMap = { ArrowUp:{x:0,y:-1}, ArrowDown:{x:0,y:1}, ArrowLeft:{x:-1,y:0}, ArrowRight:{x:1,y:0} };
-  function onKey(e){
-    if(keyMap[e.key]){ pac.nextDir = keyMap[e.key]; e.preventDefault(); }
-    if(e.key.toLowerCase()==='r'){ restartLevel(); }
-  }
-  window.addEventListener('keydown', onKey);
-
-  // can step a small amount toward dir without hitting wall
-  function canStep(px,py,dir){
-    const testX = px + dir.x * (TILE*0.45);
-    const testY = py + dir.y * (TILE*0.45);
-    const { gx, gy } = pixelToGrid(testX,testY);
-    return !isWall(gx,gy);
-  }
-
-  function handleTunnel(ent){
-    // wrap when fully out of bounds horizontally (allows smooth crossing)
-    if(ent.px < -TILE/2) ent.px = (COLS - 0.5)*TILE;
-    if(ent.px > (COLS - 0.5)*TILE) ent.px = -TILE/2;
-  }
-
-  // Apply buffered direction when near center of cell (tolerance)
-  function tryApplyBufferedDir(){
-    const { gx, gy } = pixelToGrid(pac.px, pac.py);
-    const center = gridCenter(gx,gy);
-    const dist = Math.hypot(pac.px - center.cx, pac.py - center.cy);
-    const tolerance = 6; // px
-    if(dist <= tolerance){
-      if((pac.nextDir.x !== pac.dir.x) || (pac.nextDir.y !== pac.dir.y)){
-        if(canStep(pac.px, pac.py, pac.nextDir)){
-          pac.dir = { x: pac.nextDir.x, y: pac.nextDir.y };
-          // snap to center to avoid drift
-          pac.px = center.cx; pac.py = center.cy;
-        }
-      }
-    }
-  }
-
-  function movePac(stepFactor){
-    tryApplyBufferedDir();
-    if(pac.dir.x === 0 && pac.dir.y === 0) return;
-    if(!canStep(pac.px, pac.py, pac.dir)){
-      // snap to center and stop
-      const g = pixelToGrid(pac.px, pac.py);
-      const c = gridCenter(g.gx, g.gy);
-      pac.px = c.cx; pac.py = c.cy;
-      pac.dir = {x:0,y:0};
-      return;
-    }
-    // pixel move scaled by stepFactor
-    pac.px += pac.dir.x * pac.speed * stepFactor;
-    pac.py += pac.dir.y * pac.speed * stepFactor;
-    handleTunnel(pac);
-  }
-
-  // ghosts decision: BFS when close, random otherwise; avoid immediate reverse
-  function ghostDecide(ghost){
-    const ggrid = pixelToGrid(ghost.px, ghost.py);
-    const center = gridCenter(ggrid.gx,ggrid.gy);
-    const aligned = Math.hypot(ghost.px - center.cx, ghost.py - center.cy) < 6;
-    if(!aligned) return; // only decide when near center
-    // build options
-    const options = [];
-    [['left',-1,0],['right',1,0],['up',0,-1],['down',0,1]].forEach(([n,dx,dy])=>{
-      if(!isWall(ggrid.gx+dx, ggrid.gy+dy)) options.push({dx,dy});
-    });
-    if(options.length===0){ ghost.dir = {x:0,y:0}; return; }
-
-    // Pac grid & distance
-    const pgrid = pixelToGrid(pac.px, pac.py);
-    const dist = Math.hypot(pgrid.gx - ggrid.gx, pgrid.gy - ggrid.gy);
-
-    // frightened mode: run away (choose adjacent cell that maximizes distance)
-    if(powerMode && ghost.frightened){
-      let best = options[0], bestD = -1;
-      for(const o of options){
-        const nx = ggrid.gx + o.dx, ny = ggrid.gy + o.dy;
-        const d = Math.hypot(pgrid.gx - nx, pgrid.gy - ny);
-        if(d > bestD){ bestD = d; best = o; }
-      }
-      ghost.dir = { x: best.dx, y: best.dy };
-      return;
-    }
-
-    // If close enough, use BFS to choose the next cell toward Pac
-    if(dist < 8){
-      const nextCell = bfsShortest(map, COLS, ROWS, {x:ggrid.gx,y:ggrid.gy}, {x:pgrid.gx,y:pgrid.gy});
-      if(nextCell){
-        ghost.dir = { x: Math.sign(nextCell.x - ggrid.gx), y: Math.sign(nextCell.y - ggrid.gy) };
-        return;
-      }
-    }
-
-    // Else random choice avoiding immediate reverse
-    const nonReverse = options.filter(o => !(ghost.dir.x === -o.dx && ghost.dir.y === -o.dy));
-    const pickList = nonReverse.length ? nonReverse : options;
-    const pick = pickList[Math.floor(Math.random()*pickList.length)];
-    ghost.dir = { x: pick.dx, y: pick.dy };
-  }
-
-  function moveGhost(ghost, stepFactor){
-    if(ghost.dir.x === 0 && ghost.dir.y === 0) return;
-    if(!canStep(ghost.px, ghost.py, ghost.dir)){
-      // snap to center and clear dir so decision happens next frame
-      const g = pixelToGrid(ghost.px, ghost.py);
-      const c = gridCenter(g.gx,g.gy);
-      ghost.px = c.cx; ghost.py = c.cy;
-      ghost.dir = {x:0,y:0};
-      return;
-    }
-    ghost.px += ghost.dir.x * ghost.speed * stepFactor;
-    ghost.py += ghost.dir.y * ghost.speed * stepFactor;
-    handleTunnel(ghost);
-  }
-
-  function tryEatPellet(){
-    const { gx, gy } = pixelToGrid(pac.px, pac.py);
-    const ch = map[gy] && map[gy][gx];
-    if(!ch) return;
-    if(ch === '.'){ score += 10; map[gy][gx] = ' '; updateHUD(); }
-    if(ch === 'o'){ score += 50; map[gy][gx] = ' '; powerMode=true; powerTimer = 10 * 60; // 10s at 60fps
-      ghosts.forEach(g => g.frightened = true); updateHUD();
-    }
-  }
-
-  function checkGhostCollision(){
-    for(const g of ghosts){
-      const d = Math.hypot(g.px - pac.px, g.py - pac.py);
-      if(d < TILE*0.6){
-        if(powerMode && g.frightened){
-          // eat ghost: send home & award pts
-          score += 200;
-          // teleport instantly to home center
-          const hx = Math.floor(( ( (g.home && g.home.px) ? g.home.px : (13*TILE+TILE/2) ) ) );
-          // simpler: reset to spawn tile centers:
-          g.px = ( (g.color==='pink') ? (14*TILE+TILE/2) : ( (g.color==='cyan') ? (12*TILE+TILE/2) : ( (g.color==='orange') ? (15*TILE+TILE/2) : (13*TILE+TILE/2) ) ) );
-          g.py = 11*TILE + TILE/2;
-          g.frightened = false;
-          updateHUD();
-          return true;
-        } else if(!powerMode){
-          // Pac death
-          lives--;
-          updateHUD();
-          if(lives <= 0){
-            alert(`Game Over\nPuntuación: ${score}`);
-            stop();
-            backToMenu();
-            return true;
-          }
-          // reset positions and small pause
-          resetEntities();
-          pauseTicks = 18;
-          return true;
-        }
-      }
-    }
-    return false;
-  }
-
-  // draw
-  let mouthT = 0;
-  function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    // map
-    for(let y=0;y<map.length;y++){
-      for(let x=0;x<map[y].length;x++){
-        const ch = map[y][x];
-        const sx = x*TILE, sy = y*TILE;
-        if(ch === '#'){
-          ctx.fillStyle = 'rgba(0,31,111,1)';
-          ctx.fillRect(sx,sy,TILE,TILE);
-          ctx.fillStyle = 'rgba(255,255,255,0.03)';
-          ctx.fillRect(sx+2,sy+2,TILE-4,TILE-4);
-        } else if(ch === '.' || ch === 'o'){
-          ctx.fillStyle = ch === 'o' ? '#ff8b8b' : '#ffd54d';
-          ctx.beginPath();
-          ctx.arc(sx + TILE/2, sy + TILE/2, ch==='o'?4:2, 0, Math.PI*2);
-          ctx.fill();
-        }
-      }
-    }
-    // pac mouth animation
-    mouthT += 0.12;
-    const mouthOpen = 0.18 + Math.abs(Math.sin(mouthT)) * 0.22;
-    let start = 0, end = Math.PI*2;
-    if(pac.dir.x === 1){ start = mouthOpen*Math.PI; end = (2-mouthOpen)*Math.PI; }
-    else if(pac.dir.x === -1){ start = Math.PI + mouthOpen*Math.PI; end = Math.PI - mouthOpen*Math.PI; }
-    else if(pac.dir.y === -1){ start = -Math.PI/2 + mouthOpen*Math.PI; end = -Math.PI/2 - mouthOpen*Math.PI; }
-    else if(pac.dir.y === 1){ start = Math.PI/2 + mouthOpen*Math.PI; end = Math.PI/2 - mouthOpen*Math.PI; }
-
-    ctx.fillStyle = '#ffeb3b';
-    ctx.beginPath();
-    ctx.moveTo(pac.px, pac.py);
-    ctx.arc(pac.px, pac.py, pac.radius, start, end);
-    ctx.closePath();
-    ctx.fill();
-
-    // ghosts
-    for(const g of ghosts){
-      ctx.fillStyle = (powerMode && g.frightened) ? '#3a7bd5' : g.color;
-      ctx.beginPath();
-      ctx.arc(g.px, g.py - 3, TILE*0.42, Math.PI, 0); // head
-      ctx.lineTo(g.px + TILE*0.42, g.py + TILE*0.42);
-      ctx.lineTo(g.px - TILE*0.42, g.py + TILE*0.42);
-      ctx.closePath();
-      ctx.fill();
-      // eyes
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(g.px - 5, g.py - 6, 4, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(g.px + 5, g.py - 6, 4, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = '#000';
-      ctx.beginPath(); ctx.arc(g.px - 5 + g.dir.x*2, g.py - 6 + g.dir.y*2, 2, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(g.px + 5 + g.dir.x*2, g.py - 6 + g.dir.y*2, 2, 0, Math.PI*2); ctx.fill();
-    }
-  }
-
-  // entity reset
-  function resetEntities(){
-    pac.px = 13*TILE + TILE/2; pac.py = 23*TILE + TILE/2; pac.dir = {x:0,y:0}; pac.nextDir={x:0,y:0};
-    ghosts[0].px = 13*TILE + TILE/2; ghosts[0].py = 11*TILE + TILE/2; ghosts[0].dir={x:0,y:0}; ghosts[0].frightened=false;
-    ghosts[1].px = 14*TILE + TILE/2; ghosts[1].py = 11*TILE + TILE/2; ghosts[1].dir={x:0,y:0}; ghosts[1].frightened=false;
-    ghosts[2].px = 12*TILE + TILE/2; ghosts[2].py = 11*TILE + TILE/2; ghosts[2].dir={x:0,y:0}; ghosts[2].frightened=false;
-    ghosts[3].px = 15*TILE + TILE/2; ghosts[3].py = 11*TILE + TILE/2; ghosts[3].dir={x:0,y:0}; ghosts[3].frightened=false;
-  }
-
-  // restart full level
-  function restartLevel(){
-    map = raw.map(r => r.split(''));
-    score = 0; lives = 3; powerMode=false; powerTimer=0;
-    updateHUD(); resetEntities();
-  }
-
-  // main loop (delta-scaled)
-  let last = performance.now();
-  let running = true;
-  let pauseTicks = 0;
-
-  function frame(now){
-    if(!running) return;
-    const dt = Math.min(40, now - last); last = now;
-    const stepFactor = dt / 16; // scale to ~60fps base
-
-    if(pauseTicks > 0){ pauseTicks--; draw(); requestAnimationFrame(frame); return; }
-
-    // apply pac direction buffer and movement
-    // pac.nextDir is object {x,y} or {x:0,y:0}
-    tryApplyBufferedDir();
-    movePac(stepFactor);
-
-    // ghosts decide & move
-    for(const g of ghosts) ghostDecide(g);
-    for(const g of ghosts) moveGhost(g, stepFactor);
-
-    // pellets & power
-    tryEatPellet();
-
-    // collisions
-    checkGhostCollision();
-
-    // power timer
-    if(powerMode){
-      powerTimer--;
-      if(powerTimer <= 0){
-        powerMode = false;
-        ghosts.forEach(g => g.frightened = false);
-      }
-    }
-
-    draw();
-    requestAnimationFrame(frame);
-  }
-
-  requestAnimationFrame(frame);
-
-  // stop function to cleanup
-  function stop(){
-    running = false;
-    window.removeEventListener('keydown', onKey);
-  }
-
-  // wire local onKey removal reference
-  function onKey(e){ if(keyMap[e.key]){ pac.nextDir = keyMap[e.key]; e.preventDefault(); } if(e.key.toLowerCase()==='r'){ restartLevel(); } }
-  // replace global listener with local (so stop() can remove)
-  window.removeEventListener('keydown', onKey); // ensure no dup
-  window.addEventListener('keydown', onKey);
-
-  // expose stop for UI
-  return stop;
+function isWall(tx, ty) {
+  return map[ty] && map[ty][tx] === '#';
 }
+
+function movePac() {
+  let nextX = pac.x + pac.dir.x * pac.speed;
+  let nextY = pac.y + pac.dir.y * pac.speed;
+
+  // túneles laterales
+  if (nextX < -pac.radius) nextX = mapWidth * tileSize + pac.radius;
+  if (nextX > mapWidth * tileSize + pac.radius) nextX = -pac.radius;
+
+  let tileX = Math.floor(nextX / tileSize);
+  let tileY = Math.floor(nextY / tileSize);
+
+  if (!isWall(tileX, tileY)) {
+    pac.x = nextX;
+    pac.y = nextY;
+  }
+
+  // cambio de dirección
+  const ndx = Math.floor((pac.x + pac.nextDir.x * tileSize/2)/tileSize);
+  const ndy = Math.floor((pac.y + pac.nextDir.y * tileSize/2)/tileSize);
+  if (!isWall(ndx, ndy)) pac.dir = {...pac.nextDir};
+}
+
+function checkPellets() {
+  const tileX = Math.floor(pac.x / tileSize);
+  const tileY = Math.floor(pac.y / tileSize);
+  const c = map[tileY][tileX];
+  if (c === 'o' || c === 'P') {
+    if (c === 'P') { 
+      powerMode = true;
+      powerTimer = 600;
+      ghosts.forEach(g => g.mode = 'frightened');
+    }
+    map[tileY] = map[tileY].substring(0,tileX)+' '+map[tileY].substring(tileX+1);
+    score += (c==='P'?50:10);
+  }
+}
+
+function distance(a,b) {
+  const dx = a.x-b.x, dy=a.y-b.y;
+  return Math.sqrt(dx*dx+dy*dy);
+}
+
+function moveGhosts() {
+  ghosts.forEach(g => {
+    // túneles
+    if (g.x < -tileSize) g.x = mapWidth*tileSize;
+    if (g.x > mapWidth*tileSize) g.x = 0;
+
+    const gx = Math.floor(g.x/tileSize);
+    const gy = Math.floor(g.y/tileSize);
+    const dirs = [
+      {x:1,y:0}, {x:-1,y:0}, {x:0,y:1}, {x:0,y:-1}
+    ].filter(d=>!isWall(gx+d.x, gy+d.y));
+
+    let target = {x:pac.x, y:pac.y};
+    if (powerMode && g.mode==='frightened') {
+      // huye
+      const rand = dirs[Math.floor(Math.random()*dirs.length)];
+      g.dir = rand || g.dir;
+    } else {
+      switch(g.name) {
+        case 'blinky':
+          target = {x:pac.x, y:pac.y};
+          break;
+        case 'pinky':
+          target = {x:pac.x+pac.dir.x*tileSize*4, y:pac.y+pac.dir.y*tileSize*4};
+          break;
+        case 'inky':
+          const blinky = ghosts.find(x=>x.name==='blinky');
+          const midX = pac.x + pac.dir.x*tileSize*2;
+          const midY = pac.y + pac.dir.y*tileSize*2;
+          target = {
+            x: midX + (midX - blinky.x),
+            y: midY + (midY - blinky.y)
+          };
+          break;
+        case 'clyde':
+          if (distance(pac,g) < 8*tileSize)
+            target = {x:1*tileSize, y:mapHeight*tileSize - 2*tileSize};
+          else
+            target = {x:pac.x, y:pac.y};
+          break;
+      }
+      // buscar dirección más cercana al target
+      let bestDir = g.dir;
+      let minDist = Infinity;
+      dirs.forEach(d=>{
+        const nx = g.x + d.x*tileSize;
+        const ny = g.y + d.y*tileSize;
+        const dist = (nx-target.x)**2+(ny-target.y)**2;
+        if (dist < minDist && !(d.x===-g.dir.x && d.y===-g.dir.y)) {
+          minDist = dist; bestDir = d;
+        }
+      });
+      g.dir = bestDir;
+    }
+    g.x += g.dir.x * g.speed;
+    g.y += g.dir.y * g.speed;
+  });
+}
+
+function checkCollisions() {
+  ghosts.forEach(g=>{
+    const d = distance(pac,g);
+    if (d < pac.radius*1.5) {
+      if (powerMode && g.mode==='frightened') {
+        score += 200;
+        g.x = 13*tileSize; g.y = 11*tileSize; // volver al centro
+        g.mode='chase';
+      } else if (!powerMode) {
+        lives--;
+        if (lives <= 0) {
+          alert("GAME OVER");
+          location.reload();
+        } else {
+          resetPositions();
+        }
+      }
+    }
+  });
+}
+
+function resetPositions() {
+  pac.x = 13 * tileSize + tileSize/2;
+  pac.y = 17 * tileSize + tileSize/2;
+  pac.dir = {x:0,y:0};
+  pac.nextDir = {x:0,y:0};
+  ghosts.forEach((g,i)=>{
+    g.x = (13+i)*tileSize;
+    g.y = 11*tileSize;
+    g.dir = {x:0,y:1};
+    g.mode = 'chase';
+  });
+}
+
+function draw() {
+  ctx.fillStyle='black';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  for (let y=0;y<mapHeight;y++){
+    for (let x=0;x<mapWidth;x++){
+      const c=map[y][x];
+      if (c==='#') {
+        ctx.fillStyle='blue';
+        ctx.fillRect(x*tileSize,y*tileSize,tileSize,tileSize);
+      } else if (c==='o' || c==='P') {
+        ctx.fillStyle = (c==='P'?'orange':'white');
+        ctx.beginPath();
+        ctx.arc(x*tileSize+tileSize/2, y*tileSize+tileSize/2, c==='P'?4:2, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+  }
+  // Pac-Man
+  ctx.fillStyle='yellow';
+  ctx.beginPath();
+  ctx.arc(pac.x, pac.y, pac.radius, 0, Math.PI*2);
+  ctx.fill();
+  // Ghosts
+  ghosts.forEach(g=>{
+    ctx.fillStyle=(powerMode && g.mode==='frightened')?'blue':g.color;
+    ctx.beginPath();
+    ctx.arc(g.x, g.y, pac.radius, 0, Math.PI*2);
+    ctx.fill();
+  });
+  document.getElementById('scoreBoard').innerText=`Puntuación: ${score} | Vidas: ${lives}`;
+}
+
+function loop() {
+  movePac();
+  moveGhosts();
+  checkPellets();
+  checkCollisions();
+  if (powerMode) {
+    powerTimer--;
+    if (powerTimer <= 0) {
+      powerMode = false;
+      ghosts.forEach(g=>g.mode='chase');
+    }
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.addEventListener('keydown',e=>{
+  if (e.key==='ArrowUp') pac.nextDir={x:0,y:-1};
+  if (e.key==='ArrowDown') pac.nextDir={x:0,y:1};
+  if (e.key==='ArrowLeft') pac.nextDir={x:-1,y:0};
+  if (e.key==='ArrowRight') pac.nextDir={x:1,y:0};
+});
+
+resetPositions();
+loop();
 </script>
 </body>
 </html>
