@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🗞️ Periódico Peketruli</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<style>
+:root {
+  --bg: #0a001a;
+  --card-bg: rgba(40, 0, 60, 0.7);
+  --accent: #ff6f00;
+  --text: #fff;
+}
+body {
+  margin: 0;
+  background: radial-gradient(circle, #000, var(--bg));
+  color: var(--text);
+  font-family: 'Poppins', sans-serif;
+  text-align: center;
+  padding: 20px;
+}
+h1 {
+  color: var(--accent);
+  text-shadow: 0 0 12px var(--accent);
+}
+.news-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  margin-top: 25px;
+}
+.news-card {
+  background: var(--card-bg);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  box-shadow: 0 0 20px var(--accent);
+  max-width: 700px;
+  padding: 16px;
+  text-align: left;
+  transition: transform 0.3s;
+}
+.news-card:hover { transform: scale(1.02); }
+.news-card img {
+  width: 100%;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+.author-date {
+  font-size: 0.9rem;
+  color: #ccc;
+  margin-bottom: 8px;
+}
+.publish-section {
+  display: none;
+  margin: 20px auto;
+  background: rgba(255,255,255,0.05);
+  border-radius: 12px;
+  padding: 15px;
+  width: 90%;
+  max-width: 600px;
+}
+input, textarea {
+  width: 95%;
+  margin-bottom: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  border: none;
+  font-size: 1rem;
+}
+button {
+  background: linear-gradient(90deg, var(--accent), #b517ff);
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  padding: 10px 16px;
+  cursor: pointer;
+  font-weight: bold;
+}
+button:hover { transform: scale(1.05); box-shadow: 0 0 15px var(--accent); }
+</style>
+</head>
+<body>
+<h1>🗞️ Noticias Peketruli</h1>
+<div id="publishSection" class="publish-section">
+  <h2>Publicar Noticia</h2>
+  <input type="text" id="titulo" placeholder="Título">
+  <textarea id="contenido" rows="4" placeholder="Contenido..."></textarea>
+  <input type="text" id="imagen" placeholder="URL de imagen (opcional)">
+  <button onclick="publicar()">📢 Publicar</button>
+</div>
+
+<div id="newsContainer" class="news-container"></div>
+
+<script>
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+let currentUser = null;
+
+document.addEventListener("DOMContentLoaded", async ()=>{
+  await cargarUsuario();
+  await cargarNoticias();
+});
+
+async function cargarUsuario(){
+  const saved = localStorage.getItem("currentUser");
+  if (saved) {
+    currentUser = JSON.parse(saved);
+  } else {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data } = await supabase.from("usuarios").select("*").eq("auth_id", user.id).maybeSingle();
+      currentUser = data;
+      localStorage.setItem("currentUser", JSON.stringify(currentUser));
+    }
+  }
+  if (currentUser?.es_periodista) {
+    document.getElementById("publishSection").style.display = "block";
+  }
+}
+
+async function cargarNoticias(){
+  const cont = document.getElementById("newsContainer");
+  cont.innerHTML = "<p>Cargando noticias...</p>";
+
+  const { data, error } = await supabase
+    .from("noticias")
+    .select("*")
+    .eq("visible", true)
+    .order("fecha", { ascending: false });
+
+  if (error) {
+    cont.innerHTML = `<p style='color:red'>Error cargando noticias: ${error.message}</p>`;
+    return;
+  }
+
+  if (!data || data.length === 0) {
+    cont.innerHTML = "<p>No hay noticias por ahora.</p>";
+    return;
+  }
+
+  cont.innerHTML = "";
+  data.forEach(n => {
+    const card = document.createElement("div");
+    card.className = "news-card";
+    card.innerHTML = `
+      ${n.imagen ? `<img src="${n.imagen}" alt="imagen">` : ""}
+      <h2>${n.titulo}</h2>
+      <div class="author-date">Por ${n.autor} — ${new Date(n.fecha).toLocaleString()}</div>
+      <p>${n.contenido}</p>
+    `;
+    cont.appendChild(card);
+  });
+}
+
+async function publicar(){
+  if (!currentUser?.es_periodista) return alert("No tienes permiso para publicar.");
+  const titulo = document.getElementById("titulo").value.trim();
+  const contenido = document.getElementById("contenido").value.trim();
+  const imagen = document.getElementById("imagen").value.trim();
+  if (!titulo || !contenido) return alert("Faltan datos.");
+
+  const { error } = await supabase.from("noticias").insert([{
+    titulo,
+    contenido,
+    imagen: imagen || null,
+    autor: currentUser.username,
+    fecha: new Date().toISOString(),
+    visible: true
+  }]);
+
+  if (error) {
+    alert("❌ Error publicando noticia: " + error.message);
+  } else {
+    alert("✅ Noticia publicada.");
+    document.getElementById("titulo").value = "";
+    document.getElementById("contenido").value = "";
+    document.getElementById("imagen").value = "";
+    cargarNoticias();
+  }
+}
+</script>
+</body>
+</html>
