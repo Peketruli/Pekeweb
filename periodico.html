@@ -58,15 +58,16 @@ let permisosPublicar = [];
 document.addEventListener("DOMContentLoaded", async () => {
     await initUser();
     await loadPermisos();
+    renderUserUI();
     await loadNoticias();
 });
 
+// ------------------ INIT USER ------------------
 async function initUser() {
     try {
         const saved = localStorage.getItem("currentUser");
         if (saved) {
             currentUser = JSON.parse(saved);
-            renderUserUI();
             return;
         }
 
@@ -83,11 +84,12 @@ async function initUser() {
 
         currentUser = data;
         localStorage.setItem("currentUser", JSON.stringify(currentUser));
-        renderUserUI();
-
-    } catch (err) { console.error(err); }
+    } catch (err) {
+        console.error(err);
+    }
 }
 
+// ------------------ RENDER UI ------------------
 function renderUserUI() {
     const ajustesBtnContainer = document.getElementById("ajustesContainer");
     const publicarDiv = document.getElementById("publicarContainer");
@@ -97,31 +99,41 @@ function renderUserUI() {
     // Botón ajustes solo para Peketruli
     ajustesBtnContainer.style.display = currentUser.username === "Peketruli" ? "block" : "none";
 
-    // Formulario publicar solo si tiene permiso
-    publicarDiv.style.display = permisosPublicar.includes(currentUser.id) ? "block" : "none";
+    // Formulario publicar solo si tiene permiso o es Peketruli
+    publicarDiv.style.display = (permisosPublicar.includes(currentUser.id) || currentUser.username === "Peketruli") ? "block" : "none";
 }
 
 // ------------------ PERMISOS ------------------
 async function loadPermisos() {
-    const { data, error } = await supabase
-        .from("usuarios")
-        .select("id, username, puede_publicar");
+    try {
+        const { data, error } = await supabase
+            .from("usuarios")
+            .select("id, username, puede_publicar");
 
-    if (error) return console.error(error);
-    permisosPublicar = data.filter(u => u.puede_publicar).map(u => u.id);
-    renderUserUI();
+        if (error) return console.error(error);
+
+        permisosPublicar = data.filter(u => u.puede_publicar).map(u => u.id);
+        renderUserUI();
+    } catch (err) {
+        console.error(err);
+    }
 }
 
 async function togglePermiso(usuarioId) {
-    const nuevoValor = !permisosPublicar.includes(usuarioId);
-    const { error } = await supabase
-        .from("usuarios")
-        .update({ puede_publicar: nuevoValor })
-        .eq("id", usuarioId);
+    try {
+        const usuario = permisosPublicar.includes(usuarioId);
+        const { error } = await supabase
+            .from("usuarios")
+            .update({ puede_publicar: !usuario })
+            .eq("id", usuarioId);
 
-    if (error) return alert("Error actualizando permiso: " + error.message);
-    await loadPermisos();
-    mostrarAjustes(); // recarga lista
+        if (error) return alert("Error actualizando permiso: " + error.message);
+
+        await loadPermisos();
+        mostrarAjustes(); // recarga lista
+    } catch (err) {
+        console.error(err);
+    }
 }
 
 // ------------------ AJUSTES ------------------
@@ -129,19 +141,29 @@ async function mostrarAjustes() {
     const ajustesDiv = document.getElementById("ajustesDiv");
     ajustesDiv.style.display = ajustesDiv.style.display === "block" ? "none" : "block";
 
-    const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
-    if (error) return console.error(error);
+    if (ajustesDiv.style.display === "block") {
+        try {
+            const { data, error } = await supabase.from("usuarios").select("id, username, puede_publicar");
+            if (error) return console.error(error);
 
-    const lista = document.getElementById("listaUsuariosPermisos");
-    lista.innerHTML = "";
-    data.forEach(u => {
-        const li = document.createElement("li");
-        li.innerHTML = `${u.username} 
-            <button onclick="togglePermiso('${u.id}')">
-                ${u.puede_publicar ? "Quitar permiso" : "Dar permiso"}
-            </button>`;
-        lista.appendChild(li);
-    });
+            const lista = document.getElementById("listaUsuariosPermisos");
+            lista.innerHTML = "";
+
+            data.forEach(u => {
+                const esPeketruli = u.username === "Peketruli";
+                const li = document.createElement("li");
+                li.innerHTML = `
+                    ${u.username} 
+                    ${!esPeketruli ? `<button onclick="togglePermiso('${u.id}')">
+                        ${u.puede_publicar ? "Quitar permiso" : "Dar permiso"}
+                    </button>` : "(admin)"}
+                `;
+                lista.appendChild(li);
+            });
+        } catch (err) {
+            console.error(err);
+        }
+    }
 }
 
 // ------------------ NOTICIAS ------------------
@@ -189,21 +211,25 @@ async function publicarNoticia() {
 
     if (!titulo || !contenido) return alert("Debes completar título y contenido.");
 
-    const { error } = await supabase.from("noticias").insert({
-        titulo,
-        contenido,
-        imagen_url: imagen || null,
-        autor_id: currentUser.id,
-        publicada: true
-    });
+    try {
+        const { error } = await supabase.from("noticias").insert({
+            titulo,
+            contenido,
+            imagen_url: imagen || null,
+            autor_id: currentUser.id,
+            publicada: true
+        });
 
-    if (error) return alert("Error publicando noticia: " + error.message);
+        if (error) return alert("Error publicando noticia: " + error.message);
 
-    document.getElementById("noticiaTitulo").value = "";
-    document.getElementById("noticiaContenido").value = "";
-    document.getElementById("noticiaImagen").value = "";
+        document.getElementById("noticiaTitulo").value = "";
+        document.getElementById("noticiaContenido").value = "";
+        document.getElementById("noticiaImagen").value = "";
 
-    loadNoticias();
+        loadNoticias();
+    } catch (err) {
+        console.error(err);
+    }
 }
 </script>
 </body>
