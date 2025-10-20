@@ -158,25 +158,20 @@
     </div>
 
 <script>
-/* === SOLITARIO COMPLETO CON DRAG & DROP Y BARJA ROJA === */
+/* === SOLITARIO COMPLETO CON DRAG & DROP DE PILAS === */
 
 const palos = ['♠', '♥', '♦', '♣'];
 let mazo = [], descarte = [];
 let tableau = [[],[],[],[],[],[],[]];
 let fundaciones = [[],[],[],[]];
-let cartaArrastrada = null;
+let cartasArrastradas = [];
 let origen = null;
 
-/* === CREACIÓN DEL MAZO === */
+/* === CREAR MAZO === */
 function crearMazo() {
     mazo = [];
     for (let palo of palos) {
         for (let valor = 1; valor <= 13; valor++) {
-            let nombre = valor;
-            if (valor === 1) nombre = 'A';
-            else if (valor === 11) nombre = 'J';
-            else if (valor === 12) nombre = 'Q';
-            else if (valor === 13) nombre = 'K';
             mazo.push({
                 valor,
                 palo,
@@ -187,7 +182,7 @@ function crearMazo() {
     }
 }
 
-/* === BARAJAR CARTAS === */
+/* === BARAJAR === */
 function barajar() {
     for (let i = mazo.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -208,7 +203,7 @@ function repartirCartas() {
     render();
 }
 
-/* === ROBAR CARTA === */
+/* === ROBAR === */
 function robarCarta() {
     if (mazo.length === 0) {
         mazo = descarte.reverse().map(c => ({...c, visible:false}));
@@ -234,46 +229,18 @@ function puedeMoverATabla(carta, columna) {
     return top.visible && carta.color !== top.color && carta.valor === top.valor - 1;
 }
 
-/* === MOVER CARTA === */
-function moverCarta(carta, destino, tipo) {
-    if (!carta.visible) return;
-
-    if (tipo === 'foundation') {
-        for (let f = 0; f < 4; f++) {
-            if (puedeMoverAFoundation(carta, fundaciones[f])) {
-                eliminarCartaDeOrigen(carta);
-                fundaciones[f].push(carta);
-                render();
-                return true;
-            }
-        }
-    } else if (tipo === 'tableau') {
-        for (let t = 0; t < 7; t++) {
-            if (puedeMoverATabla(carta, tableau[t])) {
-                eliminarCartaDeOrigen(carta);
-                tableau[t].push(carta);
-                render();
-                return true;
-            }
-        }
-    }
-    render();
-    return false;
-}
-
-/* === ELIMINAR CARTA DE SU ORIGEN === */
-function eliminarCartaDeOrigen(carta) {
+/* === ELIMINAR CARTAS DE ORIGEN === */
+function eliminarCartasDeOrigen(cartas) {
     for (let t = 0; t < 7; t++) {
-        const idx = tableau[t].indexOf(carta);
+        const col = tableau[t];
+        const idx = col.indexOf(cartas[0]);
         if (idx !== -1) {
-            tableau[t].splice(idx, 1);
-            if (tableau[t].length > 0)
-                tableau[t][tableau[t].length - 1].visible = true;
+            col.splice(idx, cartas.length);
+            if (col.length > 0) col[col.length - 1].visible = true;
             return;
         }
     }
-    const dIdx = descarte.indexOf(carta);
-    if (dIdx !== -1) descarte.splice(dIdx, 1);
+    if (descarte.includes(cartas[0])) descarte.pop();
 }
 
 /* === RENDERIZAR === */
@@ -291,7 +258,7 @@ function render() {
     wasteDiv.innerHTML = '';
     if (descarte.length > 0) {
         const carta = descarte[descarte.length - 1];
-        const div = crearCartaDiv(carta);
+        const div = crearCartaDiv(carta, [carta]);
         wasteDiv.appendChild(div);
     }
 
@@ -300,7 +267,7 @@ function render() {
         fDiv.innerHTML = '';
         if (fundaciones[i].length > 0) {
             const carta = fundaciones[i][fundaciones[i].length - 1];
-            fDiv.appendChild(crearCartaDiv(carta));
+            fDiv.appendChild(crearCartaDiv(carta, [carta]));
         }
     }
 
@@ -311,8 +278,10 @@ function render() {
         col.className = 'column';
         col.dataset.index = i;
         let offset = 0;
-        for (const carta of tableau[i]) {
-            const div = crearCartaDiv(carta);
+        for (let j = 0; j < tableau[i].length; j++) {
+            const carta = tableau[i][j];
+            const pila = tableau[i].slice(j);
+            const div = crearCartaDiv(carta, pila);
             div.style.top = offset + 'px';
             col.appendChild(div);
             offset += 25;
@@ -324,8 +293,8 @@ function render() {
         setTimeout(() => alert("🎉 ¡Ganaste el Solitario!"), 300);
 }
 
-/* === CREAR CARTA DIV === */
-function crearCartaDiv(carta) {
+/* === CREAR DIV CARTA === */
+function crearCartaDiv(carta, pila) {
     const div = document.createElement('div');
     div.className = 'card ' + (carta.visible ? (carta.color === 'red' ? 'red' : '') : 'back red-back');
     if (carta.visible) {
@@ -336,12 +305,12 @@ function crearCartaDiv(carta) {
         div.textContent = valorTexto + carta.palo;
         div.draggable = true;
         div.ondragstart = e => {
-            cartaArrastrada = carta;
+            cartasArrastradas = pila;
             origen = e.target.parentElement;
             setTimeout(() => e.target.style.opacity = "0.3", 0);
         };
         div.ondragend = e => {
-            cartaArrastrada = null;
+            cartasArrastradas = [];
             e.target.style.opacity = "1";
         };
     }
@@ -354,14 +323,24 @@ document.addEventListener("drop", e => {
     e.preventDefault();
     const col = e.target.closest('.column');
     const fund = e.target.closest('.foundation');
-    if (!cartaArrastrada) return;
+    if (cartasArrastradas.length === 0) return;
 
-    if (fund) moverCarta(cartaArrastrada, fund, 'foundation');
-    else if (col) {
+    const cartaBase = cartasArrastradas[0];
+
+    if (fund) {
+        for (let f = 0; f < 4; f++) {
+            if (puedeMoverAFoundation(cartaBase, fundaciones[f])) {
+                eliminarCartasDeOrigen(cartasArrastradas);
+                fundaciones[f].push(cartaBase);
+                render();
+                return;
+            }
+        }
+    } else if (col) {
         const index = parseInt(col.dataset.index);
-        if (puedeMoverATabla(cartaArrastrada, tableau[index])) {
-            eliminarCartaDeOrigen(cartaArrastrada);
-            tableau[index].push(cartaArrastrada);
+        if (puedeMoverATabla(cartaBase, tableau[index])) {
+            eliminarCartasDeOrigen(cartasArrastradas);
+            tableau[index] = tableau[index].concat(cartasArrastradas);
             render();
         }
     }
@@ -375,6 +354,7 @@ function iniciarJuego() {
     fundaciones = [[],[],[],[]];
     repartirCartas();
 }
+
 window.onload = iniciarJuego;
 </script>
 </body>
