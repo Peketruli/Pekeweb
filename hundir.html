@@ -1,222 +1,710 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<title>Hundir la Flota</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Hundir la Flota — Avanzado (IA + Multiplayer)</title>
 <style>
-body{
-  margin:0;
-  font-family:Arial, sans-serif;
-  background:#0b1220;
-  color:#fff;
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:flex-start;
-  min-height:100vh;
-  overflow:hidden;
-}
-h1{color:#39a0ff;text-align:center;margin-top:20px;}
-.boards{
-  display:flex;
-  gap:40px;
-  margin-top:20px;
-}
-.board {
-  display:grid;
-  grid-template-columns: repeat(10, 30px);
-  grid-template-rows: repeat(10, 30px);
-  gap:2px;
-  background:#071026;
-  padding:4px;
-  border-radius:8px;
-}
-.cell{
-  width:30px;
-  height:30px;
-  background:#0b1220;
-  border:1px solid #444;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  cursor:pointer;
-}
-.cell.ship{background:#39a0ff;}
-.cell.hit{background:red;}
-.cell.miss{background:#555;}
-.controls{
-  margin-top:20px;
-  display:flex;
-  gap:10px;
-}
-button{
-  padding:6px 10px;
-  border:none;
-  border-radius:6px;
-  background:#39a0ff;
-  color:#fff;
-  cursor:pointer;
-}
-button:hover{background:#28a0ff;}
-#log{
-  margin-top:15px;
-  max-width:650px;
-  text-align:center;
-  min-height:24px;
-}
+  :root{
+    --bg:#071022;
+    --panel:#0d1a2a;
+    --accent:#39a0ff;
+    --cell:30px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    align-items:flex-start;
+    justify-content:center;
+    background:linear-gradient(180deg,#041026,#071022);
+    color:#e6eef6;
+    font-family:Inter, Arial, sans-serif;
+    padding:18px;
+  }
+  .container{width:100%;max-width:1150px;display:flex;gap:18px;align-items:flex-start}
+  .left, .right{background:var(--panel);border-radius:10px;padding:12px}
+  .left{flex:1;min-width:640px}
+  .right{width:320px}
+  h1{margin:0 0 8px 0;color:var(--accent)}
+  .boards{display:flex;gap:20px;align-items:flex-start}
+  .board{display:grid;grid-template-columns:repeat(10,var(--cell));gap:4px;padding:8px;background:rgba(255,255,255,0.02);border-radius:8px}
+  .cell{width:var(--cell);height:var(--cell);background:#0b2030;border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-weight:700}
+  .cell.ship{background:#2a90ff;opacity:0.9}
+  .cell.hit{background:#d63b3b;color:#fff}
+  .cell.miss{background:#3e4b55;color:#ddd}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+  .controls button{padding:8px 10px;border-radius:8px;border:none;background:var(--accent);color:#041022;cursor:pointer}
+  .status{margin-top:10px;padding:8px;background:rgba(255,255,255,0.02);border-radius:6px}
+  label{display:block;margin-top:8px;font-size:13px}
+  .small{font-size:13px;color:#bcd}
+  input, select{padding:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.06);background:transparent;color:inherit}
+  .log{margin-top:10px;min-height:30px}
+  .room-controls{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .muted{color:#8aa}
 </style>
 </head>
 <body>
+  <div class="container">
+    <div class="left">
+      <h1>Hundir la Flota — Avanzado</h1>
 
-<h1>Hundir la Flota</h1>
+      <div style="display:flex;gap:12px;align-items:center;">
+        <div>
+          <div class="small">Modo</div>
+          <select id="mode">
+            <option value="local" selected>Local: vs IA</option>
+            <option value="multiplayer">Multijugador (Supabase)</option>
+          </select>
+        </div>
 
-<div class="boards">
-  <div>
-    <h3>Tu tablero</h3>
-    <div class="board" id="player-board"></div>
+        <div>
+          <div class="small">IA dificultad</div>
+          <select id="ai-diff">
+            <option value="easy">Fácil (aleatorio)</option>
+            <option value="normal" selected>Normal (hunt/target)</option>
+          </select>
+        </div>
+
+        <div style="margin-left:auto">
+          <div class="small">Turno</div>
+          <div id="turnIndicator" class="muted">—</div>
+        </div>
+      </div>
+
+      <div class="boards" style="margin-top:12px">
+        <div>
+          <div class="small">Tu tablero</div>
+          <div id="playerBoard" class="board" aria-label="Tu tablero"></div>
+        </div>
+
+        <div>
+          <div class="small">Tablero rival</div>
+          <div id="enemyBoard" class="board" aria-label="Tablero enemigo"></div>
+        </div>
+      </div>
+
+      <div class="controls">
+        <button id="autoPlace">Colocación automática</button>
+        <button id="clearPlace">Borrar barcos</button>
+        <button id="startBtn">Empezar partida</button>
+        <button id="randomShot" title="Para test">Disparo aleatorio (solo local)</button>
+        <label style="margin-left:8px" class="small">Coloca barcos clicando celdas (clic cambia sentido)</label>
+      </div>
+
+      <div class="status">
+        <div class="small">Tu barcos sanos: <span id="playerShipsLeft">-</span></div>
+        <div class="small">Rival barcos sanos: <span id="enemyShipsLeft">-</span></div>
+        <div class="log" id="log">Listo.</div>
+      </div>
+    </div>
+
+    <div class="right">
+      <h3>Multijugador (Supabase)</h3>
+      <div class="small">Para jugar online necesitas un proyecto Supabase. Pon tu URL y ANON KEY abajo y crea la tabla `games` (id text PK, state jsonb).</div>
+
+      <label>SUPABASE_URL</label>
+      <input id="supabaseUrl" placeholder="https://xyz.supabase.co" style="width:100%">
+
+      <label>SUPABASE_ANON_KEY</label>
+      <input id="supabaseKey" placeholder="anon-..." style="width:100%">
+
+      <div class="room-controls">
+        <input id="roomId" placeholder="room-id (ej: room-123)" style="padding:6px;border-radius:6px">
+        <button id="createRoom">Crear sala</button>
+        <button id="joinRoom">Unirse</button>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="small">Estado sala: <span id="roomState">—</span></div>
+        <div class="small">Jugador local: <span id="localPlayerId">—</span></div>
+      </div>
+
+      <div style="margin-top:12px">
+        <div class="small">Notas:</div>
+        <ul class="small">
+          <li>El primer jugador crea sala y espera un rival.</li>
+          <li>Ambos deben pulsar "Empezar partida" cuando colocaron barcos.</li>
+        </ul>
+      </div>
+    </div>
   </div>
-  <div>
-    <h3>Tablero enemigo</h3>
-    <div class="board" id="enemy-board"></div>
-  </div>
-</div>
 
-<div class="controls">
-  <button id="random-place">Colocar barcos aleatoriamente</button>
-  <button id="reset">Reiniciar</button>
-</div>
-
-<div id="log"></div>
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
-const playerBoardEl = document.getElementById('player-board');
-const enemyBoardEl = document.getElementById('enemy-board');
-const logEl = document.getElementById('log');
-const randomBtn = document.getElementById('random-place');
-const resetBtn = document.getElementById('reset');
+/* ==========================
+   Battleship — Avanzado
+   - Local IA (hunt/target)
+   - Multiplayer via Supabase Realtime (uses table `games`)
+   ========================== */
 
-const SHIPS = [
-  {name:'Portaaviones',size:5},
-  {name:'Acorazado',size:4},
-  {name:'Crucero',size:3},
-  {name:'Submarino',size:3},
-  {name:'Destructor',size:2},
+const SHIPS_DEF = [
+  { name:'carrier', size:5 },
+  { name:'battleship', size:4 },
+  { name:'cruiser', size:3 },
+  { name:'submarine', size:3 },
+  { name:'destroyer', size:2 }
 ];
 
-let playerBoard, enemyBoard, enemyShips, playerShips, playerTurn=true, gameOver=false;
+const N = 10; // 10x10
+let playerBoard = createEmptyBoard();
+let enemyBoard = createEmptyBoard(); // for local: AI ships here. For multiplayer: remote visible state of opponent shots/hits
+let playerShips = [];
+let enemyShips = [];
+let placingDir = 'H'; // H or V when placing manually
+let placingIndex = 0;
+let gameStarted = false;
+let playerTurn = true;
+let mode = 'local'; // 'local' or 'multiplayer'
+let aiDifficulty = 'normal';
+let logEl = document.getElementById('log');
 
-function createEmptyBoard(){ return Array.from({length:10},()=>Array(10).fill(null)); }
+const playerBoardEl = document.getElementById('playerBoard');
+const enemyBoardEl = document.getElementById('enemyBoard');
+const playerShipsLeftEl = document.getElementById('playerShipsLeft');
+const enemyShipsLeftEl = document.getElementById('enemyShipsLeft');
+const turnIndicator = document.getElementById('turnIndicator');
 
-function createBoardElement(boardEl,clickHandler){
-  boardEl.innerHTML='';
-  for(let r=0;r<10;r++){
-    for(let c=0;c<10;c++){
-      const cell=document.createElement('div');
-      cell.classList.add('cell');
-      cell.dataset.row=r;
-      cell.dataset.col=c;
-      cell.addEventListener('click',()=>clickHandler(r,c,cell));
+const autoPlaceBtn = document.getElementById('autoPlace');
+const clearPlaceBtn = document.getElementById('clearPlace');
+const startBtn = document.getElementById('startBtn');
+const randomShotBtn = document.getElementById('randomShot');
+
+const modeSelect = document.getElementById('mode');
+const aiDiffSelect = document.getElementById('ai-diff');
+
+/* Supabase UI */
+const supabaseUrlInput = document.getElementById('supabaseUrl');
+const supabaseKeyInput = document.getElementById('supabaseKey');
+const createRoomBtn = document.getElementById('createRoom');
+const joinRoomBtn = document.getElementById('joinRoom');
+const roomIdInput = document.getElementById('roomId');
+const roomStateEl = document.getElementById('roomState');
+const localPlayerIdEl = document.getElementById('localPlayerId');
+
+let supabase = null;
+let currentRoomId = null;
+let localPlayerId = null; // 'p1' or 'p2'
+let unsub = null;
+
+/* ---------------------
+   Utilities & Board
+   --------------------- */
+function createEmptyBoard(){ return Array.from({length:N}, ()=>Array(N).fill(null)); }
+function coordToIndex(r,c){ return r* N + c; }
+function resetBoards(){
+  playerBoard = createEmptyBoard();
+  enemyBoard = createEmptyBoard();
+  playerShips = [];
+  enemyShips = [];
+  placingDir = 'H';
+  placingIndex = 0;
+  gameStarted = false;
+  playerTurn = true;
+  updateUI();
+  log('Tableros reiniciados. Coloca tus barcos.');
+}
+
+/* Render helpers */
+function createBoardDOM(boardEl, clickable, handler){
+  boardEl.innerHTML = '';
+  for(let r=0;r<N;r++){
+    for(let c=0;c<N;c++){
+      const cell = document.createElement('div');
+      cell.className='cell';
+      cell.dataset.r=r; cell.dataset.c=c;
+      if(clickable) cell.addEventListener('click', ()=> handler(r,c,cell));
       boardEl.appendChild(cell);
     }
   }
 }
 
-function placeShipsRandomly(board){
-  let shipsPositions=[];
-  for(let ship of SHIPS){
+createBoardDOM(playerBoardEl, true, playerBoardClick);
+createBoardDOM(enemyBoardEl, true, enemyBoardClick);
+
+/* Update visuals */
+function updateUI(){
+  // player
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    const el = playerBoardEl.children[coordToIndex(r,c)];
+    el.className='cell';
+    const v = playerBoard[r][c];
+    if(v && v.type==='ship' && !v.hit) el.classList.add('ship');
+    if(v && v.type==='ship' && v.hit) el.classList.add('hit');
+    if(v && v.type==='miss') el.classList.add('miss');
+    if(v && v.type==='hit' && v.shipHit) el.classList.add('hit');
+  }
+  // enemy (show hits/misses only)
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    const el = enemyBoardEl.children[coordToIndex(r,c)];
+    el.className='cell';
+    const v = enemyBoard[r][c];
+    if(v && v.type==='miss') el.classList.add('miss');
+    if(v && v.type==='hit') el.classList.add('hit');
+    // For debugging/local, you can show enemy ships by adding class ship when v.ship
+  }
+  playerShipsLeftEl.textContent = countShipsRemaining(playerBoard);
+  enemyShipsLeftEl.textContent = countShipsRemaining(enemyBoard);
+  turnIndicator.textContent = gameStarted ? (playerTurn ? 'Tu turno' : 'Turno rival') : 'No empezada';
+}
+
+/* Logging */
+function log(s){ logEl.textContent = s; }
+
+/* Count ships remaining (cells with ship not hit) */
+function countShipsRemaining(board){
+  let cnt=0;
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) if(board[r][c] && board[r][c].type==='ship' && !board[r][c].hit) cnt++;
+  return cnt;
+}
+
+/* ---------------------
+   Ship placement
+   --------------------- */
+function canPlace(board, r,c, size, dir){
+  if(dir==='H'){
+    if(c+size>10) return false;
+    for(let i=0;i<size;i++) if(board[r][c+i]) return false;
+  } else {
+    if(r+size>10) return false;
+    for(let i=0;i<size;i++) if(board[r+i][c]) return false;
+  }
+  return true;
+}
+function placeShip(board, r,c, size, name, dir){
+  if(!canPlace(board,r,c,size,dir)) return false;
+  const positions=[];
+  for(let i=0;i<size;i++){
+    const rr = dir==='H'? r : r+i;
+    const cc = dir==='H'? c+i : c;
+    board[rr][cc] = { type:'ship', ship:name, hit:false };
+    positions.push([rr,cc]);
+  }
+  return positions;
+}
+function autoPlaceAll(board){
+  // clears board then place ships randomly
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++) board[r][c]=null;
+  const ships=[];
+  for(const s of SHIPS_DEF){
     let placed=false;
-    while(!placed){
-      let horizontal=Math.random()<0.5;
-      let row=Math.floor(Math.random()*10);
-      let col=Math.floor(Math.random()*10);
-      if(horizontal){
-        if(col+ship.size>10) continue;
-        if(board[row].slice(col,col+ship.size).some(v=>v)) continue;
-        for(let i=0;i<ship.size;i++) board[row][col+i]='ship';
-      }else{
-        if(row+ship.size>10) continue;
-        if(board.slice(row,row+ship.size).some(r=>r[col])) continue;
-        for(let i=0;i<ship.size;i++) board[row+i][col]='ship';
+    let tries=0;
+    while(!placed && tries<1000){
+      tries++;
+      const dir = Math.random()<0.5?'H':'V';
+      const r = Math.floor(Math.random()*10);
+      const c = Math.floor(Math.random()*10);
+      if(canPlace(board,r,c,s.size,dir)){
+        const pos = placeShip(board,r,c,s.size,s.name,dir);
+        ships.push({name:s.name,size:s.size,positions:pos, sunk:false});
+        placed=true;
       }
-      shipsPositions.push({name:ship.name,size:ship.size,positions:[]});
-      for(let i=0;i<10;i++){for(let j=0;j<10;j++){if(board[i][j]==='ship') shipsPositions[shipsPositions.length-1].positions.push([i,j].toString());}}
-      placed=true;
+    }
+    if(!placed) { console.warn('No pudo colocar', s); }
+  }
+  return ships;
+}
+
+/* manual clicks to place ships */
+function playerBoardClick(r,c,el){
+  if(gameStarted) return;
+  const s = SHIPS_DEF[placingIndex];
+  // toggle dir on shift / alternate on right-click? keep simple: alternate each placement
+  if(canPlace(playerBoard,r,c,s.size,placingDir)){
+    const pos = placeShip(playerBoard,r,c,s.size,s.name,placingDir);
+    playerShips.push({name:s.name,size:s.size,positions:pos,sunk:false});
+    placingIndex++;
+    if(placingIndex >= SHIPS_DEF.length) {
+      log('Has colocado todos los barcos. Pulsa Empezar partida.');
+    } else {
+      log(`Colocado ${s.name}. Siguiente: ${SHIPS_DEF[placingIndex].name}`);
+    }
+    updateUI();
+  } else {
+    // try toggling dir
+    placingDir = placingDir==='H'?'V':'H';
+    log(`No cabe ahí — cambié orientación a ${placingDir}. Inténtalo otra vez.`);
+  }
+}
+
+/* clear placement */
+clearPlaceBtn.addEventListener('click', ()=>{ resetBoards(); });
+
+autoPlaceBtn.addEventListener('click', ()=> {
+  playerShips = autoPlaceAll(playerBoard);
+  updateUI();
+  log('Colocados aleatoriamente tus barcos.');
+});
+
+/* ---------------------
+   Game start & shooting
+   --------------------- */
+startBtn.addEventListener('click', ()=>{
+  if(mode === 'multiplayer'){
+    if(!currentRoomId) return alert('Une o crea sala primero.');
+    // in multiplayer, send ready state to server (update game row)
+    sendLocalReady();
+  } else {
+    if(!playerShips.length) playerShips = autoPlaceAll(playerBoard);
+    enemyShips = autoPlaceAll(enemyBoard);
+    // mark enemyBoard internal 'ship' cells for local mode
+    // (we keep ship cells on enemyBoard for local AI detection, but hide in UI)
+    updateUI();
+    gameStarted = true;
+    playerTurn = true;
+    log('Partida local iniciada. Tu turno.');
+  }
+});
+
+/* player's click on enemy board to shoot */
+function enemyBoardClick(r,c,el){
+  if(!gameStarted || !playerTurn || mode === 'multiplayer' && !isMyTurn()) {
+    return;
+  }
+  // already shot?
+  if(enemyBoard[r][c] && (enemyBoard[r][c].type === 'hit' || enemyBoard[r][c].type === 'miss')) return;
+  // local mode: check enemyBoard ships
+  if(mode === 'local'){
+    if(enemyBoard[r][c] && enemyBoard[r][c].type === 'ship') {
+      enemyBoard[r][c].hit = true;
+      enemyBoard[r][c].type = 'hit';
+      log('¡Impacto!');
+    } else {
+      enemyBoard[r][c] = { type:'miss' };
+      log('Agua.');
+    }
+    updateUI();
+    checkEndLocal();
+    playerTurn = false;
+    updateUI();
+    setTimeout(()=> aiTurn(), 600);
+  } else {
+    // multiplayer: send shot to supabase / server by updating game row
+    sendShotToServer(r,c);
+  }
+}
+
+/* check end local */
+function checkEndLocal(){
+  const enemyLeft = countShipsRemaining(enemyBoard);
+  if(enemyLeft === 0) { log('¡Has ganado!'); gameStarted=false; return; }
+  const playerLeft = countShipsRemaining(playerBoard);
+  if(playerLeft === 0) { log('Has perdido.'); gameStarted=false; return; }
+}
+
+/* AI behaviors */
+let aiMemory = { hits:[], candidates:[], tried:new Set() };
+
+function aiTurn(){
+  if(!gameStarted) return;
+  log('IA pensándolo...');
+  let r,c;
+  if(aiDifficulty === 'easy'){
+    [r,c] = aiChooseRandom(playerBoard);
+  } else {
+    [r,c] = aiChooseHuntTarget();
+  }
+  // apply shot
+  if(playerBoard[r][c] && playerBoard[r][c].type === 'ship'){
+    playerBoard[r][c].hit = true;
+    playerBoard[r][c].type = 'hit';
+    log('IA: ¡Impacto!');
+    // update memory
+    aiMemory.hits.push([r,c].toString());
+    addCandidatesAround(r,c);
+  } else {
+    playerBoard[r][c] = { type:'miss' };
+    log('IA: Agua.');
+  }
+  updateUI();
+  checkEndLocal();
+  playerTurn = true;
+  updateUI();
+}
+
+/* AI helper: choose random untried cell */
+function aiChooseRandom(board){
+  let tries=0;
+  while(true){
+    const r = Math.floor(Math.random()*N);
+    const c = Math.floor(Math.random()*N);
+    const key = `${r},${c}`;
+    if(!aiMemory.tried.has(key) && (!board[r][c] || (board[r][c] && board[r][c].type!=='hit' && board[r][c].type!=='miss'))){
+      aiMemory.tried.add(key);
+      return [r,c];
+    }
+    if(++tries>1000) return [Math.floor(Math.random()*N),Math.floor(Math.random()*N)];
+  }
+}
+
+/* Add adjacent candidates for hunt */
+function addCandidatesAround(r,c){
+  const deltas = [[1,0],[-1,0],[0,1],[0,-1]];
+  for(const [dr,dc] of deltas){
+    const rr=r+dr, cc=c+dc;
+    if(rr>=0 && rr<N && cc>=0 && cc<N){
+      const key = `${rr},${cc}`;
+      if(!aiMemory.tried.has(key)) aiMemory.candidates.push([rr,cc]);
     }
   }
-  return shipsPositions;
 }
 
-function renderBoard(board,boardEl,showShips=false){
-  for(let r=0;r<10;r++){
-    for(let c=0;c<10;c++){
-      const cell = boardEl.children[r*10+c];
-      cell.className='cell';
-      if(showShips && board[r][c]==='ship') cell.classList.add('ship');
-      else if(board[r][c]==='hit') cell.classList.add('hit');
-      else if(board[r][c]==='miss') cell.classList.add('miss');
+/* Choose hunt/target: prefer candidates */
+function aiChooseHuntTarget(){
+  // clean invalid candidates
+  while(aiMemory.candidates.length){
+    const [r,c] = aiMemory.candidates.shift();
+    const key = `${r},${c}`;
+    if(aiMemory.tried.has(key)) continue;
+    aiMemory.tried.add(key);
+    return [r,c];
+  }
+  // else fallback to random
+  return aiChooseRandom(playerBoard);
+}
+
+/* ---------------------
+   Multiplayer (Supabase)
+   --------------------- */
+/*
+  Expected DB: table "games" fields:
+   - id (text primary key)
+   - state (jsonb)  -> contains whole game state object
+   Example state shape:
+    {
+      players: { p1: {board: <masked>, shipsPlaced: true}, p2: {...} },
+      fullBoards: { p1: <full board for server authoritative? optional>, p2: <full> },
+      turn: 'p1'|'p2',
+      started: bool,
+      winner: null|'p1'|'p2'
+    }
+*/
+function initSupabase(){
+  const url = supabaseUrlInput.value.trim();
+  const key = supabaseKeyInput.value.trim();
+  if(!url || !key) { alert('Pon SUPABASE_URL y SUPABASE_ANON_KEY'); return; }
+  supabase = supabaseJs.createClient(url, key);
+  log('Supabase inicializado.');
+}
+
+/* create room */
+createRoomBtn.addEventListener('click', async ()=>{
+  initSupabase();
+  if(!supabase) return;
+  const room = roomIdInput.value.trim() || 'room-' + Math.random().toString(36).slice(2,8);
+  currentRoomId = room;
+  // local player becomes p1
+  localPlayerId = 'p1';
+  localPlayerIdEl.textContent = localPlayerId;
+  // initial state
+  const initial = {
+    players: {
+      p1: { boardMasked: createEmptyBoardMasked(), shipsPlaced:false },
+      p2: { boardMasked: createEmptyBoardMasked(), shipsPlaced:false }
+    },
+    fullBoards: { p1: createEmptyBoardFull(), p2: createEmptyBoardFull() }, // store full boards of both (serverless but we store in DB)
+    turn: 'p1',
+    started: false,
+    winner: null
+  };
+  // set local boards to DB fullBoards.p1
+  initial.fullBoards.p1 = boardToSerializable(playerBoard);
+  // create on supabase (insert)
+  const { data, error } = await supabase.from('games').upsert({ id: room, state: initial });
+  if(error){ console.error(error); alert('Error creando sala: ' + error.message); return; }
+  log('Sala creada: ' + room + ' (esperando rival)');
+  roomStateEl.textContent = 'creada - esperando rival';
+  subscribeRoom(room);
+});
+
+/* join room */
+joinRoomBtn.addEventListener('click', async ()=>{
+  initSupabase();
+  if(!supabase) return;
+  const room = roomIdInput.value.trim();
+  if(!room) return alert('Pon room id para unirte.');
+  currentRoomId = room;
+  localPlayerId = 'p2';
+  localPlayerIdEl.textContent = localPlayerId;
+  // read state, if exists update p2 fullboard
+  const { data, error } = await supabase.from('games').select('state').eq('id', room).single();
+  if(error || !data){ alert('No existe sala o error: ' + (error? error.message: 'no data')); return; }
+  const state = data.state;
+  // update fullBoards.p2 with our playerBoard
+  state.fullBoards.p2 = boardToSerializable(playerBoard);
+  // update DB
+  const upd = await supabase.from('games').update({ state }).eq('id', room);
+  log('Unido a sala: ' + room);
+  roomStateEl.textContent = 'unido - listo';
+  subscribeRoom(room);
+});
+
+/* subscribe to changes for the room */
+async function subscribeRoom(room){
+  if(!supabase) return;
+  if(unsub) await unsub.unsubscribe();
+  // listen to persistence changes on games table for that id
+  const chan = supabase.channel('room-'+room);
+  chan.on('postgres_changes', { event: '*', schema:'public', table:'games', filter:`id=eq.${room}` }, (payload)=>{
+    // payload contains { eventType, new, old }
+    if(payload.eventType === 'INSERT' || payload.eventType === 'UPDATE'){
+      const newState = payload.new.state;
+      handleRemoteState(newState);
+    }
+  });
+  const sub = await chan.subscribe();
+  unsub = chan;
+  // also fetch current state once
+  const res = await supabase.from('games').select('state').eq('id', room).single();
+  if(res.data) handleRemoteState(res.data.state);
+}
+
+/* handle incoming state */
+function handleRemoteState(state){
+  // update local UI from state: show masked enemy board
+  if(!state) return;
+  roomStateEl.textContent = state.started ? 'jugando' : 'en preparación';
+  // Determine who is opponent and copy masked board into enemyBoard
+  const myKey = localPlayerId;
+  const otherKey = myKey === 'p1' ? 'p2' : 'p1';
+  // fullBoards kept in DB for simplicity — WARNING: in production do not expose full boards!
+  // We will set enemyBoard masked view using players[other].boardMasked
+  if(state.players && state.players[otherKey]){
+    const masked = state.players[otherKey].boardMasked;
+    // masked expected as array NxN with 'hit'/'miss'/null. We'll copy that into enemyBoard
+    if(masked){
+      for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+        enemyBoard[r][c] = masked[r][c] ? { type: masked[r][c] } : null;
+      }
     }
   }
+  // update turn & started
+  gameStarted = state.started;
+  playerTurn = (state.turn === localPlayerId);
+  updateUI();
+  if(state.winner){ log('Partida finalizada. Ganador: ' + state.winner); }
 }
 
-function enemyShoot(){
-  if(gameOver) return;
-  let row=Math.floor(Math.random()*10);
-  let col=Math.floor(Math.random()*10);
-  if(playerBoard[row][col]==='hit' || playerBoard[row][col]==='miss'){ return enemyShoot(); }
-  if(playerBoard[row][col]==='ship'){
-    playerBoard[row][col]='hit';
-    logEl.textContent='La IA acertó un barco!';
-  }else{
-    playerBoard[row][col]='miss';
-    logEl.textContent='La IA falló!';
+/* helpers to serializable boards */
+function createEmptyBoardMasked(){ return Array.from({length:N}, ()=>Array(N).fill(null)); }
+function createEmptyBoardFull(){ return Array.from({length:N}, ()=>Array(N).fill(null)); }
+
+function boardToSerializable(board){
+  // convert playerBoard with ship cells marked and hits/misses
+  const out = Array.from({length:N}, ()=>Array(N).fill(null));
+  for(let r=0;r<N;r++) for(let c=0;c<N;c++){
+    const v = board[r][c];
+    if(!v) out[r][c] = null;
+    else if(v.type === 'ship') out[r][c] = {type:'ship', ship:v.ship, hit:!!v.hit};
+    else if(v.type === 'hit') out[r][c] = { type:'hit' };
+    else if(v.type === 'miss') out[r][c] = { type:'miss' };
   }
-  renderBoard(playerBoard,playerBoardEl,true);
-  checkGameOver();
-  playerTurn=true;
+  return out;
 }
 
-function checkGameOver(){
-  const playerShipsLeft=playerBoard.flat().filter(c=>c==='ship').length;
-  const enemyShipsLeft=enemyBoard.flat().filter(c=>c==='ship').length;
-  if(playerShipsLeft===0){ logEl.textContent='¡Perdiste!'; gameOver=true; }
-  else if(enemyShipsLeft===0){ logEl.textContent='¡Ganaste!'; gameOver=true; }
-}
-
-function playerClick(r,c,cell){
-  if(!playerTurn || gameOver) return;
-  if(enemyBoard[r][c]==='hit' || enemyBoard[r][c]==='miss') return;
-  if(enemyBoard[r][c]==='ship'){
-    enemyBoard[r][c]='hit';
-    logEl.textContent='¡Acertaste!';
-  }else{
-    enemyBoard[r][c]='miss';
-    logEl.textContent='Fallaste!';
+/* send local ready: update DB state with player's full board and set shipsPlaced true */
+async function sendLocalReady(){
+  if(!supabase || !currentRoomId || !localPlayerId) return;
+  // fetch game
+  const { data, error } = await supabase.from('games').select('state').eq('id', currentRoomId).single();
+  if(error || !data) return alert('Error read room: ' + (error? error.message: 'no data'));
+  const state = data.state;
+  // set our full board
+  state.fullBoards[localPlayerId] = boardToSerializable(playerBoard);
+  state.players[localPlayerId].shipsPlaced = true;
+  // if both ready, set started true
+  if(state.players.p1.shipsPlaced && state.players.p2.shipsPlaced){
+    state.started = true;
+    state.turn = 'p1';
   }
-  renderBoard(enemyBoard,enemyBoardEl);
-  checkGameOver();
-  if(!gameOver){playerTurn=false; setTimeout(enemyShoot,500);}
+  // also set masked boards (only hits/misses) empty for now
+  state.players[localPlayerId].boardMasked = createEmptyBoardMasked();
+  await supabase.from('games').update({ state }).eq('id', currentRoomId);
+  log('Lista: enviado ready al servidor.');
 }
 
-function startGame(){
-  playerBoard=createEmptyBoard();
-  enemyBoard=createEmptyBoard();
-  playerShips=placeShipsRandomly(playerBoard);
-  enemyShips=placeShipsRandomly(enemyBoard);
-  playerTurn=true;
-  gameOver=false;
-  renderBoard(playerBoard,playerBoardEl,true);
-  renderBoard(enemyBoard,enemyBoardEl,false);
-  logEl.textContent='Coloca tus barcos o dispara al enemigo';
+/* send shot in multiplayer */
+async function sendShotToServer(r,c){
+  if(!supabase || !currentRoomId || !localPlayerId) return;
+  // fetch, apply server-side like behaviour in client (since no server function)
+  const { data, error } = await supabase.from('games').select('state').eq('id', currentRoomId).single();
+  if(error || !data) return alert('Error read room: ' + (error? error.message: 'no data'));
+  const state = data.state;
+  if(state.turn !== localPlayerId) return alert('No es tu turno');
+  const opponent = localPlayerId === 'p1' ? 'p2' : 'p1';
+  // apply shot against opponent fullBoards[opponent]; mark masked board for player
+  const targetFull = state.fullBoards[opponent];
+  const mask = state.players[opponent].boardMasked || createEmptyBoardMasked();
+  // targetFull is full representation with ship info
+  if(targetFull[r][c] && targetFull[r][c].type === 'ship'){
+    // hit
+    mask[r][c] = 'hit';
+    targetFull[r][c].hit = true;
+    // also mark in player's view
+  } else {
+    mask[r][c] = 'miss';
+  }
+  // write back
+  state.players[opponent].boardMasked = mask;
+  // flip turn
+  state.turn = opponent;
+  // check winner: if all ships of opponent have hit==true
+  let opponentLeft = 0;
+  for(let rr=0; rr<N; rr++) for(let cc=0; cc<N; cc++){
+    const t = targetFull[rr][cc];
+    if(t && t.type==='ship' && !t.hit) opponentLeft++;
+  }
+  if(opponentLeft === 0){
+    state.started = false;
+    state.winner = localPlayerId;
+  }
+  state.fullBoards[opponent] = targetFull;
+  await supabase.from('games').update({ state }).eq('id', currentRoomId);
+  // local update handled via subscription
 }
 
-randomBtn.addEventListener('click',()=>{startGame();});
-resetBtn.addEventListener('click',()=>{startGame();});
+/* ---------------------
+   Helpers & testing
+   --------------------- */
+randomShotBtn.addEventListener('click', ()=> {
+  if(mode!=='local') return;
+  const [r,c] = [Math.floor(Math.random()*N), Math.floor(Math.random()*N)];
+  enemyBoardClick(r,c);
+});
 
-createBoardElement(playerBoardEl,()=>{}); // Player board click solo para IA disparos
-createBoardElement(enemyBoardEl,playerClick); // Enemy board click para disparos del jugador
+modeSelect.addEventListener('change', ()=> {
+  mode = modeSelect.value;
+  resetBoards();
+  if(mode === 'multiplayer') log('Seleccionado modo multijugador. Introduce credenciales y crea/unirse a sala.');
+});
 
-startGame();
+aiDiffSelect.addEventListener('change', ()=> aiDifficulty = aiDiffSelect.value);
+
+/* AI helper: ensure enemyBoard has ships set for local mode */
+function prepareLocalEnemy(){
+  if(!enemyShips || enemyShips.length === 0){
+    enemyShips = autoPlaceAll(enemyBoard);
+  }
+}
+
+/* place ships random for enemy initially in local mode */
+function initLocal(){
+  resetBoards();
+  enemyShips = autoPlaceAll(enemyBoard);
+  updateUI();
+}
+
+/* start up */
+resetBoards();
+initLocal();
+
+/* Expose some debug in console */
+window._battleship = {
+  playerBoard, enemyBoard, resetBoards, autoPlaceAll, initLocal
+};
+
+/* END of script */
 </script>
-
 </body>
 </html>
