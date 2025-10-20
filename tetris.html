@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Tetris</title>
+<style>
+  :root{
+    --bg:#0b1220;
+    --panel:#071026;
+    --accent:#39a0ff;
+    --muted:#96a0b3;
+    --tile-size:28px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:Inter, system-ui, Arial, sans-serif;
+    background: linear-gradient(180deg,#05060a,var(--bg));
+    color:#e6eef6;
+    padding:12px;
+  }
+
+  .wrap {
+    display:flex;
+    gap:18px;
+    align-items:flex-start;
+    width:100%;
+    max-width:1100px;
+  }
+
+  .panel {
+    background:linear-gradient(180deg,var(--panel), #071226);
+    padding:16px;
+    border-radius:12px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  }
+
+  .left {
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    align-items:center;
+  }
+
+  canvas {
+    background: linear-gradient(180deg,#061022,#08203a);
+    border-radius:8px;
+    display:block;
+  }
+
+  .right {
+    width:260px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+  }
+
+  h1{margin:0;font-size:18px}
+  .info {
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+
+  .box {
+    background: rgba(255,255,255,0.03);
+    padding:10px;
+    border-radius:8px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+
+  .row { display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  .label { color:var(--muted); font-size:13px }
+  .value { font-weight:700; font-size:16px; color:var(--accent) }
+
+  .controls {
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+  .btn {
+    background:transparent;
+    border:1px solid rgba(255,255,255,0.06);
+    color:inherit;
+    padding:8px 10px;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  .btn:hover{border-color:rgba(255,255,255,0.12)}
+
+  .touch-controls { display:flex; gap:8px; justify-content:center; margin-top:8px; }
+  .touch-controls .btn{padding:12px 14px;font-size:16px}
+
+  .preview, .hold {
+    display:grid;
+    grid-template-columns: repeat(4, var(--tile-size));
+    grid-template-rows: repeat(4, var(--tile-size));
+    gap:2px;
+    width: calc(var(--tile-size)*4 + 6px);
+    height: calc(var(--tile-size)*4 + 6px);
+    background: rgba(255,255,255,0.02);
+    border-radius:6px;
+    padding:4px;
+  }
+
+  .small {
+    font-size:13px;
+    color:var(--muted);
+  }
+
+  footer { color: rgba(255,255,255,0.4); font-size:13px; text-align:center; margin-top:10px;}
+  @media (max-width:880px){
+    .wrap{flex-direction:column;align-items:center}
+    .right{width:92%}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel left">
+    <h1>Tetris</h1>
+    <canvas id="game" width="220" height="616"></canvas>
+    <div class="controls">
+      <button class="btn" id="start">Start / Resume</button>
+      <button class="btn" id="pause">Pause</button>
+      <button class="btn" id="reset">Reset</button>
+      <button class="btn" id="harddrop">Hard Drop</button>
+    </div>
+
+    <div class="touch-controls" aria-hidden="true" style="margin-top:8px">
+      <button class="btn" id="left-btn">◀</button>
+      <button class="btn" id="rotate-btn">⟳</button>
+      <button class="btn" id="right-btn">▶</button>
+      <button class="btn" id="down-btn">▼</button>
+      <button class="btn" id="hold-btn">Hold</button>
+    </div>
+  </div>
+
+  <div class="panel right">
+    <div class="box info">
+      <div class="row"><span class="label">Score</span><span class="value" id="score">0</span></div>
+      <div class="row"><span class="label">Level</span><span class="value" id="level">1</span></div>
+      <div class="row"><span class="label">Lines</span><span class="value" id="lines">0</span></div>
+    </div>
+
+    <div class="box">
+      <div class="small">Hold</div>
+      <div class="hold" id="hold-grid"></div>
+    </div>
+
+    <div class="box">
+      <div class="small">Siguientes piezas</div>
+      <div id="nexts"></div>
+    </div>
+
+    <div class="box">
+      <div class="small">Controles</div>
+      <div class="small">
+        Flechas ← → mover | ↑ rotar | ↓ soft drop | Espacio hard drop | C hold | P pausa
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>Hecho para tu colección de minijuegos — usa teclado o los botones táctiles.</footer>
+
+<script>
+/* ---------- TETRIS completo --------- */
+/* Grid: 10 x 22 (2 filas ocultas) but canvas height sets tile size. We'll use visible height 20 rows. */
+const COLS = 10;
+const VISIBLE_ROWS = 20;
+const HIDDEN_ROWS = 2;
+const ROWS = VISIBLE_ROWS + HIDDEN_ROWS;
+const TILE = 28; // same as CSS var
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = COLS * TILE;
+canvas.height = VISIBLE_ROWS * TILE;
+
+/* DOM */
+const scoreEl = document.getElementById('score');
+const levelEl = document.getElementById('level');
+const linesEl = document.getElementById('lines');
+const nextsEl = document.getElementById('nexts');
+const holdGrid = document.getElementById('hold-grid');
+
+const startBtn = document.getElementById('start');
+const pauseBtn = document.getElementById('pause');
+const resetBtn = document.getElementById('reset');
+const hardDropBtn = document.getElementById('harddrop');
+const leftBtn = document.getElementById('left-btn');
+const rightBtn = document.getElementById('right-btn');
+const rotateBtn = document.getElementById('rotate-btn');
+const downBtn = document.getElementById('down-btn');
+const holdBtn = document.getElementById('hold-btn');
+
+/* Colors for tetrominoes */
+const COLORS = {
+  I: '#00f0f0',
+  J: '#0000f0',
+  L: '#f0a000',
+  O: '#f0f000',
+  S: '#00f000',
+  T: '#a000f0',
+  Z: '#f00000'
+};
+
+/* Tetromino rotation states defined as 4x4 matrices */
+const TETROMINOS = {
+  I: [
+    [
+      [0,0,0,0],
+      [1,1,1,1],
+      [0,0,0,0],
+      [0,0,0,0]
+    ],
+    [
+      [0,0,1,0],
+      [0,0,1,0],
+      [0,0,1,0],
+      [0,0,1,0]
+    ],
+  ],
+  J: [
+    [
+      [1,0,0],
+      [1,1,1],
+      [0,0,0]
+    ],
+    [
+      [0,1,1],
+      [0,1,0],
+      [0,1,0]
+    ],
+    [
+      [0,0,0],
+      [1,1,1],
+      [0,0,1]
+    ],
+    [
+      [0,1,0],
+      [0,1,0],
+      [1,1,0]
+    ]
+  ],
+  L: [
+    [
+      [0,0,1],
+      [1,1,1],
+      [0,0,0]
+    ],
+    [
+      [0,1,0],
+      [0,1,0],
+      [0,1,1]
+    ],
+    [
+      [0,0,0],
+      [1,1,1],
+      [1,0,0]
+    ],
+    [
+      [1,1,0],
+      [0,1,0],
+      [0,1,0]
+    ]
+  ],
+  O: [
+    [
+      [1,1],
+      [1,1]
+    ]
+  ],
+  S: [
+    [
+      [0,1,1],
+      [1,1,0],
+      [0,0,0]
+    ],
+    [
+      [0,1,0],
+      [0,1,1],
+      [0,0,1]
+    ]
+  ],
+  T: [
+    [
+      [0,1,0],
+      [1,1,1],
+      [0,0,0]
+    ],
+    [
+      [0,1,0],
+      [0,1,1],
+      [0,1,0]
+    ],
+    [
+      [0,0,0],
+      [1,1,1],
+      [0,1,0]
+    ],
+    [
+      [0,1,0],
+      [1,1,0],
+      [0,1,0]
+    ]
+  ],
+  Z: [
+    [
+      [1,1,0],
+      [0,1,1],
+      [0,0,0]
+    ],
+    [
+      [0,0,1],
+      [0,1,1],
+      [0,1,0]
+    ]
+  ]
+};
+
+/* Utility: deep clone matrix */
+function cloneMatrix(m){
+  return m.map(row => row.slice());
+}
+
+/* Game state */
+let grid = createEmptyGrid(); // ROWS x COLS
+let current = null; // {type, matrix, row, col, rotIndex}
+let nextQueue = [];
+let holdPiece = null;
+let holdUsed = false;
+let score = 0;
+let level = 1;
+let lines = 0;
+let dropInterval = 800; // ms base
+let lastDropTime = 0;
+let playing = false;
+let paused = false;
+
+/* Initialize grid */
+function createEmptyGrid(){
+  const g = [];
+  for (let r=0;r<ROWS;r++){
+    const row = new Array(COLS).fill(null); // null or {type,color}
+    g.push(row);
+  }
+  return g;
+}
+
+/* Random bag generator */
+function generateBag(){
+  const types = Object.keys(TETROMINOS);
+  const bag = types.slice();
+  // shuffle
+  for (let i = bag.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [bag[i],bag[j]] = [bag[j],bag[i]];
+  }
+  return bag;
+}
+
+/* Fill nextQueue to at least N */
+function ensureNext(){
+  while(nextQueue.length < 6){
+    if (!nextQueue._bag || nextQueue._bag.length === 0){
+      nextQueue._bag = generateBag();
+    }
+    nextQueue.push(nextQueue._bag.pop());
+  }
+}
+
+/* Create piece object from type */
+function createPiece(type){
+  const states = TETROMINOS[type];
+  // gather rotation matrices (some tetromino definitions have 2 states; create symmetric rotations)
+  const rotations = [];
+  for (let s of states){
+    rotations.push(normalizeMatrix(s));
+  }
+  // For I and S/Z ensure 2-state rotations handle as 2 but we can use length as is
+  return {
+    type,
+    rotations,
+    rot: 0,
+    matrix: rotations[0],
+    row: 0,
+    col: Math.floor((COLS - rotations[0][0].length)/2)
+  };
+}
+
+/* normalize: ensure each rotation is square matrix and trimmed to its own size */
+function normalizeMatrix(m){
+  // convert to deep clone
+  const mat = cloneMatrix(m);
+  return mat;
+}
+
+/* spawn next piece */
+function spawnPiece(){
+  ensureNext();
+  const type = nextQueue.shift();
+  const piece = createPiece(type);
+  piece.row = -HIDDEN_ROWS; // start above visible area
+  // adjust for O (2x2) or others center
+  current = piece;
+  holdUsed = false;
+  // collision immediate -> game over
+  if (collides(current.matrix, current.row, current.col)){
+    gameOver();
+  }
+}
+
+/* collision detection */
+function collides(matrix, row, col){
+  for (let r=0;r<matrix.length;r++){
+    for (let c=0;c<matrix[r].length;c++){
+      if (matrix[r][c]){
+        const gr = row + r;
+        const gc = col + c;
+        if (gc < 0 || gc >= COLS || gr >= ROWS) return true;
+        if (gr >= 0 && grid[gr][gc]) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/* lock piece into grid */
+function lockPiece(){
+  const m = current.matrix;
+  for (let r=0;r<m.length;r++){
+    for (let c=0;c<m[r].length;c++){
+      if (m[r][c]){
+        const gr = current.row + r;
+        const gc = current.col + c;
+        if (gr >= 0 && gr < ROWS && gc >= 0 && gc < COLS){
+          grid[gr][gc] = { type: current.type, color: COLORS[current.type] };
+        }
+      }
+    }
+  }
+  clearLines();
+  spawnPiece();
+}
+
+/* clear full lines */
+function clearLines(){
+  let cleared = 0;
+  for (let r=ROWS-1;r>=0;r--){
+    if (grid[r].every(cell => cell !== null)){
+      // remove row r
+      grid.splice(r,1);
+      // add empty row at top
+      grid.unshift(new Array(COLS).fill(null));
+      cleared++;
+      r++; // recheck current index because we've shifted rows
+    }
+  }
+  if (cleared>0){
+    // scoring: standard: single=100, double=300, triple=500, tetris=800 and multiply by level
+    const pointsMap = {1:100,2:300,3:500,4:800};
+    score += (pointsMap[cleared] || cleared*200) * level;
+    lines += cleared;
+    // level up every 10 lines
+    const newLevel = Math.floor(lines / 10) + 1;
+    if (newLevel !== level){
+      level = newLevel;
+      dropInterval = Math.max(80, 800 - (level-1)*60); // get faster
+    }
+    updateStats();
+  }
+}
+
+/* rotate matrix clockwise (returns new) */
+function rotateMatrix(mat){
+  const H = mat.length, W = mat[0].length;
+  // rotate to square: we will produce rotated matrix with swapped dims
+  const res = [];
+  for (let c=0;c<W;c++){
+    const row = [];
+    for (let r=H-1;r>=0;r--){
+      row.push(mat[r][c]);
+    }
+    res.push(row);
+  }
+  return res;
+}
+
+/* attempt rotate with basic wall kicks */
+function tryRotate(){
+  const oldRot = current.rot;
+  const newRot = (oldRot + 1) % current.rotations.length;
+  const newMat = current.rotations[newRot];
+  const kicks = [0, -1, 1, -2, 2];
+  for (let k of kicks){
+    if (!collides(newMat, current.row, current.col + k)){
+      current.rot = newRot;
+      current.matrix = newMat;
+      current.col += k;
+      return true;
+    }
+  }
+  return false;
+}
+
+/* move if possible */
+function move(dx,dy){
+  const nr = current.row + dy;
+  const nc = current.col + dx;
+  if (!collides(current.matrix, nr, nc)){
+    current.row = nr;
+    current.col = nc;
+    return true;
+  }
+  return false;
+}
+
+/* soft drop one */
+function softDrop(){
+  if (!move(0,1)){
+    lockPiece();
+  } else {
+    // award 1 point for soft drop optionally
+    score += 1;
+    updateStats();
+  }
+}
+
+/* hard drop */
+function hardDrop(){
+  let dropped = 0;
+  while(move(0,1)) dropped++;
+  score += 2 * dropped;
+  lockPiece();
+  updateStats();
+}
+
+/* hold piece */
+function hold(){
+  if (holdUsed) return;
+  if (!holdPiece){
+    holdPiece = current.type;
+    spawnPiece();
+  } else {
+    const tmp = holdPiece;
+    holdPiece = current.type;
+    // replace current by tmp
+    current = createPiece(tmp);
+  }
+  holdUsed = true;
+  renderHold();
+}
+
+/* update stats UI */
+function updateStats(){
+  scoreEl.textContent = String(score);
+  levelEl.textContent = String(level);
+  linesEl.textContent = String(lines);
+  renderNext();
+  renderHold();
+}
+
+/* render next queue small preview elements */
+function renderNext(){
+  nextsEl.innerHTML = '';
+  ensureNext();
+  const previewList = nextQueue.slice(0,5);
+  for (let t of previewList){
+    const preview = document.createElement('div');
+    preview.className = 'preview';
+    // create empty 4x4 grid
+    preview.style.gridTemplateColumns = `repeat(4, ${TILE}px)`;
+    preview.style.gridTemplateRows = `repeat(4, ${TILE}px)`;
+    // fill with empty tiles
+    const frag = document.createDocumentFragment();
+    for (let i=0;i<16;i++){
+      const cell = document.createElement('div');
+      cell.style.width = `${TILE}px`;
+      cell.style.height = `${TILE}px`;
+      frag.appendChild(cell);
+    }
+    preview.appendChild(frag);
+    // draw tetromino centered: we'll draw by creating colored tiles on preview
+    const states = TETROMINOS[t];
+    const m = states[0]; // first rotation matrix
+    // compute offset to center (4x4 area)
+    const h = m.length, w = m[0].length;
+    const offsetR = Math.floor((4 - h)/2);
+    const offsetC = Math.floor((4 - w)/2);
+    for (let r=0;r<h;r++){
+      for (let c=0;c<w;c++){
+        if (m[r][c]){
+          const idx = (offsetR + r)*4 + (offsetC + c);
+          const cell = preview.children[idx];
+          cell.style.background = COLORS[t];
+          cell.style.borderRadius = '4px';
+        }
+      }
+    }
+    nextsEl.appendChild(preview);
+  }
+}
+
+/* render hold */
+function renderHold(){
+  holdGrid.innerHTML = '';
+  holdGrid.style.gridTemplateColumns = `repeat(4, ${TILE}px)`;
+  holdGrid.style.gridTemplateRows = `repeat(4, ${TILE}px)`;
+  const frag = document.createDocumentFragment();
+  for (let i=0;i<16;i++){
+    const cell = document.createElement('div');
+    cell.style.width = `${TILE}px`;
+    cell.style.height = `${TILE}px`;
+    frag.appendChild(cell);
+  }
+  holdGrid.appendChild(frag);
+  if (holdPiece){
+    const states = TETROMINOS[holdPiece];
+    const m = states[0];
+    const h = m.length, w = m[0].length;
+    const offsetR = Math.floor((4 - h)/2);
+    const offsetC = Math.floor((4 - w)/2);
+    for (let r=0;r<h;r++){
+      for (let c=0;c<w;c++){
+        if (m[r][c]){
+          const idx = (offsetR + r)*4 + (offsetC + c);
+          const cell = holdGrid.children[idx];
+          cell.style.background = COLORS[holdPiece];
+          cell.style.borderRadius = '4px';
+        }
+      }
+    }
+  }
+}
+
+/* draw grid and piece */
+function draw(){
+  // clear canvas
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // draw locked blocks
+  for (let r=HIDDEN_ROWS;r<ROWS;r++){
+    for (let c=0;c<COLS;c++){
+      const cell = grid[r][c];
+      const y = (r - HIDDEN_ROWS)*TILE;
+      const x = c * TILE;
+      if (cell){
+        drawTile(x,y,cell.color);
+      } else {
+        // draw faint grid
+        ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+        ctx.strokeRect(x+0.5, y+0.5, TILE-1, TILE-1);
+      }
+    }
+  }
+  // draw current piece
+  if (current){
+    const m = current.matrix;
+    for (let r=0;r<m.length;r++){
+      for (let c=0;c<m[r].length;c++){
+        if (m[r][c]){
+          const gr = current.row + r;
+          const gc = current.col + c;
+          const screenR = gr - HIDDEN_ROWS;
+          if (screenR >= 0){
+            const x = gc * TILE;
+            const y = screenR * TILE;
+            drawTile(x,y,COLORS[current.type]);
+          }
+        }
+      }
+    }
+  }
+}
+
+/* draw single tile with border */
+function drawTile(x,y,color){
+  const rad = 4;
+  ctx.fillStyle = color;
+  ctx.fillRect(x+1,y+1,TILE-2,TILE-2);
+  // subtle shading
+  ctx.strokeStyle = shade(color, -20);
+  ctx.lineWidth = 1;
+  roundRect(ctx, x+1, y+1, TILE-2, TILE-2, rad);
+  ctx.stroke();
+  // inner highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(x+3,y+3,TILE-6,2);
+}
+
+/* helper: rounded rect path */
+function roundRect(ctx, x, y, w, h, r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
+}
+
+/* small shade util */
+function shade(hex, percent) {
+  // hex like #rrggbb
+  const num = parseInt(hex.slice(1),16);
+  let r = (num >> 16) + percent;
+  let g = (num >> 8 & 0x00FF) + percent;
+  let b = (num & 0x0000FF) + percent;
+  r = Math.max(0,Math.min(255,r));
+  g = Math.max(0,Math.min(255,g));
+  b = Math.max(0,Math.min(255,b));
+  return `rgb(${r},${g},${b})`;
+}
+
+/* Game loop */
+let lastTime = 0;
+function loop(time){
+  if (!playing || paused) { lastTime = time; requestAnimationFrame(loop); return; }
+  if (!lastTime) lastTime = time;
+  const delta = time - lastTime;
+  if (time - lastDropTime > dropInterval){
+    // advance
+    if (!move(0,1)){
+      lockPiece();
+    }
+    lastDropTime = time;
+  }
+  draw();
+  lastTime = time;
+  requestAnimationFrame(loop);
+}
+
+/* start/pause/reset handlers */
+function startGame(){
+  if (!playing){
+    playing = true;
+    paused = false;
+    if (!current) {
+      ensureNext();
+      spawnPiece();
+    }
+    lastDropTime = performance.now();
+    requestAnimationFrame(loop);
+  } else {
+    paused = false;
+  }
+}
+function pauseGame(){
+  paused = true;
+}
+function resetGame(){
+  playing = false;
+  paused = false;
+  grid = createEmptyGrid();
+  current = null;
+  nextQueue = [];
+  nextQueue._bag = [];
+  holdPiece = null;
+  cartasArrastradas = [];
+  score = 0; level = 1; lines = 0;
+  dropInterval = 800;
+  updateStats();
+  draw();
+}
+
+/* keyboard controls */
+document.addEventListener('keydown', (e)=>{
+  if (!playing) return;
+  if (paused) return;
+  if (e.key === 'ArrowLeft'){ move(-1,0); draw(); }
+  else if (e.key === 'ArrowRight'){ move(1,0); draw(); }
+  else if (e.key === 'ArrowDown'){ softDrop(); draw(); }
+  else if (e.key === 'ArrowUp'){ tryRotate(); draw(); }
+  else if (e.code === 'Space'){ hardDrop(); draw(); }
+  else if (e.key.toLowerCase() === 'c'){ hold(); draw(); }
+  else if (e.key.toLowerCase() === 'p'){ paused = !paused; }
+});
+
+/* touch buttons */
+leftBtn.addEventListener('click', ()=>{ if(playing && !paused){ move(-1,0); draw(); }});
+rightBtn.addEventListener('click', ()=>{ if(playing && !paused){ move(1,0); draw(); }});
+rotateBtn.addEventListener('click', ()=>{ if(playing && !paused){ tryRotate(); draw(); }});
+downBtn.addEventListener('mousedown', ()=>{ if(playing && !paused){ softDrop(); draw(); }});
+downBtn.addEventListener('click', ()=>{ if(playing && !paused){ softDrop(); draw(); }});
+holdBtn.addEventListener('click', ()=>{ if(playing && !paused){ hold(); draw(); }});
+hardDropBtn.addEventListener('click', ()=>{ if(playing && !paused){ hardDrop(); draw(); }});
+
+startBtn.addEventListener('click', ()=>{ startGame(); });
+pauseBtn.addEventListener('click', ()=>{ pauseGame(); });
+resetBtn.addEventListener('click', ()=>{ resetGame(); startGame(); });
+
+/* spawn & ensure next initially */
+ensureNext();
+updateStats();
+draw();
+
+/* spawn first automatically on Start click */
+startGame();
+
+/* game over */
+function gameOver(){
+  playing = false;
+  paused = true;
+  alert('Game Over — puntuación: ' + score);
+}
+
+/* helper: spawn piece from nextQueue */
+function spawnPiece(){
+  ensureNext();
+  const t = nextQueue.shift();
+  const p = createPiece(t);
+  p.row = -HIDDEN_ROWS;
+  p.col = Math.floor((COLS - p.matrix[0].length)/2);
+  current = p;
+  holdUsed = false;
+  // if collides right away -> game over
+  if (collides(current.matrix, current.row, current.col)){
+    gameOver();
+  }
+  updateStats();
+}
+
+/* END of missing functions definitions (some were referenced before definition): ensureNext (already defined), createPiece, etc. 
+   We already defined createPiece earlier, but below we redefine to ensure current.rotations based on TETROMINOS states:
+*/
+
+function createPiece(type){
+  const states = TETROMINOS[type].map(s => cloneMatrix(s));
+  // for pieces with 2 states we ensure rotation count is 4 for convenience (I and S/Z usually 2)
+  let rotations = states;
+  // For symmetry expand to 4 by rotating if needed
+  while(rotations.length < 4){
+    const last = rotations[rotations.length-1];
+    const next = rotateMatrix(last);
+    // avoid duplicates
+    if (!rotations.some(r => matEquals(r,next))) rotations.push(next);
+    else break;
+  }
+  return {
+    type,
+    rotations,
+    rot: 0,
+    matrix: rotations[0],
+    row: -HIDDEN_ROWS,
+    col: 0
+  };
+}
+
+/* matrix equality */
+function matEquals(a,b){
+  if (a.length !== b.length) return false;
+  for (let i=0;i<a.length;i++){
+    if (a[i].length !== b[i].length) return false;
+    for (let j=0;j<a[i].length;j++){
+      if (a[i][j] !== b[i][j]) return false;
+    }
+  }
+  return true;
+}
+
+/* move and rotate: note tryRotate defined earlier uses current.rotations
+   but we'll implement full tryRotate now */
+function tryRotate(){
+  if (!current) return false;
+  const oldRot = current.rot;
+  const newRot = (oldRot + 1) % current.rotations.length;
+  const newMat = current.rotations[newRot];
+  const kicks = [0, -1, 1, -2, 2];
+  for (let k of kicks){
+    if (!collides(newMat, current.row, current.col + k)){
+      current.rot = newRot;
+      current.matrix = newMat;
+      current.col += k;
+      return true;
+    }
+  }
+  return false;
+}
+
+/* move */
+function move(dx,dy){
+  if (!current) return false;
+  const nr = current.row + dy;
+  const nc = current.col + dx;
+  if (!collides(current.matrix, nr, nc)){
+    current.row = nr;
+    current.col = nc;
+    return true;
+  }
+  return false;
+}
+
+/* finalize updateStats and draw integration already present */
+function updateAndDraw(){
+  updateStats();
+  draw();
+}
+
+/* Utility: ensureNext already defined earlier; but if nextQueue empty, fill before spawn */
+ensureNext();
+
+/* Expose some functions to console for debugging */
+window.tetris = {
+  reset: resetGame,
+  start: startGame,
+  stop: ()=>{ playing=false; paused=true; }
+};
+
+</script>
+</body>
+</html>
