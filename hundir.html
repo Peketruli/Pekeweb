@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Hundir la Flota</title>
+<style>
+body{
+  margin:0;
+  font-family:Arial, sans-serif;
+  background:#0b1220;
+  color:#fff;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:flex-start;
+  min-height:100vh;
+  overflow:hidden;
+}
+h1{color:#39a0ff;text-align:center;margin-top:20px;}
+.boards{
+  display:flex;
+  gap:40px;
+  margin-top:20px;
+}
+.board {
+  display:grid;
+  grid-template-columns: repeat(10, 30px);
+  grid-template-rows: repeat(10, 30px);
+  gap:2px;
+  background:#071026;
+  padding:4px;
+  border-radius:8px;
+}
+.cell{
+  width:30px;
+  height:30px;
+  background:#0b1220;
+  border:1px solid #444;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+.cell.ship{background:#39a0ff;}
+.cell.hit{background:red;}
+.cell.miss{background:#555;}
+.controls{
+  margin-top:20px;
+  display:flex;
+  gap:10px;
+}
+button{
+  padding:6px 10px;
+  border:none;
+  border-radius:6px;
+  background:#39a0ff;
+  color:#fff;
+  cursor:pointer;
+}
+button:hover{background:#28a0ff;}
+#log{
+  margin-top:15px;
+  max-width:650px;
+  text-align:center;
+  min-height:24px;
+}
+</style>
+</head>
+<body>
+
+<h1>Hundir la Flota</h1>
+
+<div class="boards">
+  <div>
+    <h3>Tu tablero</h3>
+    <div class="board" id="player-board"></div>
+  </div>
+  <div>
+    <h3>Tablero enemigo</h3>
+    <div class="board" id="enemy-board"></div>
+  </div>
+</div>
+
+<div class="controls">
+  <button id="random-place">Colocar barcos aleatoriamente</button>
+  <button id="reset">Reiniciar</button>
+</div>
+
+<div id="log"></div>
+
+<script>
+const playerBoardEl = document.getElementById('player-board');
+const enemyBoardEl = document.getElementById('enemy-board');
+const logEl = document.getElementById('log');
+const randomBtn = document.getElementById('random-place');
+const resetBtn = document.getElementById('reset');
+
+const SHIPS = [
+  {name:'Portaaviones',size:5},
+  {name:'Acorazado',size:4},
+  {name:'Crucero',size:3},
+  {name:'Submarino',size:3},
+  {name:'Destructor',size:2},
+];
+
+let playerBoard, enemyBoard, enemyShips, playerShips, playerTurn=true, gameOver=false;
+
+function createEmptyBoard(){ return Array.from({length:10},()=>Array(10).fill(null)); }
+
+function createBoardElement(boardEl,clickHandler){
+  boardEl.innerHTML='';
+  for(let r=0;r<10;r++){
+    for(let c=0;c<10;c++){
+      const cell=document.createElement('div');
+      cell.classList.add('cell');
+      cell.dataset.row=r;
+      cell.dataset.col=c;
+      cell.addEventListener('click',()=>clickHandler(r,c,cell));
+      boardEl.appendChild(cell);
+    }
+  }
+}
+
+function placeShipsRandomly(board){
+  let shipsPositions=[];
+  for(let ship of SHIPS){
+    let placed=false;
+    while(!placed){
+      let horizontal=Math.random()<0.5;
+      let row=Math.floor(Math.random()*10);
+      let col=Math.floor(Math.random()*10);
+      if(horizontal){
+        if(col+ship.size>10) continue;
+        if(board[row].slice(col,col+ship.size).some(v=>v)) continue;
+        for(let i=0;i<ship.size;i++) board[row][col+i]='ship';
+      }else{
+        if(row+ship.size>10) continue;
+        if(board.slice(row,row+ship.size).some(r=>r[col])) continue;
+        for(let i=0;i<ship.size;i++) board[row+i][col]='ship';
+      }
+      shipsPositions.push({name:ship.name,size:ship.size,positions:[]});
+      for(let i=0;i<10;i++){for(let j=0;j<10;j++){if(board[i][j]==='ship') shipsPositions[shipsPositions.length-1].positions.push([i,j].toString());}}
+      placed=true;
+    }
+  }
+  return shipsPositions;
+}
+
+function renderBoard(board,boardEl,showShips=false){
+  for(let r=0;r<10;r++){
+    for(let c=0;c<10;c++){
+      const cell = boardEl.children[r*10+c];
+      cell.className='cell';
+      if(showShips && board[r][c]==='ship') cell.classList.add('ship');
+      else if(board[r][c]==='hit') cell.classList.add('hit');
+      else if(board[r][c]==='miss') cell.classList.add('miss');
+    }
+  }
+}
+
+function enemyShoot(){
+  if(gameOver) return;
+  let row=Math.floor(Math.random()*10);
+  let col=Math.floor(Math.random()*10);
+  if(playerBoard[row][col]==='hit' || playerBoard[row][col]==='miss'){ return enemyShoot(); }
+  if(playerBoard[row][col]==='ship'){
+    playerBoard[row][col]='hit';
+    logEl.textContent='La IA acertó un barco!';
+  }else{
+    playerBoard[row][col]='miss';
+    logEl.textContent='La IA falló!';
+  }
+  renderBoard(playerBoard,playerBoardEl,true);
+  checkGameOver();
+  playerTurn=true;
+}
+
+function checkGameOver(){
+  const playerShipsLeft=playerBoard.flat().filter(c=>c==='ship').length;
+  const enemyShipsLeft=enemyBoard.flat().filter(c=>c==='ship').length;
+  if(playerShipsLeft===0){ logEl.textContent='¡Perdiste!'; gameOver=true; }
+  else if(enemyShipsLeft===0){ logEl.textContent='¡Ganaste!'; gameOver=true; }
+}
+
+function playerClick(r,c,cell){
+  if(!playerTurn || gameOver) return;
+  if(enemyBoard[r][c]==='hit' || enemyBoard[r][c]==='miss') return;
+  if(enemyBoard[r][c]==='ship'){
+    enemyBoard[r][c]='hit';
+    logEl.textContent='¡Acertaste!';
+  }else{
+    enemyBoard[r][c]='miss';
+    logEl.textContent='Fallaste!';
+  }
+  renderBoard(enemyBoard,enemyBoardEl);
+  checkGameOver();
+  if(!gameOver){playerTurn=false; setTimeout(enemyShoot,500);}
+}
+
+function startGame(){
+  playerBoard=createEmptyBoard();
+  enemyBoard=createEmptyBoard();
+  playerShips=placeShipsRandomly(playerBoard);
+  enemyShips=placeShipsRandomly(enemyBoard);
+  playerTurn=true;
+  gameOver=false;
+  renderBoard(playerBoard,playerBoardEl,true);
+  renderBoard(enemyBoard,enemyBoardEl,false);
+  logEl.textContent='Coloca tus barcos o dispara al enemigo';
+}
+
+randomBtn.addEventListener('click',()=>{startGame();});
+resetBtn.addEventListener('click',()=>{startGame();});
+
+createBoardElement(playerBoardEl,()=>{}); // Player board click solo para IA disparos
+createBoardElement(enemyBoardEl,playerClick); // Enemy board click para disparos del jugador
+
+startGame();
+</script>
+
+</body>
+</html>
