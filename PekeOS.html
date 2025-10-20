@@ -14,7 +14,10 @@ body, html{margin:0;padding:0;height:100%;background:#111;color:#fff;overflow:hi
 .icon span{display:block;margin-top:6px;color:#ffe9b6;}
 .taskbar{position:fixed;bottom:0;left:0;right:0;height:42px;background:#222;border-top:3px solid #444;display:flex;align-items:center;padding:4px 6px;gap:8px;color:#fff;}
 .start-btn{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#333;border:2px solid #555;box-shadow:inset 1px 1px 0 rgba(255,255,255,.1);cursor:pointer;color:#fff;}
-.tray{margin-left:auto;display:flex;gap:8px;align-items:center;color:#fff;}
+.task-buttons{display:flex;gap:4px;flex:1;}
+.task-buttons button{padding:4px 8px;background:#333;border:1px solid #555;color:#fff;cursor:pointer;display:flex;align-items:center;gap:4px;}
+.task-buttons button img{width:16px;height:16px;}
+.tray{display:flex;gap:8px;align-items:center;color:#fff;}
 .clock{background:#333;padding:4px 8px;border:2px solid #555;color:#fff;}
 .win{position:absolute;width:520px;background:#000;border:2px solid #ff6f00;box-shadow:6px 6px 0 rgba(0,0,0,.8);display:flex;flex-direction:column;color:#fff;}
 .titlebar{height:28px;background:linear-gradient(#111,#333);color:#fff;display:flex;align-items:center;padding:0 6px;gap:8px;user-select:none;}
@@ -30,16 +33,17 @@ iframe{width:100%;height:100%;border:0;}
 <body>
 <div class="desktop">
   <div class="icons">
-    <div class="icon" data-app="golf.html"><div class="thumb">A</div><span>Zona Arcade</span></div>
-    <div class="icon" data-app="e.html"><div class="thumb">E</div><span>Encuestas</span></div>
-    <div class="icon" data-app="c.html"><div class="thumb">C</div><span>Casino</span></div>
-    <div class="icon" data-app="periodico.html"><div class="thumb">N</div><span>Noticias</span></div>
-    <div class="icon" data-app="po.html"><div class="thumb">Po</div><span>Política</span></div>
-    <div class="icon" data-app="ch.html"><div class="thumb">Ch</div><span>Chat</span></div>
+    <div class="icon" data-app="golf.html" data-icon="arcade.png"><div class="thumb">A</div><span>Zona Arcade</span></div>
+    <div class="icon" data-app="e.html" data-icon="encuestas.png"><div class="thumb">E</div><span>Encuestas</span></div>
+    <div class="icon" data-app="c.html" data-icon="casino.png"><div class="thumb">C</div><span>Casino</span></div>
+    <div class="icon" data-app="periodico.html" data-icon="noticias.png"><div class="thumb">N</div><span>Noticias</span></div>
+    <div class="icon" data-app="po.html" data-icon="politica.png"><div class="thumb">Po</div><span>Política</span></div>
+    <div class="icon" data-app="ch.html" data-icon="chat.png"><div class="thumb">Ch</div><span>Chat</span></div>
   </div>
 </div>
 <div class="taskbar">
   <div class="start-btn">🎃 PekeOS</div>
+  <div class="task-buttons" id="taskButtons"></div>
   <div class="tray"><div class="clock" id="clock">00:00</div></div>
 </div>
 <div class="start-menu" id="startMenu">
@@ -65,13 +69,11 @@ const tpl=document.getElementById('winTpl');
 let zIndex=10;
 let windows={};
 
-// Clock
 function nowTime(){const d=new Date();return d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});}
 document.getElementById('clock').textContent=nowTime();
 setInterval(()=>document.getElementById('clock').textContent=nowTime(),30000);
 
-// Windows
-function createWindow({title='Ventana', src=null, id=null,x=60,y=60,w=520,h=360}){
+function createWindow({title='Ventana', src=null, id=null,x=60,y=60,w=520,h=360,icon=null}){
   const node=tpl.content.firstElementChild.cloneNode(true);
   const wid=id||'w_'+Date.now();
   node.dataset.wid=wid;
@@ -84,12 +86,17 @@ function createWindow({title='Ventana', src=null, id=null,x=60,y=60,w=520,h=360}
   if(src){const iframe=document.createElement('iframe'); iframe.src=src; content.appendChild(iframe);}
   makeDraggable(node); makeResizable(node); attachControls(node); document.body.appendChild(node); focusWindow(node);
   windows[wid]=node;
+  addTaskButton(node,title,icon);
   return node;
 }
+
 function focusWindow(node){node.style.zIndex=++zIndex; node.classList.remove('minimized');}
 function attachControls(node){const wid=node.dataset.wid; node.querySelectorAll('.btn').forEach(b=>{b.addEventListener('click',()=>{
-  const a=b.dataset.action; if(a==='close'){node.remove(); delete windows[wid];}
-  else if(a==='min'){node.classList.add('minimized'); node.style.display='none';}
+  const a=b.dataset.action; if(a==='close'){
+    const taskBtn=document.querySelector(`[data-task-btn-id='${node.dataset.taskBtnId}']`);
+    if(taskBtn) taskBtn.remove();
+    node.remove(); delete windows[wid];
+  } else if(a==='min'){node.classList.add('minimized'); node.style.display='none';}
   else if(a==='max'){if(node.dataset.maxed==='1'){node.style.left=node.dataset.prevLeft; node.style.top=node.dataset.prevTop; node.style.width=node.dataset.prevWidth; node.style.height=node.dataset.prevHeight; node.dataset.maxed='0';} else{node.dataset.prevLeft=node.style.left; node.dataset.prevTop=node.style.top; node.dataset.prevWidth=node.style.width; node.dataset.prevHeight=node.style.height; node.style.left='6px'; node.style.top='6px'; node.style.width=(window.innerWidth-12)+'px'; node.style.height=(window.innerHeight-72)+'px'; node.dataset.maxed='1';}}});});
   node.addEventListener('mousedown',()=>focusWindow(node));}
 function makeDraggable(el){const title=el.querySelector('.titlebar'); let ox,oy,dx,dy,drag=false; title.addEventListener('mousedown',(e)=>{drag=true; ox=e.clientX; oy=e.clientY; dx=parseInt(el.style.left)||0; dy=parseInt(el.style.top)||0; focusWindow(el); document.addEventListener('mousemove',move); document.addEventListener('mouseup',up);});
@@ -103,7 +110,7 @@ function makeResizable(el){const grip=document.createElement('div'); grip.style.
 // Abrir apps
 document.querySelectorAll('.icon').forEach(ic=>{
   ic.addEventListener('dblclick',()=>{
-    const src=ic.dataset.app; createWindow({title:ic.querySelector('span').textContent, src});
+    const src=ic.dataset.app; const icon=ic.dataset.icon; createWindow({title:ic.querySelector('span').textContent, src, icon});
   });
 });
 
@@ -121,6 +128,20 @@ document.getElementById('settingsBtn').addEventListener('click',()=>{
 document.getElementById('shutdownBtn').addEventListener('click',()=>{
   if(confirm('¿Deseas apagar PekeOS?')){ window.location.href='about:blank';}
 });
+
+// Task buttons
+function addTaskButton(winNode,title,icon){
+  const taskButtons=document.getElementById('taskButtons');
+  const btn=document.createElement('button');
+  if(icon){ const img=document.createElement('img'); img.src=icon; btn.appendChild(img); }
+  const text=document.createTextNode(title); btn.appendChild(text);
+  btn.addEventListener('click',()=>{
+    if(winNode.classList.contains('minimized')){ winNode.style.display='flex'; winNode.classList.remove('minimized'); focusWindow(winNode); }
+    else{ winNode.classList.add('minimized'); winNode.style.display='none'; }
+  });
+  const id=Date.now(); winNode.dataset.taskBtnId=id; btn.dataset.taskBtnId=id;
+  taskButtons.appendChild(btn);
+}
 </script>
 </body>
 </html>
