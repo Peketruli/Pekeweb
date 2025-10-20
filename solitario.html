@@ -134,11 +134,14 @@ body {
     </div>
 
 <script>
+/* === SOLITARIO KLONDIKE BÁSICO (FASE 2) === */
+
 const palos = ['♠', '♥', '♦', '♣'];
 let mazo = [], descarte = [];
 let tableau = [[],[],[],[],[],[],[]];
 let fundaciones = [[],[],[],[]];
 
+/* === CREACIÓN DEL MAZO === */
 function crearMazo() {
     mazo = [];
     for (let palo of palos) {
@@ -148,11 +151,17 @@ function crearMazo() {
             else if (valor === 11) nombre = 'J';
             else if (valor === 12) nombre = 'Q';
             else if (valor === 13) nombre = 'K';
-            mazo.push({ valor, palo, color: (palo === '♥' || palo === '♦') ? 'red' : 'black', visible: false });
+            mazo.push({
+                valor,
+                palo,
+                color: (palo === '♥' || palo === '♦') ? 'red' : 'black',
+                visible: false
+            });
         }
     }
 }
 
+/* === BARAJAR CARTAS === */
 function barajar() {
     for (let i = mazo.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -160,6 +169,7 @@ function barajar() {
     }
 }
 
+/* === REPARTIR === */
 function repartirCartas() {
     tableau = [[],[],[],[],[],[],[]];
     for (let i = 0; i < 7; i++) {
@@ -172,9 +182,10 @@ function repartirCartas() {
     render();
 }
 
+/* === ROBAR CARTA DEL MAZO === */
 function robarCarta() {
     if (mazo.length === 0) {
-        // Reiniciar descarte al mazo
+        // Si se vacía el mazo, se da la vuelta al descarte
         mazo = descarte.reverse().map(c => ({...c, visible:false}));
         descarte = [];
     } else {
@@ -185,8 +196,72 @@ function robarCarta() {
     render();
 }
 
+/* === REGLAS DE MOVIMIENTO === */
+function puedeMoverAFoundation(carta, fundacion) {
+    if (fundacion.length === 0) {
+        return carta.valor === 1; // Solo Ases
+    }
+    const top = fundacion[fundacion.length - 1];
+    return carta.palo === top.palo && carta.valor === top.valor + 1;
+}
+
+function puedeMoverATabla(carta, columna) {
+    if (columna.length === 0) {
+        return carta.valor === 13; // Solo Reyes en columnas vacías
+    }
+    const top = columna[columna.length - 1];
+    return top.visible && carta.color !== top.color && carta.valor === top.valor - 1;
+}
+
+/* === MOVER CARTA DEL DESCARTE === */
+function moverDescarte() {
+    if (descarte.length === 0) return;
+    const carta = descarte[descarte.length - 1];
+
+    // Intentar mover a fundación
+    for (let f = 0; f < 4; f++) {
+        if (puedeMoverAFoundation(carta, fundaciones[f])) {
+            fundaciones[f].push(descarte.pop());
+            render();
+            return;
+        }
+    }
+
+    // Intentar mover al tableau
+    for (let t = 0; t < 7; t++) {
+        if (puedeMoverATabla(carta, tableau[t])) {
+            tableau[t].push(descarte.pop());
+            render();
+            return;
+        }
+    }
+}
+
+/* === CLIC EN COLUMNA === */
+function clickColumna(i) {
+    const col = tableau[i];
+    if (col.length === 0) return;
+
+    const ultima = col[col.length - 1];
+    if (!ultima.visible) {
+        ultima.visible = true; // Voltear carta
+        render();
+        return;
+    }
+
+    // Intentar mover la carta superior a fundación
+    for (let f = 0; f < 4; f++) {
+        if (puedeMoverAFoundation(ultima, fundaciones[f])) {
+            fundaciones[f].push(col.pop());
+            render();
+            return;
+        }
+    }
+}
+
+/* === RENDERIZAR TABLERO === */
 function render() {
-    // Render del mazo
+    // --- Mazo ---
     const deckDiv = document.getElementById('deck');
     deckDiv.innerHTML = '';
     if (mazo.length > 0) {
@@ -195,30 +270,33 @@ function render() {
         deckDiv.appendChild(back);
     }
 
-    // Render descarte
+    // --- Descarte ---
     const wasteDiv = document.getElementById('waste');
     wasteDiv.innerHTML = '';
     if (descarte.length > 0) {
         const carta = descarte[descarte.length - 1];
         const div = crearCartaDiv(carta);
+        div.onclick = moverDescarte;
         wasteDiv.appendChild(div);
     }
 
-    // Render fundaciones
+    // --- Fundaciones ---
     for (let i = 0; i < 4; i++) {
         const fDiv = document.getElementById('f'+i);
         fDiv.innerHTML = '';
         if (fundaciones[i].length > 0) {
-            fDiv.appendChild(crearCartaDiv(fundaciones[i][fundaciones[i].length - 1]));
+            const carta = fundaciones[i][fundaciones[i].length - 1];
+            fDiv.appendChild(crearCartaDiv(carta));
         }
     }
 
-    // Render tableau
+    // --- Tableau ---
     const tabla = document.getElementById('tableau');
     tabla.innerHTML = '';
     for (let i = 0; i < 7; i++) {
         const col = document.createElement('div');
         col.className = 'column';
+        col.onclick = () => clickColumna(i);
         let offset = 0;
         for (const carta of tableau[i]) {
             const div = crearCartaDiv(carta);
@@ -228,15 +306,28 @@ function render() {
         }
         tabla.appendChild(col);
     }
+
+    // --- Comprobar Victoria ---
+    if (fundaciones.every(f => f.length === 13)) {
+        setTimeout(() => alert("🎉 ¡Ganaste el Solitario!"), 300);
+    }
 }
 
+/* === CREAR DIV DE CARTA === */
 function crearCartaDiv(carta) {
     const div = document.createElement('div');
     div.className = 'card ' + (carta.visible ? (carta.color === 'red' ? 'red' : '') : 'back');
-    if (carta.visible) div.textContent = (carta.valor === 1 ? 'A' : carta.valor === 11 ? 'J' : carta.valor === 12 ? 'Q' : carta.valor === 13 ? 'K' : carta.valor) + carta.palo;
+    if (carta.visible) {
+        const valorTexto = (carta.valor === 1 ? 'A' :
+                           carta.valor === 11 ? 'J' :
+                           carta.valor === 12 ? 'Q' :
+                           carta.valor === 13 ? 'K' : carta.valor);
+        div.textContent = valorTexto + carta.palo;
+    }
     return div;
 }
 
+/* === INICIO DEL JUEGO === */
 function iniciarJuego() {
     crearMazo();
     barajar();
@@ -245,6 +336,7 @@ function iniciarJuego() {
     repartirCartas();
 }
 
+/* === ARRANQUE AUTOMÁTICO === */
 window.onload = iniciarJuego;
 </script>
 </body>
