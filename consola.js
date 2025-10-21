@@ -1,16 +1,3 @@
-<table>
-  <thead>
-    <tr>
-      <th>Usuario</th>
-      <th>Última acción</th>
-      <th>IP</th>
-      <th>Fecha</th>
-    </tr>
-  </thead>
-  <tbody id="logsBody"></tbody>
-</table>
-
-<script type="module">
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
 const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co'
