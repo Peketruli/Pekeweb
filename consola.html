@@ -2,89 +2,93 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>Consola Administrativa</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Consola de Actividades</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-  body { font-family: Arial, sans-serif; background: #111; color: #fff; padding: 20px; }
-  h1 { text-align: center; color: #0f0; }
-  table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-  th, td { border: 1px solid #444; padding: 8px; text-align: left; }
-  th { background: #222; color: #fff; }
-  tr:nth-child(even) { background: #1a1a1a; }
-  tr:hover { background: #333; }
-  .error { color: red; font-weight: bold; }
-  .empty { color: #888; }
+body {
+    font-family: Arial, sans-serif;
+    background-color: #111;
+    color: #fff;
+    padding: 20px;
+}
+h1 {
+    color: #ff6f00;
+    text-shadow: 0 0 8px #ff6f00;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+th, td {
+    padding: 10px;
+    border: 1px solid #444;
+}
+th {
+    background-color: #222;
+}
+tr:nth-child(even) {
+    background-color: #1a1a1a;
+}
 </style>
 </head>
 <body>
-
-<h1>Consola de Movimientos</h1>
-
+<h1>📜 Registro de Actividades</h1>
 <table>
-  <thead>
-    <tr>
-      <th>ID</th>
-      <th>Usuario</th>
-      <th>Acción</th>
-      <th>IP</th>
-      <th>Fecha</th>
-    </tr>
-  </thead>
-  <tbody id="logsBody">
-    <tr><td colspan="5" class="empty">Cargando...</td></tr>
-  </tbody>
+<thead>
+<tr>
+<th>Usuario</th>
+<th>Acción</th>
+<th>Detalle</th>
+<th>Fecha</th>
+</tr>
+</thead>
+<tbody id="logBody">
+<tr><td colspan="4" style="color:#aaa;">Cargando...</td></tr>
+</tbody>
 </table>
 
-<script type="module">
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+<script>
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// --- Conexión Supabase ---
-const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co'
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'
-const supabase = createClient(supabaseUrl, supabaseKey)
+async function loadActividad() {
+    const { data, error } = await supabase
+        .from("actividad")
+        .select("id, user_id, accion, detalle, fecha, usuarios(username)")
+        .order("fecha", { ascending: false });
 
-// --- Función para cargar logs ---
-async function cargarLogs(limit = 100) {
-  const tbody = document.getElementById('logsBody')
-
-  try {
-    const { data: logs, error } = await supabase
-      .from('logs')
-      .select('id, action, ip, created_at, user:usuarios(username)')
-      .order('created_at', { ascending: false })
-      .limit(limit)
-
+    const tbody = document.getElementById("logBody");
     if (error) {
-      tbody.innerHTML = `<tr><td colspan="5" class="error">Error al cargar logs: ${error.message}</td></tr>`
-      console.error(error)
-      return
+        tbody.innerHTML = `<tr><td colspan="4" style="color:red;">Error cargando actividades: ${error.message}</td></tr>`;
+        console.error(error);
+        return;
     }
 
-    if (!logs || logs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" class="empty">No hay registros todavía</td></tr>`
-      return
+    if (!data || data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="color:#aaa;">No hay actividades registradas.</td></tr>`;
+        return;
     }
 
-    tbody.innerHTML = logs.map(log => `
-      <tr>
-        <td>${log.id}</td>
-        <td>${log.user?.username || 'Desconocido'}</td>
-        <td>${log.action}</td>
-        <td>${log.ip}</td>
-        <td>${new Date(log.created_at).toLocaleString()}</td>
-      </tr>
-    `).join('')
-
-  } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="5" class="error">Error inesperado: ${err.message}</td></tr>`
-    console.error(err)
-  }
+    tbody.innerHTML = "";
+    data.forEach(act => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${act.usuarios?.username || "Desconocido"}</td>
+            <td>${act.accion}</td>
+            <td>${act.detalle}</td>
+            <td>${new Date(act.fecha).toLocaleString()}</td>
+        `;
+        tbody.appendChild(tr);
+    });
 }
 
-// --- Actualizar cada 10 segundos ---
-cargarLogs()
-setInterval(cargarLogs, 10000)
-
+// Recargar cada 5 segundos
+loadActividad();
+setInterval(loadActividad, 5000);
 </script>
-
 </body>
 </html>
