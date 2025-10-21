@@ -291,7 +291,7 @@ let currentUser = null;
 document.addEventListener("DOMContentLoaded", async () => {
     await initUser();
 
-    // Botones de personalización
+    // Personalización
     document.getElementById("rewardBgBtn").addEventListener("click", () => toggleShow("backgroundPicker"));
     document.getElementById("rewardNameBtn").addEventListener("click", () => toggleShow("nameColorPicker"));
     document.getElementById("reward3Btn").addEventListener("click", () => toggleShow("tableColorPicker"));
@@ -319,7 +319,22 @@ async function initUser() {
             window.location.href = "l.html";
             return;
         }
-        currentUser = JSON.parse(saved);
+        const localUser = JSON.parse(saved);
+
+        // Cargar datos reales desde Supabase
+        const { data, error } = await supabase.from("usuarios")
+            .select("id, username, pekepuntos, logo, fondo_color, nombre_color, tabla_color, last_claim")
+            .eq("id", localUser.id)
+            .single();
+
+        if (error || !data) {
+            alert("Error al cargar tus datos de usuario");
+            console.error(error);
+            return;
+        }
+
+        currentUser = data;
+        localStorage.setItem("currentUser", JSON.stringify(currentUser));
         renderUserUI();
         setupDailyButton();
     } catch (err) {
@@ -331,14 +346,12 @@ function renderUserUI() {
     if (!currentUser) return;
 
     document.getElementById("userName").textContent = currentUser.username || "Usuario";
-    document.getElementById("userLogo").src = currentUser.logo || "logoDefault.png";
     document.getElementById("pekepuntos").textContent = `Pekepuntos: ${(currentUser.pekepuntos || 0).toLocaleString()}`;
 
     if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
     if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
     if (currentUser.tabla_color) applyTableColor(currentUser.tabla_color);
 
-    // Mostrar info de usuario
     document.getElementById("authContainer").style.display = "none";
     document.getElementById("userInfo").style.display = "flex";
 }
@@ -350,7 +363,7 @@ async function loadTop5() {
 
     top5List.innerHTML = "<li>Cargando...</li>";
     const { data, error } = await supabase.from("usuarios")
-        .select("username, pekepuntos, logo, nombre_color")
+        .select("username, pekepuntos, nombre_color")
         .order("pekepuntos", { ascending: false })
         .limit(5);
 
@@ -363,11 +376,7 @@ async function loadTop5() {
     data.forEach((u, idx) => {
         const li = document.createElement("li");
         const color = idx === 0 ? "gold" : idx === 1 ? "silver" : idx === 2 ? "#b87333" : u.nombre_color || "#fff";
-        li.innerHTML = `
-            <img src="${u.logo || "logoDefault.png"}" alt="logo" />
-            <strong style="color:${color}">${idx + 1}. ${u.username}</strong>
-            <span>${(u.pekepuntos || 0).toLocaleString()} Pekepuntos</span>
-        `;
+        li.innerHTML = `<strong style="color:${color}">${idx + 1}. ${u.username}</strong> - ${u.pekepuntos.toLocaleString()} Pekepuntos`;
         top5List.appendChild(li);
     });
 }
