@@ -81,7 +81,16 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
 
-// Comprobar admin
+// ------------------ FUNCIONES DE LOG ------------------
+async function registrarAccion(userId, accion, extra = '') {
+  try {
+    await supabase.from('logs').insert([{ user_id: userId, action: accion, extra }]);
+  } catch(err) {
+    console.error('Error registrando acción:', err);
+  }
+}
+
+// ------------------ ADMIN CHECK ------------------
 function isAdmin(user){
     return user && (user.username === "Peketruli" || user.username === "SabinoArana");
 }
@@ -104,7 +113,7 @@ async function init(){
   await loadChats();
 }
 
-/* ------------------ USUARIOS ------------------ */
+// ------------------ USUARIOS ------------------
 async function loadUsers(filter=""){
   const tbody = document.querySelector('#usersTable tbody');
   tbody.innerHTML = 'Cargando...';
@@ -144,30 +153,30 @@ function renderUsers(users){
     `;
     tbody.appendChild(tr);
 
-    tr.querySelector('.addBtn').addEventListener('click', ()=>promptAdd(u.id));
-    tr.querySelector('.removeBtn').addEventListener('click', ()=>promptRemove(u.id));
-    tr.querySelector('.banBtn').addEventListener('click', ()=>toggleBan(u.id, u.banned));
+    tr.querySelector('.addBtn').addEventListener('click', ()=>promptAdd(u.id, u.username));
+    tr.querySelector('.removeBtn').addEventListener('click', ()=>promptRemove(u.id, u.username));
+    tr.querySelector('.banBtn').addEventListener('click', ()=>toggleBan(u.id, u.username, u.banned));
     tr.querySelector('.deleteBtn').addEventListener('click', ()=>deleteUser(u.id, u.username||''));
   });
 }
 
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m])); }
 
-async function promptAdd(userId){
+async function promptAdd(userId, username){
   const raw = prompt("¿Cuántos Pekepuntos añadir? (positivo)");
   const val = parseInt(raw);
   if(isNaN(val) || val<=0) return alert("Cantidad inválida");
-  await changePoints(userId, val);
+  await changePoints(userId, val, username);
   await loadUsers();
 }
-async function promptRemove(userId){
+async function promptRemove(userId, username){
   const raw = prompt("¿Cuántos Pekepuntos quitar? (positivo)");
   const val = parseInt(raw);
   if(isNaN(val) || val<=0) return alert("Cantidad inválida");
-  await changePoints(userId, -val);
+  await changePoints(userId, -val, username);
   await loadUsers();
 }
-async function changePoints(userId, delta){
+async function changePoints(userId, delta, username){
   const { data, error } = await supabase.from('usuarios').select('pekepuntos').eq('id', userId).single();
   if(error) return alert('Error leyendo usuario: '+error.message);
   const current = BigInt(data.pekepuntos || 0);
@@ -176,13 +185,15 @@ async function changePoints(userId, delta){
   const { error:err2 } = await supabase.from('usuarios').update({ pekepuntos: finalVal.toString() }).eq('id', userId);
   if(err2) return alert('Error actualizando: '+err2.message);
   alert('Pekepuntos actualizados');
+  await registrarAccion(currentUser.id, delta>0 ? `sumar puntos a ${username}` : `quitar puntos a ${username}`, `delta:${delta}`);
 }
-async function toggleBan(userId, currentlyBanned){
+async function toggleBan(userId, username, currentlyBanned){
   const confirmMsg = currentlyBanned ? "¿Desbanear a este usuario?" : "¿Banear a este usuario?";
   if(!confirm(confirmMsg)) return;
   const { error } = await supabase.from('usuarios').update({ banned: !currentlyBanned }).eq('id', userId);
   if(error) return alert('Error: '+error.message);
   alert(currentlyBanned ? 'Usuario desbaneado' : 'Usuario baneado');
+  await registrarAccion(currentUser.id, currentlyBanned ? `desbanear a ${username}` : `banear a ${username}`);
   await loadUsers();
 }
 async function deleteUser(userId, username){
@@ -190,10 +201,11 @@ async function deleteUser(userId, username){
   const { error } = await supabase.from('usuarios').delete().eq('id', userId);
   if(error) return alert('Error borrando: '+error.message);
   alert('Usuario borrado');
+  await registrarAccion(currentUser.id, `borrar usuario ${username}`);
   await loadUsers();
 }
 
-/* ------------------ BLOGS ------------------ */
+// ------------------ BLOGS ------------------
 async function loadBlogs(){
   const tbody = document.querySelector('#blogsTable tbody');
   tbody.innerHTML = 'Cargando...';
@@ -218,10 +230,11 @@ async function deleteBlog(id, titulo){
   const { error } = await supabase.from('blog').delete().eq('id', id);
   if(error) return alert('Error borrando blog: '+error.message);
   alert('Blog borrado');
+  await registrarAccion(currentUser.id, `borrar blog ${titulo}`);
   await loadBlogs();
 }
 
-/* ------------------ CHATS ------------------ */
+// ------------------ CHATS ------------------
 async function loadChats(){
   const tbody = document.querySelector('#chatsTable tbody');
   tbody.innerHTML = 'Cargando...';
@@ -234,22 +247,24 @@ async function loadChats(){
     tr.innerHTML = `
       <td>${c.id}</td>
       <td>${escapeHtml(c.nombre||'')}</td>
-      <td>${escapeHtml(c.creador||'')}</td>
-      <td><button class="small danger deleteChatBtn">Borrar</button></td>
+      <td>${escapeHtml(c.creador||'')}</td
+ <td><button class="small danger deleteChatBtn">Borrar</button></td>
     `;
     tbody.appendChild(tr);
     tr.querySelector('.deleteChatBtn').addEventListener('click', ()=>deleteChat(c.id, c.creador));
   });
 }
-async function deleteChat(id, msg){
-  if(!confirm(`¿Borrar el mensaje "${msg}" (id: ${id})?`)) return;
+
+async function deleteChat(id, creador){
+  if(!confirm(`¿Borrar el mensaje de "${creador}" (id: ${id})?`)) return;
   const { error } = await supabase.from('chats').delete().eq('id', id);
   if(error) return alert('Error borrando chat: '+error.message);
   alert('Mensaje borrado');
+  await registrarAccion(currentUser.id, `borrar chat de ${creador}`);
   await loadChats();
 }
 
-/* ------------------ EVENTOS ------------------ */
+// ------------------ EVENTOS ------------------
 document.getElementById('searchBtn').addEventListener('click', ()=> {
   const q = document.getElementById('searchInput').value || '';
   loadUsers(q);
