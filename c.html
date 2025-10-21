@@ -291,9 +291,7 @@ let currentUser = null;
 document.addEventListener("DOMContentLoaded", async () => {
     await initUser();
 
-    document.getElementById("logoutBtn").addEventListener("click", logout);
-    document.getElementById("dailyButton")?.addEventListener("click", reclamarRecompensa);
-
+    // Botones de personalización
     document.getElementById("rewardBgBtn").addEventListener("click", () => toggleShow("backgroundPicker"));
     document.getElementById("rewardNameBtn").addEventListener("click", () => toggleShow("nameColorPicker"));
     document.getElementById("reward3Btn").addEventListener("click", () => toggleShow("tableColorPicker"));
@@ -306,7 +304,7 @@ document.addEventListener("DOMContentLoaded", async () => {
 });
 
 // -------------------- LOGIN / LOGOUT --------------------
-async function logout() {
+function logout() {
     localStorage.removeItem("currentUser");
     currentUser = null;
     window.location.href = "l.html";
@@ -316,16 +314,14 @@ async function logout() {
 async function initUser() {
     try {
         const saved = localStorage.getItem("currentUser");
-        if (saved) {
-            currentUser = JSON.parse(saved);
-        } else {
+        if (!saved) {
             alert("No estás logueado");
             window.location.href = "l.html";
             return;
         }
-
+        currentUser = JSON.parse(saved);
         renderUserUI();
-        showDailyButton();
+        setupDailyButton();
     } catch (err) {
         console.error("Error initUser:", err);
     }
@@ -334,17 +330,17 @@ async function initUser() {
 function renderUserUI() {
     if (!currentUser) return;
 
-    const userName = document.getElementById("userName");
-    const userLogo = document.getElementById("userLogo");
-    const pekepuntos = document.getElementById("pekepuntos");
-
-    if (userName) userName.textContent = currentUser.username || "Usuario";
-    if (userLogo) userLogo.src = currentUser.logo || "logoDefault.png";
-    if (pekepuntos) pekepuntos.textContent = `Pekepuntos: ${(currentUser.pekepuntos || 0).toLocaleString()}`;
+    document.getElementById("userName").textContent = currentUser.username || "Usuario";
+    document.getElementById("userLogo").src = currentUser.logo || "logoDefault.png";
+    document.getElementById("pekepuntos").textContent = `Pekepuntos: ${(currentUser.pekepuntos || 0).toLocaleString()}`;
 
     if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
     if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
     if (currentUser.tabla_color) applyTableColor(currentUser.tabla_color);
+
+    // Mostrar info de usuario
+    document.getElementById("authContainer").style.display = "none";
+    document.getElementById("userInfo").style.display = "flex";
 }
 
 // -------------------- TOP 5 --------------------
@@ -353,7 +349,10 @@ async function loadTop5() {
     if (!top5List) return;
 
     top5List.innerHTML = "<li>Cargando...</li>";
-    const { data, error } = await supabase.from("usuarios").select("username, pekepuntos, logo, nombre_color").order("pekepuntos", { ascending: false }).limit(5);
+    const { data, error } = await supabase.from("usuarios")
+        .select("username, pekepuntos, logo, nombre_color")
+        .order("pekepuntos", { ascending: false })
+        .limit(5);
 
     if (error) {
         top5List.innerHTML = `<li>Error: ${error.message}</li>`;
@@ -361,7 +360,7 @@ async function loadTop5() {
     }
 
     top5List.innerHTML = "";
-    (data || []).forEach((u, idx) => {
+    data.forEach((u, idx) => {
         const li = document.createElement("li");
         const color = idx === 0 ? "gold" : idx === 1 ? "silver" : idx === 2 ? "#b87333" : u.nombre_color || "#fff";
         li.innerHTML = `
@@ -373,13 +372,13 @@ async function loadTop5() {
     });
 }
 
-// -------------------- RECOMPENSAS DIARIAS --------------------
-function showDailyButton() {
-    const container = document.getElementById("dailyContainer");
-    if (!container || !currentUser) return;
-
-    container.innerHTML = `<button id="dailyButton">🎁 Reclamar 100 Pekepuntos diarios</button>`;
-    document.getElementById("dailyButton").addEventListener("click", reclamarRecompensa);
+// -------------------- RECOMPENSA DIARIA --------------------
+function setupDailyButton() {
+    const dailyBtn = document.createElement("button");
+    dailyBtn.textContent = "🎁 Reclamar 100 Pekepuntos diarios";
+    dailyBtn.className = "reward-button";
+    dailyBtn.addEventListener("click", reclamarRecompensa);
+    document.getElementById("rewardsSection").prepend(dailyBtn);
 }
 
 async function reclamarRecompensa() {
@@ -387,19 +386,21 @@ async function reclamarRecompensa() {
 
     const now = new Date();
     const last = currentUser.last_claim ? new Date(currentUser.last_claim) : null;
-    if (last) {
-        const diffHours = (now - last) / 36e5;
-        if (diffHours < 24) return alert(`Ya reclamaste hoy. Espera ${Math.ceil(24 - diffHours)}h`);
+    if (last && (now - last) / 36e5 < 24) {
+        alert(`Ya reclamaste hoy. Espera ${Math.ceil(24 - ((now - last) / 36e5))}h`);
+        return;
     }
 
     const nuevos = (currentUser.pekepuntos || 0) + 100;
-    const { error } = await supabase.from("usuarios").update({ pekepuntos: nuevos, last_claim: now.toISOString() }).eq("id", currentUser.id);
+    const { error } = await supabase.from("usuarios")
+        .update({ pekepuntos: nuevos, last_claim: now.toISOString() })
+        .eq("id", currentUser.id);
+
     if (error) return alert("Error al reclamar pekepuntos: " + error.message);
 
     currentUser.pekepuntos = nuevos;
     currentUser.last_claim = now.toISOString();
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
-
     document.getElementById("pekepuntos").textContent = `Pekepuntos: ${nuevos.toLocaleString()}`;
     alert("¡Recompensa diaria reclamada!");
 }
@@ -414,14 +415,17 @@ async function setBackgroundColor(color) {
     document.body.style.backgroundColor = color;
     if (currentUser) await updateUserField("fondo_color", color);
 }
+
 async function setNameColor(color) {
     document.getElementById("userName").style.color = color;
     if (currentUser) await updateUserField("nombre_color", color);
 }
+
 async function setTableColor(color) {
     applyTableColor(color);
     if (currentUser) await updateUserField("tabla_color", color);
 }
+
 function applyTableColor(color) {
     document.querySelectorAll("table").forEach(tbl => tbl.style.backgroundColor = color);
 }
