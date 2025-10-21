@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Consola de Actividad</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
   body {
     background-color: #000;
@@ -30,59 +31,85 @@
 <div id="output"></div>
 
 <script>
-// --- CONFIGURACIÓN ---
-// Para probar: localStorage.setItem("currentUser", "Peketruli");
+// ===============================
+// 🔧 CONFIGURACIÓN SUPABASE
+// ===============================
+const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
 const currentUser = localStorage.getItem("currentUser");
 const output = document.getElementById("output");
 
-// Si no es Peketruli, mostrar mensaje de error
+// ===============================
+// 🚫 ACCESO RESTRINGIDO
+// ===============================
 if (currentUser !== "Peketruli") {
   document.body.innerHTML = "<h1 class='error'>Casi pero no, vuelve cuando seas admin 😎</h1>";
 } else {
   iniciarConsola();
 }
 
-// --- FUNCIONES ---
-function iniciarConsola() {
-  log("🟢 Bienvenido, Peketruli. Monitorizando actividad...\n");
+// ===============================
+// 📡 INICIO DE CONSOLA
+// ===============================
+async function iniciarConsola() {
+  log("🟢 Bienvenido, Peketruli. Consola conectada a Supabase...\n");
 
-  // Clicks
-  document.addEventListener("click", e => {
-    const info = `Click en: <${e.target.tagName.toLowerCase()}>` +
-                 (e.target.id ? `#${e.target.id}` : '') +
-                 (e.target.className ? `.${e.target.className}` : '');
-    log(info);
-  });
+  // 1️⃣ Cargar historial
+  const { data, error } = await supabase
+    .from("actividad")
+    .select("*")
+    .order("fecha", { ascending: true });
 
-  // Teclas
-  document.addEventListener("keydown", e => {
-    log(`Tecla presionada: ${e.key}`);
-  });
+  if (error) {
+    log("❌ Error al cargar actividad: " + error.message);
+  } else if (data.length === 0) {
+    log("Sin registros anteriores.\n───────────────\n");
+  } else {
+    data.forEach(row => {
+      const hora = new Date(row.fecha).toLocaleTimeString();
+      log(`[${hora}] ${row.usuario} ${row.accion}`);
+    });
+    log("───────────────\n");
+  }
 
-  // Scroll
-  window.addEventListener("scroll", () => {
-    log("Scroll detectado");
-  });
-
-  // Movimiento del ratón
-  document.addEventListener("mousemove", e => {
-    log(`Ratón en posición X:${e.clientX} Y:${e.clientY}`);
-  });
-
-  // Cambio de pestaña / visibilidad
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      log("Pestaña inactiva ❌");
-    } else {
-      log("Pestaña activa ✅");
-    }
-  });
+  // 2️⃣ Escuchar nuevos eventos en tiempo real
+  supabase
+    .channel("actividad_changes")
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "actividad" }, payload => {
+      const nuevo = payload.new;
+      const hora = new Date(nuevo.fecha).toLocaleTimeString();
+      log(`[${hora}] ${nuevo.usuario} ${nuevo.accion}`);
+    })
+    .subscribe();
 }
 
+// ===============================
+// 🧠 FUNCIONES GLOBALES
+// ===============================
+window.registrarActividad = async function(accion) {
+  const usuario = localStorage.getItem("currentUser") || "Desconocido";
+
+  const { error } = await supabase.from("actividad").insert([
+    {
+      usuario,
+      accion,
+      fecha: new Date().toISOString()
+    }
+  ]);
+
+  if (error) {
+    console.error("Error al registrar actividad:", error.message);
+  }
+};
+
+// ===============================
+// 💬 LOG VISUAL
+// ===============================
 function log(msg) {
   const time = new Date().toLocaleTimeString();
-  output.innerHTML += `[${time}] ${msg}\n`;
+  output.innerHTML += msg + "\n";
   output.scrollTop = output.scrollHeight;
 }
 </script>
