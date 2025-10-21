@@ -300,12 +300,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("backgroundPicker")?.addEventListener("input", (e) => setBackgroundColor(e.target.value));
     document.getElementById("nameColorPicker")?.addEventListener("input", (e) => setNameColor(e.target.value));
     document.getElementById("tableColorPicker")?.addEventListener("input", (e) => setTableColor(e.target.value));
-
-    await loadTop5();
 });
 
 // -------------------- LOGIN / LOGOUT --------------------
-async function logout() {
+function logout() {
     localStorage.removeItem("currentUser");
     currentUser = null;
     window.location.href = "l.html";
@@ -313,21 +311,18 @@ async function logout() {
 
 // -------------------- USUARIO --------------------
 async function initUser() {
-    try {
-        const saved = localStorage.getItem("currentUser");
-        if (saved) {
-            currentUser = JSON.parse(saved);
-        } else {
-            alert("No estás logueado");
-            window.location.href = "l.html";
-            return;
-        }
-
-        renderUserUI();
-        showDailyButton();
-    } catch (err) {
-        console.error("Error initUser:", err);
+    const saved = localStorage.getItem("currentUser");
+    if (saved) {
+        currentUser = JSON.parse(saved);
+    } else {
+        alert("No estás logueado");
+        window.location.href = "l.html";
+        return;
     }
+
+    renderUserUI();
+    showDailyButton();
+    await loadTop5();
 }
 
 function renderUserUI() {
@@ -337,9 +332,9 @@ function renderUserUI() {
     const userLogo = document.getElementById("userLogo");
     const pekepuntos = document.getElementById("pekepuntos");
 
-    if (userName) userName.textContent = currentUser.username || "Usuario";
-    if (userLogo) userLogo.src = currentUser.logo || "logoDefault.png";
-    if (pekepuntos) pekepuntos.textContent = `Pekepuntos: ${(currentUser.pekepuntos || 0).toLocaleString()}`;
+    userName.textContent = currentUser.username || "Usuario";
+    userLogo.src = currentUser.logo || "logoDefault.png";
+    pekepuntos.textContent = `Pekepuntos: ${(currentUser.pekepuntos || 0).toLocaleString()}`;
 
     if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
     if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
@@ -376,13 +371,20 @@ async function loadTop5() {
     });
 }
 
-// -------------------- RECOMPENSAS DIARIAS --------------------
+// -------------------- RECOMPENSA DIARIA --------------------
 function showDailyButton() {
-    const container = document.getElementById("dailyContainer");
+    const container = document.getElementById("rewardsSection");
     if (!container || !currentUser) return;
 
-    container.innerHTML = `<button id="dailyButton">🎁 Reclamar 100 Pekepuntos diarios</button>`;
-    document.getElementById("dailyButton").addEventListener("click", reclamarRecompensa);
+    if (!document.getElementById("dailyButton")) {
+        const btn = document.createElement("button");
+        btn.id = "dailyButton";
+        btn.className = "reward-button";
+        btn.textContent = "🎁 Reclamar 100 Pekepuntos diarios";
+        btn.style.marginTop = "12px";
+        container.appendChild(btn);
+        btn.addEventListener("click", reclamarRecompensa);
+    }
 }
 
 async function reclamarRecompensa() {
@@ -390,9 +392,9 @@ async function reclamarRecompensa() {
 
     const now = new Date();
     const last = currentUser.last_claim ? new Date(currentUser.last_claim) : null;
-    if (last) {
-        const diffHours = (now - last) / 36e5;
-        if (diffHours < 24) return alert(`Ya reclamaste hoy. Espera ${Math.ceil(24 - diffHours)}h`);
+    if (last && (now - last) / 36e5 < 24) {
+        const horas = Math.ceil(24 - (now - last) / 36e5);
+        return alert(`Ya reclamaste hoy. Espera ${horas}h`);
     }
 
     const nuevos = (currentUser.pekepuntos || 0) + 100;
@@ -410,8 +412,6 @@ async function reclamarRecompensa() {
     document.getElementById("pekepuntos").textContent = `Pekepuntos: ${nuevos.toLocaleString()}`;
     alert("¡Recompensa diaria reclamada!");
 
-    // ✅ Refrescar Top 5 y tabla si existe loadUsers
-    if (typeof loadUsers === "function") loadUsers();
     await loadTop5();
 }
 
@@ -445,7 +445,6 @@ async function updateUserField(field, value) {
     if (!error) currentUser[field] = value;
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
 }
-
 </script>
 </body>  
 </html>
