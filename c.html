@@ -282,6 +282,7 @@ table.site-table th, table.site-table td {
 <script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -289,171 +290,255 @@ let currentUser = null;
 
 // -------------------- INICIALIZACIÓN --------------------
 document.addEventListener("DOMContentLoaded", async () => {
-    await initUser();
-
-    // Personalización
+    document.getElementById("reward3Btn").addEventListener("click", () => toggleShow("tableColorPicker"));
     document.getElementById("rewardBgBtn").addEventListener("click", () => toggleShow("backgroundPicker"));
     document.getElementById("rewardNameBtn").addEventListener("click", () => toggleShow("nameColorPicker"));
-    document.getElementById("reward3Btn").addEventListener("click", () => toggleShow("tableColorPicker"));
 
-    document.getElementById("backgroundPicker")?.addEventListener("input", (e) => setBackgroundColor(e.target.value));
-    document.getElementById("nameColorPicker")?.addEventListener("input", (e) => setNameColor(e.target.value));
-    document.getElementById("tableColorPicker")?.addEventListener("input", (e) => setTableColor(e.target.value));
+    document.getElementById("backgroundPicker").addEventListener("input", (e) => setBackgroundColor(e.target.value));
+    document.getElementById("nameColorPicker").addEventListener("input", (e) => setNameColor(e.target.value));
+    document.getElementById("tableColorPicker").addEventListener("input", (e) => setTableColor(e.target.value));
 
+    document.getElementById("userInfo").addEventListener("click", toggleDropdown);
+    document.addEventListener("click", (e) => {
+        const ui = document.getElementById("userInfo"), dd = document.getElementById("dropdownMenu");
+        if (!ui.contains(e.target) && !dd.contains(e.target)) dd.style.display = "none";
+    });
+
+    await initUser();
     await loadTop5();
 });
 
+// -------------------- LOG DE ACTIVIDADES --------------------
+async function logActividad(accion, detalle = "") {
+    if (!currentUser) return;
+    const { error } = await supabase.from("actividad").insert([{
+        user_id: currentUser.id,
+        accion: accion,
+        detalle: detalle,
+        fecha: new Date().toISOString()
+    }]);
+    if (error) console.error("Error registrando actividad:", error);
+}
+
 // -------------------- LOGIN / LOGOUT --------------------
-function logout() {
+async function logout() {
     localStorage.removeItem("currentUser");
     currentUser = null;
     window.location.href = "l.html";
+    await logActividad("Cerró sesión");
 }
 
 // -------------------- USUARIO --------------------
 async function initUser() {
     try {
         const saved = localStorage.getItem("currentUser");
-        if (!saved) {
-            alert("No estás logueado");
-            window.location.href = "l.html";
-            return;
-        }
-        const localUser = JSON.parse(saved);
-
-        if (!localUser.id) {
-            console.error("Usuario en localStorage no tiene id válido:", localUser);
-            alert("No se puede cargar tu cuenta correctamente. Vuelve a iniciar sesión.");
-            localStorage.removeItem("currentUser");
-            window.location.href = "l.html";
+        if (saved) {
+            currentUser = JSON.parse(saved);
+            renderUserUI();
+            showDailyButton();
             return;
         }
 
-        // Cargar datos reales desde Supabase
-        const { data, error } = await supabase.from("usuarios")
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+            document.getElementById("authContainer").style.display = "flex";
+            document.getElementById("userInfo").style.display = "none";
+            return;
+        }
+
+        const { data, error } = await supabase
+            .from("usuarios")
             .select("*")
-            .eq("id", localUser.id)
-            .single();
+            .eq("auth_id", user.id)
+            .maybeSingle();
 
-        if (error || !data) {
-            console.error("Error cargando datos de usuario:", error);
-            alert("No se ha podido cargar los datos de tu usuario. Vuelve a iniciar sesión.");
-            localStorage.removeItem("currentUser");
-            window.location.href = "l.html";
+        if (error) {
+            console.error("Error cargando usuario:", error);
+            alert("No se pudo cargar tus datos.");
             return;
         }
+
+        if (!data) return;
 
         currentUser = data;
         localStorage.setItem("currentUser", JSON.stringify(currentUser));
         renderUserUI();
-        setupDailyButton();
+        showDailyButton();
     } catch (err) {
-        console.error("Error initUser:", err);
-        alert("Ocurrió un error inesperado al cargar tu usuario.");
+        console.error("initUser exception:", err);
+        alert("Error al cargar tus datos de usuario.");
     }
 }
 
 function renderUserUI() {
-    if (!currentUser) return;
+    const authContainer = document.getElementById("authContainer");
+    const userInfo = document.getElementById("userInfo");
 
-    document.getElementById("userName").textContent = currentUser.username || "Usuario";
-    document.getElementById("pekepuntos").textContent = `Pekepuntos: ${(currentUser.pekepuntos || 0).toLocaleString()}`;
+    if (currentUser) {
+        authContainer.style.display = "none";
+        userInfo.style.display = "flex";
+        document.getElementById("userName").textContent = currentUser.username || "Usuario";
+        document.getElementById("pekepuntos").textContent = `Pekepuntos: ${(currentUser.pekepuntos || 0).toLocaleString()}`;
 
-    if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
-    if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
-    if (currentUser.tabla_color) applyTableColor(currentUser.tabla_color);
-
-    document.getElementById("authContainer").style.display = "none";
-    document.getElementById("userInfo").style.display = "flex";
+        if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
+        if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
+        if (currentUser.tabla_color) {
+            applyTableColor(currentUser.tabla_color);
+            document.getElementById("tableColorPicker").value = currentUser.tabla_color;
+        }
+    } else {
+        authContainer.style.display = "flex";
+        userInfo.style.display = "none";
+        document.getElementById("pekepuntos").textContent = "Pekepuntos: 0";
+    }
 }
 
 // -------------------- TOP 5 --------------------
 async function loadTop5() {
     const top5List = document.getElementById("top5List");
-    if (!top5List) return;
+    top5List.innerHTML = '<li style="color:#aaa;">Cargando top 5...</li>';
 
-    top5List.innerHTML = "<li>Cargando...</li>";
-    const { data, error } = await supabase.from("usuarios")
-        .select("username, pekepuntos, nombre_color")
-        .order("pekepuntos", { ascending: false })
-        .limit(5);
+    try {
+        const { data, error } = await supabase
+            .from("usuarios")
+            .select("id, username, pekepuntos, nombre_color")
+            .order("pekepuntos", { ascending: false })
+            .limit(5);
 
-    if (error) {
-        top5List.innerHTML = `<li>Error: ${error.message}</li>`;
-        return;
+        if (error) {
+            top5List.innerHTML = `<li style="color:red;">❌ Error al cargar el Top 5:<br>${error.message}</li>`;
+            console.error(error);
+            return;
+        }
+
+        if (!data || data.length === 0) {
+            top5List.innerHTML = '<li style="color:#ccc;">(No hay jugadores aún en la base de datos)</li>';
+            return;
+        }
+
+        top5List.innerHTML = "";
+        data.forEach((u, idx) => {
+            const li = document.createElement("li");
+            li.className = "top5-item";
+            const color = idx === 0 ? "gold" : idx === 1 ? "silver" : idx === 2 ? "#b87333" : u.nombre_color || "#fff";
+            li.innerHTML = `
+                <div style="flex:1;text-align:left;">
+                    <strong style="color:${color}">${idx + 1}. ${u.username}</strong>
+                    <div style="font-size:0.9rem;color:#ddd;">${(u.pekepuntos || 0).toLocaleString()} Pekepuntos</div>
+                </div>
+            `;
+            top5List.appendChild(li);
+        });
+    } catch (e) {
+        console.error("loadTop5 exception:", e);
     }
-
-    top5List.innerHTML = "";
-    data.forEach((u, idx) => {
-        const li = document.createElement("li");
-        const color = idx === 0 ? "gold" : idx === 1 ? "silver" : idx === 2 ? "#b87333" : u.nombre_color || "#fff";
-        li.innerHTML = `<strong style="color:${color}">${idx + 1}. ${u.username}</strong> - ${u.pekepuntos.toLocaleString()} Pekepuntos`;
-        top5List.appendChild(li);
-    });
 }
 
-// -------------------- RECOMPENSA DIARIA --------------------
-function setupDailyButton() {
-    const dailyBtn = document.createElement("button");
-    dailyBtn.textContent = "🎁 Reclamar 100 Pekepuntos diarios";
-    dailyBtn.className = "reward-button";
-    dailyBtn.addEventListener("click", reclamarRecompensa);
-    document.getElementById("rewardsSection").prepend(dailyBtn);
+// -------------------- RECOMPENSAS DIARIAS --------------------
+function showDailyButton() {
+    if (!document.getElementById("dailyButton") && currentUser) {
+        const dailyDiv = document.createElement("div");
+        dailyDiv.innerHTML = `<button id="dailyButton" class="reward-button" onclick="reclamarRecompensa()">🎁 Reclamar 100 Pekepuntos diarios</button>`;
+        document.getElementById("pekepuntos").after(dailyDiv);
+        checkDailyStatus();
+    }
+}
+
+async function checkDailyStatus() {
+    if (!currentUser) return;
+    const lastClaim = currentUser.last_claim;
+    const btn = document.getElementById("dailyButton");
+    if (!btn || !lastClaim) return;
+
+    const last = new Date(lastClaim);
+    const now = new Date();
+    const diffHours = (now - last) / 36e5;
+
+    if (diffHours < 24) {
+        btn.disabled = true;
+        const remaining = Math.ceil(24 - diffHours);
+        btn.textContent = `⏳ Ya reclamaste — vuelve en ${remaining}h`;
+    }
 }
 
 async function reclamarRecompensa() {
-    if (!currentUser) return;
+    if (!currentUser) return alert("Debes iniciar sesión.");
 
     const now = new Date();
-    const last = currentUser.last_claim ? new Date(currentUser.last_claim) : null;
-    if (last && (now - last) / 36e5 < 24) {
-        alert(`Ya reclamaste hoy. Espera ${Math.ceil(24 - ((now - last) / 36e5))}h`);
-        return;
+    const lastClaim = currentUser.last_claim ? new Date(currentUser.last_claim) : null;
+    const diffHours = lastClaim ? (now - lastClaim) / 36e5 : 25;
+
+    if (diffHours < 24) {
+        const horasRestantes = Math.ceil(24 - diffHours);
+        return alert(`Debes esperar ${horasRestantes} horas para volver a reclamar.`);
     }
 
-    const nuevos = (currentUser.pekepuntos || 0) + 100;
-    const { error } = await supabase.from("usuarios")
-        .update({ pekepuntos: nuevos, last_claim: now.toISOString() })
+    const nuevosPekepuntos = (currentUser.pekepuntos || 0) + 100;
+    const { error } = await supabase
+        .from("usuarios")
+        .update({ pekepuntos: nuevosPekepuntos, last_claim: now.toISOString() })
         .eq("id", currentUser.id);
 
-    if (error) return alert("Error al reclamar pekepuntos: " + error.message);
+    if (error) {
+        console.error(error);
+        return alert("Error al reclamar los pekepuntos.");
+    }
 
-    currentUser.pekepuntos = nuevos;
+    currentUser.pekepuntos = nuevosPekepuntos;
     currentUser.last_claim = now.toISOString();
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
-    document.getElementById("pekepuntos").textContent = `Pekepuntos: ${nuevos.toLocaleString()}`;
-    alert("¡Recompensa diaria reclamada!");
+
+    document.getElementById("pekepuntos").innerText = `Pekepuntos: ${nuevosPekepuntos}`;
+
+    await logActividad("Reclamó recompensa diaria", `+100 Pekepuntos (total: ${nuevosPekepuntos})`);
+
+    alert("¡Has reclamado 100 pekepuntos!");
 }
 
 // -------------------- PERSONALIZACIÓN --------------------
 function toggleShow(id) {
     const el = document.getElementById(id);
-    if (el) el.style.display = el.style.display === "block" ? "none" : "block";
+    el.style.display = el.style.display === "block" ? "none" : "block";
+}
+
+function toggleDropdown() {
+    const dd = document.getElementById("dropdownMenu");
+    dd.style.display = dd.style.display === "block" ? "none" : "block";
+}
+
+function applyTableColor(color) {
+    document.querySelectorAll(".section").forEach(sec => sec.style.backgroundColor = color);
+    document.querySelectorAll("table").forEach(tbl => tbl.style.backgroundColor = color);
 }
 
 async function setBackgroundColor(color) {
     document.body.style.backgroundColor = color;
-    if (currentUser) await updateUserField("fondo_color", color);
+    if (currentUser) {
+        await supabase.from("usuarios").update({ fondo_color: color }).eq("id", currentUser.id);
+        currentUser.fondo_color = color;
+        localStorage.setItem("currentUser", JSON.stringify(currentUser));
+        await logActividad("Cambio de fondo", `Color: ${color}`);
+    }
 }
 
 async function setNameColor(color) {
     document.getElementById("userName").style.color = color;
-    if (currentUser) await updateUserField("nombre_color", color);
+    if (currentUser) {
+        await supabase.from("usuarios").update({ nombre_color: color }).eq("id", currentUser.id);
+        currentUser.nombre_color = color;
+        localStorage.setItem("currentUser", JSON.stringify(currentUser));
+        await logActividad("Cambio color de nombre", `Color: ${color}`);
+    }
 }
 
 async function setTableColor(color) {
     applyTableColor(color);
-    if (currentUser) await updateUserField("tabla_color", color);
-}
-
-function applyTableColor(color) {
-    document.querySelectorAll("table").forEach(tbl => tbl.style.backgroundColor = color);
-}
-
-async function updateUserField(field, value) {
-    const { error } = await supabase.from("usuarios").update({ [field]: value }).eq("id", currentUser.id);
-    if (!error) currentUser[field] = value;
-    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+    if (currentUser) {
+        await supabase.from("usuarios").update({ tabla_color: color }).eq("id", currentUser.id);
+        currentUser.tabla_color = color;
+        localStorage.setItem("currentUser", JSON.stringify(currentUser));
+        await logActividad("Cambio color de tabla", `Color: ${color}`);
+    }
 }
 </script>
 </body>  
