@@ -1,76 +1,160 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Consola de Actividad</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Consola de Actividad (Admin)</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
-  body { background-color: #000; color: #0f0; font-family: "Courier New", monospace; padding: 20px; white-space: pre-wrap; overflow-y: scroll; }
-  h1 { color: #0f0; text-shadow: 0 0 10px #0f0; }
-  .error { color: red; text-align: center; font-size: 24px; margin-top: 100px; }
+  body { background:#000; color:#0f0; font-family: "Courier New", monospace; padding:20px; white-space:pre-wrap; }
+  h1 { color:#0f0; text-shadow:0 0 10px #0f0; }
+  .error { color:#ff5c5c; font-size:20px; text-align:center; margin-top:80px; }
+  #output { max-height:70vh; overflow:auto; margin-top:12px; border-top:1px solid #0f0; padding-top:8px; }
+  .small { color: #bbb; font-size: 12px; margin-top:6px; }
 </style>
 </head>
 <body>
 <h1>Consola de Actividad</h1>
+<div id="info" class="small">Comprobando sesión...</div>
 <div id="output"></div>
 
 <script>
-// 🔧 CONFIGURACIÓN SUPABASE
-const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const supabaseKey = "TU_SUPABASE_PUBLIC_KEY"; // reemplaza con tu clave
+// -------------------------------
+// CONFIG (REEMPLAZA ESTO)
+// -------------------------------
+const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";           // tu URL Supabase
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; 
+const adminNames = ["Peketruli"];                                        // <-- Opcional, nombre en metadata si usas eso
+
+// -------------------------------
+// Inicializar Supabase
+// -------------------------------
 const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-// 🔑 CLAVE SECRETA PARA PEKETRULI
-const claveSecreta = "yo_soy_peketruli"; // cambia esto a cualquier frase secreta que solo tú sepas
+// elementos
+const info = document.getElementById("info");
+const output = document.getElementById("output");
 
-// ✅ ACCESO SIMPLIFICADO
-const acceso = prompt("Introduce la clave para abrir la consola:");
-if(acceso !== claveSecreta){
-  document.body.innerHTML = "<h1 class='error'>Casi pero no, vuelve cuando seas admin 😎</h1>";
-} else {
-  iniciarConsola();
+// -------------------------------
+// Función para comprobar si el user es admin
+// -------------------------------
+async function esAdmin() {
+  // obtiene el usuario desde la sesión real de Supabase
+  const { data: userData, error: userErr } = await supabase.auth.getUser();
+
+  if (userErr) {
+    console.error("Error al obtener usuario:", userErr);
+    return { ok: false, reason: "error" };
+  }
+
+  const user = userData?.user;
+  if (!user) return { ok: false, reason: "no_session" };
+
+  // extrae campos útiles
+  const email = user.email || "";
+  // metadata puede variar según cómo guardes el nombre: prueba varios campos comunes
+  const meta = user.user_metadata || {};
+  const metadataName = meta.name || meta.preferred_name || meta.username || meta.full_name || "";
+
+  // comprobaciones:
+  const emailMatch = adminEmails.some(a => a.toLowerCase() === email.toLowerCase());
+  const nameMatch = adminNames.some(a => a.toLowerCase() === (metadataName || "").toLowerCase());
+  const displayNameMatch = adminNames.some(a => a.toLowerCase() === (user.user_metadata?.displayName || "").toLowerCase());
+
+  // devolver info para logs
+  return {
+    ok: emailMatch || nameMatch || displayNameMatch,
+    user,
+    email,
+    metadataName,
+    matches: { emailMatch, nameMatch, displayNameMatch }
+  };
 }
 
-// 🚀 FUNCIONES DE CONSOLA
-async function iniciarConsola(){
+// -------------------------------
+// Iniciar (comprobación + UI)
+// -------------------------------
+(async function init() {
+  info.innerText = "Comprobando sesión en Supabase...";
+  const check = await esAdmin();
+
+  if (!check.ok) {
+    // mostrar mensaje de acceso denegado con motivo razonable
+    if (check.reason === "no_session") {
+      document.body.innerHTML = `
+        <h1 class="error">Acceso denegado</h1>
+        <p style="color:#ffb86b; text-align:center;">No hay sesión activa. Inicia sesión con tu cuenta (Supabase Auth) para acceder.</p>
+        <p style="text-align:center; margin-top:12px;"><a href="/login.html" style="color:#0f0">Ir a login</a></p>
+      `;
+    } else {
+      document.body.innerHTML = "<h1 class='error'>Casi pero no, vuelve cuando seas admin 😎</h1>";
+    }
+    return;
+  }
+
+  // si es admin, iniciamos la consola
+  info.innerText = `Conectado como: ${check.email || check.metadataName} — iniciando consola...`;
+  iniciarConsola();
+})();
+
+// -------------------------------
+// FUNCIONES DE CONSOLA
+// -------------------------------
+async function iniciarConsola() {
   log("🟢 Bienvenido, Peketruli. Consola conectada a Supabase...\n");
 
+  // cargar historial (los últimos 200 registros por ejemplo)
   const { data, error } = await supabase
     .from("actividad")
     .select("*")
-    .order("fecha", { ascending: true });
+    .order("fecha", { ascending: true })
+    .limit(200);
 
-  if(error) log("❌ Error al cargar actividad: " + error.message);
-  else if(!data || data.length === 0) log("Sin registros anteriores.\n───────────────\n");
-  else {
+  if (error) {
+    log("❌ Error al cargar actividad: " + error.message);
+  } else if (!data || data.length === 0) {
+    log("Sin registros anteriores.\n───────────────\n");
+  } else {
     data.forEach(row => {
-      const hora = new Date(row.fecha).toLocaleTimeString();
+      const hora = new Date(row.fecha).toLocaleString();
       log(`[${hora}] ${row.usuario} ${row.accion}`);
     });
     log("───────────────\n");
   }
 
+  // suscripción en tiempo real a nuevos INSERTs en tabla actividad
   supabase
     .channel("actividad_changes")
     .on("postgres_changes", { event: "INSERT", schema: "public", table: "actividad" }, payload => {
       const nuevo = payload.new;
-      const hora = new Date(nuevo.fecha).toLocaleTimeString();
+      const hora = new Date(nuevo.fecha).toLocaleString();
       log(`[${hora}] ${nuevo.usuario} ${nuevo.accion}`);
     })
-    .subscribe();
+    .subscribe()
+    .then(() => log("Suscripción a actividad en tiempo real activada."))
+    .catch(e => log("No se pudo suscribir en tiempo real: " + (e?.message || e)));
 }
 
-// Registrar actividad
-window.registrarActividad = async function(accion){
-  const usuario = "Peketruli"; // siempre Peketruli para tu consola
-  const { error } = await supabase.from("actividad").insert([{ usuario, accion, fecha: new Date().toISOString() }]);
-  if(error) console.error("Error al registrar actividad:", error.message);
-}
+// registrarActividad: usa la sesión real para extraer quien manda la acción
+window.registrarActividad = async function(accion) {
+  // intenta obtener usuario desde sesión
+  const { data: userData } = await supabase.auth.getUser();
+  const user = userData?.user;
+  const usuario = user?.email || user?.user_metadata?.name || localStorage.getItem("currentUser") || "Desconocido";
 
-// Mostrar mensajes
-function log(msg){
-  const output = document.getElementById("output");
+  const { error } = await supabase.from("actividad").insert([{
+    usuario,
+    accion,
+    fecha: new Date().toISOString()
+  }]);
+
+  if (error) {
+    console.error("Error al registrar actividad:", error.message);
+  }
+};
+
+// log visual en pantalla
+function log(msg) {
   output.innerHTML += `[${new Date().toLocaleTimeString()}] ${msg}\n`;
   output.scrollTop = output.scrollHeight;
 }
