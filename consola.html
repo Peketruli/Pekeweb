@@ -17,7 +17,7 @@
 
 <script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImF4IiwiZXhwIjoxNzYwMDAwMDAwfQ==";
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const statusEl = document.getElementById("status");
@@ -26,12 +26,7 @@ const logEl = document.getElementById("log");
 // Leer usuario del localStorage
 let rawUser = localStorage.getItem("currentUser");
 let currentUser = null;
-
-try {
-  currentUser = JSON.parse(rawUser); // Si es JSON
-} catch {
-  currentUser = rawUser; // Si solo es string
-}
+try { currentUser = JSON.parse(rawUser); } catch { currentUser = rawUser; }
 
 // Comprobar si es admin
 function isAdmin(user){
@@ -41,7 +36,31 @@ function isAdmin(user){
   return false;
 }
 
-// Iniciar consola
+// -------------------- ELIMINAR TODOS LOS REGISTROS --------------------
+async function clearAllActivity() {
+  try {
+    const { error } = await supabase.from("actividad").delete().neq("id",0);
+    if(error) console.error("Error eliminando actividad:", error);
+    else logEl.textContent += "✅ Todos los registros antiguos eliminados.\n";
+  } catch(e) { console.error("Exception eliminando actividad:", e); }
+}
+
+// -------------------- LOG DIRECTO A SUPABASE --------------------
+async function logActividad(accion, detalle="") {
+  if(!currentUser) return;
+  try {
+    const { error } = await supabase.from("actividad").insert([{
+      user_id: currentUser.id || null,
+      usuario: currentUser.username || currentUser || "Desconocido",
+      accion: accion,
+      detalle: detalle,
+      fecha: new Date().toISOString()
+    }]);
+    if(error) console.error("Error registrando actividad:", error);
+  } catch(e){ console.error("Exception logActividad:", e); }
+}
+
+// -------------------- INICIALIZACIÓN DE LA CONSOLA --------------------
 async function initConsole() {
   if(!isAdmin(currentUser)){
     document.body.innerHTML = "<h1 class='error'>Casi pero no, vuelve cuando seas admin 😎</h1>";
@@ -50,6 +69,9 @@ async function initConsole() {
 
   statusEl.textContent = `🟢 Bienvenido Peketruli — acceso concedido`;
   logEl.textContent = "Cargando actividad...\n";
+
+  // Borrar registros antiguos
+  await clearAllActivity();
 
   // Historial
   const { data, error } = await supabase.from("actividad").select("*").order("fecha",{ascending:true});
