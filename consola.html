@@ -21,27 +21,137 @@
 
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <script>
-const supabase = window.supabase.createClient(
-  "https://jdvwlfogkzrzovepzjqa.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"
-);
+  // consola.js — Panel de administración conectado a Supabase
 
-// 🔹 Función global para registrar actividad
-async function registrarActividad(accion) {
-  let user = localStorage.getItem("currentUser");
-  try { user = JSON.parse(user); } catch {}
-  if (typeof user === "object" && user?.username) user = user.username;
-  if (!user) user = "Invitado";
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  const { error } = await supabase.from("actividad").insert([
-    { usuario: user, accion, fecha: new Date().toISOString() }
-  ]);
+// ===============================
+// 🔹 FUNCIONES GENERALES
+// ===============================
 
-  if (error) console.error("❌ Error al registrar actividad:", error.message);
+// Obtener usuario actual del localStorage
+function getCurrentUser() {
+  try {
+    const data = localStorage.getItem("currentUser");
+    return data ? JSON.parse(data) : null;
+  } catch (err) {
+    console.error("Error leyendo usuario:", err);
+    return null;
+  }
 }
 
-// Ejemplo de uso:
-registrarActividad("ha iniciado sesión");
+// Registrar actividad globalmente
+async function registrarActividad(accion) {
+  const user = getCurrentUser();
+  const usuario = user?.username || "Desconocido";
+
+  try {
+    const { error } = await supabase.from("actividad").insert([
+      {
+        usuario,
+        accion,
+        fecha: new Date().toISOString(),
+      },
+    ]);
+    if (error) console.error("❌ Error al registrar:", error.message);
+    else console.log("✅ Actividad registrada:", usuario, accion);
+  } catch (err) {
+    console.error("⚠️ Error general al registrar actividad:", err);
+  }
+}
+
+// ===============================
+// 🔹 MOSTRAR REGISTROS DE SUPABASE
+// ===============================
+
+async function mostrarRegistros() {
+  const tabla = document.getElementById("tabla-actividad");
+  if (!tabla) return;
+
+  tabla.innerHTML = `
+    <tr>
+      <th>Usuario</th>
+      <th>Acción</th>
+      <th>Fecha</th>
+    </tr>
+  `;
+
+  try {
+    const { data, error } = await supabase
+      .from("actividad")
+      .select("*")
+      .order("fecha", { ascending: false });
+
+    if (error) throw error;
+
+    data.forEach((registro) => {
+      const fila = document.createElement("tr");
+      fila.innerHTML = `
+        <td>${registro.usuario}</td>
+        <td>${registro.accion}</td>
+        <td>${new Date(registro.fecha).toLocaleString()}</td>
+      `;
+      tabla.appendChild(fila);
+    });
+  } catch (err) {
+    console.error("Error cargando registros:", err.message);
+  }
+}
+
+// ===============================
+// 🔹 LIMPIAR REGISTROS
+// ===============================
+
+async function limpiarRegistros() {
+  if (!confirm("¿Seguro que quieres eliminar todos los registros?")) return;
+
+  try {
+    const { error } = await supabase.from("actividad").delete().neq("id", 0);
+    if (error) throw error;
+
+    alert("✅ Todos los registros fueron eliminados correctamente.");
+    await registrarActividad("ha eliminado todos los registros");
+    mostrarRegistros();
+  } catch (err) {
+    alert("❌ Error al eliminar los registros: " + err.message);
+  }
+}
+
+// ===============================
+// 🔹 VERIFICAR USUARIO Y ACCESO
+// ===============================
+
+function verificarAcceso() {
+  const user = getCurrentUser();
+  const contenido = document.getElementById("contenido");
+  const accesoDenegado = document.getElementById("acceso-denegado");
+
+  if (user && user.username === "Peketruli") {
+    // Acceso permitido
+    contenido.style.display = "block";
+    accesoDenegado.style.display = "none";
+    registrarActividad("ha accedido a la consola de administración");
+    mostrarRegistros();
+  } else {
+    // Bloqueado
+    contenido.style.display = "none";
+    accesoDenegado.style.display = "block";
+  }
+}
+
+// ===============================
+// 🔹 EJECUCIÓN AUTOMÁTICA
+// ===============================
+
+document.addEventListener("DOMContentLoaded", () => {
+  verificarAcceso();
+
+  const limpiarBtn = document.getElementById("btn-limpiar");
+  if (limpiarBtn) limpiarBtn.addEventListener("click", limpiarRegistros);
+});
+
 </script>
 
 </body>
