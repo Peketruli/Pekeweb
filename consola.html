@@ -8,13 +8,16 @@
   body { background:#000; color:#0f0; font-family:"Courier New",monospace; padding:20px; white-space:pre-wrap; overflow-y:auto; }
   h1 { color:#0f0; text-shadow:0 0 10px #0f0; }
   .error { color:red; text-align:center; font-size:24px; margin-top:100px; }
-  #log { display:none; }
-  #status { display:none; }
+  #log { display:none; margin-top:20px; }
+  #status { display:none; margin-bottom:10px; }
+  #clearBtn { margin-top:10px; padding:6px 12px; background:#111; color:#0f0; border:1px solid #0f0; cursor:pointer; border-radius:6px; }
+  #clearBtn:hover { background:#0f0; color:#000; }
 </style>
 </head>
 <body>
 <h1>Consola de Actividad</h1>
 <div id="status"></div>
+<button id="clearBtn">🧹 Limpiar todos los registros</button>
 <pre id="log"></pre>
 
 <script>
@@ -24,6 +27,7 @@ const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const statusEl = document.getElementById("status");
 const logEl = document.getElementById("log");
+const clearBtn = document.getElementById("clearBtn");
 
 // Leer usuario del localStorage
 let rawUser = localStorage.getItem("currentUser");
@@ -42,8 +46,13 @@ function isAdmin(user){
 async function clearAllActivity() {
   try {
     const { error } = await supabase.from("actividad").delete().neq("id",0);
-    if(error) console.error("Error eliminando actividad:", error);
-    else console.log("✅ Todos los registros antiguos eliminados.");
+    if(error) {
+      console.error("Error eliminando actividad:", error);
+      alert("❌ Error al limpiar registros: "+error.message);
+    } else {
+      logEl.textContent = "🧹 Todos los registros eliminados.\n";
+      console.log("✅ Todos los registros eliminados");
+    }
   } catch(e) { console.error("Exception eliminando actividad:", e); }
 }
 
@@ -69,25 +78,20 @@ async function initConsole() {
     return;
   }
 
-  // Borrar registros antes de mostrar la consola
-  await clearAllActivity();
-
-  // Mostrar consola tras limpiar
+  // Mostrar consola
   statusEl.style.display = "block";
   logEl.style.display = "block";
+
   statusEl.textContent = `🟢 Bienvenido Peketruli — acceso concedido`;
   logEl.textContent = "Cargando actividad...\n";
+
+  // Limpiar los registros al cargar
+  await clearAllActivity();
 
   // Historial (ya vacío, pero por si hay nuevas inserciones)
   const { data, error } = await supabase.from("actividad").select("*").order("fecha",{ascending:true});
   if(error){ logEl.textContent += "❌ Error: "+error.message; return; }
   if(!data || data.length === 0){ logEl.textContent += "Sin registros anteriores.\n"; }
-  else{
-    data.forEach(r=>{
-      const hora = new Date(r.fecha).toLocaleTimeString();
-      logEl.textContent += `[${hora}] ${r.usuario} ${r.accion}\n`;
-    });
-  }
 
   // Tiempo real
   supabase.channel("actividad_changes")
@@ -99,6 +103,13 @@ async function initConsole() {
     })
     .subscribe();
 }
+
+// -------------------- BOTÓN LIMPIAR --------------------
+clearBtn.addEventListener("click", async () => {
+  if(confirm("⚠️ ¿Estás seguro de eliminar todos los registros? Esta acción no se puede deshacer.")) {
+    await clearAllActivity();
+  }
+});
 
 initConsole();
 </script>
