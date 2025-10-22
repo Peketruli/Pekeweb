@@ -3,7 +3,6 @@
 <head>
 <meta charset="utf-8">
 <title>Consola de Actividad</title>
-<script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
   body { background:#000; color:#0f0; font-family:"Courier New",monospace; padding:20px; white-space:pre-wrap; overflow-y:auto; }
   h1 { color:#0f0; text-shadow:0 0 10px #0f0; }
@@ -20,90 +19,30 @@
 <button id="clearBtn">🧹 Limpiar todos los registros</button>
 <pre id="log"></pre>
 
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
 <script>
-const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = window.supabase.createClient(
+  "https://jdvwlfogkzrzovepzjqa.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"
+);
 
-const statusEl = document.getElementById("status");
-const logEl = document.getElementById("log");
-const clearBtn = document.getElementById("clearBtn");
+// 🔹 Función global para registrar actividad
+async function registrarActividad(accion) {
+  let user = localStorage.getItem("currentUser");
+  try { user = JSON.parse(user); } catch {}
+  if (typeof user === "object" && user?.username) user = user.username;
+  if (!user) user = "Invitado";
 
-// Leer usuario del localStorage
-let rawUser = localStorage.getItem("currentUser");
-let currentUser = null;
-try { currentUser = JSON.parse(rawUser); } catch { currentUser = rawUser; }
+  const { error } = await supabase.from("actividad").insert([
+    { usuario: user, accion, fecha: new Date().toISOString() }
+  ]);
 
-// Comprobar si es admin
-function isAdmin(user){
-  if(!user) return false;
-  if(typeof user === "string") return user === "Peketruli";
-  if(typeof user === "object") return user.username === "Peketruli";
-  return false;
+  if (error) console.error("❌ Error al registrar actividad:", error.message);
 }
 
-// -------------------- ELIMINAR TODOS LOS REGISTROS --------------------
-async function clearAllActivity() {
-  try {
-    const { error } = await supabase.from("actividad").delete().neq("id",0);
-    if(error) {
-      console.error("Error eliminando actividad:", error);
-      alert("❌ Error al limpiar registros: "+error.message);
-    } else {
-      logEl.textContent = "🧹 Todos los registros eliminados.\n";
-      console.log("✅ Todos los registros eliminados");
-    }
-  } catch(e) { console.error("Exception eliminando actividad:", e); }
-}
-
-// -------------------- MOSTRAR ACTIVIDAD --------------------
-async function loadActivity() {
-  logEl.textContent = "Cargando actividad...\n";
-  const { data, error } = await supabase.from("actividad").select("*").order("fecha",{ascending:true});
-  if(error){ logEl.textContent += "❌ Error: "+error.message; return; }
-  if(!data || data.length === 0){ logEl.textContent += "Sin registros anteriores.\n"; }
-  else{
-    data.forEach(r=>{
-      const hora = new Date(r.fecha).toLocaleTimeString();
-      logEl.textContent += `[${hora}] ${r.usuario} ${r.accion}\n`;
-    });
-  }
-  logEl.scrollTop = logEl.scrollHeight;
-}
-
-// -------------------- INICIALIZACIÓN DE LA CONSOLA --------------------
-async function initConsole() {
-  if(!isAdmin(currentUser)){
-    document.body.innerHTML = "<h1 class='error'>Casi pero no, vuelve cuando seas admin 😎</h1>";
-    return;
-  }
-
-  // Mostrar consola
-  statusEl.style.display = "block";
-  logEl.style.display = "block";
-
-  statusEl.textContent = `🟢 Bienvenido Peketruli — acceso concedido`;
-  await loadActivity();
-
-  // Suscripción en tiempo real
-  supabase.channel("actividad_changes")
-    .on("postgres_changes", {event:"INSERT", schema:"public", table:"actividad"}, payload=>{
-      const n = payload.new;
-      const hora = new Date(n.fecha).toLocaleTimeString();
-      logEl.textContent += `[${hora}] ${n.usuario} ${n.accion}\n`;
-      logEl.scrollTop = logEl.scrollHeight;
-    })
-    .subscribe();
-}
-
-// -------------------- BOTÓN LIMPIAR --------------------
-clearBtn.addEventListener("click", async () => {
-  if(confirm("⚠️ ¿Estás seguro de eliminar todos los registros? Esta acción no se puede deshacer.")) {
-    await clearAllActivity();
-  }
-});
-
-initConsole();
+// Ejemplo de uso:
+registrarActividad("ha iniciado sesión");
 </script>
+
 </body>
 </html>
