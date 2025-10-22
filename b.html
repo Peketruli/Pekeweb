@@ -326,12 +326,13 @@ input, textarea {
 </div>
 
 <script>
-// -------------------- Lógica de blogs (igual que la versión que funcionaba) --------------------
+// -------------------- Supabase --------------------
 const { createClient } = supabase;
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// -------------------- Usuario --------------------
 function getCurrentUser() { return JSON.parse(localStorage.getItem("currentUser")) || null; }
 function isUserLoggedIn() { return !!getCurrentUser(); }
 
@@ -344,6 +345,7 @@ function loadUserInfo() {
     authContainer.style.display = "none";
     document.getElementById("userName").textContent = user.username || "Usuario";
     document.getElementById("userLogo").src = user.logo || "logoDefault.png";
+    registrarActividad("ha iniciado sesión");
   } else {
     userInfo.style.display = "none";
     authContainer.style.display = "flex";
@@ -355,14 +357,43 @@ document.addEventListener("DOMContentLoaded", ()=>{
   loadBlogs();
 });
 
-function logout() { localStorage.removeItem("currentUser"); window.location.href="login.html"; }
+// Logout
+function logout() {
+  registrarActividad("ha cerrado sesión");
+  localStorage.removeItem("currentUser");
+  window.location.href="login.html";
+}
 
 const userInfoDiv = document.getElementById("userInfo");
 const dropdownMenu = document.getElementById("dropdownMenu");
-userInfoDiv.addEventListener("click", ()=>{ dropdownMenu.style.display = dropdownMenu.style.display==="block"?"none":"block"; });
-document.addEventListener("click",(e)=>{ if(!userInfoDiv.contains(e.target)&&!dropdownMenu.contains(e.target)) dropdownMenu.style.display="none"; });
+userInfoDiv.addEventListener("click", ()=>{ 
+  dropdownMenu.style.display = dropdownMenu.style.display==="block"?"none":"block"; 
+});
+document.addEventListener("click",(e)=>{
+  if(!userInfoDiv.contains(e.target)&&!dropdownMenu.contains(e.target)) dropdownMenu.style.display="none"; 
+});
 
-function showNewBlogForm(){ if(!isUserLoggedIn()){ alert("Debes iniciar sesión para publicar un blog"); return; } document.getElementById("newBlogForm").classList.remove("hidden"); }
+// -------------------- Registrar actividad --------------------
+async function registrarActividad(accion) {
+  const user = getCurrentUser();
+  const usuario = user?.username || "Desconocido";
+
+  try {
+    await db.from("actividad").insert([{
+      usuario,
+      accion,
+      fecha: new Date().toISOString()
+    }]);
+  } catch(err) {
+    console.error("Error registrando actividad:", err.message);
+  }
+}
+
+// -------------------- Blogs --------------------
+function showNewBlogForm(){ 
+  if(!isUserLoggedIn()){ alert("Debes iniciar sesión para publicar un blog"); return; } 
+  document.getElementById("newBlogForm").classList.remove("hidden"); 
+}
 function hideNewBlogForm(){ document.getElementById("newBlogForm").classList.add("hidden"); }
 
 async function loadBlogs(){
@@ -391,6 +422,7 @@ async function loadBlogs(){
   });
 }
 
+// -------------------- Likes --------------------
 async function toggleLike(blogId){
   const user=getCurrentUser(); if(!user){ alert("Inicia sesión para dar like"); return; }
   const likeKey=`like_${blogId}_${user.id}`;
@@ -403,8 +435,12 @@ async function toggleLike(blogId){
   btn.classList.toggle("liked");
   if(alreadyLiked) localStorage.removeItem(likeKey); else localStorage.setItem(likeKey,"true");
   await db.from("blog").update({likes:newLikes}).eq("id",blogId);
+
+  const blogTitle = (await db.from("blog").select("title").eq("id",blogId).single()).data?.title || "Desconocido";
+  registrarActividad(`${alreadyLiked ? "ha quitado like" : "ha dado like"} al blog "${blogTitle}"`);
 }
 
+// -------------------- Publicar blog --------------------
 async function publishBlog(){
   const user=getCurrentUser(); if(!user){ alert("Debes iniciar sesión"); return; }
   const title=document.getElementById("newTitle").value.trim();
@@ -422,6 +458,9 @@ async function publishBlog(){
   }
   const { error } = await db.from("blog").insert([{ title, content, author:user.username, media_url:mediaUrl, likes:0, comments:[] }]);
   if(error){ console.error(error); alert("Error al publicar"); return; }
+
+  registrarActividad(`ha publicado un blog: "${title}"`);
+
   hideNewBlogForm();
   document.getElementById("newTitle").value="";
   document.getElementById("newContent").value="";
@@ -429,6 +468,7 @@ async function publishBlog(){
   loadBlogs();
 }
 
+// -------------------- Abrir blog --------------------
 function openBlog(blog){
   document.getElementById("blogTitleDetail").textContent=blog.title;
   document.getElementById("blogContentDetail").textContent=blog.content;
@@ -446,6 +486,7 @@ function openBlog(blog){
   window.currentBlogId=blog.id;
 }
 
+// -------------------- Comentar --------------------
 async function publishComment(){
   const user=getCurrentUser(); if(!user){ alert("Debes iniciar sesión"); return; }
   const commentText=document.getElementById("newCommentText").value.trim(); if(!commentText){ alert("Escribe un comentario"); return; }
@@ -455,15 +496,18 @@ async function publishComment(){
   newComments.push({ author:user.username, comment:commentText });
   const { error: updateError } = await db.from("blog").update({comments:newComments}).eq("id",window.currentBlogId);
   if(updateError){ console.error(updateError); alert("Error al publicar comentario"); return; }
+
+  registrarActividad(`ha comentado en el blog "${blogData.title}"`);
+
   document.getElementById("newCommentText").value="";
   openBlog({...blogData, comments:newComments});
 }
 
+// -------------------- Cerrar blog --------------------
 function closeBlog(){
   document.getElementById("blogDetails").classList.add("hidden");
   document.getElementById("blogsList").classList.remove("hidden");
 }
 </script>
-
 </body>
 </html>
