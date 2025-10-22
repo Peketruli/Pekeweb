@@ -56,19 +56,19 @@ async function clearAllActivity() {
   } catch(e) { console.error("Exception eliminando actividad:", e); }
 }
 
-// -------------------- LOG DIRECTO A SUPABASE --------------------
-async function logActividad(accion, detalle="") {
-  if(!currentUser) return;
-  try {
-    const { error } = await supabase.from("actividad").insert([{
-      user_id: currentUser.id || null,
-      usuario: currentUser.username || currentUser || "Desconocido",
-      accion: accion,
-      detalle: detalle,
-      fecha: new Date().toISOString()
-    }]);
-    if(error) console.error("Error registrando actividad:", error);
-  } catch(e){ console.error("Exception logActividad:", e); }
+// -------------------- MOSTRAR ACTIVIDAD --------------------
+async function loadActivity() {
+  logEl.textContent = "Cargando actividad...\n";
+  const { data, error } = await supabase.from("actividad").select("*").order("fecha",{ascending:true});
+  if(error){ logEl.textContent += "❌ Error: "+error.message; return; }
+  if(!data || data.length === 0){ logEl.textContent += "Sin registros anteriores.\n"; }
+  else{
+    data.forEach(r=>{
+      const hora = new Date(r.fecha).toLocaleTimeString();
+      logEl.textContent += `[${hora}] ${r.usuario} ${r.accion}\n`;
+    });
+  }
+  logEl.scrollTop = logEl.scrollHeight;
 }
 
 // -------------------- INICIALIZACIÓN DE LA CONSOLA --------------------
@@ -83,17 +83,9 @@ async function initConsole() {
   logEl.style.display = "block";
 
   statusEl.textContent = `🟢 Bienvenido Peketruli — acceso concedido`;
-  logEl.textContent = "Cargando actividad...\n";
+  await loadActivity();
 
-  // Limpiar los registros al cargar
-  await clearAllActivity();
-
-  // Historial (ya vacío, pero por si hay nuevas inserciones)
-  const { data, error } = await supabase.from("actividad").select("*").order("fecha",{ascending:true});
-  if(error){ logEl.textContent += "❌ Error: "+error.message; return; }
-  if(!data || data.length === 0){ logEl.textContent += "Sin registros anteriores.\n"; }
-
-  // Tiempo real
+  // Suscripción en tiempo real
   supabase.channel("actividad_changes")
     .on("postgres_changes", {event:"INSERT", schema:"public", table:"actividad"}, payload=>{
       const n = payload.new;
