@@ -191,56 +191,7 @@ let currentBet = 0;
 let currentUser = null;
 let deck = [];
 
-// --- Cargar PekePuntos y verificar baneo ---
-async function loadPekePuntos() {
-    currentUser = JSON.parse(localStorage.getItem("currentUser"));
-    if(!currentUser) {
-        alert("Debes iniciar sesión para jugar.");
-        window.location.href = "login.html";
-        return;
-    }
-
-    // ✅ Verificar si está baneado
-    const { data, error } = await supabase
-        .from("usuarios")
-        .select("pekepuntos, banned")
-        .eq("id", currentUser.id)
-        .single();
-
-    if(error) { 
-        console.error(error); 
-        return; 
-    }
-
-    // ⚡ Aquí estaba el error: usabas `baneado` en vez de `banned`
-    if(data && data.banned === true){
-        alert("Has sido baneado y no puedes acceder al juego.");
-        document.getElementById("place-bet-button").disabled = true;
-        document.getElementById("hit-button").disabled = true;
-        document.getElementById("stand-button").disabled = true;
-        return;
-    }
-
-    currentUser.pekepuntos = data.pekepuntos;
-    document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
-    localStorage.setItem("currentUser", JSON.stringify(currentUser));
-}
-
-// --- Actualizar puntos según resultado ---
-async function updatePoints(result) {
-    if(result === "win") currentUser.pekepuntos += currentBet * 2;
-    else if(result === "tie") currentUser.pekepuntos += currentBet;
-    document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
-    const { error } = await supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
-    if(error) console.error("Error al actualizar Pekepuntos:", error);
-    localStorage.setItem("currentUser", JSON.stringify(currentUser));
-    currentBet = 0;
-    document.getElementById("bet-amount").disabled = false;
-    document.getElementById("place-bet-button").disabled = false;
-    document.getElementById("bet-amount").value = '';
-}
-
-// --- Baraja y valor de cartas ---
+// ------------------- UTILIDADES -------------------
 function createDeck(){
     const suits = ["♥","♦","♣","♠"];
     const values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
@@ -259,37 +210,76 @@ function handValue(hand){
     while(val>21 && aces>0){ val-=10; aces--; } 
     return val; 
 }
-
-// --- Mostrar cartas ---
 function renderHand(containerId, hand, hideSecond=false) {
     const container = document.getElementById(containerId);
     container.innerHTML = '';
     hand.forEach((card, index) => {
         const cardDiv = document.createElement('div');
         cardDiv.classList.add('card');
-        if(hideSecond && index === 1) cardDiv.classList.add('hidden');
+        if(hideSecond && index===1) cardDiv.classList.add('hidden');
         cardDiv.textContent = cardDiv.classList.contains('hidden') ? '??' : card.value + card.suit;
         container.appendChild(cardDiv);
     });
 }
 
-// --- Actualizar UI y puntos ---
+// ------------------- ACTIVIDAD -------------------
+async function registrarActividad(accion){
+    if(!currentUser) return;
+    await supabase.from("actividad").insert([{usuario: currentUser.username, accion, fecha: new Date().toISOString()}]);
+}
+
+// ------------------- CARGAR USUARIO -------------------
+async function loadPekePuntos() {
+    currentUser = JSON.parse(localStorage.getItem("currentUser"));
+    if(!currentUser){
+        alert("Debes iniciar sesión para jugar.");
+        window.location.href = "login.html";
+        return;
+    }
+    const { data, error } = await supabase
+        .from("usuarios")
+        .select("pekepuntos,banned")
+        .eq("id", currentUser.id)
+        .single();
+    if(error){ console.error(error); return; }
+    if(data.banned){
+        alert("Has sido baneado y no puedes acceder al juego.");
+        document.getElementById("place-bet-button").disabled = true;
+        document.getElementById("hit-button").disabled = true;
+        document.getElementById("stand-button").disabled = true;
+        return;
+    }
+    currentUser.pekepuntos = data.pekepuntos;
+    document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+}
+
+// ------------------- ACTUALIZAR PUNTOS -------------------
+async function updatePoints(result){
+    if(result==="win") currentUser.pekepuntos += currentBet*2;
+    else if(result==="tie") currentUser.pekepuntos += currentBet;
+
+    document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
+    await supabase.from("usuarios").update({pekepuntos: currentUser.pekepuntos}).eq("id", currentUser.id);
+    localStorage.setItem("currentUser", JSON.stringify(currentUser));
+    registrarActividad(`Resultado del Blackjack: ${result.toUpperCase()} con apuesta de ${currentBet} PekePuntos`);
+    currentBet=0;
+    document.getElementById("bet-amount").disabled=false;
+    document.getElementById("place-bet-button").disabled=false;
+    document.getElementById("bet-amount").value='';
+}
+
+// ------------------- JUEGO -------------------
 function updateUI(){
     renderHand('player-hand', playerHand);
     renderHand('dealer-hand', dealerHand, hideDealer);
-
-    const playerPoints = handValue(playerHand);
-    document.getElementById('player-points').textContent = `Suma: ${playerPoints}`;
-
-    const dealerPoints = hideDealer ? '?' : handValue(dealerHand);
-    document.getElementById('dealer-points').textContent = `Suma: ${dealerPoints}`;
+    document.getElementById('player-points').textContent = `Suma: ${handValue(playerHand)}`;
+    document.getElementById('dealer-points').textContent = `Suma: ${hideDealer ? '?' : handValue(dealerHand)}`;
 }
 
-// --- Finalizar juego ---
 function endGame(msg){
-    hideDealer=false; 
-    updateUI();
-    document.getElementById("game-message").textContent = msg;
+    hideDealer=false; updateUI();
+    document.getElementById("game-message").textContent=msg;
     document.getElementById("hit-button").disabled=true;
     document.getElementById("stand-button").disabled=true;
 
@@ -297,64 +287,43 @@ function endGame(msg){
     else if(msg.includes("Pierdes") || msg.includes("perdiste") || msg.includes("Crupier gana")) updatePoints("lose");
     else if(msg.includes("Empate")) updatePoints("tie");
 
-    document.getElementById("reset-button").style.display = "inline-block";
+    document.getElementById("reset-button").style.display="inline-block";
 }
 
-// --- Reiniciar ---
-document.getElementById("reset-button").addEventListener("click", ()=>{
-    playerHand = [];
-    dealerHand = [];
-    hideDealer = true;
-    deck = [];
-    currentBet = 0;
-
-    document.getElementById("player-hand").innerHTML = "";
-    document.getElementById("dealer-hand").innerHTML = "";
-    document.getElementById("player-points").textContent = "";
-    document.getElementById("dealer-points").textContent = "";
-    document.getElementById("game-message").textContent = "";
-
-    document.getElementById("bet-amount").disabled = false;
-    document.getElementById("place-bet-button").disabled = false;
-    document.getElementById("bet-amount").value = "";
-
-    document.getElementById("reset-button").style.display = "none";
-});
-
-// --- Iniciar juego ---
 function startGame(){
     deck = createDeck();
-    playerHand=[deck.pop(),deck.pop()];
-    dealerHand=[deck.pop(),deck.pop()];
-    hideDealer=true;
+    playerHand = [deck.pop(), deck.pop()];
+    dealerHand = [deck.pop(), deck.pop()];
+    hideDealer = true;
     updateUI();
     document.getElementById("hit-button").disabled=false;
     document.getElementById("stand-button").disabled=false;
     document.getElementById("game-message").textContent="";
 }
 
-// --- Eventos ---
+// ------------------- EVENTOS -------------------
 document.getElementById("place-bet-button").addEventListener("click", async ()=>{
-    const bet=parseInt(document.getElementById("bet-amount").value);
-    if(isNaN(bet) || bet<=0){ alert("Introduce una cantidad válida."); return; }
+    const bet = parseInt(document.getElementById("bet-amount").value);
+    if(isNaN(bet)||bet<=0){ alert("Introduce una cantidad válida."); return; }
     if(bet>currentUser.pekepuntos){ alert("No tienes suficientes PekePuntos."); return; }
 
     currentBet=bet;
     currentUser.pekepuntos -= currentBet;
-    document.getElementById("pekePuntos").textContent = `PekePuntos: ${currentUser.pekepuntos}`;
-
-    const { error } = await supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
+    document.getElementById("pekePuntos").textContent=`PekePuntos: ${currentUser.pekepuntos}`;
+    const { error } = await supabase.from("usuarios").update({pekepuntos: currentUser.pekepuntos}).eq("id", currentUser.id);
     if(error){ alert("Error al registrar la apuesta."); return; }
 
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
     document.getElementById("game-message").textContent=`Apuesta colocada: ${currentBet} PekePuntos`;
+    registrarActividad(`Ha apostado ${currentBet} PekePuntos`);
     document.getElementById("bet-amount").disabled=true;
     document.getElementById("place-bet-button").disabled=true;
     startGame();
 });
 
 document.getElementById("hit-button").addEventListener("click",()=>{
-    playerHand.push(deck.pop()); updateUI();
+    playerHand.push(deck.pop());
+    updateUI();
     if(handValue(playerHand)>21) endGame("¡Perdiste! Te pasaste.");
 });
 
@@ -367,7 +336,20 @@ document.getElementById("stand-button").addEventListener("click",()=>{
     else endGame("Empate.");
 });
 
-// --- Inicializar ---
+document.getElementById("reset-button").addEventListener("click", ()=>{
+    playerHand=[]; dealerHand=[]; hideDealer=true; deck=[]; currentBet=0;
+    document.getElementById("player-hand").innerHTML="";
+    document.getElementById("dealer-hand").innerHTML="";
+    document.getElementById("player-points").textContent="";
+    document.getElementById("dealer-points").textContent="";
+    document.getElementById("game-message").textContent="";
+    document.getElementById("bet-amount").disabled=false;
+    document.getElementById("place-bet-button").disabled=false;
+    document.getElementById("bet-amount").value="";
+    document.getElementById("reset-button").style.display="none";
+});
+
+// ------------------- INICIALIZAR -------------------
 loadPekePuntos();
 </script>
 </body>
