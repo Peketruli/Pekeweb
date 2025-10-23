@@ -363,7 +363,7 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 // -------------------- LOGOUT --------------------
-function logout() {
+async function logout() {
   registrarActividad("ha cerrado sesión");
   localStorage.removeItem("currentUser");
   window.location.href = "login.html";
@@ -390,26 +390,22 @@ async function registrarActividad(accion) {
     {
       usuario,
       accion,
-      fecha: new Date().toISOString(),
-    },
+      fecha: new Date().toISOString()
+    }
   ]);
 
-  if (error) {
-    console.error("Error registrando actividad:", error.message);
-  } else {
-    console.log("✅ Actividad registrada:", accion);
-  }
+  if (error) console.error("❌ Error registrando actividad:", error.message);
+  else console.log("🟢 Actividad registrada:", accion);
 }
 
 // -------------------- BLOGS --------------------
 async function loadBlogs() {
   const blogsList = document.getElementById("blogsList");
-  blogsList.innerHTML = "Cargando blogs...";
+  blogsList.innerHTML = "📡 Cargando blogs...";
 
   const { data: blogs, error } = await db.from("blog").select("*").order("created_at", { ascending: false });
 
   if (error) {
-    console.error(error);
     blogsList.innerHTML = `<p>Error al cargar blogs: ${error.message}</p>`;
     return;
   }
@@ -420,12 +416,9 @@ async function loadBlogs() {
   }
 
   blogsList.innerHTML = "";
-  const user = getCurrentUser();
-
   blogs.forEach((blog) => {
     const div = document.createElement("div");
     div.className = "blog-post";
-
     div.innerHTML = `
       <h3>${blog.title}</h3>
       <p style="font-size:0.9em;color:gray;">Autor: ${blog.author || "Anónimo"}</p>
@@ -435,28 +428,22 @@ async function loadBlogs() {
         <button class="like-btn" id="likeBtn-${blog.id}">❤️</button>
         &nbsp;&nbsp;
         💔 <span id="dislikeCount-${blog.id}">${blog.dislikes || 0}</span>
-        <button class="dislike-btn" id="dislikeBtn-${blog.id}">💔</button>
+        <button class="like-btn" id="dislikeBtn-${blog.id}">💔</button>
       </p>
     `;
 
-    // Eventos de botones
-    const likeBtn = div.querySelector(`#likeBtn-${blog.id}`);
-    const dislikeBtn = div.querySelector(`#dislikeBtn-${blog.id}`);
-
-    likeBtn.addEventListener("click", (e) => {
+    div.querySelector(`#likeBtn-${blog.id}`).addEventListener("click", (e) => {
       e.stopPropagation();
-      toggleLike(blog.id);
+      toggleLike(blog.id, blog.title);
     });
 
-    dislikeBtn.addEventListener("click", (e) => {
+    div.querySelector(`#dislikeBtn-${blog.id}`).addEventListener("click", (e) => {
       e.stopPropagation();
-      toggleDislike(blog.id);
+      toggleDislike(blog.id, blog.title);
     });
 
     div.addEventListener("click", (e) => {
-      if (!e.target.classList.contains("like-btn") && !e.target.classList.contains("dislike-btn")) {
-        openBlog(blog);
-      }
+      if (!e.target.classList.contains("like-btn")) openBlog(blog);
     });
 
     blogsList.appendChild(div);
@@ -464,12 +451,9 @@ async function loadBlogs() {
 }
 
 // -------------------- LIKES --------------------
-async function toggleLike(blogId) {
+async function toggleLike(blogId, title) {
   const user = getCurrentUser();
   if (!user) return alert("Inicia sesión para dar like");
-
-  const likeKey = `like_${blogId}_${user.id}`;
-  const dislikeKey = `dislike_${blogId}_${user.id}`;
 
   const likeEl = document.getElementById(`likeCount-${blogId}`);
   const dislikeEl = document.getElementById(`dislikeCount-${blogId}`);
@@ -477,16 +461,18 @@ async function toggleLike(blogId) {
   let likes = parseInt(likeEl.textContent);
   let dislikes = parseInt(dislikeEl.textContent);
 
+  const likeKey = `like_${blogId}_${user.id}`;
+  const dislikeKey = `dislike_${blogId}_${user.id}`;
   const liked = localStorage.getItem(likeKey);
 
   if (liked) {
     likes--;
     localStorage.removeItem(likeKey);
-    registrarActividad(`ha quitado su like en el blog ${blogId}`);
+    registrarActividad(`ha quitado su like en "${title}"`);
   } else {
     likes++;
     localStorage.setItem(likeKey, "true");
-    registrarActividad(`ha dado like al blog ${blogId}`);
+    registrarActividad(`ha dado like al blog "${title}"`);
 
     if (localStorage.getItem(dislikeKey)) {
       dislikes--;
@@ -495,18 +481,14 @@ async function toggleLike(blogId) {
   }
 
   await db.from("blog").update({ likes, dislikes }).eq("id", blogId);
-
   likeEl.textContent = likes;
   dislikeEl.textContent = dislikes;
 }
 
 // -------------------- DISLIKES --------------------
-async function toggleDislike(blogId) {
+async function toggleDislike(blogId, title) {
   const user = getCurrentUser();
   if (!user) return alert("Inicia sesión para dar dislike");
-
-  const likeKey = `like_${blogId}_${user.id}`;
-  const dislikeKey = `dislike_${blogId}_${user.id}`;
 
   const likeEl = document.getElementById(`likeCount-${blogId}`);
   const dislikeEl = document.getElementById(`dislikeCount-${blogId}`);
@@ -514,16 +496,18 @@ async function toggleDislike(blogId) {
   let likes = parseInt(likeEl.textContent);
   let dislikes = parseInt(dislikeEl.textContent);
 
+  const likeKey = `like_${blogId}_${user.id}`;
+  const dislikeKey = `dislike_${blogId}_${user.id}`;
   const disliked = localStorage.getItem(dislikeKey);
 
   if (disliked) {
     dislikes--;
     localStorage.removeItem(dislikeKey);
-    registrarActividad(`ha quitado su dislike en el blog ${blogId}`);
+    registrarActividad(`ha quitado su dislike en "${title}"`);
   } else {
     dislikes++;
     localStorage.setItem(dislikeKey, "true");
-    registrarActividad(`ha dado dislike al blog ${blogId}`);
+    registrarActividad(`ha dado dislike al blog "${title}"`);
 
     if (localStorage.getItem(likeKey)) {
       likes--;
@@ -532,7 +516,6 @@ async function toggleDislike(blogId) {
   }
 
   await db.from("blog").update({ likes, dislikes }).eq("id", blogId);
-
   likeEl.textContent = likes;
   dislikeEl.textContent = dislikes;
 }
@@ -545,7 +528,6 @@ async function publishBlog() {
   const title = document.getElementById("newTitle").value.trim();
   const content = document.getElementById("newContent").value.trim();
   const mediaInput = document.getElementById("newMedia");
-
   if (!title || !content) return alert("Completa todos los campos");
 
   let mediaUrl = "";
@@ -553,12 +535,10 @@ async function publishBlog() {
   if (mediaInput.files.length > 0) {
     const file = mediaInput.files[0];
     const fileName = `${user.id}_${Date.now()}_${file.name}`;
-
     const { error: uploadError } = await db.storage.from("blog-media").upload(fileName, file, { upsert: true });
     if (uploadError) return alert("Error al subir archivo: " + uploadError.message);
-
-    const { data: publicData } = db.storage.from("blog-media").getPublicUrl(fileName);
-    mediaUrl = publicData.publicUrl;
+    const { data } = db.storage.from("blog-media").getPublicUrl(fileName);
+    mediaUrl = data.publicUrl;
   }
 
   const { error } = await db.from("blog").insert([
@@ -570,18 +550,13 @@ async function publishBlog() {
       likes: 0,
       dislikes: 0,
       comments: [],
-      created_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
     },
   ]);
 
-  if (error) {
-    console.error(error);
-    alert("Error al publicar blog: " + error.message);
-    return;
-  }
+  if (error) return alert("Error al publicar blog: " + error.message);
 
   registrarActividad(`ha publicado un blog: "${title}"`);
-
   document.getElementById("newTitle").value = "";
   document.getElementById("newContent").value = "";
   document.getElementById("newMedia").value = "";
@@ -606,13 +581,12 @@ async function publishComment() {
   const { error: updateError } = await db.from("blog").update({ comments: newComments }).eq("id", window.currentBlogId);
   if (updateError) return alert("Error al publicar comentario: " + updateError.message);
 
-  registrarActividad(`ha comentado en el blog "${blogData.title}"`);
-
+  registrarActividad(`ha comentado en "${blogData.title}"`);
   document.getElementById("newCommentText").value = "";
   openBlog({ ...blogData, comments: newComments });
 }
 
-// -------------------- MOSTRAR BLOG --------------------
+// -------------------- ABRIR/CERRAR BLOG --------------------
 function openBlog(blog) {
   document.getElementById("blogTitleDetail").textContent = blog.title;
   document.getElementById("blogContentDetail").textContent = blog.content;
@@ -642,7 +616,6 @@ function openBlog(blog) {
   window.currentBlogId = blog.id;
 }
 
-// -------------------- CERRAR BLOG --------------------
 function closeBlog() {
   document.getElementById("blogDetails").classList.add("hidden");
   document.getElementById("blogsList").classList.remove("hidden");
