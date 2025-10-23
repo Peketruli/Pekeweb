@@ -344,7 +344,6 @@ function loadUserInfo() {
     authContainer.style.display = "none";
     document.getElementById("userName").textContent = user.username || "Usuario";
     document.getElementById("userLogo").src = user.logo || "logoDefault.png";
-    registrarActividad("ha iniciado sesión");
   } else {
     userInfo.style.display = "none";
     authContainer.style.display = "flex";
@@ -354,35 +353,27 @@ function loadUserInfo() {
 document.addEventListener("DOMContentLoaded", ()=>{
   loadUserInfo();
   loadBlogs();
+  if(document.getElementById("activityLog")) loadActivities();
 });
 
-// Logout
-function logout() {
-  registrarActividad("ha cerrado sesión");
-  localStorage.removeItem("currentUser");
-  window.location.href="login.html";
-}
-
-const userInfoDiv = document.getElementById("userInfo");
-const dropdownMenu = document.getElementById("dropdownMenu");
-userInfoDiv.addEventListener("click", ()=>{ 
-  dropdownMenu.style.display = dropdownMenu.style.display==="block"?"none":"block"; 
-});
-document.addEventListener("click",(e)=>{
-  if(!userInfoDiv.contains(e.target)&&!dropdownMenu.contains(e.target)) dropdownMenu.style.display="none"; 
-});
-
-// -------------------- Registro de actividad --------------------
+// -------------------- Registrar actividad --------------------
 async function registrarActividad(accion) {
   const user = getCurrentUser();
   const usuario = user?.username || "Desconocido";
+
   const actividad = {
     usuario,
     accion,
     fecha: new Date().toISOString()
   };
 
-  // Mostrar en panel visual
+  try {
+    await db.from("actividad").insert([actividad]);
+  } catch(err) {
+    console.error("❌ Error registrando actividad:", err.message);
+  }
+
+  // Mostrar en consola.html si existe el panel
   const logDiv = document.getElementById("activityLog");
   if(logDiv){
     const item = document.createElement("div");
@@ -390,64 +381,59 @@ async function registrarActividad(accion) {
     logDiv.appendChild(item);
     logDiv.scrollTop = logDiv.scrollHeight;
   }
+}
 
-  try {
-    await db.from("actividad").insert([actividad]);
-  } catch(err) {
-    if(logDiv){
-      const errorItem = document.createElement("div");
-      errorItem.textContent = `❌ Error al registrar: ${err.message}`;
-      errorItem.style.color = "red";
-      logDiv.appendChild(errorItem);
+// -------------------- Cargar actividades para consola.html --------------------
+async function loadActivities(){
+  const logDiv = document.getElementById("activityLog");
+  if(!logDiv) return;
+  logDiv.innerHTML = "Cargando actividades...";
+  const { data, error } = await db.from("actividad").select("*").order("fecha", {ascending:true});
+  if(error){ logDiv.innerHTML = `Error al cargar actividades: ${error.message}`; return; }
+  logDiv.innerHTML = "";
+  data.forEach(act=>{
+    const item = document.createElement("div");
+    item.textContent = `${act.fecha.split("T")[1].split(".")[0]} - ${act.usuario}: ${act.accion}`;
+    logDiv.appendChild(item);
+  });
+  logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+// -------------------- Publicar blog --------------------
+async function publishBlog(){
+  const user = getCurrentUser(); if(!user){ alert("Debes iniciar sesión"); return; }
+  const title = document.getElementById("newTitle").value.trim();
+  const content = document.getElementById("newContent").value.trim();
+  const mediaInput = document.getElementById("newMedia");
+  if(!title || !content){ alert("Completa todos los campos"); return; }
+
+  // Filtro palabras ofensivas
+  const forbidden = ["puta", "mierda", "idiota"];
+  for (let word of forbidden) {
+    if(title.toLowerCase().includes(word) || content.toLowerCase().includes(word)){
+      alert("Tu contenido contiene palabras no permitidas."); return;
     }
   }
-}
 
-// -------------------- Blogs --------------------
-function showNewBlogForm(){ 
-  if(!isUserLoggedIn()){ alert("Debes iniciar sesión para publicar un blog"); return; } 
-  document.getElementById("newBlogForm").classList.remove("hidden"); 
-}
-function hideNewBlogForm(){ document.getElementById("newBlogForm").classList.add("hidden"); }
+  let mediaUrl = "";
+  if(mediaInput.files.length>0){
+    const file = mediaInput.files[0];
+    const fileName = `${user.id}_${Date.now()}_${file.name}`;
+    const { error: uploadError } = await db.storage.from("blog-media").upload(fileName, file, { upsert:true });
+    if(uploadError){ alert("Error al subir archivo"); return; }
+    const { data: publicData } = db.storage.from("blog-media").getPublicUrl(fileName);
+    mediaUrl = publicData.publicUrl;
+  }
 
-async function loadBlogs(){
-  const blogsList=document.getElementById("blogsList");
-  blogsList.innerHTML="Cargando blogs...";
-  const { data, error } = await db.from("blog").select("*").order("created_at",{ascending:false});
-  if(error){ console.error(error); blogsList.innerHTML=`<p>Error al cargar blogs: ${error.message}</p>`; return; }
-  if(!data || data.length===0){ blogsList.innerHTML="<p>No hay blogs publicados.</p>"; return; }
-  blogsList.innerHTML="";
-  const user=getCurrentUser();
-  data.forEach(blog=>{
-    const div=document.createElement("div");
-    div.className="blog-post";
-    div.innerHTML=`
-      <h3>${blog.title}</h3>
-      <p style="font-size:0.9em;color:gray;">Autor: ${blog.author||"Anónimo"}</p>
-      ${blog.media_url?`<img src="${blog.media_url}" class="blog-media">`:''}
-      <p>
-        👍 <span id="likeCount-${blog.id}">${blog.likes||0}</span>
-        <button class="like-btn" id="likeBtn-${blog.id}">❤️</button>
-      </p>
-      <p>
-        👎 <span id="dislikeCount-${blog.id}">${blog.dislikes||0}</span>
-        <button class="dislike-btn" id="dislikeBtn-${blog.id}">💔</button>
-      </p>
-    `;
-    div.addEventListener("click",(e)=>{ 
-      if(!e.target.classList.contains("like-btn") && !e.target.classList.contains("dislike-btn")) 
-        openBlog(blog); 
-    });
+  const { error } = await db.from("blog").insert([{ title, content, author:user.username, media_url:mediaUrl, likes:0, dislikes:0, comments:[] }]);
+  if(error){ alert("Error al publicar"); return; }
 
-    const likeBtn = div.querySelector(`#likeBtn-${blog.id}`);
-    const dislikeBtn = div.querySelector(`#dislikeBtn-${blog.id}`);
-    likeBtn.addEventListener("click",(e)=>{ e.stopPropagation(); toggleLike(blog.id); });
-    dislikeBtn.addEventListener("click",(e)=>{ e.stopPropagation(); toggleDislike(blog.id); });
-
-    if(user && localStorage.getItem(`like_${blog.id}_${user.id}`)) likeBtn.classList.add("liked");
-    if(user && localStorage.getItem(`dislike_${blog.id}_${user.id}`)) dislikeBtn.classList.add("disliked");
-    blogsList.appendChild(div);
-  });
+  registrarActividad(`ha publicado un blog: "${title}"`);
+  document.getElementById("newTitle").value="";
+  document.getElementById("newContent").value="";
+  document.getElementById("newMedia").value="";
+  hideNewBlogForm();
+  loadBlogs();
 }
 
 // -------------------- Likes --------------------
@@ -456,10 +442,10 @@ async function toggleLike(blogId){
   const likeKey=`like_${blogId}_${user.id}`;
   const likeEl=document.getElementById(`likeCount-${blogId}`);
   const btn=document.getElementById(`likeBtn-${blogId}`);
-  const alreadyLiked=localStorage.getItem(likeKey);
-  const currentLikes=parseInt(likeEl.textContent)||0;
-  const newLikes=alreadyLiked ? currentLikes-1 : currentLikes+1;
-  likeEl.textContent=newLikes;
+  const alreadyLiked = localStorage.getItem(likeKey);
+  const currentLikes = parseInt(likeEl.textContent)||0;
+  const newLikes = alreadyLiked ? currentLikes-1 : currentLikes+1;
+  likeEl.textContent = newLikes;
   btn.classList.toggle("liked");
   if(alreadyLiked) localStorage.removeItem(likeKey); else localStorage.setItem(likeKey,"true");
 
@@ -486,7 +472,6 @@ async function toggleDislike(blogId){
   const alreadyDisliked=localStorage.getItem(dislikeKey);
   const currentDislikes=parseInt(dislikeEl.textContent)||0;
   const newDislikes=alreadyDisliked ? currentDislikes-1 : currentDislikes+1;
-
   dislikeEl.textContent=newDislikes;
   btn.classList.toggle("disliked");
   if(alreadyDisliked) localStorage.removeItem(dislikeKey); else localStorage.setItem(dislikeKey,"true");
@@ -506,90 +491,26 @@ async function toggleDislike(blogId){
   registrarActividad(`${alreadyDisliked ? "quitó dislike" : "dio dislike"} al blog "${blogTitle}"`);
 }
 
-// -------------------- Publicar blog --------------------
-async function publishBlog(){
-  const user=getCurrentUser(); if(!user){ alert("Debes iniciar sesión"); return; }
-  const title=document.getElementById("newTitle").value.trim();
-  const content=document.getElementById("newContent").value.trim();
-  const mediaInput=document.getElementById("newMedia");
-  let mediaUrl="";
-  if(!title||!content){ alert("Completa todos los campos"); return; }
-
-  // Filtro de palabras ofensivas
-  const forbidden = ["puta", "mierda", "idiota"];
-  for (let word of forbidden) {
-    if (content.toLowerCase().includes(word) || title.toLowerCase().includes(word)) {
-      alert("Tu contenido contiene palabras no permitidas.");
-      return;
-    }
-  }
-
-  if(mediaInput.files.length>0){
-    const file=mediaInput.files[0];
-    const fileName=`${user.id}_${Date.now()}_${file.name}`;
-    const { error: uploadError } = await db.storage.from("blog-media").upload(fileName, file, { upsert:true });
-    if(uploadError){ console.error(uploadError); alert("Error al subir archivo"); return; }
-    const { data: publicData } = db.storage.from("blog-media").getPublicUrl(fileName);
-    mediaUrl=publicData.publicUrl;
-  }
-  const { error } = await db.from("blog").insert([{ title, content, author:user.username, media_url:mediaUrl, likes:0, dislikes:0, comments:[] }]);
-  if(error){ console.error(error); alert("Error al publicar"); return; }
-
-  registrarActividad(`ha publicado un blog: "${title}"`);
-  hideNewBlogForm();
-  document.getElementById("newTitle").value="";
-  document.getElementById("newContent").value="";
-  document.getElementById("newMedia").value="";
-  loadBlogs();
-}
-
-// -------------------- Abrir blog --------------------
-function openBlog(blog){
-  document.getElementById("blogTitleDetail").textContent=blog.title;
-  document.getElementById("blogContentDetail").textContent=blog.content;
-  const mediaDiv=document.getElementById("blogMediaDetail"); mediaDiv.innerHTML="";
-  if(blog.media_url){
-    if(blog.media_url.endsWith(".mp4")) mediaDiv.innerHTML=`<video src="${blog.media_url}" controls class="blog-media"></video>`;
-    else mediaDiv.innerHTML=`<img src="${blog.media_url}" class="blog-media">`;
-  }
-  const commentsList=document.getElementById("commentsList"); commentsList.innerHTML="";
-  if(blog.comments && blog.comments.length>0){
-    blog.comments.forEach(c=>{ commentsList.innerHTML+=`<div><strong>${c.author}</strong>: ${c.comment}</div>`; });
-  } else commentsList.innerHTML="<p>No hay comentarios todavía.</p>";
-  document.getElementById("blogsList").classList.add("hidden");
-  document.getElementById("blogDetails").classList.remove("hidden");
-  window.currentBlogId=blog.id;
-}
-
-// -------------------- Comentar --------------------
+// -------------------- Publicar comentario --------------------
 async function publishComment(){
   const user=getCurrentUser(); if(!user){ alert("Debes iniciar sesión"); return; }
   const commentText=document.getElementById("newCommentText").value.trim(); if(!commentText){ alert("Escribe un comentario"); return; }
 
   const prohibidas = ["puta","mierda","imbecil"];
   for (let p of prohibidas) {
-    if (commentText.toLowerCase().includes(p)) {
-      alert("Tu comentario contiene palabras no permitidas.");
-      return;
-    }
+    if(commentText.toLowerCase().includes(p)){ alert("Tu comentario contiene palabras no permitidas."); return; }
   }
 
   const { data: blogData, error } = await db.from("blog").select("*").eq("id",window.currentBlogId).single();
-  if(error){ console.error(error); alert("Error al obtener comentarios"); return; }
+  if(error){ alert("Error al obtener comentarios"); return; }
   const newComments = blogData.comments || [];
   newComments.push({ author:user.username, comment:commentText });
   const { error: updateError } = await db.from("blog").update({comments:newComments}).eq("id",window.currentBlogId);
-  if(updateError){ console.error(updateError); alert("Error al publicar comentario"); return; }
+  if(updateError){ alert("Error al publicar comentario"); return; }
 
   registrarActividad(`ha comentado en el blog "${blogData.title}"`);
   document.getElementById("newCommentText").value="";
   openBlog({...blogData, comments:newComments});
-}
-
-// -------------------- Cerrar blog --------------------
-function closeBlog(){
-  document.getElementById("blogDetails").classList.add("hidden");
-  document.getElementById("blogsList").classList.remove("hidden");
 }
 </script>
 </body>
