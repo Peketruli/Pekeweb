@@ -27,12 +27,14 @@
       padding: 0.7rem; 
       margin: 0.5rem 0; 
       border-radius: 8px; 
+      border: 1px solid #ccc;
     }
     button { 
       background: #4CAF50; 
       color: white; 
       cursor: pointer;
       border: none;
+      transition: 0.3s;
     }
     button:hover { 
       background: #45a049; 
@@ -58,7 +60,6 @@
   </style>
 </head>
 <body>
-  <!-- Botón de volver a la página principal -->
   <button class="home-btn" onclick="window.location.href='h.html'">🏠 Volver a la Página Principal</button>
 
   <div class="container">
@@ -71,7 +72,7 @@
     <div class="toggle" id="toggleForm">¿No tienes cuenta? Regístrate</div>
   </div>
 
-  <script>
+<script>
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
@@ -83,10 +84,18 @@ const toggleForm = document.getElementById("toggleForm");
 const formTitle = document.getElementById("form-title");
 const submitBtn = document.getElementById("submitBtn");
 
-/* 🧾 Registrar actividad en la tabla 'actividad' */
-async function registrarActividad(usuario, accion) {
+/* 🧾 Registrar actividad */
+async function registrarActividad(usuario, accion, extra = null) {
   try {
-    const { error } = await supabase.from("actividad").insert([{ usuario, accion }]);
+    const { error } = await supabase
+      .from("actividad")
+      .insert([{ 
+        usuario: usuario || "desconocido", 
+        accion, 
+        extra, 
+        timestamp: new Date().toISOString() 
+      }]);
+
     if (error) console.error("Error registrando actividad:", error.message);
   } catch (err) {
     console.error("Error inesperado al registrar actividad:", err);
@@ -112,6 +121,7 @@ authForm.addEventListener("submit", async (e) => {
 
   if (!username || !password) {
     alert("Completa todos los campos.");
+    await registrarActividad(username, "intentó enviar formulario incompleto");
     return;
   }
 
@@ -126,21 +136,26 @@ authForm.addEventListener("submit", async (e) => {
         .maybeSingle();
 
       if (searchError) throw searchError;
-      if (existingUser) return alert("⚠️ Ese nombre de usuario ya está en uso.");
+      if (existingUser) {
+        alert("⚠️ Ese nombre de usuario ya está en uso.");
+        await registrarActividad(username, "intentó registrarse con usuario ya existente");
+        return;
+      }
 
-      if (username.length > 50)
-        return alert("❌ El nombre de usuario no puede tener más de 50 caracteres.");
+      if (username.length > 50) {
+        alert("❌ El nombre de usuario no puede tener más de 50 caracteres.");
+        return;
+      }
 
       // Crear usuario nuevo
       const { data: newUser, error } = await supabase
         .from("usuarios")
-        .insert([{ username, password, pekepuntos: 100 }]) // puedes ajustar el valor inicial
+        .insert([{ username, password, pekepuntos: 100 }])
         .select()
         .single();
 
       if (error) throw error;
 
-      // Registrar actividad
       await registrarActividad(username, "se registró en la plataforma");
 
       alert("✅ Usuario creado con éxito. Ahora inicia sesión.");
@@ -152,6 +167,7 @@ authForm.addEventListener("submit", async (e) => {
     } catch (err) {
       console.error(err);
       alert("Error al registrarse: " + err.message);
+      await registrarActividad(username, "error al registrarse", err.message);
     }
     return;
   }
@@ -170,13 +186,13 @@ authForm.addEventListener("submit", async (e) => {
       await registrarActividad(username, "intentó iniciar sesión sin éxito");
     } else {
       localStorage.setItem("currentUser", JSON.stringify(data));
-
       await registrarActividad(username, "inició sesión correctamente");
       window.location.href = "h.html";
     }
   } catch (err) {
     console.error(err);
     alert("Error al iniciar sesión: " + err.message);
+    await registrarActividad(username, "error al iniciar sesión", err.message);
   }
 });
 </script>
