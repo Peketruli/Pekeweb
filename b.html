@@ -325,21 +325,27 @@ input, textarea {
   </div>
 </div>
 <script>
-// -------------------- Supabase --------------------
+// -------------------- CONFIGURACIÓN SUPABASE --------------------
 const { createClient } = supabase;
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// -------------------- Usuario --------------------
-function getCurrentUser() { return JSON.parse(localStorage.getItem("currentUser")) || null; }
-function isUserLoggedIn() { return !!getCurrentUser(); }
+// -------------------- USUARIO --------------------
+function getCurrentUser() {
+  return JSON.parse(localStorage.getItem("currentUser")) || null;
+}
+
+function isUserLoggedIn() {
+  return !!getCurrentUser();
+}
 
 function loadUserInfo() {
   const user = getCurrentUser();
   const authContainer = document.getElementById("authContainer");
   const userInfo = document.getElementById("userInfo");
-  if(user) {
+
+  if (user) {
     userInfo.style.display = "flex";
     authContainer.style.display = "none";
     document.getElementById("userName").textContent = user.username || "Usuario";
@@ -351,221 +357,293 @@ function loadUserInfo() {
   }
 }
 
-document.addEventListener("DOMContentLoaded", ()=>{
+document.addEventListener("DOMContentLoaded", () => {
   loadUserInfo();
   loadBlogs();
 });
 
-// Logout
+// -------------------- LOGOUT --------------------
 function logout() {
   registrarActividad("ha cerrado sesión");
   localStorage.removeItem("currentUser");
-  window.location.href="login.html";
+  window.location.href = "login.html";
 }
 
+// -------------------- MENÚ USUARIO --------------------
 const userInfoDiv = document.getElementById("userInfo");
 const dropdownMenu = document.getElementById("dropdownMenu");
-userInfoDiv.addEventListener("click", ()=>{ 
-  dropdownMenu.style.display = dropdownMenu.style.display==="block"?"none":"block"; 
+userInfoDiv?.addEventListener("click", () => {
+  dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
 });
-document.addEventListener("click",(e)=>{
-  if(!userInfoDiv.contains(e.target)&&!dropdownMenu.contains(e.target)) dropdownMenu.style.display="none"; 
+document.addEventListener("click", (e) => {
+  if (!userInfoDiv?.contains(e.target) && !dropdownMenu?.contains(e.target)) {
+    if (dropdownMenu) dropdownMenu.style.display = "none";
+  }
 });
 
-// -------------------- Registrar actividad --------------------
+// -------------------- REGISTRAR ACTIVIDAD --------------------
 async function registrarActividad(accion) {
   const user = getCurrentUser();
   const usuario = user?.username || "Desconocido";
 
-  try {
-    await db.from("actividad").insert([{
+  const { error } = await db.from("actividad").insert([
+    {
       usuario,
       accion,
-      fecha: new Date().toISOString()
-    }]);
-  } catch(err) {
-    console.error("Error registrando actividad:", err.message);
+      fecha: new Date().toISOString(),
+    },
+  ]);
+
+  if (error) {
+    console.error("Error registrando actividad:", error.message);
+  } else {
+    console.log("✅ Actividad registrada:", accion);
   }
 }
 
-// -------------------- Blogs --------------------
-function showNewBlogForm(){ 
-  if(!isUserLoggedIn()){ alert("Debes iniciar sesión para publicar un blog"); return; } 
-  document.getElementById("newBlogForm").classList.remove("hidden"); 
-}
-function hideNewBlogForm(){ document.getElementById("newBlogForm").classList.add("hidden"); }
+// -------------------- BLOGS --------------------
+async function loadBlogs() {
+  const blogsList = document.getElementById("blogsList");
+  blogsList.innerHTML = "Cargando blogs...";
 
-async function loadBlogs(){
-  const blogsList=document.getElementById("blogsList");
-  blogsList.innerHTML="Cargando blogs...";
-  const { data, error } = await db.from("blog").select("*").order("created_at",{ascending:false});
-  if(error){ console.error(error); blogsList.innerHTML=`<p>Error al cargar blogs: ${error.message}</p>`; return; }
-  if(!data || data.length===0){ blogsList.innerHTML="<p>No hay blogs publicados.</p>"; return; }
-  blogsList.innerHTML="";
-  const user=getCurrentUser();
-  data.forEach(blog=>{
-    const div=document.createElement("div");
-    div.className="blog-post";
-    div.innerHTML=`
+  const { data: blogs, error } = await db.from("blog").select("*").order("created_at", { ascending: false });
+
+  if (error) {
+    console.error(error);
+    blogsList.innerHTML = `<p>Error al cargar blogs: ${error.message}</p>`;
+    return;
+  }
+
+  if (!blogs || blogs.length === 0) {
+    blogsList.innerHTML = "<p>No hay blogs publicados.</p>";
+    return;
+  }
+
+  blogsList.innerHTML = "";
+  const user = getCurrentUser();
+
+  blogs.forEach((blog) => {
+    const div = document.createElement("div");
+    div.className = "blog-post";
+
+    div.innerHTML = `
       <h3>${blog.title}</h3>
-      <p style="font-size:0.9em;color:gray;">Autor: ${blog.author||"Anónimo"}</p>
-      ${blog.media_url?`<img src="${blog.media_url}" class="blog-media">`:''}
-      <p>❤️ <span id="likeCount-${blog.id}">${blog.likes||0}</span>
-      <button class="like-btn" id="likeBtn-${blog.id}">❤️</button></p>
-      <p>💔 <span id="dislikeCount-${blog.id}">${blog.dislikes||0}</span>
-      <button class="dislike-btn" id="dislikeBtn-${blog.id}">💔</button></p>
+      <p style="font-size:0.9em;color:gray;">Autor: ${blog.author || "Anónimo"}</p>
+      ${blog.media_url ? `<img src="${blog.media_url}" class="blog-media">` : ""}
+      <p>
+        ❤️ <span id="likeCount-${blog.id}">${blog.likes || 0}</span>
+        <button class="like-btn" id="likeBtn-${blog.id}">❤️</button>
+        &nbsp;&nbsp;
+        💔 <span id="dislikeCount-${blog.id}">${blog.dislikes || 0}</span>
+        <button class="dislike-btn" id="dislikeBtn-${blog.id}">💔</button>
+      </p>
     `;
-    div.addEventListener("click",(e)=>{ 
-      if(!e.target.classList.contains("like-btn") && !e.target.classList.contains("dislike-btn")) openBlog(blog); 
-    });
 
+    // Eventos de botones
     const likeBtn = div.querySelector(`#likeBtn-${blog.id}`);
     const dislikeBtn = div.querySelector(`#dislikeBtn-${blog.id}`);
 
-    likeBtn.addEventListener("click",(e)=>{ e.stopPropagation(); toggleLike(blog.id); });
-    dislikeBtn.addEventListener("click",(e)=>{ e.stopPropagation(); toggleDislike(blog.id); });
+    likeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleLike(blog.id);
+    });
 
-    if(user && localStorage.getItem(`like_${blog.id}_${user.id}`)) likeBtn.classList.add("liked");
-    if(user && localStorage.getItem(`dislike_${blog.id}_${user.id}`)) dislikeBtn.classList.add("disliked");
+    dislikeBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleDislike(blog.id);
+    });
+
+    div.addEventListener("click", (e) => {
+      if (!e.target.classList.contains("like-btn") && !e.target.classList.contains("dislike-btn")) {
+        openBlog(blog);
+      }
+    });
 
     blogsList.appendChild(div);
   });
 }
 
-// -------------------- Likes --------------------
-async function toggleLike(blogId){
-  const user=getCurrentUser(); if(!user){ alert("Inicia sesión para dar like"); return; }
-  const likeKey=`like_${blogId}_${user.id}`;
-  const likeEl=document.getElementById(`likeCount-${blogId}`);
-  const btn=document.getElementById(`likeBtn-${blogId}`);
-  const dislikeKey=`dislike_${blogId}_${user.id}`;
-  const dislikeBtn=document.getElementById(`dislikeBtn-${blogId}`);
+// -------------------- LIKES --------------------
+async function toggleLike(blogId) {
+  const user = getCurrentUser();
+  if (!user) return alert("Inicia sesión para dar like");
 
-  const alreadyLiked = localStorage.getItem(likeKey);
-  const currentLikes=parseInt(likeEl.textContent)||0;
-  const currentDislikes=parseInt(document.getElementById(`dislikeCount-${blogId}`).textContent)||0;
+  const likeKey = `like_${blogId}_${user.id}`;
+  const dislikeKey = `dislike_${blogId}_${user.id}`;
 
-  let newLikes = alreadyLiked ? currentLikes-1 : currentLikes+1;
-  let newDislikes = currentDislikes;
+  const likeEl = document.getElementById(`likeCount-${blogId}`);
+  const dislikeEl = document.getElementById(`dislikeCount-${blogId}`);
 
-  // Si estaba marcado el dislike, quitarlo
-  if(localStorage.getItem(dislikeKey)){
-    newDislikes--;
-    localStorage.removeItem(dislikeKey);
-    dislikeBtn.classList.remove("disliked");
-  }
+  let likes = parseInt(likeEl.textContent);
+  let dislikes = parseInt(dislikeEl.textContent);
 
-  likeEl.textContent = newLikes;
-  document.getElementById(`dislikeCount-${blogId}`).textContent = newDislikes;
+  const liked = localStorage.getItem(likeKey);
 
-  btn.classList.toggle("liked");
-  if(alreadyLiked) localStorage.removeItem(likeKey); else localStorage.setItem(likeKey,"true");
-
-  await db.from("blog").update({likes:newLikes, dislikes:newDislikes}).eq("id",blogId);
-
-  const blogTitle = (await db.from("blog").select("title").eq("id",blogId).single()).data?.title || "Desconocido";
-  registrarActividad(`${alreadyLiked ? "ha quitado like" : "ha dado like"} al blog "${blogTitle}"`);
-}
-
-async function toggleDislike(blogId){
-  const user=getCurrentUser(); if(!user){ alert("Inicia sesión para dar dislike"); return; }
-  const dislikeKey=`dislike_${blogId}_${user.id}`;
-  const dislikeEl=document.getElementById(`dislikeCount-${blogId}`);
-  const btn=document.getElementById(`dislikeBtn-${blogId}`);
-  const likeKey=`like_${blogId}_${user.id}`;
-  const likeBtn=document.getElementById(`likeBtn-${blogId}`);
-
-  const alreadyDisliked = localStorage.getItem(dislikeKey);
-  const currentDislikes = parseInt(dislikeEl.textContent)||0;
-  const currentLikes = parseInt(document.getElementById(`likeCount-${blogId}`).textContent)||0;
-
-  let newDislikes = alreadyDisliked ? currentDislikes-1 : currentDislikes+1;
-  let newLikes = currentLikes;
-
-  // Si estaba marcado el like, quitarlo
-  if(localStorage.getItem(likeKey)){
-    newLikes--;
+  if (liked) {
+    likes--;
     localStorage.removeItem(likeKey);
-    likeBtn.classList.remove("liked");
+    registrarActividad(`ha quitado su like en el blog ${blogId}`);
+  } else {
+    likes++;
+    localStorage.setItem(likeKey, "true");
+    registrarActividad(`ha dado like al blog ${blogId}`);
+
+    if (localStorage.getItem(dislikeKey)) {
+      dislikes--;
+      localStorage.removeItem(dislikeKey);
+    }
   }
 
-  dislikeEl.textContent = newDislikes;
-  document.getElementById(`likeCount-${blogId}`).textContent = newLikes;
+  await db.from("blog").update({ likes, dislikes }).eq("id", blogId);
 
-  btn.classList.toggle("disliked");
-  if(alreadyDisliked) localStorage.removeItem(dislikeKey); else localStorage.setItem(dislikeKey,"true");
-
-  await db.from("blog").update({likes:newLikes, dislikes:newDislikes}).eq("id",blogId);
-
-  const blogTitle = (await db.from("blog").select("title").eq("id",blogId).single()).data?.title || "Desconocido";
-  registrarActividad(`${alreadyDisliked ? "quitó dislike" : "dio dislike"} al blog "${blogTitle}"`);
+  likeEl.textContent = likes;
+  dislikeEl.textContent = dislikes;
 }
 
-// -------------------- Publicar blog --------------------
-async function publishBlog(){
-  const user=getCurrentUser(); if(!user){ alert("Debes iniciar sesión"); return; }
-  const title=document.getElementById("newTitle").value.trim();
-  const content=document.getElementById("newContent").value.trim();
-  const mediaInput=document.getElementById("newMedia");
-  let mediaUrl="";
-  if(!title||!content){ alert("Completa todos los campos"); return; }
-  if(mediaInput.files.length>0){
-    const file=mediaInput.files[0];
-    const fileName=`${user.id}_${Date.now()}_${file.name}`;
-    const { error: uploadError } = await db.storage.from("blog-media").upload(fileName, file, { upsert:true });
-    if(uploadError){ console.error(uploadError); alert("Error al subir archivo"); return; }
-    const { data: publicData } = db.storage.from("blog-media").getPublicUrl(fileName);
-    mediaUrl=publicData.publicUrl;
+// -------------------- DISLIKES --------------------
+async function toggleDislike(blogId) {
+  const user = getCurrentUser();
+  if (!user) return alert("Inicia sesión para dar dislike");
+
+  const likeKey = `like_${blogId}_${user.id}`;
+  const dislikeKey = `dislike_${blogId}_${user.id}`;
+
+  const likeEl = document.getElementById(`likeCount-${blogId}`);
+  const dislikeEl = document.getElementById(`dislikeCount-${blogId}`);
+
+  let likes = parseInt(likeEl.textContent);
+  let dislikes = parseInt(dislikeEl.textContent);
+
+  const disliked = localStorage.getItem(dislikeKey);
+
+  if (disliked) {
+    dislikes--;
+    localStorage.removeItem(dislikeKey);
+    registrarActividad(`ha quitado su dislike en el blog ${blogId}`);
+  } else {
+    dislikes++;
+    localStorage.setItem(dislikeKey, "true");
+    registrarActividad(`ha dado dislike al blog ${blogId}`);
+
+    if (localStorage.getItem(likeKey)) {
+      likes--;
+      localStorage.removeItem(likeKey);
+    }
   }
-  const { error } = await db.from("blog").insert([{ title, content, author:user.username, media_url:mediaUrl, likes:0, dislikes:0, comments:[] }]);
-  if(error){ console.error(error); alert("Error al publicar"); return; }
+
+  await db.from("blog").update({ likes, dislikes }).eq("id", blogId);
+
+  likeEl.textContent = likes;
+  dislikeEl.textContent = dislikes;
+}
+
+// -------------------- PUBLICAR BLOG --------------------
+async function publishBlog() {
+  const user = getCurrentUser();
+  if (!user) return alert("Debes iniciar sesión");
+
+  const title = document.getElementById("newTitle").value.trim();
+  const content = document.getElementById("newContent").value.trim();
+  const mediaInput = document.getElementById("newMedia");
+
+  if (!title || !content) return alert("Completa todos los campos");
+
+  let mediaUrl = "";
+
+  if (mediaInput.files.length > 0) {
+    const file = mediaInput.files[0];
+    const fileName = `${user.id}_${Date.now()}_${file.name}`;
+
+    const { error: uploadError } = await db.storage.from("blog-media").upload(fileName, file, { upsert: true });
+    if (uploadError) return alert("Error al subir archivo: " + uploadError.message);
+
+    const { data: publicData } = db.storage.from("blog-media").getPublicUrl(fileName);
+    mediaUrl = publicData.publicUrl;
+  }
+
+  const { error } = await db.from("blog").insert([
+    {
+      title,
+      content,
+      author: user.username,
+      media_url: mediaUrl,
+      likes: 0,
+      dislikes: 0,
+      comments: [],
+      created_at: new Date().toISOString(),
+    },
+  ]);
+
+  if (error) {
+    console.error(error);
+    alert("Error al publicar blog: " + error.message);
+    return;
+  }
 
   registrarActividad(`ha publicado un blog: "${title}"`);
 
+  document.getElementById("newTitle").value = "";
+  document.getElementById("newContent").value = "";
+  document.getElementById("newMedia").value = "";
   hideNewBlogForm();
-  document.getElementById("newTitle").value="";
-  document.getElementById("newContent").value="";
-  document.getElementById("newMedia").value="";
   loadBlogs();
 }
 
-// -------------------- Abrir blog --------------------
-function openBlog(blog){
-  document.getElementById("blogTitleDetail").textContent=blog.title;
-  document.getElementById("blogContentDetail").textContent=blog.content;
-  const mediaDiv=document.getElementById("blogMediaDetail"); mediaDiv.innerHTML="";
-  if(blog.media_url){
-    if(blog.media_url.endsWith(".mp4")) mediaDiv.innerHTML=`<video src="${blog.media_url}" controls class="blog-media"></video>`;
-    else mediaDiv.innerHTML=`<img src="${blog.media_url}" class="blog-media">`;
-  }
-  const commentsList=document.getElementById("commentsList"); commentsList.innerHTML="";
-  if(blog.comments && blog.comments.length>0){
-    blog.comments.forEach(c=>{ commentsList.innerHTML+=`<div><strong>${c.author}</strong>: ${c.comment}</div>`; });
-  } else commentsList.innerHTML="<p>No hay comentarios todavía.</p>";
-  document.getElementById("blogsList").classList.add("hidden");
-  document.getElementById("blogDetails").classList.remove("hidden");
-  window.currentBlogId=blog.id;
-}
+// -------------------- COMENTARIOS --------------------
+async function publishComment() {
+  const user = getCurrentUser();
+  if (!user) return alert("Debes iniciar sesión");
 
-// -------------------- Comentar --------------------
-async function publishComment(){
-  const user=getCurrentUser(); if(!user){ alert("Debes iniciar sesión"); return; }
-  const commentText=document.getElementById("newCommentText").value.trim(); if(!commentText){ alert("Escribe un comentario"); return; }
-  const { data: blogData, error } = await db.from("blog").select("*").eq("id",window.currentBlogId).single();
-  if(error){ console.error(error); alert("Error al obtener comentarios"); return; }
+  const commentText = document.getElementById("newCommentText").value.trim();
+  if (!commentText) return alert("Escribe un comentario");
+
+  const { data: blogData, error } = await db.from("blog").select("*").eq("id", window.currentBlogId).single();
+  if (error) return alert("Error al cargar el blog: " + error.message);
+
   const newComments = blogData.comments || [];
-  newComments.push({ author:user.username, comment:commentText });
-  const { error: updateError } = await db.from("blog").update({comments:newComments}).eq("id",window.currentBlogId);
-  if(updateError){ console.error(updateError); alert("Error al publicar comentario"); return; }
+  newComments.push({ author: user.username, comment: commentText });
+
+  const { error: updateError } = await db.from("blog").update({ comments: newComments }).eq("id", window.currentBlogId);
+  if (updateError) return alert("Error al publicar comentario: " + updateError.message);
 
   registrarActividad(`ha comentado en el blog "${blogData.title}"`);
 
-  document.getElementById("newCommentText").value="";
-  openBlog({...blogData, comments:newComments});
+  document.getElementById("newCommentText").value = "";
+  openBlog({ ...blogData, comments: newComments });
 }
 
-// -------------------- Cerrar blog --------------------
-function closeBlog(){
+// -------------------- MOSTRAR BLOG --------------------
+function openBlog(blog) {
+  document.getElementById("blogTitleDetail").textContent = blog.title;
+  document.getElementById("blogContentDetail").textContent = blog.content;
+
+  const mediaDiv = document.getElementById("blogMediaDetail");
+  mediaDiv.innerHTML = "";
+  if (blog.media_url) {
+    if (blog.media_url.endsWith(".mp4")) {
+      mediaDiv.innerHTML = `<video src="${blog.media_url}" controls class="blog-media"></video>`;
+    } else {
+      mediaDiv.innerHTML = `<img src="${blog.media_url}" class="blog-media">`;
+    }
+  }
+
+  const commentsList = document.getElementById("commentsList");
+  commentsList.innerHTML = "";
+  if (blog.comments && blog.comments.length > 0) {
+    blog.comments.forEach((c) => {
+      commentsList.innerHTML += `<div><strong>${c.author}</strong>: ${c.comment}</div>`;
+    });
+  } else {
+    commentsList.innerHTML = "<p>No hay comentarios todavía.</p>";
+  }
+
+  document.getElementById("blogsList").classList.add("hidden");
+  document.getElementById("blogDetails").classList.remove("hidden");
+  window.currentBlogId = blog.id;
+}
+
+// -------------------- CERRAR BLOG --------------------
+function closeBlog() {
   document.getElementById("blogDetails").classList.add("hidden");
   document.getElementById("blogsList").classList.remove("hidden");
 }
