@@ -291,16 +291,13 @@ let currentUser = null;
 // -------------------- LOG DE ACTIVIDADES --------------------
 async function logActividad(accion, detalle = "") {
     if (!currentUser) return;
-
     const registro = {
         usuario: currentUser.username,
-        accion: accion,
-        detalle: detalle,
+        accion,
+        detalle,
         fecha: new Date().toISOString()
     };
-
-    const { error } = await supabase.from("actividad").insert([registro]);
-    if (error) console.error("Error registrando actividad:", error);
+    await supabase.from("actividad").insert([registro]);
 }
 
 // -------------------- INICIALIZACIÓN --------------------
@@ -322,6 +319,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     await initUser();
     if(currentUser) await logActividad("Accedió al Casino");
     await loadTop5();
+    await loadTop5LastWeek();
 });
 
 // -------------------- LOGIN / LOGOUT --------------------
@@ -340,9 +338,9 @@ async function initUser() {
             currentUser = JSON.parse(saved);
             renderUserUI();
             showDailyButton();
+            if (currentUser.username === "admin") showAdminButton();
             return;
         }
-
         document.getElementById("authContainer").style.display = "flex";
         document.getElementById("userInfo").style.display = "none";
     } catch (err) {
@@ -354,19 +352,14 @@ async function initUser() {
 function renderUserUI() {
     const authContainer = document.getElementById("authContainer");
     const userInfo = document.getElementById("userInfo");
-
     if (currentUser) {
         authContainer.style.display = "none";
         userInfo.style.display = "flex";
         document.getElementById("userName").textContent = currentUser.username || "Usuario";
         document.getElementById("pekepuntos").textContent = `Pekepuntos: ${(currentUser.pekepuntos || 0).toLocaleString()}`;
-
         if (currentUser.fondo_color) document.body.style.backgroundColor = currentUser.fondo_color;
         if (currentUser.nombre_color) document.getElementById("userName").style.color = currentUser.nombre_color;
-        if (currentUser.tabla_color) {
-            applyTableColor(currentUser.tabla_color);
-            document.getElementById("tableColorPicker").value = currentUser.tabla_color;
-        }
+        if (currentUser.tabla_color) applyTableColor(currentUser.tabla_color);
     } else {
         authContainer.style.display = "flex";
         userInfo.style.display = "none";
@@ -374,28 +367,17 @@ function renderUserUI() {
     }
 }
 
-// -------------------- TOP 5 --------------------
+// -------------------- TOP 5 ACTUAL --------------------
 async function loadTop5() {
     const top5List = document.getElementById("top5List");
-    top5List.innerHTML = '<li style="color:#aaa;">Cargando top 5...</li>';
-
+    top5List.innerHTML = '<li style="color:#aaa;">Cargando top actual...</li>';
     try {
         const { data, error } = await supabase
             .from("usuarios")
-            .select("id, username, pekepuntos, nombre_color")
+            .select("username, pekepuntos, nombre_color")
             .order("pekepuntos", { ascending: false })
             .limit(5);
-
-        if (error) {
-            top5List.innerHTML = `<li style="color:red;">❌ Error al cargar el Top 5:<br>${error.message}</li>`;
-            console.error(error);
-            return;
-        }
-
-        if (!data || data.length === 0) {
-            top5List.innerHTML = '<li style="color:#ccc;">(No hay jugadores aún en la base de datos)</li>';
-            return;
-        }
+        if (error) throw error;
 
         top5List.innerHTML = "";
         data.forEach((u, idx) => {
@@ -406,8 +388,7 @@ async function loadTop5() {
                 <div style="flex:1;text-align:left;">
                     <strong style="color:${color}">${idx + 1}. ${u.username}</strong>
                     <div style="font-size:0.9rem;color:#ddd;">${(u.pekepuntos || 0).toLocaleString()} Pekepuntos</div>
-                </div>
-            `;
+                </div>`;
             top5List.appendChild(li);
         });
     } catch (e) {
@@ -415,7 +396,102 @@ async function loadTop5() {
     }
 }
 
-// -------------------- RECOMPENSAS DIARIAS --------------------
+// -------------------- TOP 5 SEMANA PASADA --------------------
+async function loadTop5LastWeek() {
+  const list = document.getElementById("top5LastWeekList");
+  if (!list) return;
+  list.innerHTML = '<li style="color:#aaa;">Cargando top anterior...</li>';
+  try {
+    const { data: semanas } = await supabase
+      .from("ranking_semana")
+      .select("semana")
+      .order("semana", { ascending: false })
+      .limit(1);
+
+    if (!semanas || semanas.length === 0) {
+      list.innerHTML = '<li style="color:#ccc;">Sin ranking previo</li>';
+      return;
+    }
+
+    const semana = semanas[0].semana;
+    const { data, error } = await supabase
+      .from("ranking_semana")
+      .select("username, puntos, posicion")
+      .eq("semana", semana)
+      .order("posicion", { ascending: true });
+
+    if (error) throw error;
+    list.innerHTML = "";
+    data.forEach((u, idx) => {
+      const li = document.createElement("li");
+      li.className = "top5-item";
+      const color = idx === 0 ? "gold" : idx === 1 ? "silver" : idx === 2 ? "#b87333" : "#fff";
+      li.innerHTML = `
+        <div style="flex:1;text-align:left;">
+          <strong style="color:${color}">${idx + 1}. ${u.username}</strong>
+          <div style="font-size:0.9rem;color:#ddd;">${(u.puntos || 0).toLocaleString()} Pekepuntos</div>
+        </div>`;
+      list.appendChild(li);
+    });
+  } catch (e) {
+    console.error("Error cargando top semana pasada:", e);
+    list.innerHTML = `<li style="color:red;">❌ Error al cargar</li>`;
+  }
+}
+
+// -------------------- BOTÓN ADMIN: REINICIO SEMANAL --------------------
+function showAdminButton() {
+  const btn = document.createElement("button");
+  btn.className = "auth-button";
+  btn.textContent = "🧹 Guardar Ranking + Reiniciar";
+  btn.style.marginTop = "20px";
+  btn.onclick = resetSemanal;
+  document.body.appendChild(btn);
+}
+
+async function resetSemanal() {
+  if (!confirm("¿Guardar ranking actual y reiniciar puntos?")) return;
+
+  const { data: usuarios, error: errUsers } = await supabase
+    .from("usuarios")
+    .select("username, pekepuntos");
+
+  if (errUsers) return alert("Error al obtener usuarios");
+
+  // Calcular semana ISO
+  const now = new Date();
+  const year = now.getFullYear();
+  const week = Math.ceil((((now - new Date(year,0,1)) / 86400000) + new Date(year,0,1).getDay()+1) / 7);
+  const semana = `${year}-W${week}`;
+
+  const ranking = usuarios
+    .sort((a,b) => b.pekepuntos - a.pekepuntos)
+    .slice(0,5)
+    .map((u,i) => ({
+      semana,
+      username: u.username,
+      puntos: u.pekepuntos,
+      posicion: i + 1,
+      fecha_guardado: new Date().toISOString()
+    }));
+
+  const { error: errInsert } = await supabase.from("ranking_semana").insert(ranking);
+  if (errInsert) return alert("Error guardando ranking semanal.");
+
+  const { error: errReset } = await supabase
+    .from("usuarios")
+    .update({ pekepuntos: 0 })
+    .neq("pekepuntos", 0);
+
+  if (errReset) alert("Error reiniciando puntos");
+  else alert("✅ Ranking semanal guardado y puntos reiniciados");
+
+  await logActividad("Ranking semanal guardado y reiniciado");
+  await loadTop5();
+  await loadTop5LastWeek();
+}
+
+// -------------------- RECOMPENSAS --------------------
 function showDailyButton() {
     if (!document.getElementById("dailyButton") && currentUser) {
         const dailyDiv = document.createElement("div");
@@ -430,11 +506,9 @@ async function checkDailyStatus() {
     const lastClaim = currentUser.last_claim;
     const btn = document.getElementById("dailyButton");
     if (!btn || !lastClaim) return;
-
     const last = new Date(lastClaim);
     const now = new Date();
     const diffHours = (now - last) / 36e5;
-
     if (diffHours < 24) {
         btn.disabled = true;
         const remaining = Math.ceil(24 - diffHours);
@@ -444,35 +518,24 @@ async function checkDailyStatus() {
 
 async function reclamarRecompensa() {
     if (!currentUser) return alert("Debes iniciar sesión.");
-
     const now = new Date();
     const lastClaim = currentUser.last_claim ? new Date(currentUser.last_claim) : null;
     const diffHours = lastClaim ? (now - lastClaim) / 36e5 : 25;
-
     if (diffHours < 24) {
         const horasRestantes = Math.ceil(24 - diffHours);
         return alert(`Debes esperar ${horasRestantes} horas para volver a reclamar.`);
     }
-
     const nuevosPekepuntos = (currentUser.pekepuntos || 0) + 100;
     const { error } = await supabase
         .from("usuarios")
         .update({ pekepuntos: nuevosPekepuntos, last_claim: now.toISOString() })
         .eq("id", currentUser.id);
-
-    if (error) {
-        console.error(error);
-        return alert("Error al reclamar los pekepuntos.");
-    }
-
+    if (error) return alert("Error al reclamar los pekepuntos.");
     currentUser.pekepuntos = nuevosPekepuntos;
     currentUser.last_claim = now.toISOString();
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
-
     document.getElementById("pekepuntos").innerText = `Pekepuntos: ${nuevosPekepuntos}`;
-
-    await logActividad("Reclamó recompensa diaria", `+100 Pekepuntos (total: ${nuevosPekepuntos})`);
-
+    await logActividad("Reclamó recompensa diaria", `+100 Pekepuntos`);
     alert("¡Has reclamado 100 pekepuntos!");
 }
 
