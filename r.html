@@ -155,6 +155,15 @@ const ctx = canvas.getContext("2d");
 const radius = canvas.width/2;
 let currentAngle = 0, spinning = false, finalNumber = null;
 
+/* 🧾 Registrar actividad en Supabase */
+async function registrarActividad(usuario, accion) {
+  try {
+    await supabase.from("actividad").insert([{ usuario, accion }]);
+  } catch (err) {
+    console.error("Error registrando actividad:", err);
+  }
+}
+
 /* 🎨 Dibujar la ruleta */
 function drawRoulette() {
   const step = 2 * Math.PI / numbers.length;
@@ -197,7 +206,6 @@ function drawRoulette() {
 function spinRoulette() {
   if (spinning) return;
 
-  // Comprobación de conexión
   if (!navigator.onLine) {
     alert("No tienes conexión a Internet. No puedes girar la ruleta.");
     return;
@@ -208,8 +216,10 @@ function spinRoulette() {
     return;
   }
 
+  registrarActividad(currentUser.username, `giró la ruleta apostando ${currentBet} pekepuntos`);
+
   spinning = true;
-  let velocity = Math.random() * 0.15 + 0.18;  // velocidad más baja → menos probabilidad de parar justo donde conviene
+  let velocity = Math.random() * 0.15 + 0.18;
   let deceleration = 0.0025 + Math.random() * 0.003;
 
   function animate() {
@@ -257,12 +267,14 @@ async function loadPekePuntos() {
       alert("Has sido baneado y no puedes jugar a la ruleta.");
       document.getElementById("confirm-bet-button").disabled = true;
       document.getElementById("spin-button").disabled = true;
+      registrarActividad(currentUser.username, "intentó jugar estando baneado");
       return;
     }
 
     currentUser.pekepuntos = data.pekepuntos;
     document.getElementById("pekePuntos").textContent = `Pekepuntos: ${data.pekepuntos}`;
     localStorage.setItem("currentUser", JSON.stringify(currentUser));
+    registrarActividad(currentUser.username, "entró al casino");
   } catch (err) {
     console.error("Error al cargar Pekepuntos:", err);
     alert("No se han podido cargar los Pekepuntos.");
@@ -294,30 +306,34 @@ document.getElementById("confirm-bet-button").addEventListener("click", () => {
   localStorage.setItem("currentUser", JSON.stringify(currentUser));
   supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
 
+  registrarActividad(currentUser.username, `confirmó una apuesta de ${currentBet} pekepuntos`);
   document.getElementById("spin-button").disabled = false;
 });
 
 /* 🔁 Actualizar puntos */
 async function updatePoints(wonAmount) {
-  if (wonAmount > 0) currentUser.pekepuntos += wonAmount;
+  if (wonAmount > 0) {
+    currentUser.pekepuntos += wonAmount;
+    registrarActividad(currentUser.username, `ganó ${wonAmount} pekepuntos en la ruleta`);
+  } else {
+    registrarActividad(currentUser.username, `perdió la apuesta de ${currentBet} pekepuntos`);
+  }
+
   document.getElementById("pekePuntos").textContent = `Pekepuntos: ${currentUser.pekepuntos}`;
   await supabase.from("usuarios").update({ pekepuntos: currentUser.pekepuntos }).eq("id", currentUser.id);
   localStorage.setItem("currentUser", JSON.stringify(currentUser));
   resetSelections();
 }
 
-/* 🎲 Calcular ganancias (más difícil ganar) */
+/* 🎲 Calcular ganancias */
 function calculateWinnings(number, color, parity) {
   let won = 0;
-
   const activeBets = selectedNumbers.size + (selectedColor ? 1 : 0) + (selectedParity ? 1 : 0);
   if (activeBets === 0) return;
 
   const betPerOption = currentBet / activeBets;
-
-  // 🔸 Recompensas más ajustadas (más difícil)
-  if (selectedNumbers.has(number)) won += betPerOption * 20; // antes 36
-  if (selectedColor && color === selectedColor) won += betPerOption * 2; // antes 2
+  if (selectedNumbers.has(number)) won += betPerOption * 20;
+  if (selectedColor && color === selectedColor) won += betPerOption * 2;
   if (selectedParity && ((parity === "even" && selectedParity === "even") || (parity === "odd" && selectedParity === "odd")))
     won += betPerOption * 2;
 
