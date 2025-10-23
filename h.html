@@ -402,25 +402,18 @@ container .card h1,
   <button class="nav-button" onclick="window.location.href='e.html'">Encuesta</button>
 </div>
 <script>
-/* ===== Supabase (usa tu URL y KEY originales) ===== */
+/* ===== Supabase ===== */
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = window.supabase;
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ============================
-// Gestión de usuario y UI
-// ============================
 document.addEventListener("DOMContentLoaded", async () => {
   const authContainer = document.getElementById("authContainer");
   const userInfo = document.getElementById("userInfo");
   const dropdownMenu = document.getElementById("dropdownMenu");
-  const updatesButton = document.getElementById("updatesButton");
-  const updatesModal = document.getElementById("updatesModal");
-  const modalOverlay = document.getElementById("modalOverlay");
-  const closeUpdatesButton = document.getElementById("closeUpdatesButton");
   const downloadButton = document.getElementById("downloadButton");
-  const golfButton = document.getElementById("golfButton"); // ⛳ nuevo botón
+  const golfButton = document.getElementById("golfButton");
 
   // ============================
   // Cargar info de usuario
@@ -428,7 +421,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   async function loadUserInfo() {
     let user = null;
 
-    // 1️⃣ Intentar desde Supabase
     if (window.supabase) {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
@@ -437,12 +429,10 @@ document.addEventListener("DOMContentLoaded", async () => {
           email: session.user.email,
           logo: session.user.user_metadata?.logo || "logoDefault.png"
         };
-        // Guardamos en localStorage para persistencia simple
         localStorage.setItem("currentUser", JSON.stringify(user));
       }
     }
 
-    // 2️⃣ Si no hay sesión, intentar desde localStorage
     if (!user) {
       try {
         const stored = JSON.parse(localStorage.getItem("currentUser"));
@@ -459,23 +449,13 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById("userName").textContent = user.username || "Usuario";
       document.getElementById("userLogo").src = user.logo || "logoDefault.png";
 
-      // Mostrar botón de descarga solo a Peketruli o SabinoArana
-      if (user.username === "Peketruli" || user.username === "SabinoArana") {
-        if (downloadButton) {
-          downloadButton.style.display = "inline-flex";
-          downloadButton.textContent = "📥 Descargar registros";
-        }
-      } else if (downloadButton) {
-        downloadButton.style.display = "none";
-      }
-
-      // ⛳ Mostrar el botón de golf solo a Peketruli
       if (user.username === "Peketruli") {
+        if (downloadButton) downloadButton.style.display = "inline-flex";
         if (golfButton) golfButton.style.display = "inline-flex";
       } else {
+        if (downloadButton) downloadButton.style.display = "none";
         if (golfButton) golfButton.style.display = "none";
       }
-
     } else {
       userInfo.style.display = "none";
       authContainer.style.display = "flex";
@@ -503,23 +483,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // ============================
-  // Modal de actualizaciones
-  // ============================
-  if (updatesButton) updatesButton.addEventListener("click", () => {
-    updatesModal.style.display = "block";
-    modalOverlay.style.display = "block";
-    updatesModal.style.transform = "translate(-50%,-50%) scale(1)";
-  });
-  if (closeUpdatesButton) closeUpdatesButton.addEventListener("click", () => {
-    updatesModal.style.display = "none";
-    modalOverlay.style.display = "none";
-  });
-  if (modalOverlay) modalOverlay.addEventListener("click", () => {
-    updatesModal.style.display = "none";
-    modalOverlay.style.display = "none";
-  });
-
-  // ============================
   // Logout
   // ============================
   window.logout = async function() {
@@ -532,7 +495,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   // ============================
-  // Download PDF (solo admin)
+  // Descargar PDF registros (solo Peketruli)
   // ============================
   window.downloadPDF = function() {
     if (!downloadButton) return;
@@ -549,8 +512,52 @@ document.addEventListener("DOMContentLoaded", async () => {
   };
 
   if (downloadButton) downloadButton.addEventListener("click", downloadPDF);
+
+  // ============================
+  // Peticiones
+  // ============================
+  window.enviarPeticion = async function() {
+    const texto = document.getElementById("peticionTexto").value.trim();
+    if (!texto) return alert("Escribe tu petición antes de enviarla.");
+
+    const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anónimo" };
+
+    const { error } = await supabase.from("peticiones").insert([
+      { usuario: user.username, contenido: texto }
+    ]);
+
+    if (error) {
+      console.error(error);
+      alert("Error al enviar la petición.");
+    } else {
+      alert("✅ Petición enviada. ¡Gracias por tus ideas!");
+      document.getElementById("peticionTexto").value = "";
+    }
+  };
+
+  // ============================
+  // Reportes
+  // ============================
+  window.enviarReporte = async function() {
+    const tipo = document.getElementById("reporteTipo").value;
+    const texto = document.getElementById("reporteTexto").value.trim();
+    if (!texto) return alert("Describe el problema antes de enviarlo.");
+
+    const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anónimo" };
+
+    const { error } = await supabase.from("reportes").insert([
+      { usuario: user.username, tipo, descripcion: texto }
+    ]);
+
+    if (error) {
+      console.error(error);
+      alert("Error al enviar el reporte.");
+    } else {
+      alert("✅ Reporte enviado. ¡Gracias por avisar!");
+      document.getElementById("reporteTexto").value = "";
+    }
+  };
 });
 </script>
-
 </body>
 </html>
