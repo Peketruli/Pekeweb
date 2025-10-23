@@ -83,38 +83,42 @@ const toggleForm = document.getElementById("toggleForm");
 const formTitle = document.getElementById("form-title");
 const submitBtn = document.getElementById("submitBtn");
 
-// Función para registrar acciones en logs
-async function registrarAccion(userId, accion, ip = 'desconocida') {
+/* 🧾 Registrar actividad en la tabla 'actividad' */
+async function registrarActividad(usuario, accion) {
   try {
-    const { data, error } = await supabase
-      .from('logs')
-      .insert([{ user_id: userId, action: accion, ip }]);
-    if (error) console.error('Error registrando acción:', error.message);
+    const { error } = await supabase.from("actividad").insert([{ usuario, accion }]);
+    if (error) console.error("Error registrando actividad:", error.message);
   } catch (err) {
-    console.error('Error inesperado al registrar acción:', err);
+    console.error("Error inesperado al registrar actividad:", err);
   }
 }
 
-// Cambiar entre login y registro
+/* 🔁 Cambiar entre Login y Registro */
 toggleForm.addEventListener("click", () => {
   isLogin = !isLogin;
   formTitle.innerText = isLogin ? "Login" : "Registro";
   submitBtn.innerText = isLogin ? "Entrar" : "Crear cuenta";
-  toggleForm.innerText = isLogin ? "¿No tienes cuenta? Regístrate" : "¿Ya tienes cuenta? Inicia sesión";
+  toggleForm.innerText = isLogin
+    ? "¿No tienes cuenta? Regístrate"
+    : "¿Ya tienes cuenta? Inicia sesión";
 });
 
-// Manejo del formulario
+/* 🚪 Manejar formulario de login/registro */
 authForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+
   const username = document.getElementById("username").value.trim();
   const password = document.getElementById("password").value.trim();
 
-  if (!username || !password) return alert("Completa todos los campos.");
+  if (!username || !password) {
+    alert("Completa todos los campos.");
+    return;
+  }
 
   if (!isLogin) {
-    // Registro
+    /* 🧠 Registro */
     try {
-      // Verificar si el usuario ya existe
+      // Comprobar si existe
       const { data: existingUser, error: searchError } = await supabase
         .from("usuarios")
         .select("username")
@@ -122,24 +126,24 @@ authForm.addEventListener("submit", async (e) => {
         .maybeSingle();
 
       if (searchError) throw searchError;
-      if (existingUser) return alert("⚠️ El nombre de usuario ya está en uso.");
+      if (existingUser) return alert("⚠️ Ese nombre de usuario ya está en uso.");
 
-      // Validación de longitud de nombre
-      if (username.length > 50) return alert("❌ El nombre de usuario no puede tener más de 50 caracteres.");
+      if (username.length > 50)
+        return alert("❌ El nombre de usuario no puede tener más de 50 caracteres.");
 
-      // Insertar usuario
+      // Crear usuario nuevo
       const { data: newUser, error } = await supabase
         .from("usuarios")
-        .insert([{ username, password }])
+        .insert([{ username, password, pekepuntos: 100 }]) // puedes ajustar el valor inicial
         .select()
         .single();
 
       if (error) throw error;
 
-      // Registrar acción de registro
-      await registrarAccion(newUser.id, 'registro');
+      // Registrar actividad
+      await registrarActividad(username, "se registró en la plataforma");
 
-      alert("Usuario creado con éxito 🎉 Ahora inicia sesión.");
+      alert("✅ Usuario creado con éxito. Ahora inicia sesión.");
       isLogin = true;
       formTitle.innerText = "Login";
       submitBtn.innerText = "Entrar";
@@ -152,7 +156,7 @@ authForm.addEventListener("submit", async (e) => {
     return;
   }
 
-  // Login
+  /* 🔓 Login */
   try {
     const { data, error } = await supabase
       .from("usuarios")
@@ -163,12 +167,11 @@ authForm.addEventListener("submit", async (e) => {
 
     if (error || !data) {
       alert("Usuario o contraseña incorrectos ❌");
+      await registrarActividad(username, "intentó iniciar sesión sin éxito");
     } else {
       localStorage.setItem("currentUser", JSON.stringify(data));
 
-      // Registrar acción de login
-      await registrarAccion(data.id, 'login');
-
+      await registrarActividad(username, "inició sesión correctamente");
       window.location.href = "h.html";
     }
   } catch (err) {
