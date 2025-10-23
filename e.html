@@ -164,7 +164,6 @@ input:focus, .poll-option:hover, .back-button:hover, .submit-button:hover, .add-
 <button class="back-button" onclick="goToMainPage()">Volver a la Página Principal</button>
 
 <script>
-// --- Configuración de Supabase ---
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co"; 
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; 
 const { createClient } = supabase;
@@ -174,13 +173,20 @@ let currentPoll = null;
 let pollInterval = null;
 let pollEnded = false;
 
-// Usuario actual (para permisos de crear/eliminar)
 const user = JSON.parse(localStorage.getItem("currentUser"));
-
-// ID de encuesta que el usuario ya votó (localStorage)
 let votedPollId = localStorage.getItem("votedPollId");
 
-// --- Inicialización ---
+/* 🧾 Función para registrar actividad en Supabase */
+async function registrarActividad(usuario, accion) {
+  try {
+    const { error } = await db.from("actividad").insert([{ usuario, accion }]);
+    if (error) console.error("Error registrando actividad:", error.message);
+  } catch (err) {
+    console.error("Error inesperado al registrar actividad:", err);
+  }
+}
+
+/* 🚀 Inicialización */
 document.addEventListener("DOMContentLoaded", async () => {
   if(user && (user.username === "Peketruli" || user.username === "SabinoArana")){
     document.getElementById("createPoll").style.display = "block";
@@ -189,7 +195,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadActivePoll();
 });
 
-// --- Añadir opción al crear encuesta ---
+/* ➕ Añadir opción */
 function addOption() {
   const optionsContainer = document.getElementById("optionsContainer");
   const optionCount = optionsContainer.getElementsByClassName("option-input").length + 1;
@@ -201,7 +207,7 @@ function addOption() {
   optionsContainer.appendChild(document.createElement("br"));
 }
 
-// --- Crear nueva encuesta ---
+/* 🧠 Crear encuesta */
 async function createPoll() {
   const question = document.getElementById("newQuestion").value;
   const options = Array.from(document.getElementsByClassName("option-input"))
@@ -217,23 +223,30 @@ async function createPoll() {
     return; 
   }
 
-  // Limpiar voto previo para nueva encuesta
   localStorage.removeItem("votedPollId");
 
-  // Guardar encuesta en Supabase
   const { data, error } = await db.from("polls").insert([
-    { question, options: options.map(o=>({text:o})), votes: new Array(options.length).fill(0), duration, creator:user.username, start_time: new Date() }
+    { 
+      question, 
+      options: options.map(o=>({text:o})), 
+      votes: new Array(options.length).fill(0), 
+      duration, 
+      creator: user.username, 
+      start_time: new Date() 
+    }
   ]).select().single();
 
   if(error){ 
     alert("Error al crear: "+error.message); 
     return; 
   }
-  alert("Encuesta creada!");
+
+  await registrarActividad(user.username, `creó una nueva encuesta: "${question}"`);
+  alert("✅ Encuesta creada!");
   loadPoll(data.id);
 }
 
-// --- Votar ---
+/* 🗳️ Votar */
 async function vote(optionIndex){
   if(!currentPoll) return;
   if(pollEnded){
@@ -245,32 +258,30 @@ async function vote(optionIndex){
     return;
   }
 
-  // Guardar que ya votó
   localStorage.setItem("votedPollId", currentPoll.id);
-
-  // Contar el voto localmente
   currentPoll.votes[optionIndex]++;
-  
-  // Guardar votos en Supabase
+
   const { error } = await db.from("polls").update({ votes: currentPoll.votes }).eq("id", currentPoll.id);
   if(error) alert("Error al registrar el voto: " + error.message);
 
-  renderPollOptions(); // Actualizar botones
-  showResults();       // Mostrar resultados
+  const opcionVotada = currentPoll.options[optionIndex].text;
+  await registrarActividad(user.username, `votó por "${opcionVotada}" en la encuesta "${currentPoll.question}"`);
+
+  renderPollOptions();
+  showResults();
 }
 
-// --- Cargar encuesta activa ---
+/* 📡 Cargar encuesta activa */
 async function loadActivePoll(){
   const { data: polls } = await db.from("polls").select("*").order("created_at",{ascending:false}).limit(1);
   if(polls && polls.length>0) loadPoll(polls[0].id);
 }
 
-// --- Cargar encuesta por ID ---
+/* 📦 Cargar encuesta por ID */
 async function loadPoll(pollId){
   const { data: poll } = await db.from("polls").select("*").eq("id", pollId).single();
   currentPoll = poll;
 
-  // Inicializar votos correctamente
   if(!currentPoll.votes || currentPoll.votes.length !== currentPoll.options.length){
     currentPoll.votes = new Array(currentPoll.options.length).fill(0);
     await db.from("polls").update({ votes: currentPoll.votes }).eq("id", currentPoll.id);
@@ -285,12 +296,11 @@ async function loadPoll(pollId){
   startTimer(new Date(poll.start_time).getTime(), poll.duration);
 }
 
-// --- Mostrar opciones y votos ---
+/* 🧩 Mostrar opciones */
 function renderPollOptions(){
   const pollOptions = document.getElementById("pollOptions");
   pollOptions.innerHTML = "";
 
-  // Encontrar índice del ganador
   const maxVotes = Math.max(...currentPoll.votes);
   const winnerIndex = currentPoll.votes.indexOf(maxVotes);
 
@@ -300,21 +310,18 @@ function renderPollOptions(){
     const votes = currentPoll.votes[i] || 0;
     btn.textContent = `${opt.text} (${votes} votos)`;
 
-    // Resaltar ganador
     if(pollEnded && i === winnerIndex){
       btn.style.backgroundColor = "green";
       btn.style.color = "#fff";
     }
 
-    // Deshabilitar si la encuesta terminó
     btn.disabled = pollEnded;
-
     btn.onclick = ()=>vote(i);
     pollOptions.appendChild(btn);
   });
 }
 
-// --- Temporizador ---
+/* ⏳ Temporizador */
 function startTimer(startTime,duration){
   let timeLeft = duration - Math.floor((Date.now()-startTime)/1000);
   const timerElement = document.getElementById("timer");
@@ -325,12 +332,12 @@ function startTimer(startTime,duration){
       clearInterval(pollInterval); 
       pollEnded = true;
       showResults(); 
-      renderPollOptions(); // Bloquear botones y resaltar ganador
+      renderPollOptions();
     }
   },1000);
 }
 
-// --- Mostrar resultados finales ---
+/* 📊 Resultados */
 function showResults(){
   const resultsElement = document.getElementById("results");
   const counts = currentPoll.votes;
@@ -342,16 +349,17 @@ function showResults(){
   resultsElement.style.display="block";
 }
 
-// --- Eliminar encuesta ---
+/* ❌ Eliminar encuesta */
 async function deletePoll(){
   if(!currentPoll) return;
   if(!confirm("¿Eliminar esta encuesta?")) return;
   await db.from("polls").delete().eq("id",currentPoll.id);
+  await registrarActividad(user.username, `eliminó la encuesta "${currentPoll.question}"`);
   alert("Encuesta eliminada");
   location.reload();
 }
 
-// --- Volver a la página principal ---
+/* 🏠 Volver al inicio */
 function goToMainPage(){
   window.location.href='h.html';
 }
