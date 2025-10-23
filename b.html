@@ -344,7 +344,7 @@ function loadUserInfo() {
     authContainer.style.display = "none";
     document.getElementById("userName").textContent = user.username || "Usuario";
     document.getElementById("userLogo").src = user.logo || "logoDefault.png";
-    registrarActividad("inicio sesión");
+    registrarActividad("ha iniciado sesión");
   } else {
     userInfo.style.display = "none";
     authContainer.style.display = "flex";
@@ -358,7 +358,7 @@ document.addEventListener("DOMContentLoaded", ()=>{
 
 // Logout
 function logout() {
-  registrarActividad("cerró sesión");
+  registrarActividad("ha cerrado sesión");
   localStorage.removeItem("currentUser");
   window.location.href="login.html";
 }
@@ -386,12 +386,16 @@ async function registrarActividad(accion) {
     }
   }
 
+  const actividad = {
+    usuario,
+    accion,
+    fecha: new Date().toISOString()
+  };
+
+  console.log("✅ Actividad registrada:", actividad); // Mostrar en consola
+
   try {
-    await db.from("actividad").insert([{
-      usuario,
-      accion,
-      fecha: new Date().toISOString()
-    }]);
+    await db.from("actividad").insert([actividad]);
   } catch(err) {
     console.error("❌ Error registrando actividad:", err.message);
   }
@@ -419,13 +423,20 @@ async function loadBlogs(){
       <h3>${blog.title}</h3>
       <p style="font-size:0.9em;color:gray;">Autor: ${blog.author||"Anónimo"}</p>
       ${blog.media_url?`<img src="${blog.media_url}" class="blog-media">`:''}
-      <p>❤️ <span id="likeCount-${blog.id}">${blog.likes||0}</span>
-      <button class="like-btn" id="likeBtn-${blog.id}">❤️</button></p>
+      <p>
+        ❤️ <span id="likeCount-${blog.id}">${blog.likes||0}</span>
+        <button class="like-btn" id="likeBtn-${blog.id}">❤️</button>
+        <button class="dislike-btn" id="dislikeBtn-${blog.id}">💔</button>
+      </p>
     `;
-    div.addEventListener("click",(e)=>{ if(!e.target.classList.contains("like-btn")) openBlog(blog); });
+    div.addEventListener("click",(e)=>{ if(!e.target.classList.contains("like-btn") && !e.target.classList.contains("dislike-btn")) openBlog(blog); });
     const likeBtn = div.querySelector(`#likeBtn-${blog.id}`);
+    const dislikeBtn = div.querySelector(`#dislikeBtn-${blog.id}`);
     likeBtn.addEventListener("click",(e)=>{ e.stopPropagation(); toggleLike(blog.id); });
+    dislikeBtn.addEventListener("click",(e)=>{ e.stopPropagation(); toggleDislike(blog.id); });
+
     if(user && localStorage.getItem(`like_${blog.id}_${user.id}`)) likeBtn.classList.add("liked");
+    if(user && localStorage.getItem(`dislike_${blog.id}_${user.id}`)) dislikeBtn.classList.add("disliked");
     blogsList.appendChild(div);
   });
 }
@@ -438,14 +449,49 @@ async function toggleLike(blogId){
   const btn=document.getElementById(`likeBtn-${blogId}`);
   const alreadyLiked=localStorage.getItem(likeKey);
   const currentLikes=parseInt(likeEl.textContent)||0;
-  const newLikes=alreadyLiked?currentLikes-1:currentLikes+1;
+  const newLikes=alreadyLiked ? currentLikes-1 : currentLikes+1;
+
   likeEl.textContent=newLikes;
   btn.classList.toggle("liked");
   if(alreadyLiked) localStorage.removeItem(likeKey); else localStorage.setItem(likeKey,"true");
-  await db.from("blog").update({likes:newLikes}).eq("id",blogId);
 
+  // Si estaba marcado el dislike, quitarlo
+  const dislikeKey=`dislike_${blogId}_${user.id}`;
+  const dislikeBtn=document.getElementById(`dislikeBtn-${blogId}`);
+  if(localStorage.getItem(dislikeKey)){
+    localStorage.removeItem(dislikeKey);
+    dislikeBtn.classList.remove("disliked");
+  }
+
+  await db.from("blog").update({likes:newLikes}).eq("id",blogId);
   const blogTitle = (await db.from("blog").select("title").eq("id",blogId).single()).data?.title || "Desconocido";
-  registrarActividad(`${alreadyLiked ? "quitó like" : "dio like"} al blog "${blogTitle}"`);
+  registrarActividad(`${alreadyLiked ? "ha quitado like" : "ha dado like"} al blog "${blogTitle}"`);
+}
+
+async function toggleDislike(blogId){
+  const user=getCurrentUser(); if(!user){ alert("Inicia sesión para dar dislike"); return; }
+  const dislikeKey=`dislike_${blogId}_${user.id}`;
+  const dislikeEl=document.getElementById(`likeCount-${blogId}`);
+  const btn=document.getElementById(`dislikeBtn-${blogId}`);
+  const alreadyDisliked=localStorage.getItem(dislikeKey);
+  const currentLikes=parseInt(dislikeEl.textContent)||0;
+  const newLikes=alreadyDisliked ? currentLikes+1 : currentLikes-1;
+
+  dislikeEl.textContent=newLikes;
+  btn.classList.toggle("disliked");
+  if(alreadyDisliked) localStorage.removeItem(dislikeKey); else localStorage.setItem(dislikeKey,"true");
+
+  // Si estaba marcado el like, quitarlo
+  const likeKey=`like_${blogId}_${user.id}`;
+  const likeBtn=document.getElementById(`likeBtn-${blogId}`);
+  if(localStorage.getItem(likeKey)){
+    localStorage.removeItem(likeKey);
+    likeBtn.classList.remove("liked");
+  }
+
+  await db.from("blog").update({likes:newLikes}).eq("id",blogId);
+  const blogTitle = (await db.from("blog").select("title").eq("id",blogId).single()).data?.title || "Desconocido";
+  registrarActividad(`${alreadyDisliked ? "quitó dislike" : "dio dislike"} al blog "${blogTitle}"`);
 }
 
 // -------------------- Publicar blog --------------------
@@ -457,7 +503,8 @@ async function publishBlog(){
   let mediaUrl="";
   if(!title||!content){ alert("Completa todos los campos"); return; }
 
-  const forbidden = ["puta","mierda","idiota"];
+  // Filtro de palabras ofensivas
+  const forbidden = ["puta", "mierda", "idiota"];
   for (let word of forbidden) {
     if (content.toLowerCase().includes(word) || title.toLowerCase().includes(word)) {
       alert("Tu contenido contiene palabras no permitidas.");
@@ -476,7 +523,7 @@ async function publishBlog(){
   const { error } = await db.from("blog").insert([{ title, content, author:user.username, media_url:mediaUrl, likes:0, comments:[] }]);
   if(error){ console.error(error); alert("Error al publicar"); return; }
 
-  registrarActividad(`publicó un blog: "${title}"`);
+  registrarActividad(`ha publicado un blog: "${title}"`);
   hideNewBlogForm();
   document.getElementById("newTitle").value="";
   document.getElementById("newContent").value="";
@@ -522,7 +569,7 @@ async function publishComment(){
   const { error: updateError } = await db.from("blog").update({comments:newComments}).eq("id",window.currentBlogId);
   if(updateError){ console.error(updateError); alert("Error al publicar comentario"); return; }
 
-  registrarActividad(`comentó en el blog "${blogData.title}"`);
+  registrarActividad(`ha comentado en el blog "${blogData.title}"`);
   document.getElementById("newCommentText").value="";
   openBlog({...blogData, comments:newComments});
 }
