@@ -219,8 +219,8 @@ document.addEventListener("DOMContentLoaded", async () => {
   const dropdownMenu = document.getElementById("dropdownMenu");
   const adminPanel = document.getElementById("adminPanel");
 
-  // -------- FUNCIONES --------
-  async function getCurrentUser() {
+  // ---- Cargar usuario ----
+  async function loadUserInfo() {
     let user = null;
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -235,120 +235,101 @@ document.addEventListener("DOMContentLoaded", async () => {
       try { user = JSON.parse(localStorage.getItem("currentUser")); } catch {}
     }
 
-    return user;
-  }
+    if (user) {
+      userInfo.style.display = "flex";
+      authContainer.style.display = "none";
+      document.getElementById("userName").textContent = user.username;
+      document.getElementById("userLogo").src = user.logo;
 
-  async function loadAdminData() {
-    const { data: peticiones, error: e1 } = await supabase
-      .from("peticiones")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    const { data: reportes, error: e2 } = await supabase
-      .from("reportes")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    const tbodyP = document.querySelector("#peticionesTable tbody");
-    const tbodyR = document.querySelector("#reportesTable tbody");
-    tbodyP.innerHTML = "";
-    tbodyR.innerHTML = "";
-
-    if (e1 || e2) {
-      console.error("Error al cargar datos:", e1 || e2);
-      return;
-    }
-
-    if (peticiones?.length) {
-      peticiones.forEach(p => {
-        const fecha = p.created_at ? new Date(p.created_at).toLocaleString() : "—";
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${p.id}</td><td>${p.usuario}</td><td>${p.contenido}</td><td>${fecha}</td>`;
-        tbodyP.appendChild(tr);
-      });
+      if (user.username === "Peketruli") {
+        adminPanel.style.display = "block";
+        await loadAdminData();
+      }
     } else {
-      tbodyP.innerHTML = `<tr><td colspan="4">No hay peticiones aún.</td></tr>`;
-    }
-
-    if (reportes?.length) {
-      reportes.forEach(r => {
-        const fecha = r.created_at ? new Date(r.created_at).toLocaleString() : "—";
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${r.id}</td><td>${r.usuario}</td><td>${r.tipo}</td><td>${r.descripcion}</td><td>${fecha}</td>`;
-        tbodyR.appendChild(tr);
-      });
-    } else {
-      tbodyR.innerHTML = `<tr><td colspan="5">No hay reportes aún.</td></tr>`;
+      userInfo.style.display = "none";
+      authContainer.style.display = "flex";
+      adminPanel.style.display = "none";
     }
   }
 
-  // -------- INICIO --------
-  const user = await getCurrentUser();
-
-  if (user) {
-    userInfo.style.display = "flex";
-    authContainer.style.display = "none";
-    document.getElementById("userName").textContent = user.username;
-    document.getElementById("userLogo").src = user.logo;
-
-    // Mostrar panel admin solo a ti
-    if (user.username === "Peketruli") {
-      adminPanel.style.display = "block";
-      await loadAdminData();
-    }
-  } else {
-    userInfo.style.display = "none";
-    authContainer.style.display = "flex";
-  }
-
-  // -------- MENÚ USUARIO --------
-  userInfo.addEventListener("click", () => {
-    dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
-  });
-  document.addEventListener("click", e => {
-    if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target)) dropdownMenu.style.display = "none";
-  });
-
-  // -------- CERRAR SESIÓN --------
+  // ---- Cerrar sesión ----
   window.logout = async function() {
     await supabase.auth.signOut();
     localStorage.removeItem("currentUser");
     window.location.href = "l.html";
   };
 
-  // -------- ENVIAR PETICIÓN --------
+  // ---- Menú usuario ----
+  userInfo.addEventListener("click", () => {
+    dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
+  });
+  document.addEventListener("click", e => {
+    if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target))
+      dropdownMenu.style.display = "none";
+  });
+
+  // ---- Cargar tablas de admin ----
+  async function loadAdminData() {
+    if (!adminPanel) return;
+    const { data: peticiones } = await supabase.from("peticiones").select("*").order("created_at", { ascending: false });
+    const { data: reportes } = await supabase.from("reportes").select("*").order("created_at", { ascending: false });
+
+    const tbodyP = document.querySelector("#peticionesTable tbody");
+    const tbodyR = document.querySelector("#reportesTable tbody");
+    tbodyP.innerHTML = "";
+    tbodyR.innerHTML = "";
+
+    if (peticiones) peticiones.forEach(p => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${p.id}</td>
+        <td>${p.usuario}</td>
+        <td>${p.contenido}</td>
+        <td>${p.created_at ? new Date(p.created_at).toLocaleString() : ""}</td>`;
+      tbodyP.appendChild(tr);
+    });
+
+    if (reportes) reportes.forEach(r => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${r.id}</td>
+        <td>${r.usuario}</td>
+        <td>${r.tipo}</td>
+        <td>${r.descripcion}</td>
+        <td>${r.created_at ? new Date(r.created_at).toLocaleString() : ""}</td>`;
+      tbodyR.appendChild(tr);
+    });
+  }
+
+  // ---- Enviar petición ----
   document.getElementById("enviarPeticionBtn")?.addEventListener("click", async () => {
     const contenido = document.getElementById("peticionInput").value.trim();
-    if (!contenido) return alert("✏️ Escribe algo antes de enviar.");
-    const current = user || { username: "Anónimo" };
-
-    const { error } = await supabase.from("peticiones").insert([{ usuario: current.username, contenido }]);
-    if (error) return alert("Error al enviar petición: " + error.message);
+    if (!contenido) return alert("Escribe algo antes de enviar.");
+    const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
+    const { error } = await supabase.from("peticiones").insert([{ usuario: user.username, contenido }]);
+    if (error) return alert("Error al enviar: " + error.message);
 
     document.getElementById("peticionInput").value = "";
     alert("✅ Petición enviada correctamente.");
-    if (current.username === "Peketruli") loadAdminData();
+    await loadAdminData(); // actualiza tabla si eres admin
   });
 
-  // -------- ENVIAR REPORTE --------
+  // ---- Enviar reporte ----
   document.getElementById("enviarReporteBtn")?.addEventListener("click", async () => {
     const descripcion = document.getElementById("reporteInput").value.trim();
     const tipo = document.getElementById("tipoReporte").value;
-    if (!descripcion) return alert("✏️ Describe el reporte antes de enviarlo.");
-    const current = user || { username: "Anónimo" };
-
-    const { error } = await supabase.from("reportes").insert([{ usuario: current.username, tipo, descripcion }]);
-    if (error) return alert("Error al enviar reporte: " + error.message);
+    if (!descripcion) return alert("Describe el reporte antes de enviar.");
+    const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
+    const { error } = await supabase.from("reportes").insert([{ usuario: user.username, tipo, descripcion }]);
+    if (error) return alert("Error al enviar: " + error.message);
 
     document.getElementById("reporteInput").value = "";
     alert("✅ Reporte enviado correctamente.");
-    if (current.username === "Peketruli") loadAdminData();
+    await loadAdminData(); // actualiza tabla si eres admin
   });
 
-  // -------- ACTUALIZACIÓN AUTOMÁTICA (solo admin) --------
-  if (user?.username === "Peketruli") {
-    setInterval(loadAdminData, 15000); // refresca cada 15s
-  }
+  // ---- Inicio ----
+  await loadUserInfo();
 });
 </script>
 </body>
