@@ -219,11 +219,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   const dropdownMenu = document.getElementById("dropdownMenu");
   const adminPanel = document.getElementById("adminPanel");
 
-  // ---- Cargar usuario ----
   async function loadUserInfo() {
     let user = null;
     const { data: { session } } = await supabase.auth.getSession();
-
     if (session?.user) {
       user = {
         username: session.user.user_metadata?.username || session.user.email,
@@ -232,7 +230,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       };
       localStorage.setItem("currentUser", JSON.stringify(user));
     } else {
-      try { user = JSON.parse(localStorage.getItem("currentUser")); } catch {}
+      try { user = JSON.parse(localStorage.getItem("currentUser")); } catch{}
     }
 
     if (user) {
@@ -241,95 +239,76 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById("userName").textContent = user.username;
       document.getElementById("userLogo").src = user.logo;
 
-      if (user.username === "Peketruli") {
-        adminPanel.style.display = "block";
-        await loadAdminData();
-      }
+      if(user.username === "Peketruli") adminPanel.style.display = "block";
     } else {
       userInfo.style.display = "none";
       authContainer.style.display = "flex";
       adminPanel.style.display = "none";
     }
   }
+  await loadUserInfo();
 
-  // ---- Cerrar sesión ----
+  userInfo.addEventListener("click", () => {
+    const isOpen = dropdownMenu.style.display === "block";
+    dropdownMenu.style.display = isOpen ? "none" : "block";
+  });
+  document.addEventListener("click", e => {
+    if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target)) dropdownMenu.style.display = "none";
+  });
+
   window.logout = async function() {
-    await supabase.auth.signOut();
+    try { await supabase.auth.signOut(); } catch{}
     localStorage.removeItem("currentUser");
     window.location.href = "l.html";
   };
 
-  // ---- Menú usuario ----
-  userInfo.addEventListener("click", () => {
-    dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
-  });
-  document.addEventListener("click", e => {
-    if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target))
-      dropdownMenu.style.display = "none";
-  });
-
-  // ---- Cargar tablas de admin ----
+  // Cargar peticiones y reportes en tablas
   async function loadAdminData() {
-    if (!adminPanel) return;
-    const { data: peticiones } = await supabase.from("peticiones").select("*").order("created_at", { ascending: false });
-    const { data: reportes } = await supabase.from("reportes").select("*").order("created_at", { ascending: false });
+// Enviar peticion
+document.getElementById("enviarPeticionBtn")?.addEventListener("click", async () => {
+  const contenido = document.getElementById("peticionInput").value.trim();
+  if(!contenido) return alert("Escribe algo antes de enviar.");
+  const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
+  const { error } = await supabase.from("peticiones").insert([{ usuario: user.username, contenido }]);
+  if(error) return alert("Error al enviar: "+error.message);
+  document.getElementById("peticionInput").value = "";
+  alert("Petición enviada!");
+  loadAdminData(); // actualizar tabla si admin la está viendo
+});
 
+// Enviar reporte
+document.getElementById("enviarReporteBtn")?.addEventListener("click", async () => {
+  const descripcion = document.getElementById("reporteInput").value.trim();
+  const tipo = document.getElementById("tipoReporte").value;
+  if(!descripcion) return alert("Describe el reporte antes de enviar.");
+  const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
+  const { error } = await supabase.from("reportes").insert([{ usuario: user.username, tipo, descripcion }]);
+  if(error) return alert("Error al enviar: "+error.message);
+  document.getElementById("reporteInput").value = "";
+  alert("Reporte enviado!");
+  loadAdminData(); // actualizar tabla si admin la está viendo
+});
+
+    
+    if(!adminPanel) return;
+    const { data: peticiones } = await supabase.from("peticiones").select("*");
+    const { data: reportes } = await supabase.from("reportes").select("*");
     const tbodyP = document.querySelector("#peticionesTable tbody");
     const tbodyR = document.querySelector("#reportesTable tbody");
-    tbodyP.innerHTML = "";
-    tbodyR.innerHTML = "";
+    tbodyP.innerHTML = ""; tbodyR.innerHTML = "";
 
-    if (peticiones) peticiones.forEach(p => {
+    if(peticiones) peticiones.forEach(p => {
       const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${p.id}</td>
-        <td>${p.usuario}</td>
-        <td>${p.contenido}</td>
-        <td>${p.created_at ? new Date(p.created_at).toLocaleString() : ""}</td>`;
+      tr.innerHTML = `<td>${p.id}</td><td>${p.usuario}</td><td>${p.contenido}</td><td>${p.created_at||''}</td>`;
       tbodyP.appendChild(tr);
     });
-
-    if (reportes) reportes.forEach(r => {
+    if(reportes) reportes.forEach(r => {
       const tr = document.createElement("tr");
-      tr.innerHTML = `
-        <td>${r.id}</td>
-        <td>${r.usuario}</td>
-        <td>${r.tipo}</td>
-        <td>${r.descripcion}</td>
-        <td>${r.created_at ? new Date(r.created_at).toLocaleString() : ""}</td>`;
+      tr.innerHTML = `<td>${r.id}</td><td>${r.usuario}</td><td>${r.tipo}</td><td>${r.descripcion}</td><td>${r.created_at||''}</td>`;
       tbodyR.appendChild(tr);
     });
   }
-
-  // ---- Enviar petición ----
-  document.getElementById("enviarPeticionBtn")?.addEventListener("click", async () => {
-    const contenido = document.getElementById("peticionInput").value.trim();
-    if (!contenido) return alert("Escribe algo antes de enviar.");
-    const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
-    const { error } = await supabase.from("peticiones").insert([{ usuario: user.username, contenido }]);
-    if (error) return alert("Error al enviar: " + error.message);
-
-    document.getElementById("peticionInput").value = "";
-    alert("✅ Petición enviada correctamente.");
-    await loadAdminData(); // actualiza tabla si eres admin
-  });
-
-  // ---- Enviar reporte ----
-  document.getElementById("enviarReporteBtn")?.addEventListener("click", async () => {
-    const descripcion = document.getElementById("reporteInput").value.trim();
-    const tipo = document.getElementById("tipoReporte").value;
-    if (!descripcion) return alert("Describe el reporte antes de enviar.");
-    const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
-    const { error } = await supabase.from("reportes").insert([{ usuario: user.username, tipo, descripcion }]);
-    if (error) return alert("Error al enviar: " + error.message);
-
-    document.getElementById("reporteInput").value = "";
-    alert("✅ Reporte enviado correctamente.");
-    await loadAdminData(); // actualiza tabla si eres admin
-  });
-
-  // ---- Inicio ----
-  await loadUserInfo();
+  await loadAdminData();
 });
 </script>
 </body>
