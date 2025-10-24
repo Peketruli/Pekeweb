@@ -54,6 +54,7 @@ body {position:relative;padding:50px 20px 140px;background: linear-gradient(180d
 
 /* ---------- BOTONES ---------- */
 .btn { font-weight:600; padding:12px 22px; border-radius:12px; border:none; cursor:pointer; transition:all .25s ease; box-shadow:0 6px 18px rgba(0,0,0,0.45); display:inline-flex; align-items:center; gap:10px; color:white; background:linear-gradient(180deg,#f39c12,#f57c00); z-index:5;}
+.btn[disabled] { opacity:0.6; cursor:default; transform:none; }
 .btn:hover { transform: scale(1.1) translateY(-3px); box-shadow:0 0 50px 18px rgba(255,160,70,0.9),0 18px 60px rgba(0,0,0,0.7); }
 
 /* ---------- NAV INFERIOR ---------- */
@@ -219,6 +220,56 @@ document.addEventListener("DOMContentLoaded", async () => {
   const dropdownMenu = document.getElementById("dropdownMenu");
   const adminPanel = document.getElementById("adminPanel");
 
+  // Flags para evitar envíos dobles
+  let sendingPetition = false;
+  let sendingReport = false;
+
+  // ---------- loadAdminData (solo lee, no añade listeners) ----------
+  async function loadAdminData() {
+    if (!adminPanel) return;
+
+    const { data: peticiones, error: errP } = await supabase
+      .from("peticiones")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    const { data: reportes, error: errR } = await supabase
+      .from("reportes")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (errP) console.error("Error cargando peticiones:", errP);
+    if (errR) console.error("Error cargando reportes:", errR);
+
+    const tbodyP = document.querySelector("#peticionesTable tbody");
+    const tbodyR = document.querySelector("#reportesTable tbody");
+    tbodyP.innerHTML = "";
+    tbodyR.innerHTML = "";
+
+    if (peticiones && peticiones.length) {
+      peticiones.forEach(p => {
+        const fecha = p.created_at ? new Date(p.created_at).toLocaleString() : "";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${p.id}</td><td>${p.usuario}</td><td>${p.contenido}</td><td>${fecha}</td>`;
+        tbodyP.appendChild(tr);
+      });
+    } else {
+      tbodyP.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#aaa;">No hay peticiones</td></tr>`;
+    }
+
+    if (reportes && reportes.length) {
+      reportes.forEach(r => {
+        const fecha = r.created_at ? new Date(r.created_at).toLocaleString() : "";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${r.id}</td><td>${r.usuario}</td><td>${r.tipo}</td><td>${r.descripcion}</td><td>${fecha}</td>`;
+        tbodyR.appendChild(tr);
+      });
+    } else {
+      tbodyR.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#aaa;">No hay reportes</td></tr>`;
+    }
+  }
+
+  // ---------- Cargar usuario y mostrar admin si eres Peketruli ----------
   async function loadUserInfo() {
     let user = null;
     const { data: { session } } = await supabase.auth.getSession();
@@ -230,7 +281,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       };
       localStorage.setItem("currentUser", JSON.stringify(user));
     } else {
-      try { user = JSON.parse(localStorage.getItem("currentUser")); } catch{}
+      try { user = JSON.parse(localStorage.getItem("currentUser")); } catch {}
     }
 
     if (user) {
@@ -239,76 +290,92 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById("userName").textContent = user.username;
       document.getElementById("userLogo").src = user.logo;
 
-      if(user.username === "Peketruli") adminPanel.style.display = "block";
+      if (user.username === "Peketruli") {
+        adminPanel.style.display = "block";
+        await loadAdminData();
+      } else {
+        adminPanel.style.display = "none";
+      }
     } else {
       userInfo.style.display = "none";
       authContainer.style.display = "flex";
       adminPanel.style.display = "none";
     }
   }
+
   await loadUserInfo();
 
+  // ---------- Menú usuario ----------
   userInfo.addEventListener("click", () => {
-    const isOpen = dropdownMenu.style.display === "block";
-    dropdownMenu.style.display = isOpen ? "none" : "block";
+    dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
   });
   document.addEventListener("click", e => {
     if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target)) dropdownMenu.style.display = "none";
   });
 
   window.logout = async function() {
-    try { await supabase.auth.signOut(); } catch{}
+    try { await supabase.auth.signOut(); } catch {}
     localStorage.removeItem("currentUser");
     window.location.href = "l.html";
   };
 
-  // Cargar peticiones y reportes en tablas
-  async function loadAdminData() {
-// Enviar peticion
-document.getElementById("enviarPeticionBtn")?.addEventListener("click", async () => {
-  const contenido = document.getElementById("peticionInput").value.trim();
-  if(!contenido) return alert("Escribe algo antes de enviar.");
-  const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
-  const { error } = await supabase.from("peticiones").insert([{ usuario: user.username, contenido }]);
-  if(error) return alert("Error al enviar: "+error.message);
-  document.getElementById("peticionInput").value = "";
-  alert("Petición enviada!");
-  loadAdminData(); // actualizar tabla si admin la está viendo
-});
+  // ---------- Enviar petición (listener agregado UNA sola vez) ----------
+  document.getElementById("enviarPeticionBtn")?.addEventListener("click", async function () {
+    if (sendingPetition) return; // ya hay un envío en curso
+    const contenido = document.getElementById("peticionInput").value.trim();
+    if (!contenido) return alert("Escribe algo antes de enviar.");
 
-// Enviar reporte
-document.getElementById("enviarReporteBtn")?.addEventListener("click", async () => {
-  const descripcion = document.getElementById("reporteInput").value.trim();
-  const tipo = document.getElementById("tipoReporte").value;
-  if(!descripcion) return alert("Describe el reporte antes de enviar.");
-  const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
-  const { error } = await supabase.from("reportes").insert([{ usuario: user.username, tipo, descripcion }]);
-  if(error) return alert("Error al enviar: "+error.message);
-  document.getElementById("reporteInput").value = "";
-  alert("Reporte enviado!");
-  loadAdminData(); // actualizar tabla si admin la está viendo
-});
+    sendingPetition = true;
+    const btn = this;
+    btn.disabled = true;
 
-    
-    if(!adminPanel) return;
-    const { data: peticiones } = await supabase.from("peticiones").select("*");
-    const { data: reportes } = await supabase.from("reportes").select("*");
-    const tbodyP = document.querySelector("#peticionesTable tbody");
-    const tbodyR = document.querySelector("#reportesTable tbody");
-    tbodyP.innerHTML = ""; tbodyR.innerHTML = "";
+    try {
+      const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
+      const { error } = await supabase.from("peticiones").insert([{ usuario: user.username, contenido }]);
 
-    if(peticiones) peticiones.forEach(p => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${p.id}</td><td>${p.usuario}</td><td>${p.contenido}</td><td>${p.created_at||''}</td>`;
-      tbodyP.appendChild(tr);
-    });
-    if(reportes) reportes.forEach(r => {
-      const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${r.id}</td><td>${r.usuario}</td><td>${r.tipo}</td><td>${r.descripcion}</td><td>${r.created_at||''}</td>`;
-      tbodyR.appendChild(tr);
-    });
-  }
-  await loadAdminData();
+      if (error) {
+        console.error("Error insert peticion:", error);
+        alert("Error al enviar: " + (error.message || error));
+      } else {
+        document.getElementById("peticionInput").value = "";
+        alert("Petición enviada!");
+        await loadAdminData();
+      }
+    } finally {
+      sendingPetition = false;
+      btn.disabled = false;
+    }
+  });
+
+  // ---------- Enviar reporte (listener agregado UNA sola vez) ----------
+  document.getElementById("enviarReporteBtn")?.addEventListener("click", async function () {
+    if (sendingReport) return; // ya hay un envío en curso
+    const descripcion = document.getElementById("reporteInput").value.trim();
+    if (!descripcion) return alert("Describe el reporte antes de enviar.");
+
+    sendingReport = true;
+    const btn = this;
+    btn.disabled = true;
+
+    try {
+      const tipo = document.getElementById("tipoReporte").value;
+      const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
+      const { error } = await supabase.from("reportes").insert([{ usuario: user.username, tipo, descripcion }]);
+
+      if (error) {
+        console.error("Error insert reporte:", error);
+        alert("Error al enviar: " + (error.message || error));
+      } else {
+        document.getElementById("reporteInput").value = "";
+        alert("Reporte enviado!");
+        await loadAdminData();
+      }
+    } finally {
+      sendingReport = false;
+      btn.disabled = false;
+    }
+  });
+
 });
 </script>
 </body>
