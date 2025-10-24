@@ -219,6 +219,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const dropdownMenu = document.getElementById("dropdownMenu");
   const adminPanel = document.getElementById("adminPanel");
 
+  // ---------- CARGA DE USUARIO ----------
   async function loadUserInfo() {
     let user = null;
     const { data: { session } } = await supabase.auth.getSession();
@@ -230,7 +231,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       };
       localStorage.setItem("currentUser", JSON.stringify(user));
     } else {
-      try { user = JSON.parse(localStorage.getItem("currentUser")); } catch{}
+      try { user = JSON.parse(localStorage.getItem("currentUser")); } catch {}
     }
 
     if (user) {
@@ -239,7 +240,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.getElementById("userName").textContent = user.username;
       document.getElementById("userLogo").src = user.logo;
 
-      if(user.username === "Peketruli") adminPanel.style.display = "block";
+      if (user.username === "Peketruli") adminPanel.style.display = "block";
     } else {
       userInfo.style.display = "none";
       authContainer.style.display = "flex";
@@ -248,66 +249,73 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
   await loadUserInfo();
 
+  // ---------- MENÚ DE USUARIO ----------
   userInfo.addEventListener("click", () => {
-    const isOpen = dropdownMenu.style.display === "block";
-    dropdownMenu.style.display = isOpen ? "none" : "block";
+    dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
   });
   document.addEventListener("click", e => {
     if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target)) dropdownMenu.style.display = "none";
   });
 
-  window.logout = async function() {
-    try { await supabase.auth.signOut(); } catch{}
+  window.logout = async function () {
+    try { await supabase.auth.signOut(); } catch {}
     localStorage.removeItem("currentUser");
     window.location.href = "l.html";
   };
 
-  // Cargar peticiones y reportes en tablas
+  // ---------- ENVÍO DE PETICIÓN ----------
+  document.getElementById("enviarPeticionBtn")?.addEventListener("click", async () => {
+    const contenido = document.getElementById("peticionInput").value.trim();
+    if (!contenido) return alert("Escribe algo antes de enviar.");
+    const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anónimo" };
+    const { error } = await supabase.from("peticiones").insert([{ usuario: user.username, contenido }]);
+    if (error) return alert("Error al enviar: " + error.message);
+    document.getElementById("peticionInput").value = "";
+    alert("Petición enviada!");
+    loadAdminData();
+  });
+
+  // ---------- ENVÍO DE REPORTE ----------
+  document.getElementById("enviarReporteBtn")?.addEventListener("click", async () => {
+    const descripcion = document.getElementById("reporteInput").value.trim();
+    const tipo = document.getElementById("tipoReporte").value;
+    if (!descripcion) return alert("Describe el reporte antes de enviar.");
+    const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anónimo" };
+    const { error } = await supabase.from("reportes").insert([{ usuario: user.username, tipo, descripcion }]);
+    if (error) return alert("Error al enviar: " + error.message);
+    document.getElementById("reporteInput").value = "";
+    alert("Reporte enviado!");
+    loadAdminData();
+  });
+
+  // ---------- PANEL ADMIN ----------
   async function loadAdminData() {
-// Enviar peticion
-document.getElementById("enviarPeticionBtn")?.addEventListener("click", async () => {
-  const contenido = document.getElementById("peticionInput").value.trim();
-  if(!contenido) return alert("Escribe algo antes de enviar.");
-  const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
-  const { error } = await supabase.from("peticiones").insert([{ usuario: user.username, contenido }]);
-  if(error) return alert("Error al enviar: "+error.message);
-  document.getElementById("peticionInput").value = "";
-  alert("Petición enviada!");
-  loadAdminData(); // actualizar tabla si admin la está viendo
-});
+    if (!adminPanel) return;
 
-// Enviar reporte
-document.getElementById("enviarReporteBtn")?.addEventListener("click", async () => {
-  const descripcion = document.getElementById("reporteInput").value.trim();
-  const tipo = document.getElementById("tipoReporte").value;
-  if(!descripcion) return alert("Describe el reporte antes de enviar.");
-  const user = JSON.parse(localStorage.getItem("currentUser")) || { username: "Anonimo" };
-  const { error } = await supabase.from("reportes").insert([{ usuario: user.username, tipo, descripcion }]);
-  if(error) return alert("Error al enviar: "+error.message);
-  document.getElementById("reporteInput").value = "";
-  alert("Reporte enviado!");
-  loadAdminData(); // actualizar tabla si admin la está viendo
-});
+    const { data: peticiones } = await supabase.from("peticiones").select("*").order('created_at', { ascending: false });
+    const { data: reportes } = await supabase.from("reportes").select("*").order('created_at', { ascending: false });
 
-    
-    if(!adminPanel) return;
-    const { data: peticiones } = await supabase.from("peticiones").select("*");
-    const { data: reportes } = await supabase.from("reportes").select("*");
     const tbodyP = document.querySelector("#peticionesTable tbody");
     const tbodyR = document.querySelector("#reportesTable tbody");
-    tbodyP.innerHTML = ""; tbodyR.innerHTML = "";
+    tbodyP.innerHTML = "";
+    tbodyR.innerHTML = "";
 
-    if(peticiones) peticiones.forEach(p => {
+    if (peticiones) peticiones.forEach(p => {
+      const fecha = p.created_at ? new Date(p.created_at).toLocaleString() : "";
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${p.id}</td><td>${p.usuario}</td><td>${p.contenido}</td><td>${p.created_at||''}</td>`;
+      tr.innerHTML = `<td>${p.id}</td><td>${p.usuario}</td><td>${p.contenido}</td><td>${fecha}</td>`;
       tbodyP.appendChild(tr);
     });
-    if(reportes) reportes.forEach(r => {
+
+    if (reportes) reportes.forEach(r => {
+      const fecha = r.created_at ? new Date(r.created_at).toLocaleString() : "";
       const tr = document.createElement("tr");
-      tr.innerHTML = `<td>${r.id}</td><td>${r.usuario}</td><td>${r.tipo}</td><td>${r.descripcion}</td><td>${r.created_at||''}</td>`;
+      tr.innerHTML = `<td>${r.id}</td><td>${r.usuario}</td><td>${r.tipo}</td><td>${r.descripcion}</td><td>${fecha}</td>`;
       tbodyR.appendChild(tr);
     });
   }
+
+  // Cargar panel al entrar
   await loadAdminData();
 });
 </script>
