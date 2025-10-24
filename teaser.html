@@ -30,6 +30,33 @@
     flex-wrap: wrap;
     justify-content: center;
   }
+  #statusBox {
+    background: #222;
+    border: 1px solid #333;
+    padding: 10px;
+    border-radius: 10px;
+    width: 90%;
+    margin: 20px auto;
+    text-align: left;
+    font-size: 14px;
+    color: #aaa;
+    min-height: 50px;
+    overflow-y: auto;
+    max-height: 200px;
+  }
+  #loading {
+    display: none;
+    font-size: 16px;
+    color: #ff8a33;
+    margin-top: 10px;
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .loading-text {
+    animation: blink 1s infinite;
+  }
 </style>
 </head>
 <body>
@@ -39,23 +66,32 @@
 <div class="upload">
   <input type="file" id="fileInput" />
   <button id="uploadButton">Subir Teaser</button>
+  <div id="loading" class="loading-text">⏳ Subiendo teaser...</div>
 </div>
 
 <div id="teasersContainer"></div>
+
+<div id="statusBox">📜 Estado:<br></div>
 
 <!-- Carga Supabase -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.35.0/dist/supabase.min.js"></script>
 
 <script>
-  async function initApp() {
-    console.log("⏳ Iniciando app...");
+  function logMessage(msg) {
+    const box = document.getElementById('statusBox');
+    box.innerHTML += msg + "<br>";
+    box.scrollTop = box.scrollHeight;
+  }
 
-    // Esperar a que la librería Supabase esté disponible
+  async function initApp() {
+    logMessage("⏳ Iniciando app...");
+
+    // Esperar a que la librería Supabase esté lista
     while (typeof window.Supabase === 'undefined') {
       await new Promise(r => setTimeout(r, 100));
     }
 
-    console.log("✅ Supabase cargado");
+    logMessage("✅ Supabase cargado");
 
     // Crear cliente
     const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
@@ -65,13 +101,15 @@
     const fileInput = document.getElementById("fileInput");
     const uploadButton = document.getElementById("uploadButton");
     const teasersContainer = document.getElementById("teasersContainer");
+    const loadingText = document.getElementById("loading");
 
     async function uploadImage() {
       const file = fileInput.files[0];
       if (!file) return alert("Selecciona un archivo primero");
 
       uploadButton.disabled = true;
-      uploadButton.textContent = "Subiendo...";
+      loadingText.style.display = "block";
+      logMessage("📤 Subiendo " + file.name + "...");
 
       try {
         const { error } = await supabase.storage
@@ -80,25 +118,24 @@
 
         if (error) throw error;
 
-        alert("✅ Imagen subida correctamente!");
+        logMessage("✅ Imagen subida correctamente: " + file.name);
         fileInput.value = "";
         await loadTeasers();
       } catch (err) {
-        console.error(err);
-        alert("❌ Error al subir: " + err.message);
+        logMessage("❌ Error al subir: " + err.message);
+        alert("Error al subir: " + err.message);
       } finally {
         uploadButton.disabled = false;
-        uploadButton.textContent = "Subir Teaser";
+        loadingText.style.display = "none";
       }
     }
 
     async function loadTeasers() {
-      teasersContainer.innerHTML = "<p>Cargando teasers...</p>";
+      logMessage("📸 Cargando teasers...");
 
       const { data, error } = await supabase.storage.from("teasers").list("public");
       if (error) {
-        teasersContainer.innerHTML = "<p>Error al cargar imágenes.</p>";
-        console.error(error);
+        logMessage("❌ Error al cargar imágenes.");
         return;
       }
 
@@ -117,16 +154,16 @@
         img.className = "teaser";
         teasersContainer.appendChild(img);
       }
+
+      logMessage("✅ Teasers cargados: " + data.length);
     }
 
-    // Evento del botón
     uploadButton.addEventListener("click", uploadImage);
-    console.log("🎯 Botón conectado");
+    logMessage("🎯 Botón conectado");
 
     await loadTeasers();
   }
 
-  // Llamar a la función cuando cargue la página
   window.addEventListener("DOMContentLoaded", initApp);
 </script>
 </body>
