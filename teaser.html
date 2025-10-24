@@ -5,71 +5,117 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sección Teasers</title>
 <style>
-  body { font-family: Arial; background:#111; color:#eee; padding:20px; }
-  .teaser { margin:10px 0; }
-  .upload { margin-bottom:20px; }
+  body {
+    font-family: Arial;
+    background: #111;
+    color: #eee;
+    padding: 20px;
+    text-align: center;
+  }
+  h1 { margin-bottom: 20px; }
+  .upload { margin-bottom: 20px; }
+  .teaser {
+    width: 300px;
+    margin: 10px;
+    border-radius: 10px;
+    box-shadow: 0 0 10px #000;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+  .teaser:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 20px #ff8a33;
+  }
+  #teasersContainer {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
 </style>
 </head>
 <body>
 
-<h1>Teasers Públicos</h1>
+<h1>🎬 Teasers Públicos</h1>
 
 <div class="upload" id="uploadSection">
   <input type="file" id="fileInput" />
-  <button onclick="uploadImage()">Subir Teaser</button>
+  <button id="uploadButton">Subir Teaser</button>
 </div>
 
 <div id="teasersContainer"></div>
+
+<!-- Librería Supabase -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.35.0/dist/supabase.min.js" defer></script>
-<script defer>
-  window.addEventListener("DOMContentLoaded", async () => {
-    const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-    const supabase = window.Supabase.createClient(supabaseUrl, supabaseKey);
 
-    async function uploadImage() {
-      const fileInput = document.getElementById('fileInput');
-      const file = fileInput.files[0];
-      if (!file) return alert('Selecciona un archivo primero');
+<script>
+window.addEventListener("DOMContentLoaded", async () => {
+  // 🔧 Configuración de Supabase
+  const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+  const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+  const supabase = window.Supabase.createClient(supabaseUrl, supabaseKey);
 
-      try {
-        const { data, error } = await supabase.storage
-          .from('teasers')
-          .upload(`public/${file.name}`, file, { upsert: true });
+  const fileInput = document.getElementById('fileInput');
+  const uploadButton = document.getElementById('uploadButton');
+  const teasersContainer = document.getElementById('teasersContainer');
 
-        if (error) throw error;
+  // 📤 Subir imagen
+  async function uploadImage() {
+    const file = fileInput.files[0];
+    if (!file) return alert('Selecciona un archivo primero');
 
-        alert('Imagen subida correctamente!');
-        fileInput.value = '';
-        loadTeasers();
-      } catch (err) {
-        console.error(err);
-        alert('Error al subir: ' + err.message);
-      }
+    uploadButton.disabled = true;
+    uploadButton.textContent = "Subiendo...";
+
+    try {
+      const { error } = await supabase.storage
+        .from('teasers')
+        .upload(`public/${Date.now()}-${file.name}`, file, { upsert: true });
+
+      if (error) throw error;
+
+      alert('✅ Imagen subida correctamente!');
+      fileInput.value = '';
+      await loadTeasers();
+    } catch (err) {
+      console.error(err);
+      alert('❌ Error al subir: ' + err.message);
+    } finally {
+      uploadButton.disabled = false;
+      uploadButton.textContent = "Subir Teaser";
+    }
+  }
+
+  // 🖼️ Cargar imágenes
+  async function loadTeasers() {
+    teasersContainer.innerHTML = "<p>Cargando teasers...</p>";
+
+    const { data, error } = await supabase.storage.from('teasers').list('public');
+    if (error) {
+      teasersContainer.innerHTML = "<p>Error al cargar imágenes.</p>";
+      return console.error(error);
     }
 
-    async function loadTeasers() {
-      const { data, error } = await supabase.storage.from('teasers').list('public');
-      if (error) return console.error(error);
-
-      const container = document.getElementById('teasersContainer');
-      container.innerHTML = '';
-      data.forEach(file => {
-        const url = supabase.storage.from('teasers').getPublicUrl(`public/${file.name}`).data.publicUrl;
-        const img = document.createElement('img');
-        img.src = url;
-        img.className = 'teaser';
-        img.style.width = '300px';
-        container.appendChild(img);
-      });
+    teasersContainer.innerHTML = '';
+    if (data.length === 0) {
+      teasersContainer.innerHTML = "<p>No hay teasers todavía 😢</p>";
+      return;
     }
 
-    // Hacer global las funciones para que el botón las encuentre
-    window.uploadImage = uploadImage;
-    window.loadTeasers = loadTeasers;
+    for (const file of data) {
+      const { data: urlData } = supabase.storage.from('teasers').getPublicUrl(`public/${file.name}`);
+      const img = document.createElement('img');
+      img.src = urlData.publicUrl;
+      img.className = 'teaser';
+      teasersContainer.appendChild(img);
+    }
+  }
 
-    loadTeasers(); // cargar al iniciar
-  });
+  // ⚙️ Eventos
+  uploadButton.addEventListener('click', uploadImage);
+
+  // 🔁 Cargar teasers al iniciar
+  await loadTeasers();
+});
 </script>
+
 </body>
 </html>
