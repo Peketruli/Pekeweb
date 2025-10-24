@@ -6,11 +6,11 @@
 <title>Sección Teasers</title>
 <style>
   body {
-    font-family: Arial;
+    font-family: Arial, sans-serif;
     background: #111;
     color: #eee;
-    padding: 20px;
     text-align: center;
+    padding: 20px;
   }
   h1 { margin-bottom: 20px; }
   .upload { margin-bottom: 20px; }
@@ -36,86 +36,98 @@
 
 <h1>🎬 Teasers Públicos</h1>
 
-<div class="upload" id="uploadSection">
+<div class="upload">
   <input type="file" id="fileInput" />
   <button id="uploadButton">Subir Teaser</button>
 </div>
 
 <div id="teasersContainer"></div>
 
-<!-- Librería Supabase -->
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.35.0/dist/supabase.min.js" defer></script>
+<!-- Carga Supabase -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.35.0/dist/supabase.min.js"></script>
 
 <script>
-window.addEventListener("DOMContentLoaded", async () => {
-  // 🔧 Configuración de Supabase
-  const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-  const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-  const supabase = window.Supabase.createClient(supabaseUrl, supabaseKey);
+  async function initApp() {
+    console.log("⏳ Iniciando app...");
 
-  const fileInput = document.getElementById('fileInput');
-  const uploadButton = document.getElementById('uploadButton');
-  const teasersContainer = document.getElementById('teasersContainer');
-
-  // 📤 Subir imagen
-  async function uploadImage() {
-    const file = fileInput.files[0];
-    if (!file) return alert('Selecciona un archivo primero');
-
-    uploadButton.disabled = true;
-    uploadButton.textContent = "Subiendo...";
-
-    try {
-      const { error } = await supabase.storage
-        .from('teasers')
-        .upload(`public/${Date.now()}-${file.name}`, file, { upsert: true });
-
-      if (error) throw error;
-
-      alert('✅ Imagen subida correctamente!');
-      fileInput.value = '';
-      await loadTeasers();
-    } catch (err) {
-      console.error(err);
-      alert('❌ Error al subir: ' + err.message);
-    } finally {
-      uploadButton.disabled = false;
-      uploadButton.textContent = "Subir Teaser";
+    // Esperar a que la librería Supabase esté disponible
+    while (typeof window.Supabase === 'undefined') {
+      await new Promise(r => setTimeout(r, 100));
     }
+
+    console.log("✅ Supabase cargado");
+
+    // Crear cliente
+    const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+    const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+    const supabase = window.Supabase.createClient(supabaseUrl, supabaseKey);
+
+    const fileInput = document.getElementById("fileInput");
+    const uploadButton = document.getElementById("uploadButton");
+    const teasersContainer = document.getElementById("teasersContainer");
+
+    async function uploadImage() {
+      const file = fileInput.files[0];
+      if (!file) return alert("Selecciona un archivo primero");
+
+      uploadButton.disabled = true;
+      uploadButton.textContent = "Subiendo...";
+
+      try {
+        const { error } = await supabase.storage
+          .from("teasers")
+          .upload(`public/${Date.now()}-${file.name}`, file, { upsert: true });
+
+        if (error) throw error;
+
+        alert("✅ Imagen subida correctamente!");
+        fileInput.value = "";
+        await loadTeasers();
+      } catch (err) {
+        console.error(err);
+        alert("❌ Error al subir: " + err.message);
+      } finally {
+        uploadButton.disabled = false;
+        uploadButton.textContent = "Subir Teaser";
+      }
+    }
+
+    async function loadTeasers() {
+      teasersContainer.innerHTML = "<p>Cargando teasers...</p>";
+
+      const { data, error } = await supabase.storage.from("teasers").list("public");
+      if (error) {
+        teasersContainer.innerHTML = "<p>Error al cargar imágenes.</p>";
+        console.error(error);
+        return;
+      }
+
+      teasersContainer.innerHTML = "";
+      if (data.length === 0) {
+        teasersContainer.innerHTML = "<p>No hay teasers todavía 😢</p>";
+        return;
+      }
+
+      for (const file of data) {
+        const { data: urlData } = supabase.storage
+          .from("teasers")
+          .getPublicUrl(`public/${file.name}`);
+        const img = document.createElement("img");
+        img.src = urlData.publicUrl;
+        img.className = "teaser";
+        teasersContainer.appendChild(img);
+      }
+    }
+
+    // Evento del botón
+    uploadButton.addEventListener("click", uploadImage);
+    console.log("🎯 Botón conectado");
+
+    await loadTeasers();
   }
 
-  // 🖼️ Cargar imágenes
-  async function loadTeasers() {
-    teasersContainer.innerHTML = "<p>Cargando teasers...</p>";
-
-    const { data, error } = await supabase.storage.from('teasers').list('public');
-    if (error) {
-      teasersContainer.innerHTML = "<p>Error al cargar imágenes.</p>";
-      return console.error(error);
-    }
-
-    teasersContainer.innerHTML = '';
-    if (data.length === 0) {
-      teasersContainer.innerHTML = "<p>No hay teasers todavía 😢</p>";
-      return;
-    }
-
-    for (const file of data) {
-      const { data: urlData } = supabase.storage.from('teasers').getPublicUrl(`public/${file.name}`);
-      const img = document.createElement('img');
-      img.src = urlData.publicUrl;
-      img.className = 'teaser';
-      teasersContainer.appendChild(img);
-    }
-  }
-
-  // ⚙️ Eventos
-  uploadButton.addEventListener('click', uploadImage);
-
-  // 🔁 Cargar teasers al iniciar
-  await loadTeasers();
-});
+  // Llamar a la función cuando cargue la página
+  window.addEventListener("DOMContentLoaded", initApp);
 </script>
-
 </body>
 </html>
