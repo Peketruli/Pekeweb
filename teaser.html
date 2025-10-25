@@ -71,50 +71,35 @@ const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// -------------------- Elementos de estado --------------------
+// -------------------- Elementos --------------------
 const statusText = document.getElementById("status");
 const loadingText = document.getElementById("loadingText");
 const teasersContainer = document.getElementById("teasersContainer");
+const uploadZone = document.getElementById("uploadZone");
 
 // -------------------- Usuario --------------------
 function getCurrentUser() {
   const raw = localStorage.getItem("currentUser");
   if (!raw) return null;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return { username: raw };
-  }
+  try { return JSON.parse(raw); } catch { return { username: raw }; }
 }
 
-// -------------------- Forzar Peketruli para pruebas --------------------
-function forcePeketruli() {
-  // Esto asegura que siempre seas Peketruli mientras pruebas
-  localStorage.setItem("currentUser", JSON.stringify({ username: "peketruli" }));
-}
-
-// -------------------- Mostrar zona de subida --------------------
-function checkPeketruli() {
-  forcePeketruli(); // activamos Peketruli automáticamente
-
-  const user = getCurrentUser();
-  const uploadZone = document.getElementById("uploadZone");
-
-  if (user && user.username && user.username.toLowerCase() === "peketruli") {
-    uploadZone.style.display = "block";
-    statusText.textContent = "✅ Estás en modo Peketruli (puedes subir teasers)";
-    statusText.style.color = "#7fff7f";
-  } else {
-    uploadZone.style.display = "none";
-    statusText.textContent = "👤 Modo visitante (solo puedes ver los teasers)";
-    statusText.style.color = "#ff6a6a";
-  }
-}
-
-// -------------------- Mostrar mensajes en página --------------------
+// -------------------- Mostrar mensajes --------------------
 function showMessage(message, color="#ff8a33") {
   statusText.textContent = message;
   statusText.style.color = color;
+}
+
+// -------------------- Comprobar Peketruli --------------------
+function checkPeketruli() {
+  const user = getCurrentUser();
+  if(user && user.username && user.username.toLowerCase() === "peketruli") {
+    uploadZone.style.display = "block";
+    showMessage("✅ Estás en modo Peketruli (puedes subir teasers)", "#7fff7f");
+  } else {
+    uploadZone.style.display = "none";
+    showMessage("👤 Modo visitante (solo puedes ver los teasers)", "#ff6a6a");
+  }
 }
 
 // -------------------- Cargar teasers --------------------
@@ -142,7 +127,6 @@ async function loadTeasers() {
       teasersContainer.appendChild(img);
     }
   } catch(err) {
-    console.error(err);
     loadingText.textContent = "❌ Error cargando teasers: " + (err.message || err);
   }
 }
@@ -152,40 +136,41 @@ async function uploadTeaser() {
   const fileInput = document.getElementById("fileInput");
   const file = fileInput.files[0];
 
-  if(!file){
-    showMessage("❌ Selecciona una imagen primero", "#ff6a6a");
-    return;
-  }
+  if(!file){ showMessage("❌ Selecciona una imagen primero", "#ff6a6a"); return; }
 
   const user = getCurrentUser();
-  if(!user || user.username.toLowerCase() !== "peketruli"){
-    showMessage("❌ Solo Peketruli puede subir teasers", "#ff6a6a");
-    return;
+  if(!user || user.username.toLowerCase() !== "peketruli"){ 
+    showMessage("❌ Solo Peketruli puede subir teasers", "#ff6a6a"); 
+    return; 
   }
 
   const fileName = `${Date.now()}-${file.name}`;
   showMessage("⏳ Subiendo teaser...", "#fffa7f");
 
   try {
-    const { error: uploadError } = await supabase.storage.from("teasers").upload(`public/${fileName}`, file, { upsert:true });
-    if(uploadError) throw uploadError;
+    const { error } = await supabase.storage.from("teasers").upload(`public/${fileName}`, file, { upsert:true });
+    if(error) throw error;
 
     showMessage("✅ Teaser subido correctamente!", "#7fff7f");
     fileInput.value = "";
     loadTeasers();
   } catch(err) {
-    console.error(err);
     showMessage("❌ Error al subir teaser: " + (err.message || err), "#ff6a6a");
   }
 }
 
 // -------------------- Inicialización --------------------
 document.addEventListener("DOMContentLoaded", () => {
-  checkPeketruli();
-  loadTeasers();
-  window.uploadTeaser = uploadTeaser;
+  // Forzar Peketruli para pruebas (puedes quitarlo luego)
+  localStorage.setItem("currentUser", JSON.stringify({ username: "peketruli" }));
+
+  // Dejamos un pequeño delay para asegurar que localStorage se actualiza
+  setTimeout(() => {
+    checkPeketruli();
+    loadTeasers();
+    window.uploadTeaser = uploadTeaser;
+  }, 50);
 });
 </script>
-
 </body>
 </html>
