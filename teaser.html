@@ -126,21 +126,24 @@ window.addEventListener('load', async () => {
   // Función para subir teaser
   async function uploadTeaser() {
     const file = fileInput.files[0];
-    if (!file) return alert("Selecciona una imagen primero.");
+    if (!file) {
+      alert("❌ Selecciona una imagen primero");
+      return;
+    }
 
-    statusText.textContent = "⏳ Subiendo teaser...";
-    const fileName = `${Date.now()}-${file.name}`;
+    alert("⏳ Intentando subir: " + file.name);
 
-    const { error } = await supabase.storage.from('teasers').upload(`public/${fileName}`, file, { upsert: true });
+    try {
+      const fileName = `public/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage.from('teasers').upload(fileName, file, { upsert: true });
 
-    if (error) {
-      statusText.textContent = "❌ Error al subir teaser: " + error.message;
-      statusText.style.color = "#ff6a6a";
-    } else {
-      statusText.textContent = "✅ Teaser subido correctamente!";
-      statusText.style.color = "#7fff7f";
+      if (error) throw error;
+
+      alert("✅ Teaser subido correctamente!");
       fileInput.value = '';
       loadTeasers();
+    } catch (err) {
+      alert("❌ Error al subir: " + err.message);
     }
   }
 
@@ -150,41 +153,41 @@ window.addEventListener('load', async () => {
   // Función para cargar teasers
   async function loadTeasers() {
     loadingText.textContent = "Cargando teasers...";
-    const { data, error } = await supabase.storage.from('teasers').list('public');
-
     teasersContainer.innerHTML = '';
 
-    if (error || !data || data.length === 0) {
-      loadingText.textContent = "Aún no hay teasers publicados.";
-      return;
-    }
+    try {
+      const { data, error } = await supabase.storage.from('teasers').list('public');
 
-    loadingText.style.display = 'none';
+      if (error) {
+        console.error("Error cargando teasers:", error);
+        loadingText.textContent = "❌ Error cargando teasers";
+        return;
+      }
 
-    for (const file of data.reverse()) {
-      const url = supabase.storage.from('teasers').getPublicUrl(`public/${file.name}`).data.publicUrl;
-      const img = document.createElement('img');
-      img.src = url;
-      img.className = 'teaser';
-      teasersContainer.appendChild(img);
+      if (!data || data.length === 0) {
+        loadingText.textContent = "Aún no hay teasers publicados.";
+        return;
+      }
+
+      loadingText.style.display = 'none';
+
+      // Mostrar los teasers (del más reciente al más antiguo)
+      for (const file of data.reverse()) {
+        const url = supabase.storage.from('teasers').getPublicUrl(`public/${file.name}`).data.publicUrl;
+        const img = document.createElement('img');
+        img.src = url;
+        img.className = 'teaser';
+        teasersContainer.appendChild(img);
+      }
+
+    } catch (err) {
+      console.error(err);
+      loadingText.textContent = "❌ Error cargando teasers";
     }
   }
 
+  // Cargar los teasers al iniciar
   loadTeasers();
-});
-
-  window.addEventListener('load', () => {
-  const fileInput = document.getElementById('fileInput');
-  const uploadBtn = document.getElementById('uploadBtn');
-
-  uploadBtn.addEventListener('click', () => {
-    const file = fileInput.files[0];
-    if (!file) {
-      alert("❌ No has seleccionado un archivo");
-    } else {
-      alert("✅ Has seleccionado: " + file.name);
-    }
-  });
 });
 </script>
 
