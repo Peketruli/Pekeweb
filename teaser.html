@@ -27,6 +27,26 @@
     transition: transform 0.2s ease;
   }
   .teaser:hover { transform: scale(1.05); }
+  .upload-zone {
+    margin: 25px auto;
+    background: #1a1a1a;
+    padding: 15px;
+    border-radius: 10px;
+    width: fit-content;
+    display: none;
+  }
+  input[type="file"], button {
+    margin: 8px;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: none;
+    font-weight: bold;
+  }
+  button {
+    background: #ff8a33;
+    color: white;
+    cursor: pointer;
+  }
   .loading { color: #999; margin-top: 20px; }
 </style>
 </head>
@@ -35,44 +55,85 @@
 <h1>🎬 Teasers Oficiales</h1>
 <p>Los últimos avances subidos por <b>Peketruli</b></p>
 
+<div class="upload-zone" id="uploadZone">
+  <input type="file" id="fileInput">
+  <button onclick="uploadTeaser()">Subir Teaser</button>
+</div>
+
 <div id="teasersContainer"></div>
 <p class="loading" id="loadingText">Cargando teasers...</p>
 
-<script src="./supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.35.0/dist/supabase.min.js"></script>
 <script>
+  // 🔗 Configura Supabase
   const supabaseUrl = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-  const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'; // tu anon key
+  const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
   const supabase = window.Supabase.createClient(supabaseUrl, supabaseKey);
 
-  async function loadTeasers() {
-    const loadingText = document.getElementById('loadingText');
-    const container = document.getElementById('teasersContainer');
-    loadingText.textContent = "Cargando teasers...";
+  const uploadZone = document.getElementById('uploadZone');
+  const fileInput = document.getElementById('fileInput');
+  const teasersContainer = document.getElementById('teasersContainer');
+  const loadingText = document.getElementById('loadingText');
 
-    const { data, error } = await supabase.storage.from('teasers').list('public', { sortBy: { column: 'created_at', order: 'desc' } });
+  // 🧠 Verificar si el usuario local es Peketruli
+  function checkLocalUser() {
+    const currentUser = localStorage.getItem("currentUser");
+    if (currentUser === "Peketruli") {
+      uploadZone.style.display = "block";
+      console.log("✅ Modo administrador: Peketruli");
+    } else {
+      console.log("👤 Visitante público");
+    }
+  }
+
+  // 📤 Subir teaser
+  async function uploadTeaser() {
+    const file = fileInput.files[0];
+    if (!file) return alert("Selecciona una imagen primero.");
+
+    const fileName = `${Date.now()}-${file.name}`;
+    const { error } = await supabase.storage.from('teasers').upload(`public/${fileName}`, file, { upsert: true });
+
+    if (error) {
+      alert('❌ Error al subir: ' + error.message);
+    } else {
+      alert('✅ Teaser subido correctamente!');
+      fileInput.value = '';
+      loadTeasers();
+    }
+  }
+
+  // 🖼️ Cargar teasers públicos
+  async function loadTeasers() {
+    loadingText.textContent = "Cargando teasers...";
+    const { data, error } = await supabase.storage.from('teasers').list('public', {
+      sortBy: { column: 'created_at', order: 'desc' }
+    });
+
     if (error) {
       loadingText.textContent = "Error al cargar los teasers.";
       console.error(error);
       return;
     }
 
-    container.innerHTML = "";
-    if (data.length === 0) {
+    teasersContainer.innerHTML = '';
+    if (!data || data.length === 0) {
       loadingText.textContent = "Aún no hay teasers publicados.";
       return;
     }
 
-    loadingText.style.display = "none";
-
+    loadingText.style.display = 'none';
     data.forEach(file => {
       const url = supabase.storage.from('teasers').getPublicUrl(`public/${file.name}`).data.publicUrl;
       const img = document.createElement('img');
       img.src = url;
       img.className = 'teaser';
-      container.appendChild(img);
+      teasersContainer.appendChild(img);
     });
   }
 
+  // 🚀 Iniciar
+  checkLocalUser();
   loadTeasers();
 </script>
 
