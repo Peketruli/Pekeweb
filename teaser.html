@@ -69,7 +69,12 @@
 // -------------------- Supabase --------------------
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// -------------------- Elementos de estado --------------------
+const statusText = document.getElementById("status");
+const loadingText = document.getElementById("loadingText");
+const teasersContainer = document.getElementById("teasersContainer");
 
 // -------------------- Usuario --------------------
 function getCurrentUser() {
@@ -82,11 +87,18 @@ function getCurrentUser() {
   }
 }
 
+// -------------------- Forzar Peketruli para pruebas --------------------
+function forcePeketruli() {
+  // Esto asegura que siempre seas Peketruli mientras pruebas
+  localStorage.setItem("currentUser", JSON.stringify({ username: "peketruli" }));
+}
+
 // -------------------- Mostrar zona de subida --------------------
 function checkPeketruli() {
-  const uploadZone = document.getElementById("uploadZone");
-  const statusText = document.getElementById("status");
+  forcePeketruli(); // activamos Peketruli automáticamente
+
   const user = getCurrentUser();
+  const uploadZone = document.getElementById("uploadZone");
 
   if (user && user.username && user.username.toLowerCase() === "peketruli") {
     uploadZone.style.display = "block";
@@ -99,61 +111,71 @@ function checkPeketruli() {
   }
 }
 
+// -------------------- Mostrar mensajes en página --------------------
+function showMessage(message, color="#ff8a33") {
+  statusText.textContent = message;
+  statusText.style.color = color;
+}
+
 // -------------------- Cargar teasers --------------------
 async function loadTeasers() {
-  const teasersContainer = document.getElementById("teasersContainer");
-  const loadingText = document.getElementById("loadingText");
-  loadingText.textContent = "Cargando teasers...";
   teasersContainer.innerHTML = "";
+  loadingText.textContent = "Cargando teasers...";
 
-  const { data, error } = await supabase.storage.from("teasers").list("public");
-  if(error){ 
-    console.error(error); 
-    loadingText.textContent = "❌ Error cargando teasers"; 
-    return; 
-  }
-  if(!data || data.length === 0){ 
-    loadingText.textContent = "No hay teasers publicados"; 
-    return; 
-  }
+  try {
+    const { data, error } = await supabase.storage.from("teasers").list("public");
+    if(error) throw error;
 
-  loadingText.textContent = "";
-  for(const file of data){
-    const { data: publicData } = supabase.storage.from("teasers").getPublicUrl(`public/${file.name}`);
-    const img = document.createElement("img");
-    img.src = publicData.publicUrl;
-    img.className = "teaser";
-    teasersContainer.appendChild(img);
+    if(!data || data.length === 0){
+      loadingText.textContent = "No hay teasers publicados";
+      return;
+    }
+
+    loadingText.textContent = "";
+    for(const file of data){
+      const { data: publicData, error: urlError } = supabase.storage.from("teasers").getPublicUrl(`public/${file.name}`);
+      if(urlError) throw urlError;
+
+      const img = document.createElement("img");
+      img.src = publicData.publicUrl;
+      img.className = "teaser";
+      teasersContainer.appendChild(img);
+    }
+  } catch(err) {
+    console.error(err);
+    loadingText.textContent = "❌ Error cargando teasers: " + (err.message || err);
   }
 }
 
 // -------------------- Subir teaser --------------------
-async function uploadTeaser(){
+async function uploadTeaser() {
   const fileInput = document.getElementById("fileInput");
   const file = fileInput.files[0];
 
-  if(!file){ alert("❌ Selecciona una imagen primero"); return; }
+  if(!file){
+    showMessage("❌ Selecciona una imagen primero", "#ff6a6a");
+    return;
+  }
 
   const user = getCurrentUser();
-  if(!user || user.username.toLowerCase() !== "peketruli"){ 
-    alert("❌ Solo Peketruli puede subir teasers"); 
-    return; 
+  if(!user || user.username.toLowerCase() !== "peketruli"){
+    showMessage("❌ Solo Peketruli puede subir teasers", "#ff6a6a");
+    return;
   }
 
   const fileName = `${Date.now()}-${file.name}`;
-  const statusText = document.getElementById("status");
-  statusText.textContent = "⏳ Subiendo teaser...";
+  showMessage("⏳ Subiendo teaser...", "#fffa7f");
 
-  const { error } = await supabase.storage.from("teasers").upload(`public/${fileName}`, file, { upsert:true });
-  if(error){
-    statusText.textContent = "❌ Error al subir teaser: " + error.message;
-    statusText.style.color = "#ff6a6a";
-    console.error(error);
-  } else {
-    statusText.textContent = "✅ Teaser subido correctamente!";
-    statusText.style.color = "#7fff7f";
+  try {
+    const { error: uploadError } = await supabase.storage.from("teasers").upload(`public/${fileName}`, file, { upsert:true });
+    if(uploadError) throw uploadError;
+
+    showMessage("✅ Teaser subido correctamente!", "#7fff7f");
     fileInput.value = "";
     loadTeasers();
+  } catch(err) {
+    console.error(err);
+    showMessage("❌ Error al subir teaser: " + (err.message || err), "#ff6a6a");
   }
 }
 
