@@ -1,566 +1,154 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Casino 3D - Completo</title>
-
-<!-- Three.js + PointerLockControls -->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Casino 3D</title>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/PointerLockControls.js"></script>
-
 <style>
-  html,body{ height:100%; margin:0; background:#000; color:#fff; font-family:Inter, Arial; }
-  #container{ width:100%; height:100vh; position:relative; overflow:hidden; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: black;
+  color: white;
+  font-family: Arial, sans-serif;
+}
 
-  /* HUD */
-  .hud { position:absolute; left:16px; top:16px; z-index:20; pointer-events:none; }
-  .panel { background: rgba(10,6,15,0.65); border-radius:10px; padding:10px 12px; border:1px solid rgba(255,111,0,0.12); pointer-events:auto; }
-  #pekepuntos { font-weight:700; color:#00ff9d; text-shadow:0 0 8px #00ff9d; }
-  #info { margin-top:8px; color:#ddd; font-size:0.9rem; }
+#overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, rgba(0,0,0,0.8), black);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
 
-  /* Big enter hint */
-  #enterHint { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:30; background:linear-gradient(90deg,#160012,#2b002b); padding:14px 18px; border-radius:10px; cursor:pointer; border:1px solid rgba(255,111,0,0.15); }
-
-  #interactHint { position:absolute; bottom:18px; left:50%; transform:translateX(-50%); z-index:25; display:none; background:rgba(30,0,30,0.8); padding:8px 12px; border-radius:8px; font-weight:600; }
-
-  /* Modal for simple games */
-  #modal {
-    position: absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:50;
-    min-width:280px; background:#09000b; border-radius:12px; padding:14px; border:1px solid rgba(255,111,0,0.12);
-    display:none;
-  }
-  #modal button { margin-top:10px; padding:8px 10px; border-radius:8px; border:none; cursor:pointer; background:linear-gradient(90deg,#00ff9d,#b517ff); color:#000; font-weight:700; }
-
-  /* Small minimap placeholder */
-  #minimap { position:absolute; right:16px; top:16px; z-index:20; width:160px; height:120px; background:rgba(0,0,0,0.45); border-radius:8px; padding:6px; font-size:12px; color:#ddd; }
-  @media (max-width:640px){ #minimap { display:none; } #enterHint { padding:10px 12px; } }
+button {
+  background: linear-gradient(90deg, #ff6f00, #b517ff);
+  color: white;
+  font-size: 1.3em;
+  border: none;
+  padding: 15px 30px;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 0 20px #ff6f00;
+  transition: transform 0.2s;
+}
+button:hover {
+  transform: scale(1.05);
+}
 </style>
 </head>
 <body>
-<div id="container"></div>
-
-<div class="hud panel" id="hud">
-  <div id="pekepuntos">Pekepuntos: <span id="points">1200</span></div>
-  <div id="info">Click para entrar. Mover: W/A/S/D — Mira con ratón — Interact: <strong>E</strong></div>
+<div id="overlay">
+  <h1>🎰 Bienvenido al Casino 3D 🎰</h1>
+  <button id="startBtn">Entrar al casino</button>
 </div>
-
-<div id="minimap" class="panel">Minimap (placeholder)</div>
-
-<div id="enterHint" class="panel">Haz clic para entrar al casino (activar control). Usa W/A/S/D para moverte.</div>
-<div id="interactHint" class="panel">Presiona <strong>E</strong> para interactuar</div>
-
-<!-- Simple modal UI -->
-<div id="modal" class="panel"></div>
+<canvas id="game"></canvas>
 
 <script>
-// ----------------------- GLOBALS -----------------------
-let scene, camera, renderer, controls, clock;
-let container = document.getElementById('container');
-let pekepuntos = 1200;
-const INTERACT_DISTANCE = 2.2;
-const objectsForCollision = []; // bounding boxes for collision
-const interactables = []; // objects we can interact with (slots, tables, door, roulette)
-const mixers = [];
+const canvas = document.getElementById("game");
+const renderer = new THREE.WebGLRenderer({ canvas });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
 
-const pointsLabel = document.getElementById('points');
-const enterHint = document.getElementById('enterHint');
-const interactHint = document.getElementById('interactHint');
-const modal = document.getElementById('modal');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
 
-pointsLabel.textContent = pekepuntos.toLocaleString();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 1.6, 5);
 
-// ----------------------- INIT -----------------------
-function init(){
-  clock = new THREE.Clock();
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x070006);
+const light = new THREE.PointLight(0xff6f00, 2, 50);
+light.position.set(0, 5, 5);
+scene.add(light);
 
-  // camera
-  camera = new THREE.PerspectiveCamera(75, container.clientWidth/container.clientHeight, 0.1, 300);
-  camera.position.set(0, 1.6, -8); // spawn in hallway start
+const ambient = new THREE.AmbientLight(0x404040);
+scene.add(ambient);
 
-  // renderer
-  renderer = new THREE.WebGLRenderer({ antialias:true });
-  renderer.setSize(container.clientWidth, container.clientHeight);
-  renderer.shadowMap.enabled = true;
-  container.appendChild(renderer.domElement);
+// suelo y paredes
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), floorMat);
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
 
-  // lights
-  scene.add(new THREE.AmbientLight(0x404050, 0.9));
-  const dir = new THREE.DirectionalLight(0xffcfa5, 0.25);
-  dir.position.set(2,8,2); scene.add(dir);
-  addNeon(0,3.5,-20, 0xff6f00, 1.6);
-  addNeon(0,3.5, 20, 0xb517ff, 1.2);
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x330033 });
+const wallBack = new THREE.Mesh(new THREE.BoxGeometry(50, 10, 1), wallMat);
+wallBack.position.set(0, 5, -25);
+scene.add(wallBack);
 
-  // ROOM STRUCTURE: hallway -> door behind -> main hall ahead
-  buildHallwayAndDoor();
+const wallFront = new THREE.Mesh(new THREE.BoxGeometry(50, 10, 1), wallMat);
+wallFront.position.set(0, 5, 25);
+scene.add(wallFront);
 
-  // create main casino hall (ahead)
-  buildMainHall();
+const wallLeft = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 50), wallMat);
+wallLeft.position.set(-25, 5, 0);
+scene.add(wallLeft);
 
-  // pointerlock controls
-  controls = new THREE.PointerLockControls(camera, renderer.domElement);
-  enterHint.addEventListener('click', () => controls.lock());
-  controls.addEventListener('lock', ()=> enterHint.style.display='none');
-  controls.addEventListener('unlock', ()=> enterHint.style.display='block');
+const wallRight = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 50), wallMat);
+wallRight.position.set(25, 5, 0);
+scene.add(wallRight);
 
-  // movement input
-  setupMovement();
+// puerta detrás
+const doorGeo = new THREE.BoxGeometry(3, 4, 0.3);
+const doorMat = new THREE.MeshStandardMaterial({ color: 0xff6f00, emissive: 0x552200 });
+const door = new THREE.Mesh(doorGeo, doorMat);
+door.position.set(0, 2, 24.5);
+scene.add(door);
 
-  // interaction keys
-  window.addEventListener('keydown', onKeyDown);
-
-  // resize
-  window.addEventListener('resize', onWindowResize);
-
-  // animate
-  animate();
+// “máquinas” al fondo
+const machineGeo = new THREE.BoxGeometry(1, 2, 1);
+const machineMat = new THREE.MeshStandardMaterial({ color: 0x9900ff, emissive: 0x330033 });
+for (let i = 0; i < 5; i++) {
+  const m = new THREE.Mesh(machineGeo, machineMat);
+  m.position.set(i * 2 - 4, 1, -10);
+  scene.add(m);
 }
 
-// ----------------------- ROOM CREATION -----------------------
-function buildHallwayAndDoor(){
-  // hall floor narrow
-  const hallLength = 18;
-  const hallWidth = 6;
-  const floorMat = new THREE.MeshStandardMaterial({ color:0x070012, roughness:0.9 });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(hallWidth, hallLength), floorMat);
-  floor.rotation.x = -Math.PI/2;
-  floor.position.set(0,0, -hallLength/2 + 4);
-  scene.add(floor);
+// controles en primera persona
+const controls = new THREE.PointerLockControls(camera, document.body);
+const velocity = new THREE.Vector3();
+const direction = new THREE.Vector3();
+const keys = {};
 
-  // walls
-  const wallMat = new THREE.MeshStandardMaterial({ color: 0x0c0012, roughness:1 });
-  const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(hallLength, 4), wallMat);
-  leftWall.rotation.y = Math.PI/2; leftWall.position.set(-hallWidth/2, 2, -hallLength/2 + 4);
-  scene.add(leftWall);
-  const rightWall = leftWall.clone(); rightWall.position.set(hallWidth/2,2,-hallLength/2 + 4); rightWall.rotation.y = -Math.PI/2; scene.add(rightWall);
+document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-  // ceiling
-  const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(hallWidth, hallLength), new THREE.MeshStandardMaterial({ color:0x020004 }));
-  ceiling.rotation.x = Math.PI/2; ceiling.position.set(0,4,-hallLength/2 + 4); scene.add(ceiling);
-
-  // back door behind spawn (a visible door plane)
-  const doorGeo = new THREE.BoxGeometry(2,3,0.2);
-  const doorMat = new THREE.MeshStandardMaterial({ color:0x260012, emissive:0x220000, metalness:0.3 });
-  const door = new THREE.Mesh(doorGeo, doorMat);
-  door.position.set(0,1.5,0.5); // behind spawn (camera initially at z=-8)
-  door.userData = { type:'door' };
-  scene.add(door);
-  interactables.push(door);
-
-  // door "frame" glowing
-  const frame = new THREE.Mesh(new THREE.BoxGeometry(2.4,3.4,0.04), new THREE.MeshBasicMaterial({ color:0xff6f00, transparent:true, opacity:0.06 }));
-  frame.position.copy(door.position); frame.position.z += 0.11; scene.add(frame);
-
-  // bounding box for collision around door so user can't clip through the door plane
-  const doorBox = new THREE.Box3().setFromObject(door);
-  objectsForCollision.push(doorBox);
-}
-
-function buildMainHall(){
-  // main hall floor (big)
-  const mainZ = -18; // place ahead of hallway
-  const floorSize = 60;
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorSize, floorSize), new THREE.MeshStandardMaterial({ color:0x08000a, roughness:0.95 }));
-  floor.rotation.x = -Math.PI/2;
-  floor.position.set(0,0, -40);
-  scene.add(floor);
-
-  // big walls around main hall (simple)
-  const wallMat = new THREE.MeshStandardMaterial({ color:0x0b0016, roughness:1 });
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(floorSize, 12), wallMat); back.position.set(0,6,-floorSize/2 - 10); scene.add(back);
-  const front = back.clone(); front.rotation.y = Math.PI; front.position.set(0,6,-10); scene.add(front);
-  const left = new THREE.Mesh(new THREE.PlaneGeometry(floorSize, 12), wallMat); left.rotation.y = Math.PI/2; left.position.set(-floorSize/2,6,-40); scene.add(left);
-  const right = left.clone(); right.rotation.y = -Math.PI/2; right.position.set(floorSize/2,6,-40); scene.add(right);
-
-  // add rows of slot machines on sides
-  const leftStartX = -10, rightStartX = 10;
-  for (let z=-30; z<=-52; z+=4){
-    const slotL = createSlotMachine(); slotL.position.set(leftStartX,0,z); scene.add(slotL); interactables.push(slotL); objectsForCollision.push(getBoundingBoxExpanded(slotL,0.6));
-    const slotR = createSlotMachine(); slotR.position.set(rightStartX,0,z); slotR.rotation.y = Math.PI; scene.add(slotR); interactables.push(slotR); objectsForCollision.push(getBoundingBoxExpanded(slotR,0.6));
-  }
-
-  // central tables: blackjack + roulette
-  const blackjack = createBlackjackTable(); blackjack.position.set(-3,0,-44); scene.add(blackjack); interactables.push(blackjack); objectsForCollision.push(getBoundingBoxExpanded(blackjack,0.9));
-  const roulette = createRoulette(); roulette.position.set(3,0,-44); scene.add(roulette); interactables.push(roulette); objectsForCollision.push(getBoundingBoxExpanded(roulette,0.9));
-
-  // decorative neon sign at far end
-  addNeonSign(0,4,-66,"CASINO", 0xff6f00);
-}
-
-// ----------------------- SIMPLE OBJECTS -----------------------
-function createSlotMachine(){
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.1,1.8,0.8), new THREE.MeshStandardMaterial({ color:0x120016, metalness:0.2, roughness:0.4 }));
-  body.position.y=1.0; group.add(body);
-
-  // screen canvas texture
-  const canvas = document.createElement('canvas'); canvas.width=256; canvas.height=256;
-  const ctx = canvas.getContext('2d');
-  const reels = ["🍒","⭐","7","🔔","🍋"];
-  drawSlotScreen(ctx,reels,0);
-  const tex = new THREE.CanvasTexture(canvas);
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.8,0.8), new THREE.MeshBasicMaterial({ map:tex }));
-  screen.position.set(0,1.05,0.41); group.add(screen);
-
-  // lever - visual
-  const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.03,0.03,0.6,8), new THREE.MeshStandardMaterial({ color:0xff6f00 }));
-  lever.rotation.z = Math.PI/4; lever.position.set(0.55,0.6,0.38); group.add(lever);
-
-  group.userData = { type:'slot', canvas, ctx, tex, reels, spinning:false };
-  return group;
-}
-
-function createBlackjackTable(){
-  const g = new THREE.Group();
-  const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.14,24), new THREE.MeshStandardMaterial({ color:0x032022, metalness:0.1, roughness:0.4 }));
-  tableTop.position.y = 0.9; g.add(tableTop);
-  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.15,0.15,0.9,12), new THREE.MeshStandardMaterial({ color:0x2b0a2b }));
-  leg.position.y = 0.45; g.add(leg);
-  // label
-  const label = makeTextSprite("Blackjack", { fontsize: 26, textColor:{r:255,g:255,b:255,a:1} });
-  label.position.set(0,1.45,0);
-  g.add(label);
-
-  g.userData = { type:'blackjack' };
-  return g;
-}
-
-function createRoulette(){
-  const g = new THREE.Group();
-  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(1.0,1.0,0.25,48), new THREE.MeshStandardMaterial({ color:0x0b0010 }));
-  wheel.rotation.x = Math.PI/2; wheel.position.y = 1.05; g.add(wheel);
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.3,24), new THREE.MeshStandardMaterial({ color:0x07121a }));
-  base.position.y = 0.75; g.add(base);
-  const label = makeTextSprite("Ruleta", { fontsize: 22 }); label.position.set(0,1.6,0); g.add(label);
-
-  g.userData = { type:'roulette', spinning:false, angle:0 };
-  return g;
-}
-
-// ----------------------- DRAW CANVAS / TEXT HELPERS -----------------------
-function drawSlotScreen(ctx, reels, centerIndex){
-  ctx.clearRect(0,0,256,256);
-  ctx.fillStyle = '#040004'; ctx.fillRect(0,0,256,256);
-  ctx.textAlign = 'center'; ctx.font = '48px serif';
-  for (let col=0; col<3; col++){
-    const symbol = reels[(centerIndex + col) % reels.length];
-    ctx.fillStyle = '#fff'; ctx.fillText(symbol, 42 + col*85, 130);
-  }
-  ctx.strokeStyle = 'rgba(255,111,0,0.25)'; ctx.lineWidth=6; ctx.strokeRect(8,8,240,240);
-}
-
-function makeTextSprite(message, parameters){
-  parameters = parameters || {};
-  const fontsize = parameters.fontsize || 18;
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  ctx.font = `${fontsize}px Arial`;
-  const metrics = ctx.measureText(message);
-  const textWidth = metrics.width;
-  canvas.width = textWidth + 24; canvas.height = fontsize + 20;
-  ctx.fillStyle='rgba(10,6,15,0.9)'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle='white'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.font = `${fontsize}px Arial`;
-  ctx.fillText(message, canvas.width/2, canvas.height/2);
-  const tex = new THREE.CanvasTexture(canvas);
-  const mat = new THREE.SpriteMaterial({ map:tex, transparent:true });
-  const sprite = new THREE.Sprite(mat); sprite.scale.set(1.6,0.6,1);
-  return sprite;
-}
-
-// ----------------------- NEON / SIGNS -----------------------
-function addNeon(x,y,z,color = 0xff6f00, intensity=1.0){
-  const p = new THREE.PointLight(color, intensity, 18);
-  p.position.set(x,y,z); scene.add(p);
-  const plane = new THREE.Mesh(new THREE.PlaneGeometry(2.4,0.6), new THREE.MeshBasicMaterial({ color:color, transparent:true, opacity:0.12 }));
-  plane.position.set(x,y-0.4,z); plane.lookAt(x,y-0.4,z+1); scene.add(plane);
-}
-
-function addNeonSign(x,y,z,text,color=0xff6f00){
-  const group = new THREE.Group();
-  const spacing = 0.9;
-  const geom = new THREE.BoxGeometry(0.7,0.24,0.06);
-  for(let i=0;i<text.length;i++){
-    const mat = new THREE.MeshBasicMaterial({ color: color, emissive: color, emissiveIntensity: 0.6 });
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.set(x + (i - text.length/2) * spacing, y, z);
-    group.add(mesh);
-  }
-  scene.add(group);
-}
-
-// ----------------------- COLLISION HELPERS -----------------------
-function getBoundingBoxExpanded(obj, pad=0.3){
-  const box = new THREE.Box3().setFromObject(obj);
-  box.expandByScalar(pad);
-  return box;
-}
-
-function willCollide(nextPos){
-  // check future position (Vector3) against stored bounding boxes
-  for (const b of objectsForCollision){
-    if (b.containsPoint(nextPos)) return true;
-  }
-  return false;
-}
-
-// ----------------------- MOVEMENT (PointerLock) -----------------------
-const move = { forward:false, backward:false, left:false, right:false };
-let velocity = new THREE.Vector3();
-
-function setupMovement(){
-  document.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyW') move.forward = true;
-    if (e.code === 'KeyS') move.backward = true;
-    if (e.code === 'KeyA') move.left = true;
-    if (e.code === 'KeyD') move.right = true;
-  });
-  document.addEventListener('keyup', (e) => {
-    if (e.code === 'KeyW') move.forward = false;
-    if (e.code === 'KeyS') move.backward = false;
-    if (e.code === 'KeyA') move.left = false;
-    if (e.code === 'KeyD') move.right = false;
-  });
-}
-
-// ----------------------- INTERACTION -----------------------
-window.addEventListener('keydown', (e) => {
-  if (e.key.toLowerCase() === 'e') attemptInteraction();
-});
-
-function attemptInteraction(){
-  const near = findNearbyInteractable();
-  if (!near) return;
-  const ud = near.userData;
-  if (ud.type === 'slot') playSlot(near);
-  else if (ud.type === 'blackjack') openBlackjack(near);
-  else if (ud.type === 'roulette') spinRoulette(near);
-  else if (ud.type === 'door') exitToHome(near);
-}
-
-// find nearest interactable within distance
-function findNearbyInteractable(){
-  // controls.getObject() returns the internal object representing the camera
-  const pos = controls.getObject().position;
-  let nearest = null; let minD = Infinity;
-  for (const it of interactables){
-    const d = pos.distanceTo(it.position);
-    if (d < INTERACT_DISTANCE && d < minD){
-      nearest = it; minD = d;
-    }
-  }
-  // show hint UI
-  if (nearest) interactHint.style.display='block'; else interactHint.style.display='none';
-  return nearest;
-}
-
-// ----------------------- GAME INTERACTIONS -----------------------
-function playSlot(slot){
-  if (slot.userData.spinning) return;
-  slot.userData.spinning = true;
-  const { canvas, ctx, tex, reels } = slot.userData;
-  let frame = 0;
-  const spins = 40; // visuals
-  const interval = setInterval(()=>{
-    const center = Math.floor(Math.random()*reels.length);
-    drawSlotScreen(ctx,reels,center);
-    tex.needsUpdate = true;
-    frame++;
-    if (frame > spins){
-      clearInterval(interval);
-      // final result
-      const final = Math.floor(Math.random()*reels.length);
-      drawSlotScreen(ctx,reels,final);
-      tex.needsUpdate = true;
-      slot.userData.spinning = false;
-      // award points simple
-      let award = 0;
-      const symbol = reels[final];
-      if (symbol==='7') award=500; else if (symbol==='⭐') award=180; else if (symbol==='🔔') award=100; else if (symbol==='🍒') award=60; else award=30;
-      if (Math.random() < 0.04) { award *= 3; showFloatingText(slot.position, "JACKPOT! x3"); }
-      pekepuntos += award; updatePoints();
-      showFloatingText(slot.position, `+${award}`);
-    }
-  }, 30);
-}
-
-function openBlackjack(table){
-  // placeholder modal — puedes integrar tu juego aquí
-  modal.innerHTML = `<div style="font-weight:800; font-size:18px;">Blackjack (demo)</div>
-                     <div style="margin-top:8px;">Esta mesa es demo. ¿Quieres jugar 100 pts? (demo aleatorio)</div>
-                     <button id="bjPlay">Jugar 100</button> <button id="bjClose">Cerrar</button>`;
-  modal.style.display='block';
-  document.getElementById('bjPlay').onclick = ()=>{
-    modal.style.display='none';
-    const win = Math.random() < 0.45;
-    const delta = win ? 200 : -100;
-    pekepuntos += delta;
-    updatePoints();
-    showFloatingText(table.position, `${delta>0?'+':''}${delta} pts`);
-  };
-  document.getElementById('bjClose').onclick = ()=> modal.style.display='none';
-}
-
-function spinRoulette(r){
-  if (r.userData.spinning) return;
-  r.userData.spinning = true;
-  // spin visual by rotating the wheel for a short time
-  const wheel = r.children.find(c=>c.geometry && c.geometry.type==='CylinderGeometry');
-  let ticks = 0; const maxTicks = 80;
-  const spinLoop = setInterval(()=>{
-    ticks++;
-    r.rotation.y += 0.25 + Math.random()*0.15;
-    if (ticks > maxTicks){
-      clearInterval(spinLoop); r.userData.spinning=false;
-      // determine result random
-      const outcome = Math.floor(Math.random()*36);
-      let award = 0;
-      if (outcome === 0) award = 900;
-      else if (outcome % 2 === 0) award = 120;
-      else award = 60;
-      if (Math.random() < 0.05) { award *= 2; showFloatingText(r.position, "BONUS x2"); }
-      pekepuntos += award; updatePoints();
-      showFloatingText(r.position, `+${award} pts (n:${outcome})`);
-    }
-  }, 16);
-}
-
-function exitToHome(door){
-  // simple redirect — ajusta 'h.html' si tu home es otra ruta
-  window.location.href = 'h.html';
-}
-
-// ----------------------- UI HELPERS -----------------------
-function updatePoints(){ pointsLabel.textContent = pekepuntos.toLocaleString(); }
-function showFloatingText(position, text){
-  const sprite = make3DTextSprite(text);
-  sprite.position.set(position.x, position.y + 2.0, position.z);
-  scene.add(sprite);
-  const start = performance.now();
-  const lifetime = 1600;
-  function anim(t){
-    const p = (t - start)/lifetime;
-    sprite.position.y = position.y + 2.0 + p * 0.9;
-    sprite.material.opacity = 1 - p;
-    sprite.scale.setScalar(1 - p*0.6);
-    if (p < 1) requestAnimationFrame(anim); else scene.remove(sprite);
-  }
-  requestAnimationFrame(anim);
-}
-
-function make3DTextSprite(message){
-  const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
-  ctx.font = '28px Arial'; const w = ctx.measureText(message).width;
-  canvas.width = w + 40; canvas.height = 48;
-  ctx.fillStyle='rgba(10,6,15,0.9)'; ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle='white'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.font = '28px Arial'; ctx.fillText(message, canvas.width/2, canvas.height/2);
-  const tex = new THREE.CanvasTexture(canvas); const mat = new THREE.SpriteMaterial({ map:tex, transparent:true });
-  const sprite = new THREE.Sprite(mat); sprite.scale.set(2.2,0.9,1);
-  return sprite;
-}
-
-// ----------------------- ANIMATION / MAIN LOOP -----------------------
-function animate(){
+function animate() {
   requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-  // movement update only when locked
-  if (controls && controls.isLocked){
-    const speed = 4.0;
-    const damping = 10.0;
-    const dir = new THREE.Vector3();
-    controls.getDirection(dir); dir.y = 0; dir.normalize();
-    const right = new THREE.Vector3(); right.crossVectors(camera.up, dir).normalize();
+  if (controls.isLocked) {
+    const speed = 0.1;
+    direction.z = Number(keys["w"]) - Number(keys["s"]);
+    direction.x = Number(keys["d"]) - Number(keys["a"]);
+    direction.normalize();
+    velocity.z = direction.z * speed;
+    velocity.x = direction.x * speed;
+    controls.moveRight(velocity.x);
+    controls.moveForward(velocity.z);
 
-    // calculate next velocity
-    if (move.forward) velocity.add(dir.clone().multiplyScalar(speed * dt));
-    if (move.backward) velocity.add(dir.clone().multiplyScalar(-speed * dt));
-    if (move.right) velocity.add(right.clone().multiplyScalar(speed * dt));
-    if (move.left) velocity.add(right.clone().multiplyScalar(-speed * dt));
-
-    // apply damping
-    velocity.multiplyScalar(1 - Math.min(damping * dt, 0.9));
-
-    // next pos candidate
-    const nextPos = controls.getObject().position.clone().add(velocity.clone().multiplyScalar(dt));
-
-    // simple ground clamp
-    nextPos.y = 1.6;
-
-    // collision test against all boxes; we test the player's position point (you can improve with capsule)
-    if (!willCollide(nextPos)){
-      controls.getObject().position.copy(nextPos);
-    } else {
-      // try small axis adjustments: stop movement if collision
-      velocity.set(0,0,0);
+    // detectar puerta
+    const dist = camera.position.distanceTo(door.position);
+    if (dist < 3) {
+      window.location.href = "h.html"; // salir del casino
     }
   }
-
-  // update any mixers
-  if (mixers.length) for (const m of mixers) m.update(dt);
-
-  // update interact hint (nearby)
-  const near = findNearbyInteractable();
-  interactHint.style.display = near ? 'block' : 'none';
-
   renderer.render(scene, camera);
 }
-
-// ----------------------- UTIL: WINDOW RESIZE -----------------------
-function onWindowResize(){
-  camera.aspect = container.clientWidth / container.clientHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(container.clientWidth, container.clientHeight);
-}
-
-// ----------------------- UTILS: Bounding/boxes -----------------------
-function getBoundingBoxFromMesh(obj){
-  return new THREE.Box3().setFromObject(obj);
-}
-
-// ----------------------- START -----------------------
-init();
 animate();
 
-// ----------------------- EVENT BINDINGS: movement variables in outer scope -----------------------
-document.addEventListener('keydown', (e)=>{
-  if (e.code === 'KeyW') move.forward = true;
-  if (e.code === 'KeyS') move.backward = true;
-  if (e.code === 'KeyA') move.left = true;
-  if (e.code === 'KeyD') move.right = true;
-});
-document.addEventListener('keyup', (e)=>{
-  if (e.code === 'KeyW') move.forward = false;
-  if (e.code === 'KeyS') move.backward = false;
-  if (e.code === 'KeyA') move.left = false;
-  if (e.code === 'KeyD') move.right = false;
+// evento del botón
+document.getElementById("startBtn").addEventListener("click", () => {
+  document.getElementById("overlay").style.display = "none";
+  controls.lock();
 });
 
-// ----------------------- On init: update collision boxes after objects added -----------------------
-// Wait a tick to compute bounding boxes for all objects placed (ensure world built)
-setTimeout(()=> {
-  // prepare collision objects: floor edges + all interactable objects we already added to objectsForCollision
-  // Add room walls boxes roughly so player cannot escape
-  const bigWalls = [
-    new THREE.Box3(new THREE.Vector3(-40,-1,-120), new THREE.Vector3(-30,10,20)), // left rough
-    new THREE.Box3(new THREE.Vector3(30,-1,-120), new THREE.Vector3(40,10,20)),  // right rough
-  ];
-  for (const b of bigWalls) objectsForCollision.push(b);
-  // Also compute bounding boxes for interactables that weren't added earlier
-  interactables.forEach(it=>{
-    if (!objectsForCollision.find(b => b.equals && b.equals(getBoundingBoxExpanded(it,0.6)))) {
-      if (!objectsForCollision.some(b => b.containsBox && b.containsBox(new THREE.Box3().setFromObject(it)))) {
-        // add if not already roughly included - safer: add bounding box
-        objectsForCollision.push(getBoundingBoxExpanded(it,0.6));
-      }
-    }
-  });
-}, 200);
-
-// ----------------------- NOTES -----------------------
-// Este archivo es una base completa: puedes mejorar con GLTF loaders (modelos finos), sonidos, texturas y sincronización con Supabase.
-// Si quieres que automáticamente se cargue el nombre de usuario y pekepuntos desde tu sistema, dime y lo integro (supabase).
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>
