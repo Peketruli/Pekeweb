@@ -1,190 +1,186 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Casino 3D - Movimiento corregido</title>
-<script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<style>
-  body { margin:0; overflow:hidden; background:#000; font-family:Arial, Helvetica, sans-serif; }
-  #hint {
-    position: absolute; left: 12px; top: 12px; z-index: 5;
-    background: rgba(0,0,0,0.5); color: #fff; padding:8px 10px; border-radius:8px;
-    font-size:13px;
-  }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Casino 3D - Fase 1</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background-color: black;
+      font-family: Arial, sans-serif;
+    }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      background: rgba(0,0,0,0.4);
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      z-index: 10;
+    }
+  </style>
 </head>
 <body>
-<div id="hint">Mover: W A S D — Mirar: mueve el ratón</div>
+<div id="info">🎰 Casino 3D — W, A, S, D para moverte, ratón para mirar</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.165.0/examples/js/controls/PointerLockControls.js"></script>
+
 <script>
-// ---------- Scene, camera, renderer ----------
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050505);
+let scene, camera, renderer, controls, clock;
+let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+let velocity = new THREE.Vector3();
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
-camera.position.set(0, 1.7, 10);
+init();
+animate();
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(devicePixelRatio);
-document.body.appendChild(renderer.domElement);
+function init() {
+  // --- Escena y cámara ---
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000000);
+  scene.fog = new THREE.Fog(0x000000, 10, 60);
 
-// ---------- Lights ----------
-scene.add(new THREE.AmbientLight(0xffffff, 0.45));
-const pt = new THREE.PointLight(0xff66ff, 1.8, 50);
-pt.position.set(0, 6, 0);
-scene.add(pt);
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 2, 5);
 
-// ---------- Floor & walls ----------
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(50, 50),
-  new THREE.MeshStandardMaterial({ color: 0x222222 })
-);
-floor.rotation.x = -Math.PI/2;
-scene.add(floor);
+  // --- Luces ---
+  const ambient = new THREE.AmbientLight(0x404040, 2); // luz general suave
+  scene.add(ambient);
 
-const wallMat = new THREE.MeshStandardMaterial({ color: 0x330033 });
-const backWall = new THREE.Mesh(new THREE.BoxGeometry(50, 10, 1), wallMat);
-backWall.position.set(0, 5, -20);
-scene.add(backWall);
+  const point1 = new THREE.PointLight(0xff00ff, 3, 25);
+  point1.position.set(-5, 4, -5);
+  scene.add(point1);
 
-const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 50), wallMat);
-leftWall.position.set(-25, 5, 5);
-scene.add(leftWall);
+  const point2 = new THREE.PointLight(0x00ffff, 3, 25);
+  point2.position.set(5, 4, -5);
+  scene.add(point2);
 
-const rightWall = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 50), wallMat);
-rightWall.position.set(25, 5, 5);
-scene.add(rightWall);
+  const spotLight = new THREE.SpotLight(0xffffff, 1.5);
+  spotLight.position.set(0, 10, 5);
+  spotLight.angle = Math.PI / 6;
+  spotLight.penumbra = 0.5;
+  spotLight.castShadow = true;
+  scene.add(spotLight);
 
-// ---------- Corridor elements ----------
-const corridorWallMat = new THREE.MeshStandardMaterial({ color: 0x440044 });
-for (let i = -20; i < 5; i += 5) {
-  const wallL = new THREE.Mesh(new THREE.BoxGeometry(1,10,5), corridorWallMat);
-  wallL.position.set(-5, 5, i);
-  scene.add(wallL);
-  const wallR = wallL.clone();
-  wallR.position.set(5, 5, i);
-  scene.add(wallR);
+  // --- Renderer ---
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  // --- Controles de movimiento ---
+  controls = new THREE.PointerLockControls(camera, document.body);
+  document.body.addEventListener('click', () => {
+    controls.lock();
+  });
+
+  clock = new THREE.Clock();
+
+  // --- Escenario: suelo y paredes ---
+  const textureLoader = new THREE.TextureLoader();
+
+  const floorTex = textureLoader.load("https://cdn.pixabay.com/photo/2017/05/28/18/54/texture-2357920_1280.jpg");
+  floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
+  floorTex.repeat.set(20, 20);
+
+  const wallTex = textureLoader.load("https://cdn.pixabay.com/photo/2016/11/21/15/44/texture-1846863_1280.jpg");
+  wallTex.wrapS = wallTex.wrapT = THREE.RepeatWrapping;
+  wallTex.repeat.set(8, 2);
+
+  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex });
+  const wallMat = new THREE.MeshStandardMaterial({ map: wallTex, roughness: 0.6, metalness: 0.2 });
+
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  const backWall = new THREE.Mesh(new THREE.BoxGeometry(100, 10, 1), wallMat);
+  backWall.position.set(0, 5, -50);
+  scene.add(backWall);
+
+  const frontWall = new THREE.Mesh(new THREE.BoxGeometry(100, 10, 1), wallMat);
+  frontWall.position.set(0, 5, 50);
+  scene.add(frontWall);
+
+  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 100), wallMat);
+  leftWall.position.set(-50, 5, 0);
+  scene.add(leftWall);
+
+  const rightWall = new THREE.Mesh(new THREE.BoxGeometry(1, 10, 100), wallMat);
+  rightWall.position.set(50, 5, 0);
+  scene.add(rightWall);
+
+  // --- Objetos básicos: mesas ---
+  const tableMat = new THREE.MeshStandardMaterial({ color: 0x00ff66, metalness: 0.3, roughness: 0.4 });
+  const table = new THREE.Mesh(new THREE.CylinderGeometry(2, 2, 0.3, 32), tableMat);
+  table.position.set(0, 1, 0);
+  table.castShadow = true;
+  table.receiveShadow = true;
+  scene.add(table);
+
+  // --- Event listeners ---
+  document.addEventListener('keydown', onKeyDown);
+  document.addEventListener('keyup', onKeyUp);
+  window.addEventListener('resize', onWindowResize);
 }
 
-// ---------- Casino objects ----------
-const slotMat = new THREE.MeshStandardMaterial({ color: 0xff00ff, emissive: 0x330033 });
-for (let i = 0; i < 6; i++) {
-  const slot = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.5, 1.5), slotMat);
-  slot.position.set(i * 3 - 7.5, 1.25, -5);
-  scene.add(slot);
+// --- Movimiento ---
+function onKeyDown(event) {
+  switch (event.code) {
+    case 'KeyW': moveForward = true; break;
+    case 'KeyS': moveBackward = true; break;
+    case 'KeyA': moveLeft = true; break;
+    case 'KeyD': moveRight = true; break;
+  }
+}
+function onKeyUp(event) {
+  switch (event.code) {
+    case 'KeyW': moveForward = false; break;
+    case 'KeyS': moveBackward = false; break;
+    case 'KeyA': moveLeft = false; break;
+    case 'KeyD': moveRight = false; break;
+  }
 }
 
-const table = new THREE.Mesh(
-  new THREE.CylinderGeometry(5, 5, 0.5, 32),
-  new THREE.MeshStandardMaterial({ color: 0x004400 })
-);
-table.position.set(0, 0.25, 5);
-scene.add(table);
-
-const ruleta = new THREE.Mesh(
-  new THREE.CylinderGeometry(2, 2, 0.3, 32),
-  new THREE.MeshStandardMaterial({ color: 0x990000 })
-);
-ruleta.position.set(-10, 0.15, 8);
-scene.add(ruleta);
-
-// ---------- Movement & Look (fixed) ----------
-// Use yaw/pitch angles and compute forward from camera.getWorldDirection()
-// This ensures forward is always where the camera is looking.
-
-let yaw = 0;   // horizontal rotation
-let pitch = 0; // vertical rotation
-const sens = 0.0026; // mouse sensitivity
-
-// Mouse look: track pointer movement even if not locked.
-// On some browsers movementX/Y are zero until user interacts; this method will work when user moves mouse.
-window.addEventListener('mousemove', (e) => {
-  // e.movementX/movementY work even without pointer lock in most browsers during mouse move
-  // but if they are zero (touchpad, mobile), the user still can use arrow keys later if needed.
-  yaw -= (e.movementX || 0) * sens;
-  pitch -= (e.movementY || 0) * sens;
-  // clamp pitch to avoid flipping
-  const maxPitch = Math.PI / 2 - 0.05;
-  pitch = Math.max(-maxPitch, Math.min(maxPitch, pitch));
-});
-
-// Keyboard move
-const keys = {};
-window.addEventListener('keydown', (e) => { keys[e.code] = true; });
-window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-// Smooth movement velocity (simple)
-const velocity = new THREE.Vector3();
-const accel = 30.0;
-const damping = 10.0;
-
-// Temporary vectors to avoid allocations
-const forwardVec = new THREE.Vector3();
-const rightVec = new THREE.Vector3();
-const upVec = new THREE.Vector3(0,1,0);
-
-const clock = new THREE.Clock();
-
-function updateMovement(dt) {
-  // get camera forward (world) direction
-  camera.rotation.set(pitch, yaw, 0, "ZYX"); // apply pitch & yaw to camera
-  camera.updateMatrixWorld();
-
-  camera.getWorldDirection(forwardVec); // points where camera looks
-  forwardVec.y = 0; // keep movement on XZ plane
-  forwardVec.normalize();
-
-  // right vector = forward cross up
-  rightVec.copy(forwardVec).cross(upVec).negate(); // ensure right points to camera's right
-
-  // desired direction
-  let moveX = 0, moveZ = 0;
-  if (keys['KeyW']) moveZ += 1;
-  if (keys['KeyS']) moveZ -= 1;
-  if (keys['KeyD']) moveX -= 1;
-  if (keys['KeyA']) moveX += 1;
-
-  const desired = new THREE.Vector3();
-  desired.addScaledVector(forwardVec, moveZ);
-  desired.addScaledVector(rightVec, moveX);
-  if (desired.lengthSq() > 0) desired.normalize();
-
-  // accelerate / damp
-  velocity.addScaledVector(desired, accel * dt);
-  velocity.multiplyScalar(1 / (1 + damping * dt));
-
-  // move camera position
-  camera.position.addScaledVector(velocity, dt);
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// ---------- Animation loop ----------
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05); // clamp delta
+  const delta = clock.getDelta();
 
-  updateMovement(dt);
+  if (controls.isLocked === true) {
+    velocity.x -= velocity.x * 10.0 * delta;
+    velocity.z -= velocity.z * 10.0 * delta;
 
-  // small ambient animation
-  ruleta.rotation.y += 0.01;
+    const speed = 10.0 * delta;
+    if (moveForward) velocity.z -= speed;
+    if (moveBackward) velocity.z += speed;
+    if (moveLeft) velocity.x -= speed;
+    if (moveRight) velocity.x += speed;
+
+    controls.moveRight(-velocity.x);
+    controls.moveForward(-velocity.z);
+  }
+
+  // animación suave de luces de neón
+  const time = performance.now() * 0.002;
+  scene.children.forEach(obj => {
+    if (obj.isPointLight) {
+      obj.intensity = 2.5 + Math.sin(time + obj.position.x) * 0.5;
+    }
+  });
 
   renderer.render(scene, camera);
 }
-animate();
-
-// ---------- Resize ----------
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-
-// ---------- Helpful: center the mouse cursor hint removal ----------
-const hint = document.getElementById('hint');
-let hintTimeout = setTimeout(()=>{ hint.style.display = 'none'; }, 4000);
-
-// Optional: If you want the cursor visible, remove 'cursor:none' from body style.
-// End of script
 </script>
 </body>
 </html>
