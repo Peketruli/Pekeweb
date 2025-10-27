@@ -4,16 +4,8 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Casino 3D Mejorado</title>
-
-<!-- Three.js -->
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
-<!-- Cannon-es (física simple) -->
-<script type="module">
-import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
-
-window.CANNON = CANNON;
-</script>
-
+<script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"></script>
 <style>
   body { margin:0; overflow:hidden; background:#000; font-family:Arial, Helvetica, sans-serif; }
   #hint {
@@ -23,14 +15,10 @@ window.CANNON = CANNON;
   }
 </style>
 </head>
-
 <body>
 <div id="hint">Mover: W A S D — Mirar: mueve el ratón</div>
-
-<script type="module">
-// ---------- Scene & Camera ----------
-import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-
+<script>
+// ---------- THREE.js Setup ----------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050505);
 
@@ -39,221 +27,186 @@ camera.position.set(0, 1.7, 10);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
 renderer.setPixelRatio(devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
 // ---------- Lights ----------
-const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+const ambient = new THREE.AmbientLight(0xffffff, 0.3);
 scene.add(ambient);
 
-const point = new THREE.PointLight(0xffcc88, 1.2, 50);
-point.position.set(0, 6, 0);
+const point = new THREE.PointLight(0xffccaa, 1.2, 50);
+point.position.set(0, 8, 0);
 point.castShadow = true;
 scene.add(point);
 
-// Spotlights sobre mesas
-function addSpot(x,y,z,color=0xffeeaa){
-  const spot = new THREE.SpotLight(color, 1.2, 20, Math.PI/4, 0.5, 2);
-  spot.position.set(x,y,z);
-  spot.target.position.set(x,0,z);
-  scene.add(spot);
-  scene.add(spot.target);
-}
-addSpot(0,5,5); // blackjack
-addSpot(-10,5,8); // ruleta
+const spot1 = new THREE.SpotLight(0xffaa00, 1.0);
+spot1.position.set(-5, 6, -5);
+spot1.angle = Math.PI/6;
+spot1.penumbra = 0.3;
+spot1.castShadow = true;
+scene.add(spot1);
 
-// ---------- Physics world ----------
-const world = new CANNON.World({
-  gravity: new CANNON.Vec3(0,0,0) // sin gravedad
-});
+const spot2 = new THREE.SpotLight(0x00aaff, 1.0);
+spot2.position.set(5, 6, -5);
+spot2.angle = Math.PI/6;
+spot2.penumbra = 0.3;
+spot2.castShadow = true;
+scene.add(spot2);
+
+// ---------- Physics Setup ----------
+const world = new CANNON.World();
+world.gravity.set(0, -9.82, 0);
 world.broadphase = new CANNON.NaiveBroadphase();
 world.solver.iterations = 10;
 
 // ---------- Floor ----------
-const floorMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness:0.8 });
 const floorGeo = new THREE.PlaneGeometry(50,50);
-const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-floorMesh.rotation.x = -Math.PI/2;
-floorMesh.receiveShadow = true;
-scene.add(floorMesh);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x444444, roughness:0.8, metalness:0.2 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+scene.add(floor);
 
-// Physics body floor
-const floorBody = new CANNON.Body({ mass:0 });
+// Physics floor
+const floorBody = new CANNON.Body({ type: CANNON.Body.STATIC });
 floorBody.addShape(new CANNON.Plane());
 floorBody.quaternion.setFromEuler(-Math.PI/2,0,0);
 world.addBody(floorBody);
 
 // ---------- Walls ----------
-const wallMat = new THREE.MeshStandardMaterial({ color:0x330033, roughness:0.9 });
-function makeWall(x,y,z,w,h,d){
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), wallMat);
-  mesh.position.set(x,y,z);
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  scene.add(mesh);
-
-  const shape = new CANNON.Box(new CANNON.Vec3(w/2,h/2,d/2));
-  const body = new CANNON.Body({ mass:0 });
-  body.addShape(shape);
-  body.position.set(x,y,z);
-  world.addBody(body);
+function createWall(x,y,z,w,h,d,color){
+    const mat = new THREE.MeshStandardMaterial({ color, roughness:0.6 });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+    mesh.position.set(x,y,z);
+    mesh.castShadow = true; mesh.receiveShadow = true;
+    scene.add(mesh);
+    const shape = new CANNON.Box(new CANNON.Vec3(w/2,h/2,d/2));
+    const body = new CANNON.Body({ type: CANNON.Body.STATIC, shape });
+    body.position.set(x,y,z);
+    world.addBody(body);
 }
-makeWall(0,5,-20,50,10,1); // back
-makeWall(-25,5,5,1,10,50);  // left
-makeWall(25,5,5,1,10,50);   // right
+createWall(0,5,-25,50,10,1,0x330033); // back
+createWall(-25,5,0,1,10,50,0x330033); // left
+createWall(25,5,0,1,10,50,0x330033);  // right
+createWall(0,5,25,50,10,1,0x330033);  // front
 
-// Corridor side walls
-const corridorMat = new THREE.MeshStandardMaterial({ color:0x440044 });
-for(let i=-20;i<5;i+=5){
-  makeWall(-5,5,i,1,10,5);
-  makeWall(5,5,i,1,10,5);
-}
+// ---------- Casino Objects ----------
+const materials = {
+    slot: new THREE.MeshStandardMaterial({ color:0xff00ff, emissive:0x330033, roughness:0.3, metalness:0.7 }),
+    table: new THREE.MeshStandardMaterial({ color:0x004400, roughness:0.4, metalness:0.3 }),
+    roulette: new THREE.MeshStandardMaterial({ color:0x990000, roughness:0.5, metalness:0.3 })
+};
 
-// ---------- Casino objects ----------
-const slotMat = new THREE.MeshStandardMaterial({ color:0xff00ff, emissive:0x330033 });
+// Tragaperras
+const slots = [];
 for(let i=0;i<6;i++){
-  const slot = new THREE.Mesh(new THREE.BoxGeometry(1.5,2.5,1.5), slotMat);
-  slot.position.set(i*3-7.5,1.25,-5);
-  slot.castShadow = true;
-  scene.add(slot);
-
-  // collision
-  const shape = new CANNON.Box(new CANNON.Vec3(0.75,1.25,0.75));
-  const body = new CANNON.Body({ mass:0 });
-  body.addShape(shape);
-  body.position.set(slot.position.x, slot.position.y, slot.position.z);
-  world.addBody(body);
+    const slot = new THREE.Mesh(new THREE.BoxGeometry(1.5,2.5,1.5), materials.slot);
+    slot.position.set(i*3 - 7.5, 1.25, -5);
+    slot.castShadow = true; slot.receiveShadow = true;
+    scene.add(slot);
+    // physics
+    const body = new CANNON.Body({ mass:0 });
+    body.addShape(new CANNON.Box(new CANNON.Vec3(0.75,1.25,0.75)));
+    body.position.copy(slot.position);
+    world.addBody(body);
+    slots.push({mesh:slot, body});
 }
 
-// Blackjack table
-const tableMat = new THREE.MeshStandardMaterial({ color:0x004400, roughness:0.6, metalness:0.2 });
-const tableGeo = new THREE.CylinderGeometry(5,5,0.5,32);
-const tableMesh = new THREE.Mesh(tableGeo, tableMat);
-tableMesh.position.set(0,0.25,5);
-tableMesh.castShadow = true;
-scene.add(tableMesh);
-
-const tableShape = new CANNON.Cylinder(5,5,0.5,32);
+// Mesa de Blackjack
+const table = new THREE.Mesh(new THREE.CylinderGeometry(5,5,0.5,32), materials.table);
+table.position.set(0,0.25,5);
+table.castShadow = true; table.receiveShadow = true;
+scene.add(table);
 const tableBody = new CANNON.Body({ mass:0 });
-tableBody.addShape(tableShape);
-tableBody.position.set(0,0.25,5);
+tableBody.addShape(new CANNON.Cylinder(5,5,0.5,32));
+tableBody.position.copy(table.position);
 world.addBody(tableBody);
 
-// Ruleta horizontal
-const ruletaMat = new THREE.MeshStandardMaterial({ color:0x990000, roughness:0.5, metalness:0.3 });
-const ruletaGeo = new THREE.CylinderGeometry(2,2,0.3,32);
-const ruletaMesh = new THREE.Mesh(ruletaGeo, ruletaMat);
-ruletaMesh.rotation.x = -Math.PI/2; // horizontal
-ruletaMesh.position.set(-10,0.3,8);
-ruletaMesh.castShadow = true;
-scene.add(ruletaMesh);
-
-const ruletaShape = new CANNON.Cylinder(2,2,0.3,32);
+// Ruleta (horizontal)
+const ruleta = new THREE.Mesh(new THREE.CylinderGeometry(2,2,0.3,32), materials.roulette);
+ruleta.rotation.x = Math.PI/2;
+ruleta.position.set(-10,0.15,8);
+ruleta.castShadow = true; ruleta.receiveShadow = true;
+scene.add(ruleta);
 const ruletaBody = new CANNON.Body({ mass:0 });
-ruletaBody.addShape(ruletaShape);
-ruletaBody.quaternion.setFromEuler(-Math.PI/2,0,0);
-ruletaBody.position.set(-10,0.3,8);
+ruletaBody.addShape(new CANNON.Cylinder(2,2,0.3,32));
+ruletaBody.position.copy(ruleta.position);
 world.addBody(ruletaBody);
 
+// ---------- Player ----------
+const playerHeight = 1.7;
+const playerRadius = 0.3;
+const playerBody = new CANNON.Body({ mass: 80 });
+playerBody.addShape(new CANNON.Sphere(playerRadius));
+playerBody.position.set(0,playerHeight,10);
+world.addBody(playerBody);
+
 // ---------- Movement ----------
-let yaw=0, pitch=0;
-const sens = 0.0026;
-window.addEventListener('mousemove', e=>{
-  yaw -= (e.movementX||0)*sens;
-  pitch -= (e.movementY||0)*sens;
-  const maxPitch = Math.PI/2-0.05;
-  pitch = Math.max(-maxPitch, Math.min(maxPitch,maxPitch));
+let yaw=0,pitch=0;
+const sens=0.0026;
+window.addEventListener('mousemove',e=>{
+    yaw -= (e.movementX||0)*sens;
+    pitch -= (e.movementY||0)*sens;
+    const maxPitch=Math.PI/2-0.05;
+    pitch=Math.max(-maxPitch,Math.min(maxPitch,maxPitch));
 });
 
 const keys = {};
-window.addEventListener('keydown', e=>{ keys[e.code]=true; });
-window.addEventListener('keyup', e=>{ keys[e.code]=false; });
+window.addEventListener('keydown',e=>{keys[e.code]=true;});
+window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
+const forwardVec = new THREE.Vector3();
+const rightVec = new THREE.Vector3();
+const upVec = new THREE.Vector3(0,1,0);
 const velocity = new THREE.Vector3();
-const accel = 30.0, damping=10.0;
-const forwardVec = new THREE.Vector3(), rightVec=new THREE.Vector3(), upVec=new THREE.Vector3(0,1,0);
-const playerRadius = 0.3;
-const playerHeight = 1.7;
-
-// player body for collisions
-const playerShape = new CANNON.Cylinder(playerRadius, playerRadius, playerHeight, 8);
-const playerBody = new CANNON.Body({ mass:0 });
-playerBody.addShape(playerShape);
-playerBody.position.set(0,playerHeight/2,10);
-world.addBody(playerBody);
-
+const accel = 20.0;
+const damping = 10.0;
 const clock = new THREE.Clock();
 
 function updateMovement(dt){
-  camera.rotation.set(pitch,yaw,0,"ZYX");
-  camera.updateMatrixWorld();
-
-  camera.getWorldDirection(forwardVec);
-  forwardVec.y=0; forwardVec.normalize();
-  rightVec.copy(forwardVec).cross(upVec).negate();
-
-  let moveX=0, moveZ=0;
-  if(keys['KeyW']) moveZ+=1;
-  if(keys['KeyS']) moveZ-=1;
-  if(keys['KeyD']) moveX-=1;
-  if(keys['KeyA']) moveX+=1;
-
-  const desired = new THREE.Vector3();
-  desired.addScaledVector(forwardVec, moveZ);
-  desired.addScaledVector(rightVec, moveX);
-  if(desired.lengthSq()>0) desired.normalize();
-
-  velocity.addScaledVector(desired,accel*dt);
-  velocity.multiplyScalar(1/(1+damping*dt));
-
-  // Proposed new position
-  const newPos = playerBody.position.clone();
-  newPos.x += velocity.x*dt;
-  newPos.z += velocity.z*dt;
-
-  // Simple collision detection
-  const result = new CANNON.Vec3();
-  const sphere = new CANNON.Sphere(playerRadius);
-  for(const b of world.bodies){
-    if(b===playerBody) continue;
-    if(b.shapes[0] instanceof CANNON.Plane) continue;
-
-    // distance check
-    const dx = newPos.x - b.position.x;
-    const dz = newPos.z - b.position.z;
-    const combined = playerRadius + Math.max(b.shapes[0].boundingSphereRadius||1);
-    if(dx*dx + dz*dz < combined*combined){
-      velocity.x=0; velocity.z=0;
-      break;
-    }
-  }
-
-  playerBody.position.addScaledVector(velocity,dt);
-  camera.position.copy(playerBody.position);
-  camera.position.y += playerHeight/2 -0.15; // eye height
+    // camera rotation
+    camera.rotation.set(pitch,yaw,0,"ZYX");
+    camera.updateMatrixWorld();
+    camera.getWorldDirection(forwardVec);
+    forwardVec.y=0; forwardVec.normalize();
+    rightVec.copy(forwardVec).cross(upVec).negate();
+    let moveX=0,moveZ=0;
+    if(keys['KeyW']) moveZ+=1;
+    if(keys['KeyS']) moveZ-=1;
+    if(keys['KeyD']) moveX-=1;
+    if(keys['KeyA']) moveX+=1;
+    const desired = new THREE.Vector3();
+    desired.addScaledVector(forwardVec,moveZ);
+    desired.addScaledVector(rightVec,moveX);
+    if(desired.lengthSq()>0) desired.normalize();
+    velocity.addScaledVector(desired,accel*dt);
+    velocity.multiplyScalar(1/(1+damping*dt));
+    // move player
+    playerBody.velocity.x=velocity.x;
+    playerBody.velocity.z=velocity.z;
+    camera.position.copy(playerBody.position);
+    camera.position.y+=0; // adjust height if needed
 }
 
 // ---------- Animate ----------
 function animate(){
-  requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(),0.05);
-  updateMovement(dt);
-  ruletaMesh.rotation.z += 0.01;
-  renderer.render(scene,camera);
+    requestAnimationFrame(animate);
+    const dt = Math.min(clock.getDelta(),0.05);
+    updateMovement(dt);
+    world.step(dt);
+    ruleta.rotation.z += 0.03;
+    renderer.render(scene,camera);
 }
 animate();
 
 // ---------- Resize ----------
 window.addEventListener('resize',()=>{
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
 });
-
-// ---------- Hint ----------
-const hint = document.getElementById('hint');
-setTimeout(()=>{ hint.style.display='none'; }, 4000);
 </script>
 </body>
 </html>
