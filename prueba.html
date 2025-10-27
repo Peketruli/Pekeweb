@@ -3,233 +3,219 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Casino 3D - Ruleta corregida + físicas básicas</title>
+<title>Casino 3D Mejorado — Ruleta Realista + Físicas</title>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <style>
   body { margin:0; overflow:hidden; background:#000; font-family:Arial, Helvetica, sans-serif; }
-  #hint {
-    position: absolute; left: 12px; top: 12px; z-index: 5;
-    background: rgba(0,0,0,0.6); color: #fff; padding:8px 10px; border-radius:8px;
-    font-size:13px;
-  }
-  #credits {
-    position: absolute; right: 12px; top: 12px; z-index: 5;
-    background: rgba(0,0,0,0.45); color:#ddd; padding:6px 8px; border-radius:6px; font-size:12px;
+  #hud {
+    position:absolute; top:12px; left:12px; color:#fff; z-index:10;
+    background:rgba(0,0,0,0.5); padding:8px 10px; border-radius:10px; font-size:13px;
+    text-shadow:0 0 5px #000;
   }
 </style>
 </head>
 <body>
-<div id="hint">🎰 Mover: W A S D — Mirar: ratón</div>
-<div id="credits">Casino clásico — físicas básicas + ruleta corregida</div>
+<div id="hud">🎰 Mover: W A S D — Mirar: Ratón</div>
 
 <script>
-// ---------- ESCENA ----------
+// === ESCENA ===
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x060304);
-scene.fog = new THREE.FogExp2(0x060304, 0.012);
+scene.background = new THREE.Color(0x050505);
+scene.fog = new THREE.Fog(0x050505, 10, 70);
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-camera.position.set(0, 1.7, 12); // un poco más atrás
+camera.position.set(0, 1.7, 12);
 
-const renderer = new THREE.WebGLRenderer({ antialias:true });
+const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(devicePixelRatio);
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
-// ---------- ILUMINACIÓN ----------
-scene.add(new THREE.AmbientLight(0xffecd6, 0.45));
-const dir = new THREE.DirectionalLight(0xffe0b5, 0.6);
-dir.position.set(5, 20, 10);
-dir.castShadow = true;
-scene.add(dir);
+// === ILUMINACIÓN ===
+scene.add(new THREE.AmbientLight(0xffe7c2, 0.35));
+const light = new THREE.PointLight(0xffb870, 1.2, 80);
+light.position.set(0, 10, 0);
+light.castShadow = true;
+scene.add(light);
 
-// ---------- SUELO ----------
-const floorTex = new THREE.TextureLoader().load("https://cdn.pixabay.com/photo/2016/11/21/15/55/pattern-1846866_1280.jpg");
+const accent = new THREE.PointLight(0xff66aa, 0.4, 30);
+accent.position.set(10, 5, -10);
+scene.add(accent);
+
+// === SUELO ===
+const floorTex = new THREE.TextureLoader().load("https://cdn.pixabay.com/photo/2017/09/21/01/21/carpet-2777812_1280.jpg");
 floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
-floorTex.repeat.set(8, 8);
-const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9 });
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(80,80), floorMat);
+floorTex.repeat.set(8,8);
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(100,100),
+  new THREE.MeshStandardMaterial({map:floorTex, roughness:0.8})
+);
 floor.rotation.x = -Math.PI/2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-// ---------- PAREDES ----------
-const wallMat = new THREE.MeshStandardMaterial({ color:0x3d1f0f, roughness:1 });
-const back = new THREE.Mesh(new THREE.BoxGeometry(40,8,0.8), wallMat);
-back.position.set(0,4,-30);
-scene.add(back);
-const front = back.clone(); front.position.set(0,4,30); scene.add(front);
-const left = new THREE.Mesh(new THREE.BoxGeometry(0.8,8,60), wallMat);
-left.position.set(-20,4,0); scene.add(left);
-const right = left.clone(); right.position.set(20,4,0); scene.add(right);
+// === PAREDES ===
+const wallMat = new THREE.MeshStandardMaterial({color:0x2a0c06, metalness:0.2, roughness:0.9});
+const back = new THREE.Mesh(new THREE.BoxGeometry(60,8,1), wallMat);
+back.position.set(0,4,-30); scene.add(back);
+const front = back.clone(); front.position.z = 30; scene.add(front);
+const left = new THREE.Mesh(new THREE.BoxGeometry(1,8,60), wallMat);
+left.position.set(-30,4,0); scene.add(left);
+const right = left.clone(); right.position.x = 30; scene.add(right);
 
-// ---------- MESA DE BLACKJACK ----------
-const feltCanvas = document.createElement('canvas');
-feltCanvas.width = feltCanvas.height = 512;
-const fctx = feltCanvas.getContext('2d');
-fctx.fillStyle = '#0b5b35';
-fctx.fillRect(0,0,512,512);
-for(let i=0;i<30000;i++){
-  fctx.fillStyle = `rgba(0,0,0,${Math.random()*0.2})`;
-  fctx.fillRect(Math.random()*512, Math.random()*512,1,1);
-}
-const feltTex = new THREE.CanvasTexture(feltCanvas);
-
-const tableTop = new THREE.Mesh(
-  new THREE.CylinderGeometry(4.2, 4.2, 0.4, 32),
-  new THREE.MeshStandardMaterial({ map: feltTex, roughness:0.8 })
-);
-tableTop.position.set(0, 0.6, 6);
-tableTop.castShadow = true;
-scene.add(tableTop);
-
-// ---------- RULETA (ahora correctamente horizontal) ----------
-const wheelGroup = new THREE.Group();
+// === MESA DE RULETA ===
+const tableGroup = new THREE.Group();
 
 // base
-const wheelBase = new THREE.Mesh(
-  new THREE.CylinderGeometry(2.2,2.2,0.5,48),
-  new THREE.MeshStandardMaterial({ color:0x3b1f0e })
+const tableLegs = new THREE.Mesh(
+  new THREE.CylinderGeometry(4.5,4.5,0.4,32),
+  new THREE.MeshStandardMaterial({color:0x4a2e14, metalness:0.3, roughness:0.8})
 );
-wheelBase.position.y = 0.5;
-wheelGroup.add(wheelBase);
+tableLegs.position.y = 0.5;
+tableGroup.add(tableLegs);
 
-// aro exterior
-const rim = new THREE.Mesh(
-  new THREE.TorusGeometry(2.3,0.18,16,100),
-  new THREE.MeshStandardMaterial({ color:0x4a2b12 })
+// superficie verde
+const tableTop = new THREE.Mesh(
+  new THREE.CylinderGeometry(4,4,0.2,32),
+  new THREE.MeshStandardMaterial({color:0x0b5b35, roughness:0.8})
 );
-rim.rotation.x = Math.PI/2;
-rim.position.y = 0.8;
-wheelGroup.add(rim);
+tableTop.position.y = 0.9;
+tableGroup.add(tableTop);
+tableGroup.position.set(0,0,5);
+scene.add(tableGroup);
 
-// tablero
+// === RULETA REALISTA ===
+const wheelGroup = new THREE.Group();
+
+// base inferior
+const base = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.9,2.3,0.3,48),
+  new THREE.MeshStandardMaterial({color:0x3b1f0e})
+);
+wheelGroup.add(base);
+
+// tablero giratorio
 const wheelCanvas = document.createElement('canvas');
-wheelCanvas.width = 1024; wheelCanvas.height = 1024;
+wheelCanvas.width = wheelCanvas.height = 1024;
 const ctx = wheelCanvas.getContext('2d');
-const cx = 512, cy = 512, r = 420;
-for(let i=0;i<36;i++){
+const cx = 512, cy = 512, r = 450;
+
+// números rojos y negros
+for(let i=0;i<37;i++){
+  const a0 = (i/37)*Math.PI*2;
+  const a1 = ((i+1)/37)*Math.PI*2;
   ctx.beginPath();
-  const a0 = (i/36)*Math.PI*2;
-  const a1 = ((i+1)/36)*Math.PI*2;
   ctx.moveTo(cx,cy);
   ctx.arc(cx,cy,r,a0,a1);
   ctx.closePath();
   ctx.fillStyle = (i%2===0)?'#b30000':'#111';
   ctx.fill();
 }
-ctx.beginPath(); ctx.arc(cx,cy,120,0,Math.PI*2); ctx.fillStyle='#ccc'; ctx.fill();
-const wheelTex = new THREE.CanvasTexture(wheelCanvas);
+ctx.beginPath(); ctx.arc(cx,cy,120,0,Math.PI*2);
+ctx.fillStyle = '#ddd'; ctx.fill();
 
+const wheelTex = new THREE.CanvasTexture(wheelCanvas);
 const plate = new THREE.Mesh(
-  new THREE.CylinderGeometry(1.9,1.9,0.08,64),
-  new THREE.MeshStandardMaterial({ map: wheelTex })
+  new THREE.CylinderGeometry(1.8,1.8,0.05,64),
+  new THREE.MeshStandardMaterial({map:wheelTex, metalness:0.2, roughness:0.4})
 );
-plate.rotation.x = -Math.PI/2; // ← antes estaba vertical, ahora horizontal
-plate.position.y = 0.86;
+plate.rotation.x = -Math.PI/2;
+plate.position.y = 0.2;
 wheelGroup.add(plate);
 
-wheelGroup.position.set(-10, 0, 8);
-wheelGroup.castShadow = true;
+// eje central
+const pin = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.05,0.05,0.5,16),
+  new THREE.MeshStandardMaterial({color:0xffffff})
+);
+pin.position.y = 0.45;
+wheelGroup.add(pin);
+
+// bola
+const ball = new THREE.Mesh(
+  new THREE.SphereGeometry(0.08,16,16),
+  new THREE.MeshStandardMaterial({color:0xffffff, metalness:0.3, roughness:0.2})
+);
+ball.position.set(1.5,0.3,0);
+wheelGroup.add(ball);
+
+// colocar ruleta sobre la mesa
+wheelGroup.position.set(0,1.05,5);
 scene.add(wheelGroup);
 
-// ---------- TRAGAPERRAS ----------
-const machines = [];
-for(let i=0;i<6;i++){
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 2.6, 1.2),
-    new THREE.MeshStandardMaterial({ color: 0x2b1a14 })
+// === TRAGAPERRAS ===
+const slotTex = new THREE.TextureLoader().load("https://cdn.pixabay.com/photo/2020/03/03/07/12/slot-machine-4898902_1280.jpg");
+for(let i=0;i<4;i++){
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5,2.5,1.2),
+    new THREE.MeshStandardMaterial({map:slotTex, roughness:0.8})
   );
-  body.position.y = 1.3;
-  g.add(body);
-  g.position.set(i*3 - 7.5, 0, -12);
-  scene.add(g);
-  machines.push(g);
+  m.position.set(i*3-4.5,1.25,-8);
+  m.castShadow = true;
+  scene.add(m);
 }
 
-// ---------- MOVIMIENTO ----------
+// === MOVIMIENTO + FÍSICAS BÁSICAS ===
+const keys = {};
+window.addEventListener('keydown', e => keys[e.code]=true);
+window.addEventListener('keyup', e => keys[e.code]=false);
 let yaw=0, pitch=0;
-const sens=0.0026;
-window.addEventListener('mousemove',(e)=>{
-  yaw -= e.movementX*sens;
-  pitch -= e.movementY*sens;
-  const maxPitch=Math.PI/2-0.05;
-  pitch=Math.max(-maxPitch,Math.min(maxPitch,pitch));
+window.addEventListener('mousemove', e=>{
+  yaw -= e.movementX*0.0025;
+  pitch -= e.movementY*0.0025;
+  pitch = Math.max(-Math.PI/2+0.1, Math.min(Math.PI/2-0.1, pitch));
 });
-const keys={};
-window.addEventListener('keydown',e=>keys[e.code]=true);
-window.addEventListener('keyup',e=>keys[e.code]=false);
 
-const velocity=new THREE.Vector3();
-const accel=30, damping=10;
-const forwardVec=new THREE.Vector3(), rightVec=new THREE.Vector3(), upVec=new THREE.Vector3(0,1,0);
-
+const vel = new THREE.Vector3();
+const accel=25, damping=10;
+const forward=new THREE.Vector3(), right=new THREE.Vector3(), up=new THREE.Vector3(0,1,0);
 const colliders=[];
 
-// registrar colisionadores simples (AABB)
-function addCollider(mesh,size=2){
-  colliders.push({pos:mesh.position.clone(), size});
-}
-addCollider(tableTop,4.2);
-machines.forEach(m=>addCollider(m,1.2));
-addCollider(wheelGroup,2.5);
-addCollider(back,2);
-addCollider(front,2);
-addCollider(left,2);
-addCollider(right,2);
+function addCollider(pos, size){ colliders.push({pos,size}); }
+addCollider(tableGroup.position, 4.2);
+addCollider(wheelGroup.position, 2.2);
 
-function updateMovement(dt){
+function move(dt){
   camera.rotation.set(pitch,yaw,0,"ZYX");
-  camera.updateMatrixWorld();
-  camera.getWorldDirection(forwardVec);
-  forwardVec.y=0; forwardVec.normalize();
-  rightVec.copy(forwardVec).cross(upVec).negate();
-
+  camera.getWorldDirection(forward);
+  forward.y=0; forward.normalize();
+  right.copy(forward).cross(up).negate();
   let moveX=0, moveZ=0;
   if(keys['KeyW']) moveZ+=1;
   if(keys['KeyS']) moveZ-=1;
-  if(keys['KeyD']) moveX-=1;
   if(keys['KeyA']) moveX+=1;
-
-  const desired=new THREE.Vector3();
-  desired.addScaledVector(forwardVec,moveZ);
-  desired.addScaledVector(rightVec,moveX);
-  if(desired.lengthSq()>0) desired.normalize();
-
-  velocity.addScaledVector(desired, accel*dt);
-  velocity.multiplyScalar(1/(1+damping*dt));
-
-  const nextPos=camera.position.clone().addScaledVector(velocity,dt);
-
-  // --- colisiones ---
+  if(keys['KeyD']) moveX-=1;
+  const dir = new THREE.Vector3();
+  dir.addScaledVector(forward, moveZ);
+  dir.addScaledVector(right, moveX);
+  if(dir.lengthSq()>0) dir.normalize();
+  vel.addScaledVector(dir, accel*dt);
+  vel.multiplyScalar(1/(1+damping*dt));
+  const next = camera.position.clone().addScaledVector(vel,dt);
   for(const c of colliders){
-    const dist=nextPos.clone().sub(c.pos);
-    const minDist=1.2+c.size;
-    if(Math.abs(dist.x)<minDist && Math.abs(dist.z)<minDist){
-      if(dist.length()<minDist){
-        velocity.multiplyScalar(0.2); // frena
-        return; // bloquea movimiento
-      }
+    const d = next.clone().sub(c.pos);
+    const min = 1.3+c.size;
+    if(Math.abs(d.x)<min && Math.abs(d.z)<min && d.length()<min){
+      vel.set(0,0,0);
+      return;
     }
   }
-
-  camera.position.addScaledVector(velocity,dt);
+  camera.position.addScaledVector(vel,dt);
 }
 
-// ---------- LOOP ----------
+// === ANIMACIÓN ===
 const clock=new THREE.Clock();
-function animate(){
-  requestAnimationFrame(animate);
+function loop(){
+  requestAnimationFrame(loop);
   const dt=Math.min(clock.getDelta(),0.05);
-  updateMovement(dt);
+  move(dt);
   wheelGroup.rotation.y += 0.02;
   renderer.render(scene,camera);
 }
-animate();
+loop();
 
-// ---------- RESIZE ----------
+// === RESIZE ===
 window.addEventListener('resize',()=>{
   camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
