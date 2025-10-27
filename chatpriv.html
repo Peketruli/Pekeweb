@@ -1,10 +1,10 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
+<meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chat Privado - Peketruli & SabinoArana</title>
-<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <style>
   body {
     font-family: 'Segoe UI', sans-serif;
@@ -83,6 +83,7 @@
 <script>
   const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+
   const { createClient } = supabase;
   const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
@@ -90,13 +91,12 @@
   const msgInput = document.getElementById("message-input");
   const sendBtn = document.getElementById("send-btn");
 
-  // ⚙️ Asigna el usuario manualmente si no hay login
-  // Si ya usas login en tu sistema, borra esta línea:
-  let currentUser = prompt("Introduce tu usuario (Peketruli o SabinoArana):");
+  // 🔐 Leer usuario desde localStorage
+  const currentUser = localStorage.getItem("currentUser");
 
-  // Bloquear acceso si no es uno de los dos
+  // Bloquear acceso si no es Peketruli o SabinoArana
   if (!["Peketruli", "SabinoArana"].includes(currentUser)) {
-    document.body.innerHTML = "<h2>❌ Acceso denegado</h2>";
+    document.body.innerHTML = "<h2>❌ Acceso denegado</h2><p>No tienes permisos para entrar aquí.</p>";
     throw new Error("Acceso denegado");
   }
 
@@ -117,7 +117,7 @@
     data.forEach(addMessageToDOM);
   }
 
-  // 🔹 Mostrar mensaje
+  // 🔹 Mostrar mensaje en pantalla
   function addMessageToDOM(msg) {
     const div = document.createElement("div");
     div.className = "msg " + (msg.username === currentUser ? "me" : "other");
@@ -144,17 +144,23 @@
     msgInput.value = "";
   }
 
-  // 🔹 Escuchar mensajes nuevos (tiempo real)
-  function subscribeToMessages() {
-    db.channel("chat_privado_changes")
+  // 🔹 Escuchar mensajes en tiempo real
+  async function subscribeToMessages() {
+    const channel = db
+      .channel("chat_privado_channel")
       .on(
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "chat_privado" },
         (payload) => {
           addMessageToDOM(payload.new);
         }
-      )
-      .subscribe();
+      );
+
+    await channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        console.log("✅ Conectado al canal de chat_privado");
+      }
+    });
   }
 
   sendBtn.addEventListener("click", sendMessage);
@@ -162,7 +168,7 @@
     if (e.key === "Enter") sendMessage();
   });
 
-  // Inicializar
+  // Inicializar chat
   loadMessages();
   subscribeToMessages();
 </script>
