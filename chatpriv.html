@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chat Privado - Peketruli & SabinoArana</title>
 <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
@@ -81,109 +81,101 @@
   <button id="send-btn">Enviar</button>
 
 <script>
-// ==================== Configuración Supabase ====================
-const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-const { createClient } = supabase;
-const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // ==================== Configuración Supabase ====================
+  const SUPABASE_URL = "https://TU_URL.supabase.co";
+  const SUPABASE_ANON_KEY = "TU_PUBLIC_KEY";
+  const { createClient } = supabase;
+  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// ==================== Elementos DOM ====================
-const chatBox = document.getElementById("chat-box");
-const msgInput = document.getElementById("message-input");
-const sendBtn = document.getElementById("send-btn");
+  // ==================== Elementos DOM ====================
+  const chatBox = document.getElementById("chat-box");
+  const msgInput = document.getElementById("message-input");
+  const sendBtn = document.getElementById("send-btn");
 
-// ==================== Leer usuario desde localStorage ====================
-let currentUser = localStorage.getItem("currentUser");
-if (currentUser) currentUser = currentUser.trim().toLowerCase();
-
-// Usuarios permitidos (en minúsculas para normalización)
-const allowedUsers = ["peketruli", "sabinoarana"];
-
-// Bloquear acceso si el usuario no es válido
-if (!currentUser || !allowedUsers.includes(currentUser)) {
-  document.body.innerHTML = "<h2>❌ Acceso denegado</h2><p>No tienes permisos para entrar aquí.</p>";
-  throw new Error("Acceso denegado");
-}
-
-// ==================== Funciones del chat ====================
-
-// Mostrar mensaje en pantalla
-function addMessageToDOM(msg) {
-  const div = document.createElement("div");
-  div.className = "msg " + (msg.username.toLowerCase() === currentUser ? "me" : "other");
-  div.textContent = msg.username + ": " + msg.message;
-  chatBox.appendChild(div);
-  chatBox.scrollTop = chatBox.scrollHeight;
-}
-
-// Cargar mensajes iniciales
-async function loadMessages() {
-  const { data, error } = await db
-    .from("chat_privado")
-    .select("*")
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    console.error("Error cargando mensajes:", error);
-    chatBox.innerHTML = "<p>Error al cargar mensajes</p>";
-    return;
+  // ==================== Leer usuario desde localStorage ====================
+  let currentUser = localStorage.getItem("currentUser");
+  if (!currentUser) {
+    document.body.innerHTML = "<h2>❌ Acceso denegado</h2><p>No se ha detectado usuario en localStorage.</p>";
+    throw new Error("No hay usuario en localStorage");
   }
 
-  chatBox.innerHTML = "";
-  data.forEach(addMessageToDOM);
-}
+  // Normalizar: quitar espacios y pasar a minúsculas
+  currentUser = currentUser.trim().toLowerCase();
+  const allowedUsers = ["peketruli", "sabinoarana"];
 
-// Enviar mensaje
-async function sendMessage() {
-  const text = msgInput.value.trim();
-  if (text === "") return;
-
-  const { error } = await db
-    .from("chat_privado")
-    .insert([{ username: currentUser, message: text }]);
-
-  if (error) {
-    console.error("Error al enviar mensaje:", error);
-    alert("Error al enviar mensaje");
-    return;
+  if (!allowedUsers.includes(currentUser)) {
+    document.body.innerHTML = "<h2>❌ Acceso denegado</h2><p>No tienes permisos para entrar aquí.</p>";
+    throw new Error("Usuario no autorizado");
   }
 
-  // Mostrar el mensaje inmediatamente
-  addMessageToDOM({ username: currentUser, message: text });
-  msgInput.value = "";
-}
+  // ==================== Funciones del chat ====================
+  function addMessageToDOM(msg) {
+    const div = document.createElement("div");
+    div.className = "msg " + (msg.username.toLowerCase() === currentUser ? "me" : "other");
+    div.textContent = msg.username + ": " + msg.message;
+    chatBox.appendChild(div);
+    chatBox.scrollTop = chatBox.scrollHeight;
+  }
 
-// Escuchar mensajes en tiempo real
-async function subscribeToMessages() {
-  const channel = db
-    .channel("chat_privado_channel")
-    .on(
-      "postgres_changes",
-      { event: "INSERT", schema: "public", table: "chat_privado" },
-      (payload) => {
-        // Mostrar mensajes de otros usuarios
-        if (payload.new.username.toLowerCase() !== currentUser) {
-          addMessageToDOM(payload.new);
-        }
-      }
-    );
+  async function loadMessages() {
+    const { data, error } = await db
+      .from("chat_privado")
+      .select("*")
+      .order("created_at", { ascending: true });
 
-  await channel.subscribe((status) => {
-    if (status === "SUBSCRIBED") {
-      console.log("✅ Conectado al canal de chat_privado");
+    if (error) {
+      chatBox.innerHTML = "<p>Error al cargar mensajes</p>";
+      return;
     }
-  });
-}
 
-// ==================== Eventos ====================
-sendBtn.addEventListener("click", sendMessage);
-msgInput.addEventListener("keypress", (e) => {
-  if (e.key === "Enter") sendMessage();
-});
+    chatBox.innerHTML = "";
+    data.forEach(addMessageToDOM);
+  }
 
-// ==================== Inicializar chat ====================
-loadMessages();
-subscribeToMessages();
+  async function sendMessage() {
+    const text = msgInput.value.trim();
+    if (text === "") return;
+
+    const { error } = await db
+      .from("chat_privado")
+      .insert([{ username: currentUser, message: text }]);
+
+    if (error) {
+      alert("Error al enviar mensaje");
+      return;
+    }
+
+    // Mostrar mensaje inmediatamente
+    addMessageToDOM({ username: currentUser, message: text });
+    msgInput.value = "";
+  }
+
+  async function subscribeToMessages() {
+    const channel = db
+      .channel("chat_privado_channel")
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "chat_privado" },
+        (payload) => {
+          // Mostrar solo mensajes de otros usuarios
+          if (payload.new.username.toLowerCase() !== currentUser) {
+            addMessageToDOM(payload.new);
+          }
+        }
+      );
+
+    await channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") console.log("✅ Conectado al chat privado");
+    });
+  }
+
+  // ==================== Eventos ====================
+  sendBtn.addEventListener("click", sendMessage);
+  msgInput.addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
+
+  // ==================== Inicializar chat ====================
+  loadMessages();
+  subscribeToMessages();
 </script>
 </body>
 </html>
