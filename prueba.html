@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Casino 3D — Física y Visual</title>
+<title>Casino 3D — Física y Luz</title>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <style>
   body { margin:0; overflow:hidden; background:#111; font-family:Arial, Helvetica, sans-serif; }
@@ -16,20 +16,13 @@
 </head>
 <body>
 <div id="hud">🎰 Mover: W A S D — Mirar: ratón — E cerca puerta: salir</div>
-
 <script>
-/* ===========================
-   Casino 3D: visuals + collisions
-   Single-file, no external physics lib.
-   =========================== */
-
-// ---- Basic three.js setup ----
+// ------------------ ESCENA, CÁMARA, RENDER ------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x222026);
 scene.fog = new THREE.Fog(0x222026, 15, 80);
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 2000);
-// Spawn camera slightly back and above to avoid spawning inside the table
 camera.position.set(0, 1.7, 18);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -37,11 +30,11 @@ renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(devicePixelRatio);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.setClearColor(0x1a1516);
 document.body.appendChild(renderer.domElement);
 
-// ---- Lights ----
-scene.add(new THREE.HemisphereLight(0xfff6e5, 0x222233, 0.45)); // warm sky + cool ground
+// ------------------ LUCES ------------------
+scene.add(new THREE.HemisphereLight(0xfff6e5, 0x222233, 0.45)); // ambiente cálido
+
 const dirLight = new THREE.DirectionalLight(0xffe6cc, 0.8);
 dirLight.position.set(-5, 10, 5);
 dirLight.castShadow = true;
@@ -53,280 +46,155 @@ tableSpot.position.set(0, 6, 5);
 tableSpot.castShadow = true;
 scene.add(tableSpot);
 
-const accentPink = new THREE.PointLight(0xff88c9, 0.25, 40);
-accentPink.position.set(10,4,-8);
-scene.add(accentPink);
+const accentLight = new THREE.PointLight(0xff88c9, 0.25, 40);
+accentLight.position.set(10,4,-8);
+scene.add(accentLight);
 
-// ---- Textures ----
+// ------------------ TEXTURAS ------------------
 const loader = new THREE.TextureLoader();
 const floorTex = loader.load('https://cdn.pixabay.com/photo/2017/09/21/01/21/carpet-2777812_1280.jpg');
 floorTex.wrapS = floorTex.wrapT = THREE.RepeatWrapping;
 floorTex.repeat.set(8,8);
 
-const woodTex = loader.load('https://threejs.org/examples/textures/land_ocean_ice_cloud_2048.jpg'); // placeholder
-woodTex.wrapS = woodTex.wrapT = THREE.RepeatWrapping;
-woodTex.repeat.set(1,1);
-
-// ---- Floor, walls, ceiling ----
+// ------------------ SUELO Y PAREDES ------------------
 const floor = new THREE.Mesh(
   new THREE.PlaneGeometry(120,120),
-  new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.9, metalness: 0.02 })
+  new THREE.MeshStandardMaterial({ map: floorTex, roughness:0.9, metalness:0.02 })
 );
 floor.rotation.x = -Math.PI/2;
 floor.receiveShadow = true;
 scene.add(floor);
 
-const wallMaterial = new THREE.MeshStandardMaterial({ color: 0x2b1308, roughness: 0.95, metalness: 0.02 });
-const backWall = new THREE.Mesh(new THREE.BoxGeometry(80,10,0.8), wallMaterial);
-backWall.position.set(0,5,-35);
-scene.add(backWall);
+const wallMaterial = new THREE.MeshStandardMaterial({ color:0x2b1308, roughness:0.95, metalness:0.02 });
+const backWall = new THREE.Mesh(new THREE.BoxGeometry(80,10,0.8), wallMaterial); backWall.position.set(0,5,-35); scene.add(backWall);
 const frontWall = backWall.clone(); frontWall.position.set(0,5,35); scene.add(frontWall);
 const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.8,10,70), wallMaterial); leftWall.position.set(-40,5,0); scene.add(leftWall);
 const rightWall = leftWall.clone(); rightWall.position.set(40,5,0); scene.add(rightWall);
 
-// ---- Blackjack table (center) ----
-const feltCanvas = document.createElement('canvas');
-feltCanvas.width = feltCanvas.height = 512;
+// ------------------ MESA BLACKJACK ------------------
+const feltCanvas = document.createElement('canvas'); feltCanvas.width = feltCanvas.height = 512;
 const fctx = feltCanvas.getContext('2d');
 fctx.fillStyle = '#0b5b35'; fctx.fillRect(0,0,512,512);
 for(let i=0;i<20000;i++){ fctx.fillStyle = `rgba(0,0,0,${Math.random()*0.06})`; fctx.fillRect(Math.random()*512, Math.random()*512,1,1); }
 const feltTex = new THREE.CanvasTexture(feltCanvas);
-feltTex.wrapS = feltTex.wrapT = THREE.RepeatWrapping;
-feltTex.repeat.set(1,1);
+feltTex.wrapS = feltTex.wrapT = THREE.RepeatWrapping; feltTex.repeat.set(1,1);
 
 const tableTop = new THREE.Mesh(
   new THREE.CylinderGeometry(4.2,4.2,0.4,64),
-  new THREE.MeshStandardMaterial({ map: feltTex, roughness: 0.8, metalness: 0.05 })
+  new THREE.MeshStandardMaterial({ map: feltTex, roughness:0.8, metalness:0.05 })
 );
-tableTop.position.set(0, 0.6, 6);
+tableTop.position.set(0,0.6,6);
 tableTop.castShadow = true;
 tableTop.receiveShadow = true;
 scene.add(tableTop);
 
-// wooden rim
-const rim = new THREE.Mesh(new THREE.TorusGeometry(4.4, 0.22, 16, 100), new THREE.MeshStandardMaterial({ color: 0x5a3218, roughness:0.6, metalness:0.15 }));
-rim.rotation.x = Math.PI/2; rim.position.set(0,0.85,6); scene.add(rim);
+const rim = new THREE.Mesh(new THREE.TorusGeometry(4.4,0.22,16,100), new THREE.MeshStandardMaterial({ color:0x5a3218, roughness:0.6, metalness:0.15 }));
+rim.rotation.x=Math.PI/2; rim.position.set(0,0.85,6); scene.add(rim);
 
-// small chairs
+// ------------------ SILLAS ------------------
 for(let i=0;i<5;i++){
-  const a = (i/5)*Math.PI*2;
-  const sx = Math.sin(a)*5, sz = Math.cos(a)*5 + 6;
+  const a=(i/5)*Math.PI*2;
+  const sx=Math.sin(a)*5, sz=Math.cos(a)*5+6;
   const seat = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.6,0.6), new THREE.MeshStandardMaterial({ color:0x3b2a1a }));
-  seat.position.set(sx, 0.35, sz);
-  scene.add(seat);
+  seat.position.set(sx,0.35,sz); scene.add(seat);
 }
 
-// ---- Roulette: horizontal, realistic-looking plate + ball ----
+// ------------------ RULETA ------------------
 const rouletteGroup = new THREE.Group();
 
-// base wooden box
+// base
 const base = new THREE.Mesh(new THREE.CylinderGeometry(2.3,2.3,0.5,64), new THREE.MeshStandardMaterial({ color:0x3b1f0e, roughness:0.6 }));
-base.position.y = 0.5;
-rouletteGroup.add(base);
+base.position.y=0.5; rouletteGroup.add(base);
 
 // rim
-const woodRim = new THREE.Mesh(new THREE.TorusGeometry(2.35, 0.18, 16, 100), new THREE.MeshStandardMaterial({ color:0x6b3b19, roughness:0.6 }));
-woodRim.rotation.x = Math.PI/2; woodRim.position.y = 0.82; rouletteGroup.add(woodRim);
+const woodRim = new THREE.Mesh(new THREE.TorusGeometry(2.35,0.18,16,100), new THREE.MeshStandardMaterial({ color:0x6b3b19, roughness:0.6 }));
+woodRim.rotation.x=Math.PI/2; woodRim.position.y=0.82; rouletteGroup.add(woodRim);
 
-// plate drawn on canvas
-const wheelCanvas = document.createElement('canvas'); wheelCanvas.width = wheelCanvas.height = 1024;
-const wctx = wheelCanvas.getContext('2d');
+// plate
+const wheelCanvas = document.createElement('canvas'); wheelCanvas.width=wheelCanvas.height=1024;
+const wctx=wheelCanvas.getContext('2d');
 (function drawWheel(){
-  const cx = 512, cy = 512, r = 460;
-  // background
-  wctx.fillStyle = '#2e1f18'; wctx.fillRect(0,0,1024,1024);
-  // segments (simplified red/black)
-  const segments = 36;
-  for(let i=0;i<segments;i++){
-    const a0 = (i/segments)*Math.PI*2;
-    const a1 = ((i+1)/segments)*Math.PI*2;
-    wctx.beginPath(); wctx.moveTo(cx,cy);
-    wctx.arc(cx,cy,r,a0,a1);
-    wctx.closePath();
-    wctx.fillStyle = (i%2===0)?'#b30000':'#0b0b0b';
-    wctx.fill();
+  const cx=512, cy=512, r=460;
+  wctx.fillStyle='#2e1f18'; wctx.fillRect(0,0,1024,1024);
+  for(let i=0;i<36;i++){
+    const a0=(i/36)*Math.PI*2, a1=((i+1)/36)*Math.PI*2;
+    wctx.beginPath(); wctx.moveTo(cx,cy); wctx.arc(cx,cy,r,a0,a1); wctx.closePath();
+    wctx.fillStyle=(i%2===0)?'#b30000':'#0b0b0b'; wctx.fill();
   }
-  // inner circle
-  wctx.beginPath(); wctx.arc(cx,cy, r*0.55, 0, Math.PI*2); wctx.fillStyle='#222'; wctx.fill();
-  wctx.beginPath(); wctx.arc(cx,cy, r*0.12, 0, Math.PI*2); wctx.fillStyle='#d1c6b3'; wctx.fill();
+  wctx.beginPath(); wctx.arc(cx,cy,r*0.55,0,Math.PI*2); wctx.fillStyle='#222'; wctx.fill();
+  wctx.beginPath(); wctx.arc(cx,cy,r*0.12,0,Math.PI*2); wctx.fillStyle='#d1c6b3'; wctx.fill();
 })();
-const wheelTexture = new THREE.CanvasTexture(wheelCanvas);
-const wheelPlate = new THREE.Mesh(new THREE.CylinderGeometry(1.92,1.92,0.06,64), new THREE.MeshStandardMaterial({ map: wheelTexture, metalness:0.2, roughness:0.35 }));
-wheelPlate.rotation.x = -Math.PI/2; wheelPlate.position.y = 0.86; rouletteGroup.add(wheelPlate);
+const wheelTex = new THREE.CanvasTexture(wheelCanvas);
+const wheelPlate = new THREE.Mesh(new THREE.CylinderGeometry(1.92,1.92,0.06,64), new THREE.MeshStandardMaterial({ map:wheelTex, metalness:0.2, roughness:0.35 }));
+wheelPlate.rotation.x=-Math.PI/2; wheelPlate.position.y=0.86; rouletteGroup.add(wheelPlate);
 
-// pin and ball
-const pin = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.6,16), new THREE.MeshStandardMaterial({ color:0xcfcfcf }));
-pin.position.y = 1.05; rouletteGroup.add(pin);
-const ball = new THREE.Mesh(new THREE.SphereGeometry(0.07,16,16), new THREE.MeshStandardMaterial({ color:0xffffff, metalness:0.3, roughness:0.2 }));
+// pin y bola
+const pin=new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.05,0.6,16), new THREE.MeshStandardMaterial({ color:0xcfcfcf }));
+pin.position.y=1.05; rouletteGroup.add(pin);
+const ball=new THREE.Mesh(new THREE.SphereGeometry(0.07,16,16), new THREE.MeshStandardMaterial({ color:0xffffff, metalness:0.3, roughness:0.2 }));
 ball.position.set(1.6,0.95,0); rouletteGroup.add(ball);
 
-// position roulette onto small pedestal near center-left
-rouletteGroup.position.set(-10, 0, 8);
-rouletteGroup.castShadow = true; scene.add(rouletteGroup);
+rouletteGroup.position.set(-10,0,8); rouletteGroup.castShadow=true; scene.add(rouletteGroup);
 
-// ---- Slot machines (lined up) ----
-const slotTex = loader.load('https://cdn.pixabay.com/photo/2020/03/03/07/12/slot-machine-4898902_1280.jpg');
-const slotMeshes = [];
-for(let i=0;i<6;i++){
-  const m = new THREE.Mesh(new THREE.BoxGeometry(1.6,2.6,1.2), new THREE.MeshStandardMaterial({ map: slotTex, roughness:0.9 }));
-  m.position.set(i*3 - 7.5, 1.25, -12);
-  m.castShadow = true; scene.add(m); slotMeshes.push(m);
-}
-
-// ---- Door (for E to exit) ----
+// ------------------ DOOR ------------------
 const door = new THREE.Mesh(new THREE.BoxGeometry(3,4,0.25), new THREE.MeshStandardMaterial({ color:0x6b3f1a }));
 door.position.set(0,2,-34.6); scene.add(door);
 
-// ---- Colliders: compute boxes for static meshes ----
-const colliders = [];
-function addColliderFromMesh(mesh, padding=0.4){
-  const box = new THREE.Box3().setFromObject(mesh);
-  box.min.addScalar(-padding); box.max.addScalar(padding);
-  colliders.push({mesh, box});
-}
-// add big colliders
-addColliderFromMesh(tableTop, 0.6);
-addColliderFromMesh(rim, 0.6);
-addColliderFromMesh(rouletteGroup, 0.9);
-slotMeshes.forEach(m => addColliderFromMesh(m, 0.45));
-addColliderFromMesh(backWall, 0.5);
-addColliderFromMesh(frontWall, 0.5);
-addColliderFromMesh(leftWall, 0.5);
-addColliderFromMesh(rightWall, 0.5);
-addColliderFromMesh(door, 0.4);
+// ------------------ COLLIDERS ------------------
+const colliders=[];
+function addCollider(mesh,padding=0.4){ const box=new THREE.Box3().setFromObject(mesh); box.min.addScalar(-padding); box.max.addScalar(padding); colliders.push({mesh,box}); }
+addCollider(tableTop,0.6); addCollider(rim,0.6); addCollider(rouletteGroup,0.9); addCollider(backWall,0.5);
+addCollider(frontWall,0.5); addCollider(leftWall,0.5); addCollider(rightWall,0.5); addCollider(door,0.4);
 
-// ---- Movement & stable camera rotation (Euler YXZ) ----
-const keys = {};
-window.addEventListener('keydown', e=>{ keys[e.code]=true; });
-window.addEventListener('keyup', e=>{ keys[e.code]=false; });
+// ------------------ MOVIMIENTO ------------------
+const keys={}; window.addEventListener('keydown', e=>keys[e.code]=true);
+window.addEventListener('keyup', e=>keys[e.code]=false);
 
-// Mouse look, use movementX/movementY with fallback
-let yaw = 0, pitch = 0;
-const SENS = 0.0026;
-window.addEventListener('mousemove', (e) => {
-  const mx = (e.movementX !== undefined) ? e.movementX : (e.mozMovementX || e.webkitMovementX || 0);
-  const my = (e.movementY !== undefined) ? e.movementY : (e.mozMovementY || e.webkitMovementY || 0);
-  yaw -= mx * SENS;
-  pitch -= my * SENS;
-  const maxP = Math.PI/2 - 0.05;
-  pitch = Math.max(-maxP, Math.min(maxP, pitch));
-});
+let yaw=0, pitch=0; const SENS=0.0026;
+window.addEventListener('mousemove', e=>{ yaw-=e.movementX*SENS; pitch-=e.movementY*SENS; const maxP=Math.PI/2-0.05; pitch=Math.max(-maxP,Math.min(maxP,pitch)); });
 
-// Player collision params
-const playerRadius = 0.32;
-const playerHeight = 1.7;
+const playerRadius=0.32, playerHeight=1.7;
+const velocity=new THREE.Vector3(), accel=28, damping=10;
 
-// velocity smoothing
-const velocity = new THREE.Vector3();
-const accel = 28;
-const damping = 10;
+function pointToAABBDistSq(point, box){ const clamped=new THREE.Vector3(); box.clampPoint(point,clamped); return clamped.distanceToSquared(point); }
 
-// helper: distance from point to AABB (box)
-function pointToAABBDistanceSquared(point, box){
-  const clamped = new THREE.Vector3();
-  box.clampPoint(point, clamped);
-  return clamped.distanceToSquared(point);
-}
-
-// main movement update with collision prevention
 function updateMovement(dt){
-  // apply rotation safely
-  const euler = new THREE.Euler(pitch, yaw, 0, 'YXZ');
-  camera.quaternion.setFromEuler(euler);
-
-  // direction vectors
-  const forward = new THREE.Vector3();
-  camera.getWorldDirection(forward);
-  forward.y = 0; forward.normalize();
-  const right = new THREE.Vector3().copy(forward).cross(new THREE.Vector3(0,1,0)).negate();
-
+  const euler=new THREE.Euler(pitch,yaw,0,'YXZ'); camera.quaternion.setFromEuler(euler);
+  const forward=new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
+  const right=new THREE.Vector3().copy(forward).cross(new THREE.Vector3(0,1,0)).negate();
   let moveX=0, moveZ=0;
-  if(keys['KeyW']) moveZ += 1;
-  if(keys['KeyS']) moveZ -= 1;
-  if(keys['KeyD']) moveX -= 1;
-  if(keys['KeyA']) moveX += 1;
-
-  const desired = new THREE.Vector3();
-  desired.addScaledVector(forward, moveZ);
-  desired.addScaledVector(right, moveX);
-  if(desired.lengthSq() > 0) desired.normalize();
-
-  // accelerate and damping
-  velocity.addScaledVector(desired, accel * dt);
-  velocity.multiplyScalar(1 / (1 + damping * dt));
-
-  // try next position
-  const nextPos = camera.position.clone().addScaledVector(velocity, dt);
-
-  // collision test: compare point to box; if less than playerRadius^2 => collision
-  for(const c of colliders){
-    // ensure the stored box is updated (in case mesh moved); most are static so light cost
-    c.box.setFromObject(c.mesh);
-    c.box.min.addScalar(-0.01); c.box.max.addScalar(0.01); // tiny padding
-    const dist2 = pointToAABBDistanceSquared(nextPos, c.box);
-    if(dist2 < (playerRadius * playerRadius)){
-      // collision: cancel movement on that frame (simple)
-      velocity.set(0,0,0);
-      return;
-    }
-  }
-
-  // no collision: accept movement
+  if(keys['KeyW']) moveZ+=1; if(keys['KeyS']) moveZ-=1; if(keys['KeyD']) moveX-=1; if(keys['KeyA']) moveX+=1;
+  const desired=new THREE.Vector3(); desired.addScaledVector(forward,moveZ); desired.addScaledVector(right,moveX);
+  if(desired.lengthSq()>0) desired.normalize();
+  velocity.addScaledVector(desired,accel*dt); velocity.multiplyScalar(1/(1+damping*dt));
+  const nextPos=camera.position.clone().addScaledVector(velocity,dt);
+  for(const c of colliders){ c.box.setFromObject(c.mesh); c.box.min.addScalar(-0.01); c.box.max.addScalar(0.01); if(pointToAABBDistSq(nextPos,c.box)<playerRadius*playerRadius){ velocity.set(0,0,0); return; } }
   camera.position.copy(nextPos);
 }
 
-// ---- Interaction: press E near door to exit ----
-window.addEventListener('keydown', (e) => {
-  if(e.key.toLowerCase()==='e'){
-    const d = camera.position.distanceTo(door.position);
-    if(d < 3.2){
-      // redirect to homepage (adjust as needed)
-      window.location.href = 'h.html';
-    }
-  }
-});
+// ------------------ INTERACCIÓN ------------------
+window.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='e' && camera.position.distanceTo(door.position)<3.2) window.location.href='h.html'; });
 
-// ---- Small anims: rotate wheel + ball orbit ----
-let wheelSpin = 0;
+// ------------------ ANIMACIÓN RULETA ------------------
+let wheelSpin=0, perfTime=0;
 function animateWheel(dt){
-  // spin wheel plate slowly
-  wheelSpin += dt * 0.8; // radians per second
-  wheelPlate.rotation.z = wheelSpin;
-
-  // ball movement (orbit opposite direction, a bit faster, damped radius)
-  const ballSpeed = wheelSpin * -1.6;
-  const orbitRadius = 1.6 + Math.sin(perfTime * 1.2) * 0.05;
-  ball.position.set(Math.cos(ballSpeed) * orbitRadius, 0.95, Math.sin(ballSpeed) * orbitRadius);
-  // small bob
-  ball.position.y = 0.9 + Math.sin(perfTime*4)*0.02;
+  wheelSpin+=dt*0.8; wheelPlate.rotation.z=wheelSpin;
+  const ballSpeed=wheelSpin*-1.6; const orbitRadius=1.6+Math.sin(perfTime*1.2)*0.05;
+  ball.position.set(Math.cos(ballSpeed)*orbitRadius,0.9+Math.sin(perfTime*4)*0.02,Math.sin(ballSpeed)*orbitRadius);
 }
 
-// ---- Animation loop ----
-const clock = new THREE.Clock();
-let perfTime = 0;
+// ------------------ LOOP ------------------
+const clock=new THREE.Clock();
 function loop(){
   requestAnimationFrame(loop);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  perfTime += dt;
-
-  updateMovement(dt);
-
-  // update wheel animations, but guard existence
-  if(typeof wheelPlate !== 'undefined' && typeof ball !== 'undefined'){
-    animateWheel(dt);
-  }
-
-  renderer.render(scene, camera);
+  const dt=Math.min(clock.getDelta(),0.05);
+  perfTime+=dt; updateMovement(dt); animateWheel(dt);
+  renderer.render(scene,camera);
 }
 loop();
 
-// ---- Resize ----
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-
+// ------------------ RESIZE ------------------
+window.addEventListener('resize', ()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
 </script>
 </body>
 </html>
