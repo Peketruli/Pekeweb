@@ -17,11 +17,11 @@ body { margin:0; overflow:hidden; background:#111; font-family:Arial, Helvetica,
 <script>
 // -------------------- Escenario --------------------
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xaaa9a0);
-scene.fog = new THREE.FogExp2(0xaaa9a0, 0.002);
+scene.background = new THREE.Color(0x888877);
+scene.fog = new THREE.FogExp2(0x888877, 0.002);
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 300);
-camera.position.set(0, 1.7, -20); // Spawn mirando hacia la sala
+camera.position.set(0, 1.7, -18); // Spawn mirando hacia la sala
 
 const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setSize(innerWidth, innerHeight);
@@ -40,13 +40,13 @@ const floorMat = new THREE.MeshStandardMaterial({ color:0x664433, roughness:0.95
 const feltMat = new THREE.MeshStandardMaterial({ color:0x0b5b35, roughness:0.6, metalness:0.02 });
 
 // -------------------- Piso --------------------
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 60), floorMat);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 50), floorMat);
 floor.rotation.x = -Math.PI/2;
 floor.receiveShadow = true;
 scene.add(floor);
 
 // -------------------- Pasillo --------------------
-const corridorLength = 20;
+const corridorLength = 15;
 const corridorWidth = 8;
 const corridorHeight = 4;
 
@@ -57,111 +57,123 @@ function addWall(x,y,z, sx,sy,sz){
   scene.add(m);
 }
 
-// Pasillo lateral
-addWall(-corridorWidth/2-0.5, corridorHeight/2, -10, 1, corridorHeight, corridorLength);
-addWall(corridorWidth/2+0.5, corridorHeight/2, -10, 1, corridorHeight, corridorLength);
+// Paredes laterales del pasillo
+addWall(-corridorWidth/2-0.5, corridorHeight/2, -8, 1, corridorHeight, corridorLength);
+addWall(corridorWidth/2+0.5, corridorHeight/2, -8, 1, corridorHeight, corridorLength);
 
 // -------------------- Sala --------------------
 const roomZ = 0;
-const roomLength = 20;
-const roomWidth = 16;
+const roomLength = 18;
+const roomWidth = 14;
 const roomHeight = 4;
 
+// Paredes de la sala
 addWall(-roomWidth/2-0.5, roomHeight/2, roomZ, 1, roomHeight, roomLength);
 addWall(roomWidth/2+0.5, roomHeight/2, roomZ, 1, roomHeight, roomLength);
 addWall(0, roomHeight/2, roomZ - roomLength/2, roomWidth, roomHeight, 1); // fondo
 // frontal libre para conectar con pasillo
 
 // Techo
-const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth+10, roomLength+10), woodMat);
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth+4, roomLength+4), woodMat);
 ceiling.rotation.x = Math.PI/2;
 ceiling.position.y = roomHeight;
 scene.add(ceiling);
 
-// -------------------- Puerta salida --------------------
+// -------------------- Puerta de salida --------------------
 const doorMat = new THREE.MeshStandardMaterial({ color:0x8a5a2b });
 const doorLeft = new THREE.Mesh(new THREE.BoxGeometry(1.2,2,0.15), doorMat);
-doorLeft.position.set(-0.6,1, -20);
+doorLeft.position.set(-0.6,1, -18);
 scene.add(doorLeft);
 const doorRight = new THREE.Mesh(new THREE.BoxGeometry(1.2,2,0.15), doorMat);
-doorRight.position.set(0.6,1, -20);
+doorRight.position.set(0.6,1, -18);
 scene.add(doorRight);
 
 window.addEventListener('keydown', e=>{
   if(e.key.toLowerCase()==='e'){
-    const d = camera.position.distanceTo(new THREE.Vector3(0,1,-20));
+    const d = camera.position.distanceTo(new THREE.Vector3(0,1,-18));
     if(d<3) window.location.href='h.html';
   }
 });
 
-// -------------------- Mesa blackjack --------------------
+// -------------------- Mesa blackjack + sillas --------------------
 const tableGroup = new THREE.Group();
 const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(4,4,0.35,32), feltMat);
-tableTop.position.set(0,1,10);
+tableTop.position.set(0,1,5);
 tableGroup.add(tableTop);
 const rim = new THREE.Mesh(new THREE.TorusGeometry(4.15,0.25,12,64), woodMat);
-rim.rotation.x = Math.PI/2; rim.position.set(0,1.175,10);
+rim.rotation.x = Math.PI/2; rim.position.set(0,1.175,5);
 tableGroup.add(rim);
+// patas
 for(let dx=-1; dx<=1; dx+=2){
   const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,1,12), woodMat);
-  leg.position.set(dx*1.4,0.55,10);
+  leg.position.set(dx*1.4,0.55,5);
   tableGroup.add(leg);
+}
+// sillas alrededor
+const chairMat = new THREE.MeshStandardMaterial({ color:0x2b1508, roughness:0.5 });
+for(let i=0;i<6;i++){
+  const angle = (i/6)*Math.PI*2;
+  const r = 5.0;
+  const x = Math.sin(angle)*r;
+  const z = 5 + Math.cos(angle)*r;
+  const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,0.38,20), chairMat);
+  seat.position.set(x,0.38,z);
+  seat.rotation.y = angle + Math.PI;
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.55,0.9,0.12), chairMat);
+  back.position.set(x,0.85,z-0.28);
+  back.rotation.y = angle + Math.PI;
+  tableGroup.add(seat); tableGroup.add(back);
 }
 scene.add(tableGroup);
 
-// -------------------- Ruleta desde 0 --------------------
-function createRoulette(x, y, z) {
+// -------------------- Ruleta tumbada giratoria --------------------
+function createRoulette(x,y,z){
   const group = new THREE.Group();
-  // Base
   const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.9,1,16), woodMat);
-  stand.position.set(x, y-0.15, z);
-  group.add(stand);
+  stand.position.set(x,y-0.15,z); group.add(stand);
   const base = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.2,24), woodMat);
-  base.position.set(x, y-0.85, z);
-  group.add(base);
+  base.position.set(x,y-0.85,z); group.add(base);
 
-  // Canvas
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = 1024;
   const ctx = canvas.getContext('2d');
-  const cx=512, cy=512, r=420, segments=18;
+  const cx=512,cy=512,radius=420,segments=18;
   for(let i=0;i<segments;i++){
     const start = (i/segments)*2*Math.PI;
     const end = ((i+1)/segments)*2*Math.PI;
-    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,end); ctx.closePath();
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,radius,start,end); ctx.closePath();
     ctx.fillStyle = (i%2===0)?'#b20d0d':'#111111'; ctx.fill();
   }
-  ctx.beginPath(); ctx.arc(cx,cy,r*0.95,0,Math.PI*2); ctx.lineWidth=18; ctx.strokeStyle='#5a3719'; ctx.stroke();
-  ctx.beginPath(); ctx.arc(cx,cy,r*0.15,0,Math.PI*2); ctx.fillStyle='#d1c6b3'; ctx.fill();
+  ctx.beginPath(); ctx.arc(cx,cy,radius*0.95,0,Math.PI*2); ctx.lineWidth=18; ctx.strokeStyle='#5a3719'; ctx.stroke();
+  ctx.beginPath(); ctx.arc(cx,cy,radius*0.15,0,Math.PI*2); ctx.fillStyle='#d1c6b3'; ctx.fill();
   const texture = new THREE.CanvasTexture(canvas); texture.encoding = THREE.sRGBEncoding;
 
-  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(r/100,r/100,0.06,64), new THREE.MeshStandardMaterial({map:texture, roughness:0.4}));
-  wheel.rotation.x = -Math.PI/2; // tumbada horizontal
-  wheel.position.set(x, y, z);
+  const wheel = new THREE.Mesh(new THREE.CylinderGeometry(radius/100,radius/100,0.06,64),
+    new THREE.MeshStandardMaterial({map:texture, roughness:0.4}));
+  wheel.rotation.x = -Math.PI/2; wheel.position.set(x,y,z);
   group.add(wheel);
 
+  // Animar giro lento
+  group.userData.wheel = wheel;
   return group;
 }
 
-const wheelGroup = createRoulette(6,1.2,8);
+const wheelGroup = createRoulette(-6,1.2,8);
 scene.add(wheelGroup);
 
-// -------------------- Iluminación --------------------
+// -------------------- Luces --------------------
 const hemi = new THREE.HemisphereLight(0xffffff,0x888888,0.45); scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xfff5de,0.9);
-sun.position.set(40,80,40); sun.castShadow=true;
-sun.shadow.mapSize.set(1024,1024);
-scene.add(sun);
-const warm1 = new THREE.PointLight(0xffe8cc,0.7,20,2); warm1.position.set(0,3,10); scene.add(warm1);
-const warm2 = new THREE.PointLight(0xffe8cc,0.7,20,2); warm2.position.set(6,3,8); scene.add(warm2);
+const sun = new THREE.DirectionalLight(0xfff5de,0.8); sun.position.set(40,80,40); scene.add(sun);
+const warm1 = new THREE.PointLight(0xffe8cc,0.7,20,2); warm1.position.set(0,3,5); scene.add(warm1);
+const warm2 = new THREE.PointLight(0xffe8cc,0.7,20,2); warm2.position.set(-6,3,8); scene.add(warm2);
 
 // -------------------- Movimiento --------------------
-let yaw=0, pitch=0;
+let yaw=0,pitch=0;
 const sens=0.0024;
-window.addEventListener('mousemove', e=>{
+window.addEventListener('mousemove',e=>{
   yaw -= (e.movementX||0)*sens;
   pitch -= (e.movementY||0)*sens;
-  pitch = Math.max(-Math.PI/2+0.05, Math.min(Math.PI/2-0.05, pitch));
+  pitch=Math.max(-Math.PI/2+0.05,Math.min(Math.PI/2-0.05,pitch));
 });
 const keys={};
 window.addEventListener('keydown', e=>{keys[e.code]=true;});
@@ -172,19 +184,17 @@ const up = new THREE.Vector3(0,1,0);
 function updateMovement(dt){
   camera.rotation.set(pitch,yaw,0,'ZYX');
   const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
-  const right = new THREE.Vector3().crossVectors(forward, up).negate();
+  const right = new THREE.Vector3().crossVectors(forward,up).negate();
   let mx=0,mz=0;
-  if(keys['KeyW']) mz+=1;
-  if(keys['KeyS']) mz-=1;
-  if(keys['KeyA']) mx+=1;
-  if(keys['KeyD']) mx-=1;
+  if(keys['KeyW']) mz+=1; if(keys['KeyS']) mz-=1;
+  if(keys['KeyA']) mx+=1; if(keys['KeyD']) mx-=1;
   const desired = new THREE.Vector3();
   desired.addScaledVector(forward,mz); desired.addScaledVector(right,mx);
   if(desired.lengthSq()>0) desired.normalize();
-  const accel = 35.0, damping = 9.0;
-  velocity.addScaledVector(desired, accel*dt);
+  const accel=35,damping=9;
+  velocity.addScaledVector(desired,accel*dt);
   velocity.multiplyScalar(1/(1+damping*dt));
-  camera.position.addScaledVector(velocity, dt);
+  camera.position.addScaledVector(velocity,dt);
   if(camera.position.y<1.6) camera.position.y=1.7;
 }
 
@@ -193,7 +203,9 @@ function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(),0.05);
   updateMovement(dt);
-  renderer.render(scene, camera);
+  // Girar ruleta lentamente
+  wheelGroup.userData.wheel.rotation.z += 0.005;
+  renderer.render(scene,camera);
 }
 animate();
 
