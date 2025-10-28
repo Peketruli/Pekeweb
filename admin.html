@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Admin - Panel</title>
+<title>Panel de Administración - Chat Privado Integrado</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
 body { font-family: Arial, sans-serif; background:#111; color:#eee; padding:20px; }
@@ -11,66 +11,73 @@ table { width:100%; border-collapse: collapse; margin-top:10px; }
 th,td { padding:8px; border:1px solid #333; text-align:left; }
 button { padding:6px 10px; margin:2px; border-radius:6px; cursor:pointer; }
 .danger { background:#c82333; color:white; border:none; }
-.ban { background:#555; color:white; border:none; }
 .ok { background:#28a745; color:white; border:none; }
 .small { padding:4px 6px; font-size:13px; }
 #controls { margin-bottom:10px; display:flex; gap:8px; align-items:center; }
-input[type="number"]{ width:120px; padding:6px; }
+input[type="number"], input[type="text"]{ width:120px; padding:6px; }
+#messages {
+  border:1px solid #333;
+  height:250px;
+  overflow-y:auto;
+  padding:10px;
+  background:#1a1a1a;
+  color:#fff;
+  border-radius:8px;
+}
+#messageInput {
+  flex:1;
+  padding:6px;
+  border-radius:6px;
+  border:1px solid #444;
+  background:#222;
+  color:#eee;
+}
 </style>
 </head>
 <body>
-<button class="home-btn" onclick="window.location.href='h.html'"> Volver a la Página Principal</button>
+<button class="home-btn" onclick="window.location.href='h.html'">🏠 Volver a la Página Principal</button>
 <h1>Zona de administración</h1>
 <div id="status">Comprobando usuario...</div>
+
 <div id="adminArea" style="display:none;">
 
-<!-- Usuarios -->
-<h2>Gestión de Usuarios</h2>
-<div id="controls">
-  <button id="refreshBtn">🔄 Actualizar lista</button>
-  <input id="searchInput" placeholder="Buscar por nombre" />
-  <button id="searchBtn">🔎</button>
-</div>
-<table id="usersTable">
-<thead>
-<tr>
-<th>Id</th>
-<th>Usuario</th>
-<th>Pekepuntos</th>
-<th>Banned</th>
-<th>Acciones</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
+  <!-- CHAT PRIVADO -->
+  <h2>💬 Chat Privado de Administradores</h2>
+  <div id="adminChat" style="display:none; margin-bottom:30px;">
+    <div id="messages"></div>
+    <div style="display:flex; gap:5px; margin-top:10px;">
+      <input type="text" id="messageInput" placeholder="Escribe un mensaje...">
+      <button id="sendBtn">Enviar</button>
+    </div>
+  </div>
 
-<!-- Blogs -->
-<h2>Gestión de Blogs</h2>
-<table id="blogsTable">
-<thead>
-<tr>
-<th>Id</th>
-<th>Título</th>
-<th>Autor</th>
-<th>Acciones</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
+  <!-- USUARIOS -->
+  <h2>Gestión de Usuarios</h2>
+  <div id="controls">
+    <button id="refreshBtn">🔄 Actualizar lista</button>
+    <input id="searchInput" placeholder="Buscar por nombre" />
+    <button id="searchBtn">🔎</button>
+  </div>
+  <table id="usersTable">
+    <thead>
+      <tr><th>Id</th><th>Usuario</th><th>Pekepuntos</th><th>Banned</th><th>Acciones</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 
-<!-- Chats -->
-<h2>Gestión de Chats</h2>
-<table id="chatsTable">
-<thead>
-<tr>
-<th>Id</th>
-<th>Usuario</th>
-<th>Mensaje</th>
-<th>Acciones</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
+  <!-- BLOGS -->
+  <h2>Gestión de Blogs</h2>
+  <table id="blogsTable">
+    <thead><tr><th>Id</th><th>Título</th><th>Autor</th><th>Acciones</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <!-- CHATS -->
+  <h2>Gestión de Chats</h2>
+  <table id="chatsTable">
+    <thead><tr><th>Id</th><th>Usuario</th><th>Mensaje</th><th>Acciones</th></tr></thead>
+    <tbody></tbody>
+  </table>
 
 </div>
 
@@ -82,39 +89,87 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
 
-// ------------------ FUNCIONES DE LOG ------------------
-async function registrarAccion(userId, accion, extra = '') {
-  try { await supabase.from('logs').insert([{ user_id: userId, action: accion, extra }]); }
-  catch(err) { console.error('Error registrando acción:', err); }
-}
+// ================== CONFIGURACIÓN ==================
+const allowedAdmins = ["Peketruli", "SabinoArana"];
 
-// ------------------ ADMIN CHECK ------------------
-function isAdmin(user){ return user && (user.username === "Peketruli" || user.username === "SabinoArana" || user.username === "Jesus de Nazaret" || user.username === "General Suker" || user.username === "(JUSTICIA POR PEKEPO11AENORME)_69"); }
-
+// ================== INICIO ==================
 async function init(){
-  currentUser = JSON.parse(localStorage.getItem("currentUser"));
+  const status = document.getElementById('status');
+  status.textContent = "Verificando usuario...";
+
+  try {
+    currentUser = JSON.parse(localStorage.getItem("currentUser"));
+  } catch {
+    status.textContent = "Error al leer usuario del localStorage.";
+    return;
+  }
+
   if(!currentUser){
-    document.getElementById('status').textContent = "No estás logueado. Inicia sesión.";
+    status.textContent = "No hay sesión activa.";
     return;
   }
-  if(!isAdmin(currentUser)){
-    document.getElementById('status').textContent = "Acceso denegado. No eres administrador.";
+
+  if(!allowedAdmins.includes(currentUser.username)){
+    status.textContent = `Acceso denegado. Usuario "${currentUser.username}" no autorizado.`;
     return;
   }
-  document.getElementById('status').textContent = `Hola ${currentUser.username} — administrador.`;
+
+  // Usuario verificado
+  status.textContent = `✅ Bienvenido, ${currentUser.username}`;
   document.getElementById('adminArea').style.display = 'block';
+  document.getElementById('adminChat').style.display = 'block';
+
+  // Inicializar todo
+  await loadMessages();
+  subscribeMessages();
+  document.getElementById('sendBtn').addEventListener('click', sendMessage);
+
   await loadUsers();
   await loadBlogs();
   await loadChats();
 }
 
-// ------------------ USUARIOS ------------------
+// ================== CHAT PRIVADO ==================
+async function loadMessages(){
+  const { data, error } = await supabase
+    .from("mensajes")
+    .select("*")
+    .order("created_at", { ascending: true });
+
+  const messagesDiv = document.getElementById("messages");
+  if(error){
+    messagesDiv.innerHTML = `<p style="color:red;">Error cargando mensajes: ${error.message}</p>`;
+    return;
+  }
+  messagesDiv.innerHTML = data.map(m => `<b>${m.username}</b>: ${m.text}`).join("<br>");
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+async function sendMessage(){
+  const input = document.getElementById("messageInput");
+  const text = input.value.trim();
+  if(!text) return;
+  await supabase.from("mensajes").insert([{ username: currentUser.username, text }]);
+  input.value = "";
+}
+
+function subscribeMessages(){
+  supabase
+    .channel('realtime:mensajes')
+    .on('postgres_changes', { event:'INSERT', schema:'public', table:'mensajes' }, payload=>{
+      const messagesDiv = document.getElementById("messages");
+      messagesDiv.innerHTML += `<br><b>${payload.new.username}</b>: ${payload.new.text}`;
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    })
+    .subscribe();
+}
+
+// ================== ADMIN TOOLS ==================
 async function loadUsers(filter=""){
   const tbody = document.querySelector('#usersTable tbody');
   tbody.innerHTML = 'Cargando...';
-  let query = supabase.from('usuarios').select('id,username,pekepuntos,banned').order('created_at', { ascending: true });
-  const { data, error } = await query.limit(500);
-  if(error){ tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`; return; }
+  const { data, error } = await supabase.from('usuarios').select('id,username,pekepuntos,banned').limit(500);
+  if(error){ tbody.innerHTML = `<tr><td colspan="5">Error: ${error.message}</td></tr>`; return; }
   let result = data || [];
   if(filter){ result = result.filter(u => (u.username||'').toLowerCase().includes(filter.toLowerCase())); }
   renderUsers(result);
@@ -123,143 +178,41 @@ async function loadUsers(filter=""){
 function renderUsers(users){
   const tbody = document.querySelector('#usersTable tbody');
   tbody.innerHTML = '';
-  if(!users.length){ tbody.innerHTML = '<tr><td colspan="6">No hay usuarios</td></tr>'; return; }
+  if(!users.length){ tbody.innerHTML = '<tr><td colspan="5">No hay usuarios</td></tr>'; return; }
   users.forEach(u=>{
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td style="font-size:12px">${u.id}</td>
-      <td>${escapeHtml(u.username||'')}</td>
+      <td>${u.id}</td>
+      <td>${u.username}</td>
       <td>${u.pekepuntos ?? 0}</td>
       <td>${u.banned ? 'Sí' : 'No'}</td>
-      <td>
-        <button class="small addBtn">+Puntos</button>
-        <button class="small removeBtn">-Puntos</button>
-        <button class="small banBtn">${u.banned ? 'Desbanear' : 'Banear'}</button>
-        <button class="small danger deleteBtn">Borrar</button>
-      </td>
+      <td><button class="small danger">Borrar</button></td>
     `;
     tbody.appendChild(tr);
-    tr.querySelector('.addBtn').addEventListener('click', ()=>promptAdd(u.id, u.username));
-    tr.querySelector('.removeBtn').addEventListener('click', ()=>promptRemove(u.id, u.username));
-    tr.querySelector('.banBtn').addEventListener('click', ()=>toggleBan(u.id, u.username, u.banned));
-    tr.querySelector('.deleteBtn').addEventListener('click', ()=>deleteUser(u.id, u.username||''));
   });
 }
 
-function escapeHtml(s){
-  return (s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
-}
-
-async function promptAdd(userId, username){
-  const raw = prompt("¿Cuántos Pekepuntos añadir? (positivo)");
-  const val = parseInt(raw);
-  if(isNaN(val) || val<=0) return alert("Cantidad inválida");
-  await changePoints(userId, val, username);
-  await loadUsers();
-}
-
-async function promptRemove(userId, username){
-  const raw = prompt("¿Cuántos Pekepuntos quitar? (positivo)");
-  const val = parseInt(raw);
-  if(isNaN(val) || val<=0) return alert("Cantidad inválida");
-  await changePoints(userId, -val, username);
-  await loadUsers();
-}
-
-async function changePoints(userId, delta, username){
-  const { data, error } = await supabase.from('usuarios').select('pekepuntos').eq('id', userId).single();
-  if(error) return alert('Error leyendo usuario: '+error.message);
-  const current = BigInt(data.pekepuntos || 0);
-  const newVal = current + BigInt(delta);
-  const finalVal = newVal < 0n ? 0n : newVal;
-  const { error:err2 } = await supabase.from('usuarios').update({ pekepuntos: finalVal.toString() }).eq('id', userId);
-  if(err2) return alert('Error actualizando: '+err2.message);
-  alert('Pekepuntos actualizados');
-  await registrarAccion(currentUser.id, delta>0 ? `sumar puntos a ${username}` : `quitar puntos a ${username}`, `delta:${delta}`);
-}
-
-async function toggleBan(userId, username, currentlyBanned){
-  const confirmMsg = currentlyBanned ? "¿Desbanear a este usuario?" : "¿Banear a este usuario?";
-  if(!confirm(confirmMsg)) return;
-  const { error } = await supabase.from('usuarios').update({ banned: !currentlyBanned }).eq('id', userId);
-  if(error) return alert('Error: '+error.message);
-  alert(currentlyBanned ? 'Usuario desbaneado' : 'Usuario baneado');
-  await registrarAccion(currentUser.id, currentlyBanned ? `desbanear a ${username}` : `banear a ${username}`);
-  await loadUsers();
-}
-
-async function deleteUser(userId, username){
-  if(!confirm(`Borrar al usuario ${username} (id: ${userId})? Esta acción es irreversible.`)) return;
-  const { error } = await supabase.from('usuarios').delete().eq('id', userId);
-  if(error) return alert('Error borrando: '+error.message);
-  alert('Usuario borrado');
-  await registrarAccion(currentUser.id, `borrar usuario ${username}`);
-  await loadUsers();
-}
-
-// ------------------ BLOGS ------------------
 async function loadBlogs(){
   const tbody = document.querySelector('#blogsTable tbody');
-  tbody.innerHTML = 'Cargando...';
   const { data, error } = await supabase.from('blog').select('id,title,author').limit(500);
   if(error){ tbody.innerHTML = `<tr><td colspan="4">Error: ${error.message}</td></tr>`; return; }
-  tbody.innerHTML = '';
-  (data||[]).forEach(b=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${b.id}</td>
-      <td>${escapeHtml(b.title||'')}</td>
-      <td>${escapeHtml(b.author||'')}</td>
-      <td><button class="small danger deleteBlogBtn">Borrar</button></td>
-    `;
-    tbody.appendChild(tr);
-    tr.querySelector('.deleteBlogBtn').addEventListener('click', ()=>deleteBlog(b.id, b.title));
-  });
+  tbody.innerHTML = data.map(b => `<tr><td>${b.id}</td><td>${b.title}</td><td>${b.author}</td><td><button class='small danger'>Borrar</button></td></tr>`).join('');
 }
 
-async function deleteBlog(id, titulo){
-  if(!confirm(`¿Borrar el blog "${titulo}" (id: ${id})?`)) return;
-  const { error } = await supabase.from('blog').delete().eq('id', id);
-  if(error) return alert('Error borrando blog: '+error.message);
-  alert('Blog borrado');
-  await registrarAccion(currentUser.id, `borrar blog ${titulo}`);
-  await loadBlogs();
-}
-
-// ------------------ CHATS ------------------
 async function loadChats(){
   const tbody = document.querySelector('#chatsTable tbody');
-  tbody.innerHTML = 'Cargando...';
   const { data, error } = await supabase.from('chats').select('id,nombre,creador').limit(500);
   if(error){ tbody.innerHTML = `<tr><td colspan="4">Error: ${error.message}</td></tr>`; return; }
-  tbody.innerHTML = '';
-  (data||[]).forEach(c=>{
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${c.id}</td>
-      <td>${escapeHtml(c.nombre||'')}</td>
-      <td>${escapeHtml(c.creador||'')}</td>
-      <td><button class="small danger deleteChatBtn">Borrar</button></td>
-    `;
-    tbody.appendChild(tr);
-    tr.querySelector('.deleteChatBtn').addEventListener('click', ()=>deleteChat(c.id, c.creador));
-  });
+  tbody.innerHTML = data.map(c => `<tr><td>${c.id}</td><td>${c.nombre}</td><td>${c.creador}</td><td><button class='small danger'>Borrar</button></td></tr>`).join('');
 }
 
-async function deleteChat(id, creador){
-  if(!confirm(`¿Borrar el mensaje de "${creador}" (id: ${id})?`)) return;
-  const { error } = await supabase.from('chats').delete().eq('id', id);
-  if(error) return alert('Error borrando chat: '+error.message);
-  alert('Mensaje borrado');
-  await registrarAccion(currentUser.id, `borrar chat de ${creador}`);
-  await loadChats();
-}
-
-// ------------------ EVENTOS ------------------
-document.getElementById('searchBtn').addEventListener('click', ()=> { const q = document.getElementById('searchInput').value || ''; loadUsers(q); });
+// ================== EVENTOS ==================
+document.getElementById('searchBtn').addEventListener('click', ()=> {
+  const q = document.getElementById('searchInput').value || '';
+  loadUsers(q);
+});
 document.getElementById('refreshBtn').addEventListener('click', ()=> loadUsers());
 
-// Inicializar
 init();
 </script>
 </body>
