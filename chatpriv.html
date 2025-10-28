@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chat Privado</title>
+<title>Chat Privado Supabase</title>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
   body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
   #chatContainer { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 15px rgba(0,0,0,0.2); width: 350px; }
@@ -30,39 +31,62 @@
 </div>
 
 <script>
+const supabaseUrl = 'TU_SUPABASE_URL';
+const supabaseKey = 'TU_SUPABASE_ANON_KEY';
+const supabase = Supabase.createClient(supabaseUrl, supabaseKey);
+
 const allowedUsers = ["Peketruli", "SabinoArana"];
 let currentUser = null;
 
-function login() {
+async function login() {
   const username = document.getElementById("username").value.trim();
-  if (allowedUsers.includes(username)) {
-    currentUser = username;
-    localStorage.setItem("chatUser", username);
-    document.getElementById("login").style.display = "none";
-    document.getElementById("chat").style.display = "block";
-    loadMessages();
-  } else {
-    alert("Usuario no autorizado.");
-  }
+  if (!allowedUsers.includes(username)) return alert("Usuario no autorizado.");
+
+  // Comprobamos en Supabase que existe y es válido
+  const { data, error } = await supabase
+    .from('usuarios') // tabla donde guardas tus usuarios autorizados
+    .select('*')
+    .eq('username', username)
+    .single();
+
+  if (error || !data) return alert("Usuario no autorizado en el sistema.");
+  
+  currentUser = username;
+  localStorage.setItem("chatUser", username);
+  document.getElementById("login").style.display = "none";
+  document.getElementById("chat").style.display = "block";
+
+  loadMessages();
+  subscribeMessages();
 }
 
-function sendMessage() {
+async function sendMessage() {
   const input = document.getElementById("messageInput");
   const msg = input.value.trim();
   if (!msg) return;
 
-  let messages = JSON.parse(localStorage.getItem("privateChat") || "[]");
-  messages.push({ user: currentUser, text: msg, time: new Date().toLocaleTimeString() });
-  localStorage.setItem("privateChat", JSON.stringify(messages));
-  input.value = "";
-  loadMessages();
+  await supabase.from('mensajes').insert([{ user: currentUser, text: msg }]);
+  input.value = '';
 }
 
-function loadMessages() {
+async function loadMessages() {
+  const { data, error } = await supabase.from('mensajes').select('*').order('created_at', { ascending: true });
   const messagesDiv = document.getElementById("messages");
-  let messages = JSON.parse(localStorage.getItem("privateChat") || "[]");
-  messagesDiv.innerHTML = messages.map(m => `<b>${m.user}</b> [${m.time}]: ${m.text}`).join("<br>");
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  if (data) {
+    messagesDiv.innerHTML = data.map(m => `<b>${m.user}</b>: ${m.text}`).join("<br>");
+    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+  }
+}
+
+function subscribeMessages() {
+  supabase
+    .from('mensajes')
+    .on('INSERT', payload => {
+      const messagesDiv = document.getElementById("messages");
+      messagesDiv.innerHTML += `<br><b>${payload.new.user}</b>: ${payload.new.text}`;
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    })
+    .subscribe();
 }
 
 // Autologin si ya hay usuario guardado
@@ -72,6 +96,7 @@ if (savedUser && allowedUsers.includes(savedUser)) {
   document.getElementById("login").style.display = "none";
   document.getElementById("chat").style.display = "block";
   loadMessages();
+  subscribeMessages();
 }
 </script>
 
