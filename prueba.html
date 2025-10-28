@@ -3,325 +3,140 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Casino Deluxe — Pasillo y Sala</title>
+<title>Casino Deluxe — Versión Ligera</title>
 <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
 <style>
   body { margin:0; overflow:hidden; background:#111; font-family:Arial, Helvetica, sans-serif; }
   #hint {
-    position: absolute; left:12px; top:12px; z-index:5;
-    background: rgba(255,255,255,0.06); color: #fff;
+    position:absolute; left:12px; top:12px; z-index:5;
+    background:rgba(255,255,255,0.06); color:#fff;
     padding:8px 10px; border-radius:8px; font-size:13px;
   }
 </style>
 </head>
 <body>
-<div id="hint">Spawn en pasillo — Mover: W A S D — Mirar: ratón — Salir (E cerca de la puerta)</div>
+<div id="hint">Modo ligero — W A S D para moverse, ratón para mirar, E para salir</div>
 <script>
-// -------------------- Setup básico --------------------
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xefeae4); // día cálido
-scene.fog = new THREE.FogExp2(0xefeae4, 0.0018);
+scene.background = new THREE.Color(0xefeae4);
 
-const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 300);
-camera.position.set(0, 1.7, -24); // spawn en el pasillo (mirando hacia el salón que está más adelante)
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 200);
+camera.position.set(0, 1.7, -24);
 
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: false });
 renderer.setSize(innerWidth, innerHeight);
-renderer.setPixelRatio(devicePixelRatio);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.setPixelRatio(Math.min(1, window.devicePixelRatio));
 document.body.appendChild(renderer.domElement);
 
-const clock = new THREE.Clock();
-const loader = new THREE.TextureLoader();
-
-// -------------------- Texturas por canvas --------------------
-function carpetTexture(color='#7d0a0a', repeat=8){
-  const c = document.createElement('canvas'); c.width=c.height=512;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = color; ctx.fillRect(0,0,512,512);
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 2;
-  for(let i=0;i<512;i+=24){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,512); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(512,i); ctx.stroke(); }
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(repeat, repeat);
-  tex.encoding = THREE.sRGBEncoding;
-  return tex;
-}
-
-function feltTexture(){
-  const c = document.createElement('canvas'); c.width=c.height=512;
-  const ctx = c.getContext('2d');
-  const g = ctx.createLinearGradient(0,0,512,512);
-  g.addColorStop(0,'#0b5b35'); g.addColorStop(1,'#0e7041');
-  ctx.fillStyle = g; ctx.fillRect(0,0,512,512);
-  for(let i=0;i<12000;i++){ const x=Math.random()*512,y=Math.random()*512, a=Math.random()*0.05; ctx.fillStyle=`rgba(0,0,0,${a})`; ctx.fillRect(x,y,1,1); }
-  const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(1,1); tex.encoding = THREE.sRGBEncoding;
-  return tex;
-}
-
-function woodTexture(){
-  const c = document.createElement('canvas'); c.width=1024; c.height=512;
-  const ctx = c.getContext('2d'); ctx.fillStyle='#5a3719'; ctx.fillRect(0,0,1024,512);
-  ctx.strokeStyle='rgba(0,0,0,0.06)'; ctx.lineWidth=1;
-  for(let i=0;i<140;i++){
-    ctx.beginPath(); const y = Math.random()*512;
-    ctx.moveTo(0,y);
-    for(let x=0;x<1024;x+=20) ctx.lineTo(x, y + Math.sin(x*0.01 + i)*6);
-    ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(2,1); tex.encoding = THREE.sRGBEncoding;
-  return tex;
-}
-
-function marbleTexture(){
-  const c = document.createElement('canvas'); c.width=c.height=512;
-  const ctx = c.getContext('2d'); ctx.fillStyle = '#f0ebe6'; ctx.fillRect(0,0,512,512);
-  ctx.strokeStyle='rgba(120,100,80,0.12)'; ctx.lineWidth=2;
-  for(let i=0;i<18;i++){
-    ctx.beginPath(); ctx.moveTo(Math.random()*512,-50);
-    for(let x=0;x<700;x+=20) ctx.lineTo(x, 250 + Math.sin(x*0.018 + i)* (25 + Math.random()*25));
-    ctx.stroke();
-  }
-  const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(4,2); tex.encoding = THREE.sRGBEncoding;
-  return tex;
-}
-
-function wheelCanvasTexture(){
-  const c = document.createElement('canvas'); c.width=c.height=1024;
-  const ctx = c.getContext('2d');
-  const cx = 512, cy = 512, r = 420;
-  ctx.fillStyle = '#3b2b20'; ctx.fillRect(0,0,1024,1024);
-  const seg = 18;
-  for(let i=0;i<seg;i++){
-    const start = (i/seg)*Math.PI*2; const end = ((i+1)/seg)*Math.PI*2;
-    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,start,end); ctx.closePath();
-    ctx.fillStyle = (i%2===0) ? '#b20d0d' : '#111';
-    ctx.fill();
-    // little indicator dots:
-    const mid = (start+end)/2;
-    const nx = cx + Math.cos(mid)*(r*0.72);
-    const ny = cy + Math.sin(mid)*(r*0.72);
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(nx,ny,7,0,Math.PI*2); ctx.fill();
-  }
-  ctx.beginPath(); ctx.fillStyle='#222'; ctx.arc(cx,cy,r*0.55,0,Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.fillStyle='#d1c6b3'; ctx.arc(cx,cy,r*0.12,0,Math.PI*2); ctx.fill();
-  const tex = new THREE.CanvasTexture(c); tex.encoding = THREE.sRGBEncoding;
-  return tex;
-}
-
-// textures
-const carpetTex = carpetTexture('#7d0a0a', 10);
-const feltTex = feltTexture();
-const woodTex = woodTexture();
-const marbleTex = marbleTexture();
-const wheelTex = wheelCanvasTexture();
-
-// -------------------- Piso / Pasillo --------------------
-const floorMat = new THREE.MeshStandardMaterial({ map: carpetTex, roughness:0.95, metalness:0.02 });
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 120), floorMat);
-floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
-
-// Pasillo geometry: we'll place walls and ceiling along z from -40 to 0 (long)
-const corridorLength = 40; // meters, negative z to 0
-const corridorHalfW = 8; // width half
-
-// -------------------- Paredes del pasillo --------------------
-const wallMat = new THREE.MeshStandardMaterial({ map: marbleTex, roughness:0.7, metalness:0.06 });
-
-function addWall(x,y,z, sx,sy,sz){
-  const m = new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz), wallMat);
-  m.position.set(x,y,z); m.receiveShadow = true; scene.add(m);
-}
-// left/right walls for whole scene
-addWall(-corridorHalfW-1, 6, -20, 1, 14, 120);
-addWall(corridorHalfW+1, 6, -20, 1, 14, 120);
-// back wall (behind player) with door opening
-addWall(0, 6, -80, 160, 14, 1); // far back to enclose (covers beyond corridor)
-addWall(0, 6, 80, 160, 14, 1); // front boundary
-
-// -------------------- Techo con filas simétricas de luces empotradas --------------------
-const ceilingMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness:0.6, metalness:0.05 });
-const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(160, 120), ceilingMat);
-ceiling.rotation.x = Math.PI/2; ceiling.position.y = 16; ceiling.receiveShadow = true; scene.add(ceiling);
-
-// rows of recessed lights: create small spheres emissive + PointLights
-const rows = 4; // number of rows across width
-const lightsPerRow = 14; // along length
-const rowSpacing = 6; // spacing across width
-const zStart = -36; const zStep = (96) / (lightsPerRow-1); // to spread from back to front
-for(let r=0; r<rows; r++){
-  const offsetX = - (rows-1)/2 * rowSpacing + r*rowSpacing;
-  for(let i=0;i<lightsPerRow;i++){
-    const z = -48 + i * (96/(lightsPerRow-1));
-    const pos = new THREE.Vector3(offsetX, 15.6, z);
-    // small emissive disk
-    const bulbGeo = new THREE.SphereGeometry(0.15, 8, 8);
-    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xfff0d6 });
-    const bulb = new THREE.Mesh(bulbGeo, bulbMat);
-    bulb.position.copy(pos);
-    scene.add(bulb);
-    // small warm point light
-    const pl = new THREE.PointLight(0xfff1d0, 0.45, 14, 2);
-    pl.position.copy(pos); pl.castShadow = false;
-    scene.add(pl);
-  }
-}
-
-// -------------------- Door (detrás del spawn) --------------------
-const doorMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness:0.5, metalness:0.15 });
-const doorFrameMat = new THREE.MeshStandardMaterial({ color:0x8a5a2b, metalness:0.8, roughness:0.35 });
-
-const doorLeft = new THREE.Mesh(new THREE.BoxGeometry(2.4,3.8,0.18), doorMat);
-doorLeft.position.set(-1.2,1.9,-38.9); scene.add(doorLeft);
-const doorRight = doorLeft.clone(); doorRight.position.set(1.2,1.9,-38.9); scene.add(doorRight);
-const doorFrame = new THREE.Mesh(new THREE.BoxGeometry(5.0,4.2,0.12), doorFrameMat);
-doorFrame.position.set(0,2,-38.85); scene.add(doorFrame);
-
-// -------------------- Sala del casino (al final del pasillo) --------------------
-// We'll place the main room starting z from -8 to +40
-// Blackjack table and chairs centered at z=10, ruleta at z=8 at x=-8
-
-// Table group
-const tableGroup = new THREE.Group();
-// tabletop (felt)
-const tableTopMat = new THREE.MeshStandardMaterial({ map: feltTex, roughness:0.6, metalness:0.02 });
-const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(4.2,4.2,0.35,64), tableTopMat);
-tableTop.position.set(8, 1.05, 12); tableTop.castShadow=true; tableTop.receiveShadow=true;
-tableGroup.add(tableTop);
-// wooden rim
-const rimMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness:0.45, metalness:0.12 });
-const rimMesh = new THREE.Mesh(new THREE.TorusGeometry(4.45,0.28,16,128), rimMat);
-rimMesh.rotation.x = Math.PI/2; rimMesh.position.set(8,1.245,12); tableGroup.add(rimMesh);
-// legs
-const legMat = new THREE.MeshStandardMaterial({ color:0x3b2b19, roughness:0.6 });
-for(let dx=-1; dx<=1; dx+=2){
-  const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.18,0.18,1.1,12), legMat);
-  leg.position.set(8 + dx*1.4, 0.55, 12); leg.castShadow=true; tableGroup.add(leg);
-}
-scene.add(tableGroup);
-
-// chairs around the table
-const chairGroup = new THREE.Group();
-const seatMat = new THREE.MeshStandardMaterial({ color:0x2b1508, roughness:0.45, metalness:0.06 });
-for(let i=0;i<6;i++){
-  const angle = (i/6) * Math.PI * 1.8 - Math.PI/1.8;
-  const r = 4.9;
-  const x = 8 + Math.sin(angle)*r;
-  const z = 12 + Math.cos(angle)*r;
-  const seat = new THREE.Mesh(new THREE.CylinderGeometry(0.45,0.45,0.38,20), seatMat);
-  seat.position.set(x,0.38,z); seat.rotation.y = angle + Math.PI; seat.castShadow=true;
-  const back = new THREE.Mesh(new THREE.BoxGeometry(0.55,0.9,0.12), seatMat);
-  back.position.set(x, 0.85, z - 0.28); back.rotation.y = angle + Math.PI; back.castShadow=true;
-  const support = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,0.55,12), legMat);
-  support.position.set(x,0.18,z); support.castShadow=true;
-  chairGroup.add(seat); chairGroup.add(back); chairGroup.add(support);
-}
-scene.add(chairGroup);
-
-// -------------------- Ruleta con soporte --------------------
-const wheelGroup = new THREE.Group();
-// wooden pedestal (soporte)
-const standMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness:0.5, metalness:0.08 });
-const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.8,1.0,32), standMat);
-stand.position.set(-10, 0.75, 8); stand.castShadow = true; wheelGroup.add(stand);
-// ornate base platform
-const base = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.18,48), new THREE.MeshStandardMaterial({ color:0x3b2414, roughness:0.5 }));
-base.position.set(-10, 0.11, 8); base.castShadow=true; wheelGroup.add(base);
-// wheel plate (textured)
-const wheelPlateMesh = new THREE.Mesh(new THREE.CylinderGeometry(1.95,1.95,0.06,128), new THREE.MeshStandardMaterial({ map: wheelTex, roughness:0.4 }));
-wheelPlateMesh.position.set(-10, 1.22, 8); wheelPlateMesh.castShadow=true; wheelGroup.add(wheelPlateMesh);
-// rim decoration
-const wheelRim = new THREE.Mesh(new THREE.TorusGeometry(2.05,0.10,16,100), new THREE.MeshStandardMaterial({ color:0x8b4513, metalness:0.5 }));
-wheelRim.rotation.x = Math.PI/2; wheelRim.position.set(-10,1.22,8); wheelGroup.add(wheelRim);
-
-scene.add(wheelGroup);
-
-// -------------------- Lighting: dia lujoso y sombras --------------------
-const hemi = new THREE.HemisphereLight(0xffffff, 0x888888, 0.45); scene.add(hemi);
-
-// directional 'sun' (soft)
-const sun = new THREE.DirectionalLight(0xfff5de, 0.9);
-sun.position.set(40,80,40); sun.castShadow=true;
-sun.shadow.mapSize.set(2048,2048);
-sun.shadow.camera.left = -80; sun.shadow.camera.right = 80; sun.shadow.camera.top = 80; sun.shadow.camera.bottom = -80;
-sun.shadow.camera.near = 1; sun.shadow.camera.far = 300;
+// -------------------- Luces básicas --------------------
+const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+scene.add(ambient);
+const sun = new THREE.DirectionalLight(0xfff2cc, 0.8);
+sun.position.set(40, 60, 40);
 scene.add(sun);
 
-// warm fills near tables
-const warm1 = new THREE.PointLight(0xffe8cc, 0.7, 48, 2); warm1.position.set(8, 6, 12); scene.add(warm1);
-const warm2 = new THREE.PointLight(0xffe8cc, 0.7, 48, 2); warm2.position.set(-10, 6, 8); scene.add(warm2);
+// -------------------- Texturas simples --------------------
+const carpetTex = new THREE.MeshBasicMaterial({ color: 0x7d0a0a });
+const marbleMat = new THREE.MeshBasicMaterial({ color: 0xf0ebe6 });
+const woodMat = new THREE.MeshBasicMaterial({ color: 0x5a3719 });
+const greenMat = new THREE.MeshBasicMaterial({ color: 0x0b5b35 });
 
-// -------------------- Interaction: E near door to exit (door behind spawn) --------------------
-window.addEventListener('keydown', (e)=>{
+// -------------------- Suelo y techo --------------------
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(160, 120), carpetTex);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
+
+const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(160, 120), woodMat);
+ceiling.rotation.x = Math.PI/2;
+ceiling.position.y = 16;
+scene.add(ceiling);
+
+// -------------------- Paredes --------------------
+function wall(x, y, z, sx, sy, sz){
+  const w = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), marbleMat);
+  w.position.set(x, y, z);
+  scene.add(w);
+}
+wall(-9, 6, -20, 1, 14, 120);
+wall(9, 6, -20, 1, 14, 120);
+wall(0, 6, -80, 160, 14, 1);
+wall(0, 6, 80, 160, 1);
+
+// -------------------- Mesa Blackjack --------------------
+const tableGroup = new THREE.Group();
+const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 0.3, 24), greenMat);
+tableTop.position.set(8, 1.05, 12);
+tableGroup.add(tableTop);
+const rim = new THREE.Mesh(new THREE.TorusGeometry(4.45, 0.25, 8, 32), woodMat);
+rim.rotation.x = Math.PI/2;
+rim.position.set(8, 1.2, 12);
+tableGroup.add(rim);
+scene.add(tableGroup);
+
+// -------------------- Ruleta --------------------
+const wheelGroup = new THREE.Group();
+const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.8, 1, 16), woodMat);
+stand.position.set(-10, 0.75, 8);
+wheelGroup.add(stand);
+const base = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 0.18, 24), woodMat);
+base.position.set(-10, 0.11, 8);
+wheelGroup.add(base);
+const wheelPlate = new THREE.Mesh(new THREE.CylinderGeometry(1.95, 1.95, 0.06, 48), greenMat);
+wheelPlate.position.set(-10, 1.22, 8);
+wheelGroup.add(wheelPlate);
+scene.add(wheelGroup);
+
+// -------------------- Movimiento --------------------
+let yaw = 0, pitch = 0;
+const sens = 0.002;
+const keys = {};
+const velocity = new THREE.Vector3();
+
+window.addEventListener('mousemove', e=>{
+  yaw -= e.movementX * sens;
+  pitch -= e.movementY * sens;
+  pitch = Math.max(-Math.PI/2+0.05, Math.min(Math.PI/2-0.05, pitch));
+});
+
+window.addEventListener('keydown', e=>{ keys[e.code] = true; });
+window.addEventListener('keyup', e=>{ keys[e.code] = false; });
+
+function move(dt){
+  camera.rotation.set(pitch, yaw, 0, "ZYX");
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
+  const right = new THREE.Vector3().crossVectors(forward, new THREE.Vector3(0,1,0)).negate();
+  let dir = new THREE.Vector3();
+  if(keys['KeyW']) dir.add(forward);
+  if(keys['KeyS']) dir.addScaledVector(forward, -1);
+  if(keys['KeyA']) dir.add(right);
+  if(keys['KeyD']) dir.addScaledVector(right, -1);
+  if(dir.lengthSq()>0) dir.normalize();
+  camera.position.addScaledVector(dir, dt*8);
+  if(camera.position.y < 1.6) camera.position.y = 1.7;
+}
+
+window.addEventListener('keydown', e=>{
   if(e.key.toLowerCase() === 'e'){
-    const d = camera.position.distanceTo(new THREE.Vector3(0,2,-39));
-    if(d < 3.2){
-      // adjust to your home route
+    if(camera.position.distanceTo(new THREE.Vector3(0,2,-39)) < 3.5){
       window.location.href = 'h.html';
     }
   }
 });
 
-// -------------------- Movement y Mouse Look --------------------
-let yaw = 0, pitch = 0;
-const sens = 0.0024;
-window.addEventListener('mousemove', (e) => {
-  yaw -= (e.movementX || 0) * sens;
-  pitch -= (e.movementY || 0) * sens;
-  const maxP = Math.PI/2 - 0.05;
-  pitch = Math.max(-maxP, Math.min(maxP, pitch));
-});
-
-const keys = {};
-window.addEventListener('keydown', (e)=> { keys[e.code] = true; });
-window.addEventListener('keyup', (e)=> { keys[e.code] = false; });
-
-const velocity = new THREE.Vector3();
-const up = new THREE.Vector3(0,1,0);
-
-function updateMovement(dt){
-  camera.rotation.set(pitch, yaw, 0, "ZYX");
-  camera.updateMatrixWorld();
-  const forward = new THREE.Vector3();
-  camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
-  const right = new THREE.Vector3().crossVectors(forward, up).negate();
-  let mx=0, mz=0;
-  if(keys['KeyW']) mz += 1;
-  if(keys['KeyS']) mz -= 1;
-  if(keys['KeyA']) mx += 1;
-  if(keys['KeyD']) mx -= 1;
-  const desired = new THREE.Vector3();
-  desired.addScaledVector(forward, mz);
-  desired.addScaledVector(right, mx);
-  if(desired.lengthSq()>0) desired.normalize();
-  // acceleration/damping
-  const accel = 35.0;
-  const damping = 9.0;
-  velocity.addScaledVector(desired, accel * dt);
-  velocity.multiplyScalar(1 / (1 + damping * dt));
-  camera.position.addScaledVector(velocity, dt);
-  // keep player above floor (prevent going underground)
-  if(camera.position.y < 1.6) camera.position.y = 1.7;
-}
-
-// -------------------- Animate --------------------
+// -------------------- Animar --------------------
 function animate(){
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  // spin wheel slightly
-  wheelGroup.rotation.y += 0.018;
-  // tiny ambient motion
-  tableGroup.rotation.y = Math.sin(Date.now()*0.0002)*0.001;
-  updateMovement(dt);
+  const dt = 0.016; // fijo: más estable y rápido
+  wheelGroup.rotation.y += 0.01;
+  move(dt);
   renderer.render(scene, camera);
 }
 animate();
 
 // -------------------- Resize --------------------
 window.addEventListener('resize', ()=>{
-  camera.aspect = innerWidth / innerHeight;
+  camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
