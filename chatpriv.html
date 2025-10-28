@@ -4,161 +4,76 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Chat Privado</title>
-<script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 <style>
-  body {
-    font-family: 'Segoe UI', sans-serif;
-    background: #0d0d0d;
-    color: #fff;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    height: 100vh;
-    margin: 0;
-  }
-  h2 {
-    color: #ffb347;
-    margin-top: 20px;
-  }
-  #chat-box {
-    width: 90%;
-    max-width: 600px;
-    height: 60vh;
-    overflow-y: auto;
-    background: #1a1a1a;
-    border-radius: 12px;
-    padding: 15px;
-    box-shadow: 0 0 10px #ffb34755;
-    display: flex;
-    flex-direction: column;
-  }
-  .msg {
-    margin: 8px 0;
-    padding: 8px 12px;
-    border-radius: 10px;
-    max-width: 80%;
-    word-wrap: break-word;
-  }
-  .me {
-    background: #ffb347;
-    color: #000;
-    align-self: flex-end;
-  }
-  .other {
-    background: #333;
-    color: #fff;
-    align-self: flex-start;
-  }
-  #message-input {
-    width: 90%;
-    max-width: 600px;
-    padding: 10px;
-    border-radius: 10px;
-    border: none;
-    margin-top: 10px;
-    background: #222;
-    color: #fff;
-  }
-  #send-btn {
-    margin-top: 8px;
-    padding: 10px 20px;
-    border: none;
-    border-radius: 8px;
-    background: #ffb347;
-    color: #000;
-    cursor: pointer;
-    font-weight: bold;
-  }
-  #send-btn:hover {
-    background: #ffc76a;
-  }
+  body { font-family: Arial, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
+  #chatContainer { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 0 15px rgba(0,0,0,0.2); width: 350px; }
+  #messages { border: 1px solid #ccc; height: 200px; overflow-y: auto; padding: 10px; margin-bottom: 10px; }
+  input[type=text] { width: calc(100% - 60px); padding: 5px; }
+  button { padding: 5px 10px; }
+  #login { display: flex; flex-direction: column; }
+  #login input { margin-bottom: 10px; }
 </style>
 </head>
 <body>
-<h2>Chat Privado</h2>
-<div id="chat-box"></div>
-<input type="text" id="message-input" placeholder="Escribe un mensaje..." />
-<button id="send-btn">Enviar</button>
+
+<div id="chatContainer">
+  <div id="login">
+    <input type="text" id="username" placeholder="Escribe tu usuario">
+    <button onclick="login()">Entrar</button>
+  </div>
+
+  <div id="chat" style="display:none;">
+    <div id="messages"></div>
+    <input type="text" id="messageInput" placeholder="Escribe tu mensaje">
+    <button onclick="sendMessage()">Enviar</button>
+  </div>
+</div>
 
 <script>
-  // ==================== Configuración Supabase ====================
-  const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-  const { createClient } = supabase;
-  const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const allowedUsers = ["Peketruli", "SabinoArana"];
+let currentUser = null;
 
-  // ==================== Elementos DOM ====================
-  const chatBox = document.getElementById("chat-box");
-  const msgInput = document.getElementById("message-input");
-  const sendBtn = document.getElementById("send-btn");
-
-  // ==================== Usuarios autorizados ====================
-  const allowedUsers = ["Peketruli", "SabinoArana"]; // Cambia o añade más usuarios
-  let currentUser = localStorage.getItem("currentUser");
-
-  if (!currentUser || !allowedUsers.includes(currentUser)) {
-    document.body.innerHTML = "<h2>❌ Acceso denegado</h2><p>No tienes permisos para entrar aquí.</p>";
-    throw new Error("Usuario no autorizado");
+function login() {
+  const username = document.getElementById("username").value.trim();
+  if (allowedUsers.includes(username)) {
+    currentUser = username;
+    localStorage.setItem("chatUser", username);
+    document.getElementById("login").style.display = "none";
+    document.getElementById("chat").style.display = "block";
+    loadMessages();
+  } else {
+    alert("Usuario no autorizado.");
   }
+}
 
-  // ==================== Funciones del chat ====================
-  function addMessageToDOM(msg) {
-    const div = document.createElement("div");
-    div.className = "msg " + (msg.username === currentUser ? "me" : "other");
-    div.textContent = msg.username + ": " + msg.message;
-    chatBox.appendChild(div);
-    chatBox.scrollTop = chatBox.scrollHeight;
-  }
+function sendMessage() {
+  const input = document.getElementById("messageInput");
+  const msg = input.value.trim();
+  if (!msg) return;
 
-  async function loadMessages() {
-    const { data, error } = await db
-      .from("chat_privado")
-      .select("*")
-      .order("created_at", { ascending: true });
-
-    if (error) {
-      chatBox.innerHTML = "<p>Error al cargar mensajes</p>";
-      return;
-    }
-
-    chatBox.innerHTML = "";
-    data.forEach(addMessageToDOM);
-  }
-
-  async function sendMessage() {
-    const text = msgInput.value.trim();
-    if (!text) return;
-
-    const { error } = await db
-      .from("chat_privado")
-      .insert([{ username: currentUser, message: text }]);
-
-    if (error) return;
-
-    addMessageToDOM({ username: currentUser, message: text });
-    msgInput.value = "";
-  }
-
-  async function subscribeToMessages() {
-    const channel = db.channel("chat_channel")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chat_privado" }, (payload) => {
-        if (payload.new.username !== currentUser) {
-          addMessageToDOM(payload.new);
-        }
-      });
-
-    await channel.subscribe((status) => {
-      if (status === "SUBSCRIBED") console.log("✅ Conectado al chat privado");
-    });
-  }
-
-  // ==================== Eventos ====================
-  sendBtn.addEventListener("click", sendMessage);
-  msgInput.addEventListener("keypress", (e) => { if (e.key === "Enter") sendMessage(); });
-
-  // ==================== Inicializar ====================
+  let messages = JSON.parse(localStorage.getItem("privateChat") || "[]");
+  messages.push({ user: currentUser, text: msg, time: new Date().toLocaleTimeString() });
+  localStorage.setItem("privateChat", JSON.stringify(messages));
+  input.value = "";
   loadMessages();
-  subscribeToMessages();
+}
+
+function loadMessages() {
+  const messagesDiv = document.getElementById("messages");
+  let messages = JSON.parse(localStorage.getItem("privateChat") || "[]");
+  messagesDiv.innerHTML = messages.map(m => `<b>${m.user}</b> [${m.time}]: ${m.text}`).join("<br>");
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
+}
+
+// Autologin si ya hay usuario guardado
+const savedUser = localStorage.getItem("chatUser");
+if (savedUser && allowedUsers.includes(savedUser)) {
+  currentUser = savedUser;
+  document.getElementById("login").style.display = "none";
+  document.getElementById("chat").style.display = "block";
+  loadMessages();
+}
 </script>
+
 </body>
 </html>
