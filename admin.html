@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Panel de Administración - Chat Privado Integrado</title>
+<title>Admin - Panel</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
 body { font-family: Arial, sans-serif; background:#111; color:#eee; padding:20px; }
@@ -11,73 +11,78 @@ table { width:100%; border-collapse: collapse; margin-top:10px; }
 th,td { padding:8px; border:1px solid #333; text-align:left; }
 button { padding:6px 10px; margin:2px; border-radius:6px; cursor:pointer; }
 .danger { background:#c82333; color:white; border:none; }
+.ban { background:#555; color:white; border:none; }
 .ok { background:#28a745; color:white; border:none; }
 .small { padding:4px 6px; font-size:13px; }
 #controls { margin-bottom:10px; display:flex; gap:8px; align-items:center; }
-input[type="number"], input[type="text"]{ width:120px; padding:6px; }
-#messages {
-  border:1px solid #333;
-  height:250px;
-  overflow-y:auto;
-  padding:10px;
-  background:#1a1a1a;
-  color:#fff;
-  border-radius:8px;
-}
-#messageInput {
-  flex:1;
-  padding:6px;
-  border-radius:6px;
-  border:1px solid #444;
-  background:#222;
-  color:#eee;
-}
+input[type="number"]{ width:120px; padding:6px; }
+#chatContainer { margin-top:20px; border:1px solid #333; padding:10px; border-radius:10px; background:#1b1b1b; }
+#chatMessages { height:200px; overflow-y:auto; border:1px solid #333; padding:10px; margin-bottom:10px; background:#000; }
+.chatMsg { margin:5px 0; }
+.chatMsg span { color:#0f0; }
 </style>
 </head>
 <body>
 <button class="home-btn" onclick="window.location.href='h.html'">🏠 Volver a la Página Principal</button>
-<h1>Zona de administración</h1>
+<h1>Zona de Administración</h1>
 <div id="status">Comprobando usuario...</div>
-
 <div id="adminArea" style="display:none;">
 
-  <!-- CHAT PRIVADO -->
-  <h2>💬 Chat Privado de Administradores</h2>
-  <div id="adminChat" style="display:none; margin-bottom:30px;">
-    <div id="messages"></div>
-    <div style="display:flex; gap:5px; margin-top:10px;">
-      <input type="text" id="messageInput" placeholder="Escribe un mensaje...">
-      <button id="sendBtn">Enviar</button>
-    </div>
-  </div>
+<!-- 🔒 CHAT PRIVADO ADMIN -->
+<h2>💬 Chat Privado Admin</h2>
+<div id="chatContainer">
+  <div id="chatMessages"></div>
+  <input id="chatInput" placeholder="Escribe un mensaje..." style="width:80%">
+  <button id="sendBtn">Enviar</button>
+</div>
 
-  <!-- USUARIOS -->
-  <h2>Gestión de Usuarios</h2>
-  <div id="controls">
-    <button id="refreshBtn">🔄 Actualizar lista</button>
-    <input id="searchInput" placeholder="Buscar por nombre" />
-    <button id="searchBtn">🔎</button>
-  </div>
-  <table id="usersTable">
-    <thead>
-      <tr><th>Id</th><th>Usuario</th><th>Pekepuntos</th><th>Banned</th><th>Acciones</th></tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+<!-- 👥 USUARIOS -->
+<h2>Gestión de Usuarios</h2>
+<div id="controls">
+  <button id="refreshBtn">🔄 Actualizar lista</button>
+  <input id="searchInput" placeholder="Buscar por nombre" />
+  <button id="searchBtn">🔎</button>
+</div>
+<table id="usersTable">
+<thead>
+<tr>
+<th>Id</th>
+<th>Usuario</th>
+<th>Pekepuntos</th>
+<th>Banned</th>
+<th>Acciones</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
 
-  <!-- BLOGS -->
-  <h2>Gestión de Blogs</h2>
-  <table id="blogsTable">
-    <thead><tr><th>Id</th><th>Título</th><th>Autor</th><th>Acciones</th></tr></thead>
-    <tbody></tbody>
-  </table>
+<!-- 📰 BLOGS -->
+<h2>Gestión de Blogs</h2>
+<table id="blogsTable">
+<thead>
+<tr>
+<th>Id</th>
+<th>Título</th>
+<th>Autor</th>
+<th>Acciones</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
 
-  <!-- CHATS -->
-  <h2>Gestión de Chats</h2>
-  <table id="chatsTable">
-    <thead><tr><th>Id</th><th>Usuario</th><th>Mensaje</th><th>Acciones</th></tr></thead>
-    <tbody></tbody>
-  </table>
+<!-- 💭 CHATS -->
+<h2>Gestión de Chats</h2>
+<table id="chatsTable">
+<thead>
+<tr>
+<th>Id</th>
+<th>Usuario</th>
+<th>Mensaje</th>
+<th>Acciones</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
 
 </div>
 
@@ -89,130 +94,196 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let currentUser = null;
 
-// ================== CONFIGURACIÓN ==================
-const allowedAdmins = ["Peketruli", "SabinoArana"];
+// ------------------ FUNCIONES AUXILIARES ------------------
+function escapeHtml(s){
+  return (s||'').replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+}
 
-// ================== INICIO ==================
+// ------------------ ADMIN CHECK ------------------
+function isAdmin(user){
+  const allowedAdmins = ["Peketruli","SabinoArana","Alphakiller","Kenshi","Yami"];
+  return user && allowedAdmins.includes(user.username);
+}
+
+// ------------------ INICIO ------------------
 async function init(){
   const status = document.getElementById('status');
-  status.textContent = "Verificando usuario...";
-
+  status.textContent = "Comprobando usuario...";
   try {
     currentUser = JSON.parse(localStorage.getItem("currentUser"));
-  } catch {
-    status.textContent = "Error al leer usuario del localStorage.";
-    return;
-  }
+  } catch(e){ status.textContent = "Error leyendo localStorage."; return; }
 
-  if(!currentUser){
-    status.textContent = "No hay sesión activa.";
-    return;
-  }
+  if(!currentUser){ status.textContent = "⚠️ No estás logueado."; return; }
+  if(!isAdmin(currentUser)){ status.textContent = "❌ Acceso denegado."; return; }
 
-  if(!allowedAdmins.includes(currentUser.username)){
-    status.textContent = `Acceso denegado. Usuario "${currentUser.username}" no autorizado.`;
-    return;
-  }
-
-  // Usuario verificado
-  status.textContent = `✅ Bienvenido, ${currentUser.username}`;
+  status.textContent = `✅ Bienvenido ${currentUser.username} (admin)`;
   document.getElementById('adminArea').style.display = 'block';
-  document.getElementById('adminChat').style.display = 'block';
 
-  // Inicializar todo
-  await loadMessages();
-  subscribeMessages();
-  document.getElementById('sendBtn').addEventListener('click', sendMessage);
-
-  await loadUsers();
-  await loadBlogs();
-  await loadChats();
+  await Promise.all([loadUsers(), loadBlogs(), loadChats()]);
+  await loadPrivateChat();
 }
 
-// ================== CHAT PRIVADO ==================
-async function loadMessages(){
-  const { data, error } = await supabase
-    .from("mensajes")
-    .select("*")
-    .order("created_at", { ascending: true });
-
-  const messagesDiv = document.getElementById("messages");
-  if(error){
-    messagesDiv.innerHTML = `<p style="color:red;">Error cargando mensajes: ${error.message}</p>`;
-    return;
-  }
-  messagesDiv.innerHTML = data.map(m => `<b>${m.username}</b>: ${m.text}`).join("<br>");
-  messagesDiv.scrollTop = messagesDiv.scrollHeight;
-}
-
-async function sendMessage(){
-  const input = document.getElementById("messageInput");
-  const text = input.value.trim();
-  if(!text) return;
-  await supabase.from("mensajes").insert([{ username: currentUser.username, text }]);
-  input.value = "";
-}
-
-function subscribeMessages(){
-  supabase
-    .channel('realtime:mensajes')
-    .on('postgres_changes', { event:'INSERT', schema:'public', table:'mensajes' }, payload=>{
-      const messagesDiv = document.getElementById("messages");
-      messagesDiv.innerHTML += `<br><b>${payload.new.username}</b>: ${payload.new.text}`;
-      messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    })
-    .subscribe();
-}
-
-// ================== ADMIN TOOLS ==================
+// ------------------ GESTIÓN DE USUARIOS ------------------
 async function loadUsers(filter=""){
   const tbody = document.querySelector('#usersTable tbody');
   tbody.innerHTML = 'Cargando...';
-  const { data, error } = await supabase.from('usuarios').select('id,username,pekepuntos,banned').limit(500);
-  if(error){ tbody.innerHTML = `<tr><td colspan="5">Error: ${error.message}</td></tr>`; return; }
-  let result = data || [];
-  if(filter){ result = result.filter(u => (u.username||'').toLowerCase().includes(filter.toLowerCase())); }
-  renderUsers(result);
+  const { data, error } = await supabase.from('usuarios').select('id,username,pekepuntos,banned').order('created_at',{ascending:true});
+  if(error){ tbody.innerHTML = `<tr><td colspan="6">Error: ${error.message}</td></tr>`; return; }
+  let users = data || [];
+  if(filter){ users = users.filter(u => (u.username||'').toLowerCase().includes(filter.toLowerCase())); }
+  renderUsers(users);
 }
 
 function renderUsers(users){
   const tbody = document.querySelector('#usersTable tbody');
   tbody.innerHTML = '';
-  if(!users.length){ tbody.innerHTML = '<tr><td colspan="5">No hay usuarios</td></tr>'; return; }
+  if(!users.length){ tbody.innerHTML = '<tr><td colspan="6">No hay usuarios</td></tr>'; return; }
   users.forEach(u=>{
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${u.id}</td>
-      <td>${u.username}</td>
+      <td style="font-size:12px">${u.id}</td>
+      <td>${escapeHtml(u.username||'')}</td>
       <td>${u.pekepuntos ?? 0}</td>
       <td>${u.banned ? 'Sí' : 'No'}</td>
-      <td><button class="small danger">Borrar</button></td>
+      <td>
+        <button class="small ok addBtn">+Puntos</button>
+        <button class="small removeBtn">-Puntos</button>
+        <button class="small banBtn">${u.banned ? 'Desbanear' : 'Banear'}</button>
+        <button class="small danger deleteBtn">Borrar</button>
+      </td>
     `;
     tbody.appendChild(tr);
+    tr.querySelector('.addBtn').addEventListener('click', ()=>promptAdd(u.id,u.username));
+    tr.querySelector('.removeBtn').addEventListener('click', ()=>promptRemove(u.id,u.username));
+    tr.querySelector('.banBtn').addEventListener('click', ()=>toggleBan(u.id,u.username,u.banned));
+    tr.querySelector('.deleteBtn').addEventListener('click', ()=>deleteUser(u.id,u.username));
   });
 }
 
+async function promptAdd(id, username){
+  const val = parseInt(prompt("¿Cuántos Pekepuntos añadir?"));
+  if(isNaN(val)||val<=0) return alert("Cantidad inválida");
+  await changePoints(id,val,username);
+}
+
+async function promptRemove(id, username){
+  const val = parseInt(prompt("¿Cuántos Pekepuntos quitar?"));
+  if(isNaN(val)||val<=0) return alert("Cantidad inválida");
+  await changePoints(id,-val,username);
+}
+
+async function changePoints(id,delta,username){
+  const { data, error } = await supabase.from('usuarios').select('pekepuntos').eq('id',id).single();
+  if(error) return alert("Error leyendo usuario: "+error.message);
+  const current = Number(data.pekepuntos||0);
+  const newVal = Math.max(0,current+delta);
+  const { error:err2 } = await supabase.from('usuarios').update({pekepuntos:newVal}).eq('id',id);
+  if(err2) return alert("Error actualizando: "+err2.message);
+  alert(`Pekepuntos de ${username} actualizados a ${newVal}`);
+  await loadUsers();
+}
+
+async function toggleBan(id,username,banned){
+  const { error } = await supabase.from('usuarios').update({banned:!banned}).eq('id',id);
+  if(error) return alert("Error: "+error.message);
+  alert(banned ? "Usuario desbaneado" : "Usuario baneado");
+  await loadUsers();
+}
+
+async function deleteUser(id,username){
+  if(!confirm(`¿Borrar usuario ${username}?`)) return;
+  const { error } = await supabase.from('usuarios').delete().eq('id',id);
+  if(error) return alert("Error borrando: "+error.message);
+  alert("Usuario borrado");
+  await loadUsers();
+}
+
+// ------------------ BLOGS ------------------
 async function loadBlogs(){
   const tbody = document.querySelector('#blogsTable tbody');
-  const { data, error } = await supabase.from('blog').select('id,title,author').limit(500);
+  tbody.innerHTML = 'Cargando...';
+  const { data, error } = await supabase.from('blog').select('id,title,author');
   if(error){ tbody.innerHTML = `<tr><td colspan="4">Error: ${error.message}</td></tr>`; return; }
-  tbody.innerHTML = data.map(b => `<tr><td>${b.id}</td><td>${b.title}</td><td>${b.author}</td><td><button class='small danger'>Borrar</button></td></tr>`).join('');
+  tbody.innerHTML = '';
+  (data||[]).forEach(b=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${b.id}</td>
+      <td>${escapeHtml(b.title||'')}</td>
+      <td>${escapeHtml(b.author||'')}</td>
+      <td><button class="small danger deleteBlogBtn">Borrar</button></td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelector('.deleteBlogBtn').addEventListener('click',()=>deleteBlog(b.id,b.title));
+  });
 }
 
+async function deleteBlog(id,titulo){
+  if(!confirm(`¿Borrar el blog "${titulo}"?`)) return;
+  const { error } = await supabase.from('blog').delete().eq('id',id);
+  if(error) return alert("Error: "+error.message);
+  alert("Blog borrado");
+  await loadBlogs();
+}
+
+// ------------------ CHATS ------------------
 async function loadChats(){
   const tbody = document.querySelector('#chatsTable tbody');
-  const { data, error } = await supabase.from('chats').select('id,nombre,creador').limit(500);
+  tbody.innerHTML = 'Cargando...';
+  const { data, error } = await supabase.from('chats').select('id,nombre,creador');
   if(error){ tbody.innerHTML = `<tr><td colspan="4">Error: ${error.message}</td></tr>`; return; }
-  tbody.innerHTML = data.map(c => `<tr><td>${c.id}</td><td>${c.nombre}</td><td>${c.creador}</td><td><button class='small danger'>Borrar</button></td></tr>`).join('');
+  tbody.innerHTML = '';
+  (data||[]).forEach(c=>{
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${c.id}</td>
+      <td>${escapeHtml(c.nombre||'')}</td>
+      <td>${escapeHtml(c.creador||'')}</td>
+      <td><button class="small danger deleteChatBtn">Borrar</button></td>
+    `;
+    tbody.appendChild(tr);
+    tr.querySelector('.deleteChatBtn').addEventListener('click',()=>deleteChat(c.id,c.creador));
+  });
 }
 
-// ================== EVENTOS ==================
-document.getElementById('searchBtn').addEventListener('click', ()=> {
-  const q = document.getElementById('searchInput').value || '';
-  loadUsers(q);
-});
-document.getElementById('refreshBtn').addEventListener('click', ()=> loadUsers());
+async function deleteChat(id,creador){
+  if(!confirm(`¿Borrar mensaje de ${creador}?`)) return;
+  const { error } = await supabase.from('chats').delete().eq('id',id);
+  if(error) return alert("Error: "+error.message);
+  alert("Mensaje borrado");
+  await loadChats();
+}
 
+// ------------------ CHAT PRIVADO ------------------
+async function loadPrivateChat(){
+  const { data, error } = await supabase.from('private_chat').select('user,text,created_at').order('created_at',{ascending:true});
+  const chatBox = document.getElementById('chatMessages');
+  chatBox.innerHTML = '';
+  if(error){ chatBox.innerHTML = 'Error cargando mensajes.'; return; }
+  (data||[]).forEach(msg=>{
+    const div = document.createElement('div');
+    div.className = 'chatMsg';
+    div.innerHTML = `<span>${escapeHtml(msg.user)}:</span> ${escapeHtml(msg.text)}`;
+    chatBox.appendChild(div);
+  });
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+async function sendMessage(){
+  const input = document.getElementById('chatInput');
+  const text = input.value.trim();
+  if(!text) return;
+  const { error } = await supabase.from('private_chat').insert([{user:currentUser.username,text}]);
+  if(error){ alert("Error enviando mensaje: "+error.message); return; }
+  input.value = '';
+  await loadPrivateChat();
+}
+
+document.getElementById('sendBtn').addEventListener('click',sendMessage);
+document.getElementById('searchBtn').addEventListener('click',()=>loadUsers(document.getElementById('searchInput').value||''));
+document.getElementById('refreshBtn').addEventListener('click',()=>loadUsers());
+
+// Inicializar
 init();
 </script>
 </body>
