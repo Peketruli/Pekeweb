@@ -79,9 +79,9 @@
   </div>
 
 <script>
-// Basic three.js casino environment with interactions
+// --- CASINO 3D COMPLETO ---
 let scene, camera, renderer, controls;
-let objects = []; // interactive objects with metadata
+let objects = [];
 let move = {forward:false,back:false,left:false,right:false,run:false};
 let velocity = new THREE.Vector3();
 let canJump = false;
@@ -100,280 +100,215 @@ function init(){
   scene.background = new THREE.Color(0x222233);
 
   camera = new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,1000);
-  camera.position.set(0, playerHeight, 0);
+  camera.position.set(0, playerHeight, 6);
 
   renderer = new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(window.innerWidth, window.innerHeight);
   container.appendChild(renderer.domElement);
 
-  // Lights
-  const hemi = new THREE.HemisphereLight(0xffffff,0x444444,0.6);
-  hemi.position.set(0,50,0); scene.add(hemi);
-  const dir = new THREE.DirectionalLight(0xffffff,0.6); dir.position.set(-10,20,10); scene.add(dir);
+  const hemi = new THREE.HemisphereLight(0xffffff,0x444444,1.0);
+  hemi.position.set(0,50,0);
+  scene.add(hemi);
 
-  // Floor
+  const dir = new THREE.DirectionalLight(0xffffff,1.2);
+  dir.position.set(-10,20,10);
+  scene.add(dir);
+
   const floorGeo = new THREE.PlaneGeometry(60,60);
-  const floorMat = new THREE.MeshStandardMaterial({color:0x444455});
-  const floor = new THREE.Mesh(floorGeo,floorMat); floor.rotation.x = -Math.PI/2; scene.add(floor);
+  const floorMat = new THREE.MeshStandardMaterial({color:0x555566});
+  const floor = new THREE.Mesh(floorGeo,floorMat);
+  floor.rotation.x = -Math.PI/2;
+  scene.add(floor);
 
-  // Corridor and room
   buildCorridorAndRoom();
 
-  // Add interactive casino objects
-  addBlackjackTable(new THREE.Vector3(0,0, -6));
+  addBlackjackTable(new THREE.Vector3(0,0,-6));
   addRoulette(new THREE.Vector3(6,0,-6));
   addSlots(new THREE.Vector3(-6,0,-6));
+  addDoor(new THREE.Vector3(0,0,10));
 
-  // Door behind spawn leading to h.html
-  addDoor(new THREE.Vector3(0,0,6));
-
-  // Pointer lock controls
   controls = new THREE.PointerLockControls(camera, document.body);
   document.addEventListener('click', ()=>{ controls.lock(); }, false);
 
-  controls.addEventListener('lock', ()=>{ document.getElementById('crosshair').style.display='block'; document.body.style.cursor='none'; });
-  controls.addEventListener('unlock', ()=>{ document.getElementById('crosshair').style.display='none'; document.body.style.cursor='auto'; });
-
   scene.add(controls.getObject());
+  controls.getObject().position.set(0, playerHeight, 6);
+  controls.getObject().lookAt(0, playerHeight, 0);
 
-  // Movement keys
-  const onKeyDown = function (event) {
-    switch(event.code){
-      case 'ArrowUp': case 'KeyW': move.forward=true; break;
-      case 'ArrowLeft': case 'KeyA': move.left=true; break;
-      case 'ArrowDown': case 'KeyS': move.back=true; break;
-      case 'ArrowRight': case 'KeyD': move.right=true; break;
-      case 'ShiftLeft': case 'ShiftRight': move.run=true; break;
-      case 'Space': if(canJump){ velocity.y += 6; canJump=false; } break;
+  const onKeyDown = e => {
+    switch(e.code){
+      case 'KeyW': move.forward=true; break;
+      case 'KeyA': move.left=true; break;
+      case 'KeyS': move.back=true; break;
+      case 'KeyD': move.right=true; break;
+      case 'ShiftLeft': move.run=true; break;
+      case 'Space': if(canJump){velocity.y+=6;canJump=false;} break;
       case 'KeyE': tryInteract(); break;
     }
   };
-  const onKeyUp = function(event){
-    switch(event.code){
-      case 'ArrowUp': case 'KeyW': move.forward=false; break;
-      case 'ArrowLeft': case 'KeyA': move.left=false; break;
-      case 'ArrowDown': case 'KeyS': move.back=false; break;
-      case 'ArrowRight': case 'KeyD': move.right=false; break;
-      case 'ShiftLeft': case 'ShiftRight': move.run=false; break;
+  const onKeyUp = e => {
+    switch(e.code){
+      case 'KeyW': move.forward=false; break;
+      case 'KeyA': move.left=false; break;
+      case 'KeyS': move.back=false; break;
+      case 'KeyD': move.right=false; break;
+      case 'ShiftLeft': move.run=false; break;
     }
   };
   document.addEventListener('keydown',onKeyDown);
   document.addEventListener('keyup',onKeyUp);
 
-  // Resize
-  window.addEventListener('resize', ()=>{ camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth,window.innerHeight); });
+  window.addEventListener('resize', ()=>{
+    camera.aspect = window.innerWidth/window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
 
-  // Raycaster for interaction
-  window.raycaster = new THREE.Raycaster();
-
-  // Minimap
   setupMiniMap();
 }
 
 function buildCorridorAndRoom(){
-  // Corridor: a rectangular box with walls
+  const wallMat = new THREE.MeshStandardMaterial({color:0x888899});
+  const corridorWidth = 4;
   const corridorLength = 12;
   const corridorHeight = 3;
-  const corridorWidth = 4;
 
-  // Floor is already global. Build walls using boxes
-  const wallMat = new THREE.MeshStandardMaterial({color:0x666677});
   const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.2,corridorHeight,corridorLength),wallMat);
-  leftWall.position.set(-corridorWidth/2, corridorHeight/2, 0); scene.add(leftWall);
-  const rightWall = leftWall.clone(); rightWall.position.set(corridorWidth/2, corridorHeight/2, 0); scene.add(rightWall);
-  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(corridorWidth,0.2,corridorLength), wallMat);
-  ceiling.position.set(0,corridorHeight,0); scene.add(ceiling);
+  leftWall.position.set(-corridorWidth/2,corridorHeight/2,6);
+  scene.add(leftWall);
 
-  // Room at far end
-  const room = new THREE.Mesh(new THREE.BoxGeometry(12,0.2,12), new THREE.MeshStandardMaterial({color:0x333344}));
-  room.position.set(0,0, -6); // floor already
-  // Add simple pillars/support for roulette (visual)
+  const rightWall = leftWall.clone();
+  rightWall.position.set(corridorWidth/2,corridorHeight/2,6);
+  scene.add(rightWall);
 
-  // Spawn player at corridor start looking toward room
-  controls?.getObject?.().position.set(0, playerHeight, 6-0.5); // spawn just in front of door
-  camera.position.set(0,playerHeight,6-0.5);
+  const ceiling = new THREE.Mesh(new THREE.BoxGeometry(corridorWidth,0.2,corridorLength),wallMat);
+  ceiling.position.set(0,corridorHeight,6);
+  scene.add(ceiling);
+
+  const roomFloor = new THREE.Mesh(new THREE.BoxGeometry(12,0.1,12), new THREE.MeshStandardMaterial({color:0x333344}));
+  roomFloor.position.set(0,0,-6);
+  scene.add(roomFloor);
 }
 
 function addBlackjackTable(pos){
   const table = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.4,24), new THREE.MeshStandardMaterial({color:0x003300}));
-  table.position.copy(pos); table.position.y = 0.2; scene.add(table);
-  const tag = { type:'blackjack', obj:table, pos:pos, range:2.0 };
-  objects.push(tag);
+  table.position.copy(pos); table.position.y=0.2; scene.add(table);
+  objects.push({type:'blackjack',pos:pos,range:2});
 }
 
 function addRoulette(pos){
   const base = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.6,32), new THREE.MeshStandardMaterial({color:0x552200}));
-  base.position.copy(pos); base.position.y = 0.3; scene.add(base);
+  base.position.copy(pos); base.position.y=0.3; scene.add(base);
   const wheel = new THREE.Mesh(new THREE.CylinderGeometry(1.3,1.3,0.1,36), new THREE.MeshStandardMaterial({color:0x222222}));
-  wheel.position.copy(pos); wheel.position.y = 0.7; wheel.rotation.x = Math.PI/2; scene.add(wheel);
-  // simple indicator
-  const indicator = new THREE.Mesh(new THREE.BoxGeometry(0.1,0.1,0.6), new THREE.MeshStandardMaterial({color:0xff0000})); indicator.position.set(pos.x,1.2,pos.z+0.8); scene.add(indicator);
-  objects.push({type:'roulette', obj:base, pos:pos, range:2.2});
+  wheel.position.copy(pos); wheel.position.y=0.7; wheel.rotation.x=Math.PI/2; scene.add(wheel);
+  objects.push({type:'roulette',pos:pos,range:2.2});
 }
 
 function addSlots(pos){
   const body = new THREE.Mesh(new THREE.BoxGeometry(1,1.6,0.6), new THREE.MeshStandardMaterial({color:0x880033}));
-  body.position.copy(pos); body.position.y = 0.8; scene.add(body);
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.6,0.4), new THREE.MeshStandardMaterial({color:0xffffcc}));
-  screen.position.set(pos.x,1.1,pos.z+0.35); scene.add(screen);
-  objects.push({type:'slots', obj:body, pos:pos, range:2.0 });
+  body.position.copy(pos); body.position.y=0.8; scene.add(body);
+  objects.push({type:'slots',pos:pos,range:2});
 }
 
 function addDoor(pos){
   const door = new THREE.Mesh(new THREE.BoxGeometry(1.6,2.2,0.1), new THREE.MeshStandardMaterial({color:0x4444aa}));
-  door.position.copy(pos); door.position.y = 1.1; scene.add(door);
-  objects.push({type:'door', obj:door, pos:pos, range:2.0});
+  door.position.copy(pos); door.position.y=1.1; scene.add(door);
+  objects.push({type:'door',pos:pos,range:2});
 }
 
 function tryInteract(){
-  // check nearest interactive object within range
   const origin = controls.getObject().position;
-  let nearest = null; let nd = Infinity;
-  for(const it of objects){
-    const d = it.pos.distanceTo(origin);
-    if(d < it.range && d < nd){ nearest = it; nd = d; }
+  let nearest=null; let nd=Infinity;
+  for(const o of objects){
+    const d=o.pos.distanceTo(origin);
+    if(d<o.range && d<nd){nearest=o;nd=d;}
   }
-  if(nearest){
-    openInteraction(nearest.type);
-  }
-}
-
-function openInteraction(type){
-  if(type==='blackjack') showModal('blackjack');
-  if(type==='roulette') showModal('roulette');
-  if(type==='slots') showModal('slots');
-  if(type==='door'){
-    // animate door open then goto h.html
-    window.location.href = 'h.html';
+  if(!nearest)return;
+  switch(nearest.type){
+    case 'blackjack': showModal('blackjack'); break;
+    case 'roulette': showModal('roulette'); break;
+    case 'slots': showModal('slots'); break;
+    case 'door': window.location.href='h.html'; break;
   }
 }
 
-// UI helpers
-function showModal(id){ document.getElementById(id).style.display='block'; controls.unlock && controls.unlock(); document.body.style.cursor='auto'; }
-function closeModal(id){ document.getElementById(id).style.display='none'; }
+function showModal(id){document.getElementById(id).style.display='block';controls.unlock();document.body.style.cursor='auto';}
+function closeModal(id){document.getElementById(id).style.display='none';}
 
-// Blackjack logic (very simplified)
-document.getElementById('bjPlay').addEventListener('click', ()=>{
-  const bet = Number(document.getElementById('bjBet').value)||1;
-  if(bet>pekepoints){ document.getElementById('bjResult').textContent='No tienes suficientes pekepoints.'; return; }
-  // Simplified: player and dealer random 1-21 (no real rules)
-  const player = Math.floor(Math.random()*11)+11; // 11-21
-  const dealer = Math.floor(Math.random()*11)+11;
-  let result='Empate';
-  if(player>21) result='Has perdido';
-  else if(player>dealer) { result='Has ganado'; pekepoints += bet; }
-  else if(player<dealer) { result='Has perdido'; pekepoints -= bet; }
-  else { result='Empate'; }
-  document.getElementById('bjResult').textContent = `Tu: ${player} — Crupier: ${dealer} — ${result}`;
+// Blackjack
+bjPlay.onclick=()=>{
+  const bet=+bjBet.value||1;
+  if(bet>pekepoints){bjResult.textContent='No tienes puntos.';return;}
+  const p=Math.floor(Math.random()*11)+11;
+  const d=Math.floor(Math.random()*11)+11;
+  let res='Empate';
+  if(p>21)res='Pierdes'; else if(p>d){res='Ganas';pekepoints+=bet;} else if(p<d){res='Pierdes';pekepoints-=bet;}
+  bjResult.textContent=`Tú:${p} Crupier:${d} ${res}`;
   updatePP();
-});
-document.getElementById('bjClose').addEventListener('click', ()=> closeModal('blackjack'));
+};
+bjClose.onclick=()=>closeModal('blackjack');
 
-// Roulette logic
-document.getElementById('rPlay').addEventListener('click', ()=>{
-  const num = Number(document.getElementById('rNum').value)||0;
-  const bet = Number(document.getElementById('rBet').value)||1;
-  if(bet>pekepoints){ document.getElementById('rResult').textContent='Dinero insuficiente'; return; }
-  const outcome = Math.floor(Math.random()*37);
-  let text = `Sale ${outcome}. `;
-  if(outcome===num){ pekepoints += bet*35; text += '¡Has ganado el pleno!'; }
-  else { pekepoints -= bet; text += 'Has perdido.'; }
-  document.getElementById('rResult').textContent = text;
-  updatePP();
-});
-document.getElementById('rClose').addEventListener('click', ()=> closeModal('roulette'));
+// Ruleta
+rPlay.onclick=()=>{
+  const n=+rNum.value||0;const bet=+rBet.value||1;
+  if(bet>pekepoints){rResult.textContent='Sin puntos';return;}
+  const out=Math.floor(Math.random()*37);
+  let t=`Sale ${out}. `;
+  if(out===n){pekepoints+=bet*35;t+='Ganaste!';}else{pekepoints-=bet;t+='Perdiste.';}
+  rResult.textContent=t;updatePP();
+};
+rClose.onclick=()=>closeModal('roulette');
 
-// Slots logic
-document.getElementById('sPlay').addEventListener('click', ()=>{
-  const bet = Number(document.getElementById('sBet').value)||1;
-  if(bet>pekepoints){ document.getElementById('sResult').textContent='Dinero insuficiente'; return; }
-  const symbols = ['🍒','🔔','⭐','7'];
-  const a = symbols[Math.floor(Math.random()*symbols.length)];
-  const b = symbols[Math.floor(Math.random()*symbols.length)];
-  const c = symbols[Math.floor(Math.random()*symbols.length)];
-  const res = `${a} ${b} ${c}`;
-  let text = res + '. ';
-  if(a===b && b===c){ pekepoints += bet*10; text += 'Gran premio!'; }
-  else if(a===b || b===c || a===c){ pekepoints += bet*2; text += 'Pequeña victoria'; }
-  else { pekepoints -= bet; text += 'Perdiste'; }
-  document.getElementById('sResult').textContent = text;
-  updatePP();
-});
-document.getElementById('sClose').addEventListener('click', ()=> closeModal('slots'));
+// Slots
+sPlay.onclick=()=>{
+  const bet=+sBet.value||1;
+  if(bet>pekepoints){sResult.textContent='Sin puntos';return;}
+  const sym=['🍒','🔔','⭐','7'];
+  const a=sym[Math.random()*sym.length|0];
+  const b=sym[Math.random()*sym.length|0];
+  const c=sym[Math.random()*sym.length|0];
+  let t=`${a} ${b} ${c} `;
+  if(a===b&&b===c){pekepoints+=bet*10;t+='Gran premio!';}
+  else if(a===b||b===c||a===c){pekepoints+=bet*2;t+='Pequeña victoria';}
+  else{pekepoints-=bet;t+='Perdiste';}
+  sResult.textContent=t;updatePP();
+};
+sClose.onclick=()=>closeModal('slots');
 
-function updatePP(){ ppValue.textContent = pekepoints; }
+function updatePP(){ppValue.textContent=pekepoints;}
 
-// Animation loop and physics
 function animate(){
   requestAnimationFrame(animate);
-  const time = performance.now();
-  const delta = (time - prevTime) / 1000;
-
-  // simple gravity and movement when pointer locked
-  if(controls.isLocked === true){
-    const speed = move.run ? 10 : 4.0;
-    velocity.x -= velocity.x * 10.0 * delta;
-    velocity.z -= velocity.z * 10.0 * delta;
-    velocity.y -= 9.8 * 5.0 * delta; // gravity
-
-    if(move.forward) velocity.z -= speed * delta;
-    if(move.back) velocity.z += speed * delta;
-    if(move.left) velocity.x -= speed * delta;
-    if(move.right) velocity.x += speed * delta;
-
-    // update position
+  const time=performance.now();
+  const delta=(time-prevTime)/1000;
+  if(controls.isLocked===true){
+    const speed=move.run?10:4;
+    velocity.x-=velocity.x*10*delta;
+    velocity.z-=velocity.z*10*delta;
+    velocity.y-=9.8*5*delta;
+    if(move.forward)velocity.z-=speed*delta;
+    if(move.back)velocity.z+=speed*delta;
+    if(move.left)velocity.x-=speed*delta;
+    if(move.right)velocity.x+=speed*delta;
     controls.getObject().translateX(velocity.x);
-    controls.getObject().translateY(velocity.y * delta);
+    controls.getObject().translateY(velocity.y*delta);
     controls.getObject().translateZ(velocity.z);
-
-    // simple floor collision
-    if(controls.getObject().position.y < playerHeight){ velocity.y = 0; controls.getObject().position.y = playerHeight; canJump = true; }
+    if(controls.getObject().position.y<playerHeight){velocity.y=0;controls.getObject().position.y=playerHeight;canJump=true;}
   }
-
-  prevTime = time;
-  renderer.render(scene, camera);
+  prevTime=time;
+  renderer.render(scene,camera);
   updateInteractionPrompt();
   drawMiniMap();
 }
 
-// Interaction prompt display
 function updateInteractionPrompt(){
-  const origin = controls.getObject().position;
-  let found=false;
-  for(const it of objects){
-    const d = it.pos.distanceTo(origin);
-    if(d < it.range){ found=true; break; }
-  }
-  const p = document.getElementById('prompt');
-  p.style.display = found ? 'block' : 'none';
+  const origin=controls.getObject().position;let near=false;
+  for(const o of objects){if(o.pos.distanceTo(origin)<o.range){near=true;break;}}
+  document.getElementById('prompt').style.display=near?'block':'none';
 }
 
-// --- MINIMAP ---
-let mapCanvas, mapCtx;
-function setupMiniMap(){ mapCanvas = document.getElementById('mapCanvas'); mapCtx = mapCanvas.getContext('2d'); }
-function drawMiniMap(){
-  if(!mapCtx) return;
-  const w = mapCanvas.width; const h = mapCanvas.height;
-  mapCtx.fillStyle = '#0b0b0b'; mapCtx.fillRect(0,0,w,h);
-  // transform world coords to map coords (center)
-  const scale = 6; // world units -> pixels
-  const cx = w/2; const cy = h/2;
-  // draw room boundaries
-  mapCtx.strokeStyle = '#666'; mapCtx.lineWidth=2;
-  mapCtx.strokeRect(cx-60, cy-60, 120, 120);
-  // draw objects
-  for(const it of objects){
-    const x = cx + it.pos.x * scale;
-    const y = cy + -it.pos.z * scale; // invert z
-    mapCtx.fillStyle = it.type==='blackjack'? '#0f0': it.type==='roulette'?'#ff0': it.type==='slots'?'#f0f':'#fff';
-    mapCtx.beginPath(); mapCtx.arc(x,y,6,0,Math.PI*2); mapCtx.fill();
-  }
-  // draw player
-  const pPos = controls.getObject().position;
-  const px = cx + pPos.x * scale; const py = cy + -pPos.z * scale;
-  mapCtx.fillStyle = '#00f'; mapCtx.beginPath(); mapCtx.arc(px,py,6,0,Math.PI*2); mapCtx.fill();
-}
-
+let mapCanvas,mapCtx;
+function setupMiniMap(){mapCanvas=document.getElementById('mapCanvas');mapCtx=mapCanvas.getContext('2d');}
+function drawMiniMap(){if(!mapCtx)return;const w=mapCanvas.width,h=mapCanvas.height;mapCtx.fillStyle='#0b0b0b';mapCtx.fillRect(0,0,w,h);const scale=6,cx=w/2,cy=h/2;mapCtx.strokeStyle='#666';mapCtx.lineWidth=2;mapCtx.strokeRect(cx-60,cy-60,120,120);for(const o of objects){const x=cx+o.pos.x*scale,y=cy-o.pos.z*scale;mapCtx.fillStyle=o.type==='blackjack'?'#0f0':o.type==='roulette'?'#ff0':o.type==='slots'?'#f0f':'#fff';mapCtx.beginPath();mapCtx.arc(x,y,6,0,Math.PI*2);mapCtx.fill();}const p=controls.getObject().position;const px=cx+p.x*scale,py=cy-p.z*scale;mapCtx.fillStyle='#00f';mapCtx.beginPath();mapCtx.arc(px,py,6,0,Math.PI*2);mapCtx.fill();}
 </script>
 </body>
 </html>
