@@ -19,6 +19,7 @@ body { margin:0; overflow:hidden; background:#111; font-family:Arial, Helvetica,
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xefeae4);
 
+let corridorHeight = 12; // techo más bajo
 const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 200);
 camera.position.set(0, 1.7, -12);
 
@@ -36,11 +37,12 @@ scene.add(sun);
 
 // -------------------- Materiales --------------------
 const carpetMat = new THREE.MeshBasicMaterial({color:0x7d0a0a});
-const wallMatSoft = new THREE.MeshBasicMaterial({ color: 0xccc0b3 }); // gris/beige suave
+const wallMatSoft = new THREE.MeshBasicMaterial({ color: 0xccc0b3 });
 const woodMat = new THREE.MeshBasicMaterial({color:0x5a3719});
 const greenMat = new THREE.MeshBasicMaterial({color:0x0b5b35});
 const redMat = new THREE.MeshBasicMaterial({color:0xb20d0d});
 const blackMat = new THREE.MeshBasicMaterial({color:0x111111});
+const whiteMat = new THREE.MeshBasicMaterial({color:0xffffff});
 
 // -------------------- Función paredes --------------------
 function wall(x,y,z,sx,sy,sz, mat=wallMatSoft){
@@ -52,7 +54,6 @@ function wall(x,y,z,sx,sy,sz, mat=wallMatSoft){
 // -------------------- PASILLO --------------------
 const corridorLength = 20; 
 const corridorWidth = 18;
-const corridorHeight = 14;
 
 // Suelo
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(corridorWidth, corridorLength), carpetMat);
@@ -63,7 +64,7 @@ scene.add(floor);
 // Techo
 const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(corridorWidth, corridorLength), woodMat);
 ceiling.rotation.x = Math.PI/2;
-ceiling.position.y = corridorHeight + 2;
+ceiling.position.y = corridorHeight;
 ceiling.position.z = -corridorLength/2;
 scene.add(ceiling);
 
@@ -96,15 +97,19 @@ scene.add(roomFloor);
 // Techo sala
 const roomCeiling = new THREE.Mesh(new THREE.PlaneGeometry(roomSize, roomSize), woodMat);
 roomCeiling.rotation.x = Math.PI/2;
-roomCeiling.position.y = corridorHeight + 2;
+roomCeiling.position.y = corridorHeight;
 roomCeiling.position.z = roomZ + roomSize/2;
 scene.add(roomCeiling);
 
-// Paredes sala completas
+// Paredes sala completas y pared trasera dividida para el pasillo
 wall(-roomSize/2, corridorHeight/2, roomZ + roomSize/2, 1, corridorHeight, roomSize);
 wall(roomSize/2, corridorHeight/2, roomZ + roomSize/2, 1, corridorHeight, roomSize);
 wall(0, corridorHeight/2, roomZ + roomSize, roomSize, corridorHeight, 1);
-wall(0, corridorHeight/2, roomZ, roomSize, corridorHeight, 1); // pared trasera de la sala
+
+// Pared trasera dividida (a ambos lados del pasillo)
+const gap = corridorWidth/2; // ancho pasillo
+wall(-gap-0.5, corridorHeight/2, roomZ, (roomSize-gap*2)/2, corridorHeight, 1);
+wall(gap+0.5, corridorHeight/2, roomZ, (roomSize-gap*2)/2, corridorHeight, 1);
 
 // -------------------- MESA BLACKJACK --------------------
 const tableGroup = new THREE.Group();
@@ -117,7 +122,7 @@ rim.position.set(6,1.2,roomZ+15);
 tableGroup.add(rim);
 scene.add(tableGroup);
 
-// -------------------- RULETA 3D VISUAL (FIJA) --------------------
+// -------------------- RULETA MEJORADA --------------------
 const wheelGroup = new THREE.Group();
 const stand = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.8,1,16), woodMat);
 stand.position.set(-6,0.75,roomZ+10);
@@ -126,26 +131,29 @@ const base = new THREE.Mesh(new THREE.CylinderGeometry(1.5,1.5,0.2,24), woodMat)
 base.position.set(-6,0.1,roomZ+10);
 wheelGroup.add(base);
 
-// Crear plato de la ruleta (solo visual, no gira)
+// Plato ruleta con textura tipo segmentos rojo/negro con borde blanco
 const wheelRadius = 1.8;
 const wheelSegments = 18;
 const wheelPlate = new THREE.Group();
 for(let i=0;i<wheelSegments;i++){
-  const angle = (i/wheelSegments)*Math.PI*2;
-  const geom = new THREE.CylinderGeometry(wheelRadius, wheelRadius, 0.06, 32, 1, true, angle, Math.PI*2/wheelSegments);
+  const angleStart = (i/wheelSegments)*Math.PI*2;
+  const angleEnd = ((i+1)/wheelSegments)*Math.PI*2;
+  const shape = new THREE.Shape();
+  shape.moveTo(0,0);
+  shape.absarc(0,0,wheelRadius,angleStart,angleEnd,false);
+  const geom = new THREE.ExtrudeGeometry(shape, {depth:0.06, bevelEnabled:false});
   const mat = (i%2===0)? redMat : blackMat;
   const seg = new THREE.Mesh(geom, mat);
-  seg.rotation.x = Math.PI/2;
-  seg.position.y = 1.2;
-  seg.position.x = -6;
-  seg.position.z = roomZ+10;
+  seg.rotation.x = -Math.PI/2;
+  seg.position.set(-6,1.2,roomZ+10);
   wheelPlate.add(seg);
 }
-// Centro y borde
-const rimWheel = new THREE.Mesh(new THREE.TorusGeometry(wheelRadius+0.1,0.1,8,32), woodMat);
-rimWheel.rotation.x = Math.PI/2;
-rimWheel.position.set(-6,1.2,roomZ+10);
-wheelPlate.add(rimWheel);
+// Borde blanco exterior
+const border = new THREE.Mesh(new THREE.TorusGeometry(wheelRadius,0.05,8,64), whiteMat);
+border.rotation.x = Math.PI/2;
+border.position.set(-6,1.23,roomZ+10);
+wheelPlate.add(border);
+// Centro
 const center = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.06,16), woodMat);
 center.position.set(-6,1.23,roomZ+10);
 wheelPlate.add(center);
