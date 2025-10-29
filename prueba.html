@@ -2,36 +2,40 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Casino 3D - Movimiento libre</title>
+<title>Casino 3D - Movimiento FPS corregido</title>
 <style>
   html, body { margin:0; overflow:hidden; background:#000; }
-  canvas { display:block; cursor: none; } /* Ocultamos cursor */
+  canvas { display:block; cursor: none; }
 </style>
 </head>
 <body>
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
 <script>
+// ===== Escena =====
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x223355);
 
-// ===== Cámara =====
+// ===== Cámara y contenedor =====
 const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-camera.position.set(0, 2, 5);
+camera.position.y = 2;
+
+// Contenedor para rotación Y (horizontal)
+const player = new THREE.Object3D();
+player.add(camera);
+scene.add(player);
 
 // ===== Renderizador =====
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// ===== Material rápido =====
+// ===== Material y suelo =====
 const mat = c => new THREE.MeshBasicMaterial({color:c});
-
-// ===== Suelo =====
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), mat(0x888888));
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200), mat(0x888888));
 floor.rotation.x = -Math.PI/2;
 scene.add(floor);
 
-// ===== Algunos objetos =====
+// ===== Cubos de referencia =====
 for(let i=0;i<10;i++){
   const cube = new THREE.Mesh(new THREE.BoxGeometry(2,2,2), mat(0xff5500));
   cube.position.set(Math.random()*40-20,1,Math.random()*40-20);
@@ -40,54 +44,56 @@ for(let i=0;i<10;i++){
 
 // ===== Movimiento =====
 let keys = {};
-document.addEventListener('keydown', e => keys[e.code] = true);
-document.addEventListener('keyup', e => keys[e.code] = false);
-
-let velocity = new THREE.Vector3();
-let canJump = false;
+document.addEventListener('keydown', e=>keys[e.code]=true);
+document.addEventListener('keyup', e=>keys[e.code]=false);
 let speed = 0.15;
-let mouse = { x:0, y:0 };
-let rotation = { x:0, y:0 };
+let canJump = false;
+let velocityY = 0;
 
-// ===== Movimiento de cámara con ratón (sin lock) =====
-document.addEventListener('mousemove', e => {
-  mouse.x = e.movementX || e.mozMovementX || e.webkitMovementX || 0;
-  mouse.y = e.movementY || e.mozMovementY || e.webkitMovementY || 0;
-  rotation.y -= mouse.x * 0.002;
-  rotation.x -= mouse.y * 0.002;
-  rotation.x = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotation.x));
+// ===== Rotación con ratón =====
+let rotX = 0, rotY = 0;
+document.addEventListener('mousemove', e=>{
+  rotY -= e.movementX * 0.002;
+  rotX -= e.movementY * 0.002;
+  rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX)); // limitar arriba/abajo
 });
 
 // ===== Animación =====
 function animate(){
   requestAnimationFrame(animate);
 
-  // Cámara mirando según rotación
-  const dir = new THREE.Vector3();
-  camera.rotation.x = rotation.x;
-  camera.rotation.y = rotation.y;
+  // Horizontal
+  player.rotation.y = rotY;
+  // Vertical
+  camera.rotation.x = rotX;
 
-  // Movimiento
-  const forward = new THREE.Vector3(Math.sin(rotation.y), 0, Math.cos(rotation.y));
-  const right = new THREE.Vector3(Math.cos(rotation.y), 0, -Math.sin(rotation.y));
+  // Dirección movimiento
+  const forward = new THREE.Vector3(Math.sin(rotY),0,Math.cos(rotY));
+  const right = new THREE.Vector3(Math.cos(rotY),0,-Math.sin(rotY));
 
-  if (keys["ShiftLeft"] || keys["ShiftRight"]) speed = 0.3;
-  else speed = 0.15;
+  // Correr
+  speed = (keys["ShiftLeft"]||keys["ShiftRight"])?0.3:0.15;
 
-  if (keys["KeyW"]) camera.position.addScaledVector(forward, -speed);
-  if (keys["KeyS"]) camera.position.addScaledVector(forward, speed);
-  if (keys["KeyA"]) camera.position.addScaledVector(right, -speed);
-  if (keys["KeyD"]) camera.position.addScaledVector(right, speed);
+  if(keys["KeyW"]) player.position.addScaledVector(forward,-speed);
+  if(keys["KeyS"]) player.position.addScaledVector(forward,speed);
+  if(keys["KeyA"]) player.position.addScaledVector(right,-speed);
+  if(keys["KeyD"]) player.position.addScaledVector(right,speed);
 
-  renderer.render(scene, camera);
+  // Saltar + gravedad
+  velocityY -= 0.02; // gravedad simple
+  player.position.y += velocityY;
+  if(player.position.y < 2){ velocityY=0; player.position.y=2; canJump=true; }
+  if(keys["Space"] && canJump){ velocityY=0.3; canJump=false; }
+
+  renderer.render(scene,camera);
 }
 animate();
 
-// ===== Ajuste de ventana =====
+// ===== Ajuste ventana =====
 window.addEventListener('resize', ()=>{
   camera.aspect = innerWidth/innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(innerWidth,innerHeight);
 });
 </script>
 </body>
