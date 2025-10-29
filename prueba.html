@@ -2,40 +2,122 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Test Three.js Modo Seguro</title>
+<title>Casino 3D - Movimiento visible (sin luces)</title>
 <style>
-  html, body { margin:0; background:#000; overflow:hidden; }
+  html, body { margin:0; overflow:hidden; background:#000; }
+  canvas { display:block; }
 </style>
 </head>
 <body>
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.159.0/examples/js/controls/PointerLockControls.js"></script>
 <script>
+// ===== Escena y cámara =====
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x333366);
+scene.background = new THREE.Color(0x223355);
 
-// Cámara fija
-const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 100);
-camera.position.z = 3;
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+camera.position.set(0, 2, 5);
 
-// Renderizador
-const renderer = new THREE.WebGLRenderer({ antialias:true });
+// ===== Renderizador =====
+const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Cubo con color plano (no depende de luces)
-const geometry = new THREE.BoxGeometry();
-const material = new THREE.MeshBasicMaterial({ color: 0x00ffcc });
-const cube = new THREE.Mesh(geometry, material);
+// ===== Material sin luces =====
+const basicMat = color => new THREE.MeshBasicMaterial({ color });
+
+// ===== Suelo =====
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), basicMat(0x888888));
+floor.rotation.x = -Math.PI / 2;
+scene.add(floor);
+
+// ===== Objetos =====
+const cube = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), basicMat(0x00aaff));
+cube.position.set(0, 0.5, 0);
 scene.add(cube);
 
-// Animación
+const sphere = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 16), basicMat(0xffaa00));
+sphere.position.set(3, 0.6, -3);
+scene.add(sphere);
+
+// ===== Controles de cámara =====
+const controls = new THREE.PointerLockControls(camera, document.body);
+scene.add(controls.getObject());
+
+document.body.addEventListener('click', () => {
+  if (!controls.isLocked) controls.lock();
+});
+
+// ===== Movimiento =====
+let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false;
+let canJump=false, shiftPressed=false;
+let velocity = new THREE.Vector3();
+let direction = new THREE.Vector3();
+
+document.addEventListener('keydown', e => {
+  switch(e.code){
+    case 'KeyW': moveForward = true; break;
+    case 'KeyS': moveBackward = true; break;
+    case 'KeyA': moveLeft = true; break;
+    case 'KeyD': moveRight = true; break;
+    case 'Space': if (canJump) { velocity.y += 5; canJump = false; } break;
+    case 'ShiftLeft':
+    case 'ShiftRight': shiftPressed = true; break;
+  }
+});
+document.addEventListener('keyup', e => {
+  switch(e.code){
+    case 'KeyW': moveForward = false; break;
+    case 'KeyS': moveBackward = false; break;
+    case 'KeyA': moveLeft = false; break;
+    case 'KeyD': moveRight = false; break;
+    case 'ShiftLeft':
+    case 'ShiftRight': shiftPressed = false; break;
+  }
+});
+
+// ===== Animación =====
+const clock = new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
-  cube.rotation.x += 0.01;
-  cube.rotation.y += 0.01;
+  const delta = clock.getDelta();
+
+  velocity.x -= velocity.x * 10.0 * delta;
+  velocity.z -= velocity.z * 10.0 * delta;
+  velocity.y -= 9.8 * 5.0 * delta; // gravedad
+
+  direction.z = Number(moveForward) - Number(moveBackward);
+  direction.x = Number(moveRight) - Number(moveLeft);
+  direction.normalize();
+
+  const speed = shiftPressed ? 600.0 : 400.0;
+  if (moveForward || moveBackward) velocity.z -= direction.z * speed * delta;
+  if (moveLeft || moveRight) velocity.x -= direction.x * speed * delta;
+
+  controls.moveRight(-velocity.x * delta);
+  controls.moveForward(-velocity.z * delta);
+  controls.getObject().position.y += (velocity.y * delta);
+
+  if (controls.getObject().position.y < 2){
+    velocity.y = 0;
+    controls.getObject().position.y = 2;
+    canJump = true;
+  }
+
+  cube.rotation.y += 0.02;
+  sphere.rotation.y += 0.01;
+
   renderer.render(scene, camera);
 }
 animate();
+
+// ===== Ajuste de ventana =====
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
 </script>
 </body>
 </html>
