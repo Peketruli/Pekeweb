@@ -1,91 +1,164 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<title>Casino 3D - Movimiento sin ratón</title>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Casino - Pasillo de Entrada</title>
 <style>
-  html, body { margin:0; overflow:hidden; background:#000; }
-  canvas { display:block; width:100vw; height:100vh; }
+  html,body{height:100%;margin:0;overflow:hidden;background:#111;font-family:Arial,Helvetica,sans-serif}
+  canvas{display:block}
+  #prompt{position:fixed;left:50%;bottom:60px;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#fff;padding:10px 14px;border-radius:8px;display:none;z-index:5}
+  #pp{position:fixed;left:12px;top:12px;color:#fff;z-index:5;background:rgba(0,0,0,0.45);padding:8px;border-radius:6px}
+  #hint{position:fixed;right:12px;top:12px;color:#fff;z-index:5;background:rgba(0,0,0,0.45);padding:8px;border-radius:6px}
 </style>
 </head>
 <body>
-<canvas id="gameCanvas"></canvas>
+<div id="pp">Pekepoints: <span id="ppv">1000</span></div>
+<div id="hint">W/S mover • A/D girar • Shift correr • Espacio saltar • Acércate a la puerta y pulsa E</div>
+<div id="prompt">Presiona <b>E</b> para entrar</div>
+<canvas id="c"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
-
 <script>
-const canvas = document.getElementById('gameCanvas');
+// --- Config básica ---
+const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
 renderer.setSize(window.innerWidth, window.innerHeight);
-
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
+scene.background = new THREE.Color(0x333344);
 
-// ===== Cámara =====
-const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-camera.position.set(0, 2, 5);
+// Cámara (player) - cámara se añadirá directamente a escena
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 200);
+camera.position.set(0, 1.6, 2); // spawn en el pasillo, mirando hacia -Z (puerta al -Z)
 scene.add(camera);
 
-// ===== Luz =====
-const light = new THREE.AmbientLight(0xffffff, 1);
-scene.add(light);
+// Materiales "seguros" (MeshBasic para evitar problemas de iluminación en Chromebooks)
+const wallMat = new THREE.MeshBasicMaterial({color:0xefe6d6}); // pared crema
+const floorMat = new THREE.MeshBasicMaterial({color:0x666666}); // suelo gris
+const ceilingMat = new THREE.MeshBasicMaterial({color:0x2b2b2b});
+const doorMat = new THREE.MeshBasicMaterial({color:0x8b5a2b}); // madera
 
-// ===== Suelo =====
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(200,200),
-  new THREE.MeshPhongMaterial({color:0x888888})
-);
+// Pasillo parámetros (en metros / unidades)
+const pasilloLength = 5; // 4-5 metros solicitado
+const pasilloWidth = 2; // anchura normal
+const pasilloHeight = 2.8; // altura
+
+// Suelo
+const floorGeo = new THREE.PlaneGeometry(pasilloWidth + 2, pasilloLength + 2);
+const floor = new THREE.Mesh(floorGeo, floorMat);
 floor.rotation.x = -Math.PI/2;
+floor.position.set(0,0, - (pasilloLength/2) + 1);
 scene.add(floor);
 
-// ===== Cubos =====
-for(let i=-2;i<=2;i++){
-  const cube = new THREE.Mesh(
-    new THREE.BoxGeometry(2,2,2),
-    new THREE.MeshPhongMaterial({color:0xff0000})
-  );
-  cube.position.set(i*4,1,-10);
-  scene.add(cube);
+// Paredes
+const wallThickness = 0.1;
+const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, pasilloHeight, pasilloLength), wallMat);
+leftWall.position.set(-pasilloWidth/2, pasilloHeight/2, -pasilloLength/2);
+scene.add(leftWall);
+const rightWall = leftWall.clone(); rightWall.position.set(pasilloWidth/2, pasilloHeight/2, -pasilloLength/2); scene.add(rightWall);
+// Front and back (small caps to close)
+const backWall = new THREE.Mesh(new THREE.BoxGeometry(pasilloWidth, pasilloHeight, wallThickness), wallMat);
+backWall.position.set(0, pasilloHeight/2, -pasilloLength + 0.01); // atrás, donde está el spawn
+scene.add(backWall);
+
+// Techo
+const ceiling = new THREE.Mesh(new THREE.BoxGeometry(pasilloWidth + 0.2, wallThickness, pasilloLength), ceilingMat);
+ceiling.position.set(0, pasilloHeight - 0.05, -pasilloLength/2);
+scene.add(ceiling);
+
+// Puerta de madera (en el extremo -Z)
+const doorWidth = 1.0;
+const doorHeight = 2.0;
+const door = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, doorHeight, 0.12), doorMat);
+door.position.set(0, doorHeight/2, -pasilloLength - 0.01);
+scene.add(door);
+
+// Marco de la puerta (opcional, del mismo material pero más oscuro)
+const frameMat = new THREE.MeshBasicMaterial({color:0x5c3a21});
+const frameLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorHeight + 0.12, 0.2), frameMat);
+frameLeft.position.set(-doorWidth/2 - 0.06, doorHeight/2 + 0.06, -pasilloLength - 0.06);
+scene.add(frameLeft);
+const frameRight = frameLeft.clone(); frameRight.position.set(doorWidth/2 + 0.06, doorHeight/2 + 0.06, -pasilloLength - 0.06); scene.add(frameRight);
+const frameTop = new THREE.Mesh(new THREE.BoxGeometry(doorWidth + 0.24, 0.12, 0.2), frameMat);
+frameTop.position.set(0, doorHeight + 0.12, -pasilloLength - 0.06); scene.add(frameTop);
+
+// Iluminación simulada: dos "luces" en pared como meshes (visual)
+const lampMat = new THREE.MeshBasicMaterial({color:0xffd9a6});
+const lampLeft = new THREE.Mesh(new THREE.BoxGeometry(0.15,0.15,0.02), lampMat); lampLeft.position.set(-pasilloWidth/2+0.08, pasilloHeight-0.6, -pasilloLength/2); scene.add(lampLeft);
+const lampRight = lampLeft.clone(); lampRight.position.set(pasilloWidth/2-0.08, pasilloHeight-0.6, -pasilloLength/2); scene.add(lampRight);
+
+// Objetos de referencia (pequeñas cajas decorativas)
+const decoMat = new THREE.MeshBasicMaterial({color:0x8b8b8b});
+const deco1 = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.6,0.3), decoMat); deco1.position.set(-0.6,0.3,-1.6); scene.add(deco1);
+const deco2 = deco1.clone(); deco2.position.set(0.6,0.3,-3.2); scene.add(deco2);
+
+// Variables de movimiento (mantener tu esquema)
+let keys = {};
+document.addEventListener('keydown', e => { keys[e.code] = true; if(e.code==='KeyE') tryEnter(); });
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+let velocityY = 0;
+let canJump = true;
+let speedNormal = 0.12, speedRun = 0.26;
+let rotSpeed = 0.05; // velocidad de giro con A/D
+
+// Helper: distancia a puerta
+function distanceToDoor(){
+  const px = camera.position.x;
+  const py = camera.position.y;
+  const pz = camera.position.z;
+  return Math.sqrt((px-door.position.x)**2 + (py - (door.position.y))**2 + (pz - door.position.z)**2);
 }
 
-// ===== Controles =====
-let keys = {};
-document.addEventListener('keydown', e => keys[e.code] = true);
-document.addEventListener('keyup', e => keys[e.code] = false);
+// Mostrar prompt si cerca
+const prompt = document.getElementById('prompt');
+function updatePrompt(){
+  const d = distanceToDoor();
+  if(d < 2.0) prompt.style.display = 'block'; else prompt.style.display = 'none';
+}
 
-let velocityY = 0, canJump = true;
-let speedNormal = 0.15, speedRun = 0.3;
-let rotSpeed = 0.05;
+// Enter action
+function tryEnter(){
+  if(distanceToDoor() < 2.0){
+    // redirigir
+    window.location.href = 'h.html';
+  }
+}
 
+// Loop de animación
 function animate(){
   requestAnimationFrame(animate);
 
-  let speed = (keys["ShiftLeft"] || keys["ShiftRight"]) ? speedRun : speedNormal;
-  
-  // Rotación con A/D
-  if(keys["KeyA"]) camera.rotation.y += rotSpeed;
-  if(keys["KeyD"]) camera.rotation.y -= rotSpeed;
+  // rotación lateral con A/D (girar cámara)
+  if(keys['KeyA']) camera.rotation.y += rotSpeed;
+  if(keys['KeyD']) camera.rotation.y -= rotSpeed;
 
-  // Movimiento adelante/atrás según orientación
-  const direction = new THREE.Vector3();
-  camera.getWorldDirection(direction);
+  // movimiento hacia adelante/atrás en dirección de cámara
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  // eliminar componente vertical
+  dir.y = 0; dir.normalize();
+  const right = new THREE.Vector3(); right.crossVectors(new THREE.Vector3(0,1,0), dir).normalize();
 
-  if(keys["KeyW"]) camera.position.addScaledVector(direction, speed);
-  if(keys["KeyS"]) camera.position.addScaledVector(direction, -speed);
+  let speed = (keys['ShiftLeft']||keys['ShiftRight']) ? speedRun : speedNormal;
+  if(keys['KeyW']) camera.position.addScaledVector(dir, speed);
+  if(keys['KeyS']) camera.position.addScaledVector(dir, -speed);
+  if(keys['Space'] && canJump){ velocityY = 0.32; canJump = false; }
 
-  // Salto con gravedad
+  // gravedad simple
   velocityY -= 0.02;
   camera.position.y += velocityY;
-  if(camera.position.y < 2){ velocityY = 0; camera.position.y = 2; canJump = true; }
-  if(keys["Space"] && canJump){ velocityY = 0.3; canJump = false; }
+  if(camera.position.y < 1.6){ camera.position.y = 1.6; velocityY = 0; canJump = true; }
 
+  updatePrompt();
   renderer.render(scene, camera);
 }
 animate();
 
+// Resize
 window.addEventListener('resize', ()=>{
-  camera.aspect = innerWidth/innerHeight;
+  camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
 </script>
 </body>
