@@ -2,268 +2,74 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Casino - Pasillo + Sala (puerta con bisagras)</title>
+<title>Test puerta visible</title>
 <style>
-  html,body{height:100%;margin:0;overflow:hidden;background:#111;font-family:Arial,Helvetica,sans-serif}
+  html,body{margin:0;height:100%;overflow:hidden;background:#000}
   canvas{display:block}
-  #prompt{position:fixed;left:50%;bottom:60px;transform:translateX(-50%);background:rgba(0,0,0,0.75);color:#fff;padding:10px 14px;border-radius:8px;display:none;z-index:5}
-  #hint{position:fixed;right:12px;top:12px;color:#fff;z-index:5;background:rgba(0,0,0,0.45);padding:8px;border-radius:6px}
 </style>
 </head>
 <body>
-<div id="hint">W/S mover • A/D girar • Shift correr • Espacio saltar • Acércate a la puerta y pulsa E</div>
-<div id="prompt">Presiona <b>E</b> para abrir la puerta</div>
 <canvas id="c"></canvas>
-
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
 <script>
-/* -----------------------
-   Escena, renderer, cámara
-   ----------------------- */
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
-renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setSize(innerWidth, innerHeight);
+
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xebe6dc); // tono muy suave general
+scene.background = new THREE.Color(0x777777);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 300);
-camera.position.set(0, 1.6, 2); // spawn en pasillo (mirando al -Z)
-scene.add(camera);
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 100);
+camera.position.set(0, 1.6, 2);
+camera.lookAt(0,1.6,0);
 
-/* -----------------------
-   Materiales (seguros)
-   ----------------------- */
-const wallMat = new THREE.MeshBasicMaterial({color:0xD8C9B7}); // beige suave
-const floorMat = new THREE.MeshBasicMaterial({color:0x666666}); // suelo pasillo
-const ceilingMat = new THREE.MeshBasicMaterial({color:0x3b3b3b});
-const doorMat = new THREE.MeshBasicMaterial({color:0x4b2f1b}); // puerta marrón oscuro
-const frameMat = new THREE.MeshBasicMaterial({color:0x392614});
-const roomFloorMat = new THREE.MeshBasicMaterial({color:0x5a0b0b}); // moqueta burdeos
-
-/* -----------------------
-   Parámetros del pasillo
-   ----------------------- */
-const length = 5.0;   // 4-5 metros (unidades)
-const width = 2.0;
-const height = 2.8;
-
-/* Suelo del pasillo */
-const floorGeo = new THREE.PlaneGeometry(width + 2, length + 2);
-const floor = new THREE.Mesh(floorGeo, floorMat);
+// --- SUELO ---
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(10,10),
+  new THREE.MeshBasicMaterial({color:0x666666})
+);
 floor.rotation.x = -Math.PI/2;
-floor.position.set(0, 0, - (length/2) + 1);
 scene.add(floor);
 
-/* Paredes laterales */
-const wallThickness = 0.12;
-const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, height, length + 0.2), wallMat);
-leftWall.position.set(-width/2 - wallThickness/2, height/2, -length/2);
-scene.add(leftWall);
-const rightWall = leftWall.clone();
-rightWall.position.set(width/2 + wallThickness/2, height/2, -length/2);
-scene.add(rightWall);
+// --- PARED FONDO ---
+const wall = new THREE.Mesh(
+  new THREE.BoxGeometry(10,5,0.2),
+  new THREE.MeshBasicMaterial({color:0xdddddd})
+);
+wall.position.set(0,2.5,-5);
+scene.add(wall);
 
-/* Pared posterior (spawn) */
-const backWall = new THREE.Mesh(new THREE.BoxGeometry(width + 0.4, height, wallThickness), wallMat);
-backWall.position.set(0, height/2, 1.02); // detrás del spawn ligeramente
-scene.add(backWall);
-
-/* Techo */
-const ceiling = new THREE.Mesh(new THREE.BoxGeometry(width + 0.4, wallThickness, length + 0.2), ceilingMat);
-ceiling.position.set(0, height - wallThickness/2, -length/2);
-scene.add(ceiling);
-
-/* Elementos decorativos sencillos (columnas/lamparas visuales) */
-const lampMat = new THREE.MeshBasicMaterial({color:0xffe0b5});
-const lampL = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.12,0.02), lampMat);
-lampL.position.set(-width/2 + 0.12, height - 0.6, -length/2 + 0.5);
-scene.add(lampL);
-const lampR = lampL.clone(); lampR.position.set(width/2 - 0.12, height - 0.6, -length/2 + 0.5); scene.add(lampR);
-
-/* Objetos decorativos */
-const decoMat = new THREE.MeshBasicMaterial({color:0x9e9e9e});
-const deco1 = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.6,0.3), decoMat); deco1.position.set(-0.6,0.3,-1.6); scene.add(deco1);
-const deco2 = deco1.clone(); deco2.position.set(0.6,0.3,-3.2); scene.add(deco2);
-
-/* -----------------------
-   Puerta con bisagras (pivot)
-   ----------------------- */
-/* Creamos un pivot para la bisagra a la izquierda de la puerta (mirando hacia la sala) */
-const doorWidth = 1.0;
-const doorHeight = 2.0;
-const doorDepth = 0.12;
-
-// pivot: situado en el plano Z = -length (frontera entre pasillo y sala), X en el borde izquierdo de la puerta
-const hingeX = -doorWidth/2; 
-const hingeZ = -length - 0.06; // ligeramente más allá
-const hingeY = doorHeight/2;
-
-// pivot object
+// --- PUERTA ---
 const doorPivot = new THREE.Object3D();
-doorPivot.position.set(hingeX, hingeY, hingeZ);
+doorPivot.position.set(-0.5,1,-4.9);
 scene.add(doorPivot);
 
-// puerta - la colocamos con su centro desplazado +doorWidth/2 desde el pivot
-const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(doorWidth, doorHeight, doorDepth), doorMat);
-// The door's geometry center is its center; we need to offset so hinge is at pivot axis
-doorMesh.position.set(doorWidth/2, 0, 0); // relative to pivot
-doorPivot.add(doorMesh);
+const door = new THREE.Mesh(
+  new THREE.BoxGeometry(1,2,0.1),
+  new THREE.MeshBasicMaterial({color:0x4b2f1b})
+);
+door.position.x = 0.5; // desplaza para bisagra
+doorPivot.add(door);
 
-// marco de la puerta (izquierda/derecha/arriba)
-const frameLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorHeight + 0.12, 0.2), frameMat);
-frameLeft.position.set(hingeX - 0.06, hingeY, hingeZ - 0.06);
-scene.add(frameLeft);
-const frameRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorHeight + 0.12, 0.2), frameMat);
-frameRight.position.set(hingeX + doorWidth + 0.06, hingeY, hingeZ - 0.06);
-scene.add(frameRight);
-const frameTop = new THREE.Mesh(new THREE.BoxGeometry(doorWidth + 0.24, 0.12, 0.2), frameMat);
-frameTop.position.set(hingeX + doorWidth/2, doorHeight + 0.06, hingeZ - 0.06);
-scene.add(frameTop);
-
-/* -----------------------
-   Sala del casino (detrás de la puerta)
-   ----------------------- */
-/* Creamos una sala simple: suelo burdeos, paredes suaves y un espacio amplio */
-const roomWidth = 12;
-const roomLength = 10;
-const roomHeight = 3.2;
-
-// room floor - posicionado centrado detrás de la puerta
-const roomFloor = new THREE.Mesh(new THREE.PlaneGeometry(roomWidth, roomLength), roomFloorMat);
-roomFloor.rotation.x = -Math.PI/2;
-roomFloor.position.set(0,0, -length - roomLength/2 - 0.2);
-scene.add(roomFloor);
-
-// room walls (solo un par para que no ocupe mucho)
-const roomWallMat = new THREE.MeshBasicMaterial({color:0xCFC0B0}); // tono coherente beige
-const roomBack = new THREE.Mesh(new THREE.BoxGeometry(roomWidth, roomHeight, 0.2), roomWallMat);
-roomBack.position.set(0, roomHeight/2, -length - roomLength + 0.1 - 0.2);
-scene.add(roomBack);
-const roomLeft = new THREE.Mesh(new THREE.BoxGeometry(0.2, roomHeight, roomLength), roomWallMat);
-roomLeft.position.set(-roomWidth/2 + 0.1, roomHeight/2, -length - roomLength/2 - 0.2);
-scene.add(roomLeft);
-const roomRight = roomLeft.clone(); roomRight.position.set(roomWidth/2 - 0.1, roomHeight/2, -length - roomLength/2 - 0.2);
-scene.add(roomRight);
-
-/* -----------------------
-   Lógica de puerta / animación
-   ----------------------- */
-let doorState = 'closed'; // closed, opening, open, closing
-let doorOpenAngle = -Math.PI/2 * 0.9; // ~ -81 grados (abre hacia la derecha respecto pivot left)
-let doorCloseAngle = 0;
-let doorAnimTime = 0;
-const doorAnimDuration = 0.7; // segundos para abrir/cerrar
-let autoCloseTimer = null;
-
-function openDoor(){
-  if(doorState === 'closed' || doorState === 'closing'){
-    doorState = 'opening';
-    doorAnimTime = 0;
-    if(autoCloseTimer) { clearTimeout(autoCloseTimer); autoCloseTimer = null; }
-  }
-}
-function closeDoor(){
-  if(doorState === 'open' || doorState === 'opening'){
-    doorState = 'closing';
-    doorAnimTime = 0;
-    if(autoCloseTimer){ clearTimeout(autoCloseTimer); autoCloseTimer = null; }
-  }
-}
-
-/* -----------------------
-   Movimiento del jugador (cámara)
-   ----------------------- */
-let keys = {};
-document.addEventListener('keydown', e => { keys[e.code] = true; if(e.code==='KeyE') { // intentar abrir/cerrar si cerca
-  if(isNearDoor()) { 
-    if(doorState === 'closed' || doorState === 'closing') { openDoor(); 
-      // programar autocierre tras 3s desde que termine de abrir
-      setTimeout(()=>{ if(doorState==='open'){ autoCloseTimer = setTimeout(()=>closeDoor(), 3000); } }, (doorAnimDuration*1000)); 
-    } else if(doorState === 'open'){ closeDoor(); }
-  }
-}} );
-document.addEventListener('keyup', e => { keys[e.code] = false; });
-
-let velocityY = 0;
-let canJump = true;
-let speedNormal = 0.12, speedRun = 0.26, rotSpeed = 0.05;
-
-/* Helper proximidad */
-function isNearDoor(){
-  const dx = camera.position.x - (doorPivot.position.x + doorMesh.position.x * doorPivot.scale.x - doorWidth/2);
-  const dz = camera.position.z - (hingeZ + 0.06); // puerta Z position
-  const dy = camera.position.y - (door.position.y);
-  const dist = Math.sqrt( (camera.position.x - (door.position.x))**2 + (camera.position.y - door.position.y)**2 + (camera.position.z - door.position.z)**2 );
-  return dist < 2.0;
-}
-
-/* Prompt UI */
-const prompt = document.getElementById('prompt');
-
-/* -----------------------
-   Animación principal
-   ----------------------- */
-const clock = new THREE.Clock();
+// --- LÓGICA SIMPLE ---
+let doorOpen=false;
+document.addEventListener('keydown',e=>{
+  if(e.code==='KeyE'){ doorOpen=!doorOpen; }
+});
 
 function animate(){
   requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-
-  // movimiento: rotación con A/D (girar cámara alrededor Y)
-  if(keys['KeyA']) camera.rotation.y += rotSpeed;
-  if(keys['KeyD']) camera.rotation.y -= rotSpeed;
-
-  // avance en dirección cámara (sin componente Y)
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  dir.y = 0; dir.normalize();
-
-  let speed = (keys['ShiftLeft']||keys['ShiftRight'])?speedRun:speedNormal;
-  if(keys['KeyW']) camera.position.addScaledVector(dir, speed);
-  if(keys['KeyS']) camera.position.addScaledVector(dir, -speed);
-
-  // salto y gravedad
-  if(keys['Space'] && canJump){ velocityY = 0.32; canJump = false; }
-  velocityY -= 0.02;
-  camera.position.y += velocityY;
-  if(camera.position.y < 1.6){ camera.position.y = 1.6; velocityY = 0; canJump = true; }
-
-  // actualizar prompt
-  if(isNearDoor()) prompt.style.display = 'block'; else prompt.style.display = 'none';
-
-  // Animación de puerta según estado (interpola ángulo)
-  if(doorState === 'opening'){
-    doorAnimTime += dt;
-    const t = Math.min(1, doorAnimTime / doorAnimDuration);
-    // easing (smooth)
-    const ease = t * (2 - t);
-    const angle = doorCloseAngle + (doorOpenAngle - doorCloseAngle) * ease;
-    doorPivot.rotation.y = angle;
-    if(t >= 1){ doorState = 'open'; // programar cierre automático en 3s
-      if(autoCloseTimer) clearTimeout(autoCloseTimer);
-      autoCloseTimer = setTimeout(()=>{ if(doorState==='open') closeDoor(); }, 3000);
-    }
-  } else if(doorState === 'closing'){
-    doorAnimTime += dt;
-    const t = Math.min(1, doorAnimTime / doorAnimDuration);
-    const ease = t * (2 - t);
-    const angle = doorOpenAngle + (doorCloseAngle - doorOpenAngle) * ease;
-    doorPivot.rotation.y = angle;
-    if(t >= 1){ doorState = 'closed'; if(autoCloseTimer){ clearTimeout(autoCloseTimer); autoCloseTimer = null; } }
-  }
-
-  renderer.render(scene, camera);
+  // animación puerta
+  const target = doorOpen? -Math.PI/2 : 0;
+  doorPivot.rotation.y += (target-doorPivot.rotation.y)*0.1;
+  renderer.render(scene,camera);
 }
 animate();
 
-/* -----------------------
-   Resize
-   ----------------------- */
-window.addEventListener('resize', ()=>{
-  camera.aspect = window.innerWidth/window.innerHeight;
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setSize(innerWidth,innerHeight);
 });
 </script>
 </body>
