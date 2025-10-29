@@ -2,15 +2,26 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>Casino 3D - Giro 360 sin Pointer Lock</title>
+<title>Casino 3D - FPS 360 real</title>
 <style>
   html, body { margin:0; overflow:hidden; background:#000; }
-  canvas { display:block; cursor:none; }
+  canvas { display:block; }
+  #enterButton {
+    position:absolute; top:50%; left:50%;
+    transform:translate(-50%,-50%);
+    padding:20px 40px;
+    font-size:24px;
+    cursor:pointer;
+    z-index:10;
+  }
 </style>
 </head>
 <body>
+<button id="enterButton">Clic para entrar al casino</button>
 <canvas id="gameCanvas"></canvas>
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.159.0/examples/js/controls/PointerLockControls.js"></script>
+
 <script>
 const canvas = document.getElementById('gameCanvas');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
@@ -19,14 +30,14 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x223355);
 
-// ===== Cámara y contenedor =====
+// ===== Cámara y controles =====
 const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
 camera.position.y = 2;
-const player = new THREE.Object3D();
-player.add(camera);
-scene.add(player);
 
-// ===== Suelo y cubos =====
+const controls = new THREE.PointerLockControls(camera, canvas);
+scene.add(controls.getObject());
+
+// ===== Suelo y cubos de referencia =====
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200), new THREE.MeshBasicMaterial({color:0x888888}));
 floor.rotation.x = -Math.PI/2;
 scene.add(floor);
@@ -37,51 +48,41 @@ for(let i=0;i<10;i++){
   scene.add(cube);
 }
 
-// ===== Variables movimiento =====
+// ===== Movimiento =====
 let keys = {};
 document.addEventListener('keydown', e=>keys[e.code]=true);
 document.addEventListener('keyup', e=>keys[e.code]=false);
 
-let velocityY = 0, canJump=true;
+let velocityY = 0, canJump = true;
 let speedNormal = 0.15, speedRun = 0.3;
 
-// ===== Rotación manual 360° =====
-let rotX = 0, rotY = 0;
-const centerX = window.innerWidth/2;
-const centerY = window.innerHeight/2;
-
-// Capturamos movimiento relativo
-document.addEventListener('mousemove', e=>{
-  rotY -= e.movementX*0.002; // horizontal
-  rotX -= e.movementY*0.002; // vertical
-  rotX = Math.max(-Math.PI/2, Math.min(Math.PI/2, rotX));
+// ===== Botón para activar Pointer Lock =====
+const button = document.getElementById('enterButton');
+button.addEventListener('click', ()=>{
+  controls.lock();
 });
+controls.addEventListener('lock', ()=>{ button.style.display='none'; });
+controls.addEventListener('unlock', ()=>{ button.style.display='block'; });
 
 // ===== Animación =====
 function animate(){
   requestAnimationFrame(animate);
 
-  // Aplicar rotación
-  player.rotation.y = rotY;
-  camera.rotation.x = rotX;
-
-  // Dirección de movimiento
-  const forward = new THREE.Vector3(Math.sin(rotY),0,Math.cos(rotY));
-  const right = new THREE.Vector3(Math.cos(rotY),0,-Math.sin(rotY));
-
+  // Movimiento
   let speed = (keys["ShiftLeft"]||keys["ShiftRight"])?speedRun:speedNormal;
-  if(keys["KeyW"]) player.position.addScaledVector(forward,-speed);
-  if(keys["KeyS"]) player.position.addScaledVector(forward,speed);
-  if(keys["KeyA"]) player.position.addScaledVector(right,-speed);
-  if(keys["KeyD"]) player.position.addScaledVector(right,speed);
+
+  if(keys["KeyW"]) controls.moveForward(-speed);
+  if(keys["KeyS"]) controls.moveForward(speed);
+  if(keys["KeyA"]) controls.moveRight(-speed);
+  if(keys["KeyD"]) controls.moveRight(speed);
 
   // Gravedad y salto
   velocityY -= 0.02;
-  player.position.y += velocityY;
-  if(player.position.y<2){ velocityY=0; player.position.y=2; canJump=true; }
+  controls.getObject().position.y += velocityY;
+  if(controls.getObject().position.y < 2){ velocityY=0; controls.getObject().position.y=2; canJump=true; }
   if(keys["Space"] && canJump){ velocityY=0.3; canJump=false; }
 
-  renderer.render(scene,camera);
+  renderer.render(scene, camera);
 }
 animate();
 
