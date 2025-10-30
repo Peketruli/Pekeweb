@@ -7,7 +7,23 @@
 <style>
   body { margin:0; padding:0; font-family: Arial, sans-serif; background:#111; color:white; overflow:hidden; }
   canvas { display:block; background:#111; }
-  #hud { position:absolute; top:10px; left:10px; color:white; font-size:18px; }
+
+  #hud {
+      position:absolute; top:10px; left:10px;
+      width:300px; font-size:16px;
+      z-index:10;
+  }
+  .barContainer {
+      background:#333; border:2px solid white; margin:5px 0; height:20px; width:100%;
+      position:relative;
+  }
+  .barFill {
+      background:lime; height:100%; width:100%;
+      transition: width 0.2s;
+  }
+  #xpFill { background:gold; }
+  #levelText, #scoreText { margin:5px 0; font-weight:bold; }
+
   #levelMenu {
       display:none;
       position:absolute;
@@ -23,16 +39,27 @@
 </style>
 </head>
 <body>
+
 <canvas id="gameCanvas"></canvas>
+
 <div id="hud">
-    <div id="score">Puntuación: 0</div>
-    <div id="xpLevel">Nivel: 1 | XP: 0/15</div>
-    <div id="hpBar">Vida: 100/100</div>
+  <div id="scoreText">Puntuación: 0</div>
+  <div id="levelText">Nivel: 1</div>
+  <div class="barContainer">
+      <div id="hpFill" class="barFill"></div>
+      <span style="position:absolute; width:100%; text-align:center; color:white; font-size:14px;" id="hpText">100/100</span>
+  </div>
+  <div class="barContainer">
+      <div id="xpFill" class="barFill"></div>
+      <span style="position:absolute; width:100%; text-align:center; color:white; font-size:14px;" id="xpText">0/15</span>
+  </div>
 </div>
+
 <div id="levelMenu">
     <h2>¡Subiste de nivel!</h2>
     <div id="abilityButtons"></div>
 </div>
+
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -64,10 +91,13 @@ const bullets=[], vampires=[], xpParticles=[], meleeAttacks=[];
 
 // -------------------- ENEMIGOS --------------------
 const vampireTypes=[
-    {name:'Rojo', size:30, speed:2, hp:10},
-    {name:'Rápido', size:20, speed:3, hp:8},
-    {name:'Resistente', size:35, speed:1.5, hp:30}
+    {name:'Rojo', size:30, speed:2, hp:1},       // más fácil al principio
+    {name:'Rápido', size:20, speed:3, hp:1},
+    {name:'Resistente', size:35, speed:1.5, hp:5}
 ];
+
+let spawnRate = 3000;
+let spawnTimer = setInterval(spawnVampire, spawnRate);
 
 function spawnVampire(){
     if(gamePaused) return;
@@ -80,7 +110,15 @@ function spawnVampire(){
     else{ x=Math.random()*canvas.width; y=canvas.height; }
     vampires.push({x,y,type: type.name, size:type.size, speed:type.speed, hp:type.hp});
 }
-let spawnTimer=setInterval(spawnVampire,2000);
+
+// Incremento de dificultad progresivo
+setInterval(()=>{
+    if(spawnRate>800){
+        spawnRate -= 200;
+        clearInterval(spawnTimer);
+        spawnTimer = setInterval(spawnVampire, spawnRate);
+    }
+}, 20000);
 
 // -------------------- HABILIDADES / MEJORAS --------------------
 const abilities=[
@@ -88,7 +126,7 @@ const abilities=[
     {name:"Multidisparo", apply:()=>player.multiShot=true},
     {name:"Disparo rápido", apply:()=>{player.shootInterval=Math.max(500,player.shootInterval-500); resetShootTimer();}},
     {name:"Más velocidad", apply:()=>player.speed+=1},
-    {name:"Más vida", apply:()=>{player.maxHp+=20; player.hp+=20;}},
+    {name:"Más vida", apply:()=>{player.maxHp+=20; player.hp+=20; updateHUD();}},
     {name:"Espada", apply:()=>player.melee=true},
     {name:"Mejora espada", apply:()=>player.meleeDamage+=5},
     {name:"Más XP", apply:()=>playerXP+=3}
@@ -117,7 +155,6 @@ let shootTimer=setInterval(shootAtClosestVampire, player.shootInterval);
 function resetShootTimer(){ clearInterval(shootTimer); shootTimer=setInterval(shootAtClosestVampire, player.shootInterval); }
 
 // -------------------- ATAQUE MELEE --------------------
-let meleeTimer;
 function startMelee(){
     if(player.melee && !gamePaused){
         meleeAttacks.push({x:player.x, y:player.y, size:50, damage:player.meleeDamage, lifetime:5});
@@ -152,9 +189,14 @@ function showLevelMenu(){
 
 // -------------------- HUD --------------------
 function updateHUD(){
-    document.getElementById('score').textContent="Puntuación: "+score;
-    document.getElementById('xpLevel').textContent="Nivel: "+playerLevel+" | XP: "+playerXP+"/"+xpToNextLevel;
-    document.getElementById('hpBar').textContent="Vida: "+player.hp+"/"+player.maxHp;
+    document.getElementById('scoreText').textContent="Puntuación: "+score;
+    document.getElementById('levelText').textContent="Nivel: "+playerLevel;
+    const hpPercent = Math.max(0,player.hp/player.maxHp*100);
+    document.getElementById('hpFill').style.width = hpPercent+"%";
+    document.getElementById('hpText').textContent=player.hp+"/"+player.maxHp;
+    const xpPercent = Math.min(100,playerXP/xpToNextLevel*100);
+    document.getElementById('xpFill').style.width = xpPercent+"%";
+    document.getElementById('xpText').textContent=playerXP+"/"+xpToNextLevel;
 }
 
 // -------------------- UPDATE --------------------
@@ -215,8 +257,12 @@ function update(){
         // Colisión con player
         const distPlayer=Math.hypot(player.x-v.x, player.y-v.y);
         if(distPlayer<v.size/2+player.size/2){
-            alert('¡Has sido atrapado! Puntuación final: '+score+', Nivel: '+playerLevel);
-            window.location.reload();
+            player.hp -= 20; 
+            if(player.hp<=0){
+                alert('¡Has sido atrapado! Puntuación final: '+score+', Nivel: '+playerLevel);
+                window.location.reload();
+            }
+            updateHUD();
         }
     });
 
@@ -247,7 +293,7 @@ function draw(){
     ctx.arc(player.x, player.y, player.size/2,0,Math.PI*2);
     ctx.fill();
 
-    // Bullets
+    // Balas
     bullets.forEach(b=>{ ctx.fillStyle='yellow'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); });
 
     // Melee
@@ -263,6 +309,8 @@ function draw(){
 // -------------------- LOOP --------------------
 function loop(){ update(); draw(); requestAnimationFrame(loop); }
 loop();
+updateHUD();
 </script>
+
 </body>
 </html>
