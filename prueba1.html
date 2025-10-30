@@ -37,6 +37,10 @@ canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
 let score = 0;
+let playerXP = 0;
+let playerLevel = 1;
+let xpToNextLevel = 50;
+
 const player = {
     x: canvas.width / 2,
     y: canvas.height / 2,
@@ -51,6 +55,7 @@ document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
 const bullets = [];
 const vampires = [];
+const xpParticles = [];
 
 function spawnVampire() {
     const edge = Math.floor(Math.random() * 4);
@@ -69,7 +74,6 @@ setInterval(spawnVampire, 2000);
 function shootAtClosestVampire() {
     if(vampires.length === 0) return;
 
-    // Encontrar el vampiro más cercano
     let closest = vampires[0];
     let minDist = Math.hypot(player.x - closest.x, player.y - closest.y);
     for(let i=1; i<vampires.length; i++){
@@ -80,7 +84,6 @@ function shootAtClosestVampire() {
         }
     }
 
-    // Crear bala hacia ese vampiro
     const angle = Math.atan2(closest.y - player.y, closest.x - player.x);
     bullets.push({
         x: player.x,
@@ -91,7 +94,6 @@ function shootAtClosestVampire() {
     });
 }
 
-// Disparo automático cada 2.5 segundos
 setInterval(shootAtClosestVampire, 2500);
 
 function update() {
@@ -101,7 +103,6 @@ function update() {
     if(keys['a']) player.x -= player.speed;
     if(keys['d']) player.x += player.speed;
 
-    // Limites de pantalla
     player.x = Math.max(player.size/2, Math.min(canvas.width - player.size/2, player.x));
     player.y = Math.max(player.size/2, Math.min(canvas.height - player.size/2, player.y));
 
@@ -122,6 +123,18 @@ function update() {
         bullets.forEach((b, bi) => {
             const dist = Math.hypot(b.x - v.x, b.y - v.y);
             if(dist < v.size/2 + b.size/2) {
+                // Crear partícula de XP
+                const xpAmount = Math.floor(Math.random() * 5) + 1;
+                xpParticles.push({
+                    x: v.x,
+                    y: v.y,
+                    size: 10,
+                    color: 'lime',
+                    dx: (Math.random() - 0.5) * 2,
+                    dy: (Math.random() - 0.5) * 2,
+                    xp: xpAmount
+                });
+
                 vampires.splice(vi,1);
                 bullets.splice(bi,1);
                 score += 1;
@@ -132,8 +145,29 @@ function update() {
         // Colisión con jugador
         const distPlayer = Math.hypot(player.x - v.x, player.y - v.y);
         if(distPlayer < v.size/2 + player.size/2) {
-            alert('¡Has sido atrapado! Puntuación final: ' + score);
+            alert('¡Has sido atrapado! Puntuación final: ' + score + ', Nivel: ' + playerLevel);
             window.location.reload();
+        }
+    });
+
+    // Movimiento partículas XP
+    xpParticles.forEach((p, i) => {
+        p.x += p.dx;
+        p.y += p.dy;
+
+        // Colisión con jugador para recolectar XP
+        const distPlayer = Math.hypot(player.x - p.x, player.y - p.y);
+        if(distPlayer < player.size/2 + p.size/2) {
+            playerXP += p.xp;
+            xpParticles.splice(i,1);
+
+            // Subir de nivel si llega al XP necesario
+            if(playerXP >= xpToNextLevel) {
+                playerLevel += 1;
+                playerXP = playerXP - xpToNextLevel;
+                xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
+                alert("¡Subiste al nivel " + playerLevel + "!");
+            }
         }
     });
 }
@@ -162,6 +196,19 @@ function draw() {
         ctx.arc(v.x, v.y, v.size/2, 0, Math.PI*2);
         ctx.fill();
     });
+
+    // Dibujar partículas XP
+    xpParticles.forEach(p => {
+        ctx.fillStyle = p.color;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size/2, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    // Mostrar XP y nivel
+    ctx.fillStyle = 'white';
+    ctx.font = '20px Arial';
+    ctx.fillText("Nivel: " + playerLevel + " | XP: " + playerXP + "/" + xpToNextLevel, 10, 30);
 }
 
 function loop() {
