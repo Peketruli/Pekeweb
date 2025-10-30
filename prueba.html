@@ -37,7 +37,7 @@ canvas{display:block;width:100vw;height:100vh}
 </head>
 <body>
 <div id="prompt">Presiona <b>E</b> para abrir</div>
-<div id="hint">W/S mover • A/D girar • Shift correr • Espacio saltar • Acércate a la puerta</div>
+<div id="hint">W/S/A/D mover • Flechas girar cámara • Shift correr • Espacio saltar • Acércate a la puerta</div>
 <canvas id="c"></canvas>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
@@ -99,8 +99,7 @@ scene.add(backWall);
 // Puerta ajustada
 // ------------------------
 const doorW=1,doorH=2,doorD=0.12;
-// ajustamos la puerta a la derecha y un poco más arriba
-const hingeX=-pasillo.W/2 + 0.4;
+const hingeX=-pasillo.W/2 + 0.4;  // ajustado a tu gusto
 const hingeY=doorH/2 + 0.1;
 const hingeZ=-pasillo.L-0.01;
 const doorPivot=new THREE.Object3D();
@@ -164,6 +163,7 @@ window.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE') trig
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
 let velY=0, canJump=true, walkSpeed=0.1, runSpeed=0.24, rotSpeed=0.05;
+
 function distToDoor(){
   const doorWorld=new THREE.Vector3();
   doorMesh.getWorldPosition(doorWorld);
@@ -172,6 +172,7 @@ function distToDoor(){
   const dy=camera.position.y-doorWorld.y;
   return Math.sqrt(dx*dx+dy*dy+dz*dz);
 }
+
 const promptEl=document.getElementById('prompt');
 function updatePrompt(){ promptEl.style.display = distToDoor()<2 ? 'block' : 'none'; }
 
@@ -193,36 +194,49 @@ function animate(){
   requestAnimationFrame(animate);
   const dt=Math.min(0.05,clock.getDelta());
 
-  // Rotación
-  if(keys['KeyA']) camera.rotation.y+=rotSpeed;
-  if(keys['KeyD']) camera.rotation.y-=rotSpeed;
+  // Rotación con flechas
+  if(keys['ArrowLeft']) camera.rotation.y += rotSpeed;
+  if(keys['ArrowRight']) camera.rotation.y -= rotSpeed;
+  if(keys['ArrowUp']) camera.rotation.x -= rotSpeed/2;
+  if(keys['ArrowDown']) camera.rotation.x += rotSpeed/2;
 
-  // Movimiento
-  const dir=new THREE.Vector3(); camera.getWorldDirection(dir); dir.y=0; dir.normalize();
+  // Movimiento con WASD
+  const dir=new THREE.Vector3();
+  camera.getWorldDirection(dir); dir.y=0; dir.normalize();
   const speed=(keys['ShiftLeft']||keys['ShiftRight'])?runSpeed:walkSpeed;
   if(keys['KeyW']) camera.position.addScaledVector(dir,speed);
   if(keys['KeyS']) camera.position.addScaledVector(dir,-speed);
+  const strafe=new THREE.Vector3();
+  strafe.crossVectors(camera.up,dir).normalize();
+  if(keys['KeyA']) camera.position.addScaledVector(strafe,speed);
+  if(keys['KeyD']) camera.position.addScaledVector(strafe,-speed);
 
   // Salto y gravedad
-  if(keys['Space'] && canJump) { velY=0.32; canJump=false; }
+  if(keys['Space'] && canJump){ velY=0.32; canJump=false; }
   velY-=0.02; camera.position.y+=velY;
-  if(camera.position.y<1.7){camera.position.y=1.7; velY=0; canJump=true;}
+  if(camera.position.y<1.7){ camera.position.y=1.7; velY=0; canJump=true; }
 
-  // Límites pasillo sin bloquear entrada a la sala
-  const halfW=pasillo.W/2-0.05;
-  if(camera.position.x<-halfW) camera.position.x=-halfW;
-  if(camera.position.x>halfW) camera.position.x=halfW;
-  if(camera.position.z>0) camera.position.z=0;
+  // Límites pasillo
+  const inPasillo = camera.position.z > hingeZ-0.05;
+  if(inPasillo){
+    const halfW=pasillo.W/2-0.05;
+    if(camera.position.x<-halfW) camera.position.x=-halfW;
+    if(camera.position.x>halfW) camera.position.x=halfW;
+    if(camera.position.z>0) camera.position.z=0;
+  }
 
   // Límites sala
   const doorOpen = (doorState==='open');
-  const roomHalfW=sala.W/2-0.05;
-  const roomFrontZ=hingeZ;
-  const roomBackZ=hingeZ-sala.L;
-  if(camera.position.x<-roomHalfW) camera.position.x=-roomHalfW;
-  if(camera.position.x>roomHalfW) camera.position.x=roomHalfW;
-  if(!doorOpen && camera.position.z>roomFrontZ-0.05) camera.position.z=roomFrontZ-0.05;
-  if(camera.position.z<roomBackZ) camera.position.z=roomBackZ;
+  const inSala = camera.position.z < hingeZ-0.05;
+  if(inSala || doorOpen){
+    const roomHalfW=sala.W/2-0.05;
+    const roomFrontZ=hingeZ;
+    const roomBackZ=hingeZ-sala.L;
+    if(camera.position.x<-roomHalfW) camera.position.x=-roomHalfW;
+    if(camera.position.x>roomHalfW) camera.position.x=roomHalfW;
+    if(!doorOpen && camera.position.z>roomFrontZ-0.05) camera.position.z=roomFrontZ-0.05;
+    if(camera.position.z<roomBackZ) camera.position.z=roomBackZ;
+  }
 
   updatePrompt();
 
