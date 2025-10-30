@@ -77,7 +77,6 @@ button:hover { background:#444; }
 </div>
 
 <script>
-// Elementos de menú
 const mainMenu = document.getElementById('mainMenu');
 const gameContainer = document.getElementById('gameCanvasContainer');
 const dictionary = document.getElementById('dictionary');
@@ -96,18 +95,29 @@ document.getElementById('dictBtn').onclick = () => {
 document.getElementById('backBtn').onclick = () => window.location.href = 'golf.html';
 document.getElementById('dictBackBtn').onclick = () => { dictionary.style.display='none'; mainMenu.style.display='block'; };
 
-// Personajes
 const characters = document.querySelectorAll('.character');
 characters.forEach(c => { if(!c.classList.contains('locked')) c.onclick = () => alert('Personaje seleccionado: '+c.textContent); });
 
 function startGame(){
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    canvas.width = window.innerWidth; 
+    canvas.height = window.innerHeight;
 
     let score = 0, playerXP = 0, playerLevel = 1, xpToNextLevel = 15, gamePaused = false;
 
-    const player = {x:canvas.width/2, y:canvas.height/2, size:30, speed:5, color:'cyan', bulletSpeed:10, shootInterval:2500, doubleShot:false, bulletSize:5};
+    const player = {
+        x:canvas.width/2,
+        y:canvas.height/2,
+        size:30,
+        speed:5,
+        color:'cyan',
+        bulletSpeed:10,
+        shootInterval:2500,
+        doubleShot:false,
+        bulletSize:5,
+        meleeUnlocked:false
+    };
 
     const keys = {};
     document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
@@ -115,28 +125,18 @@ function startGame(){
 
     const bullets=[], vampires=[], xpParticles=[];
 
-    // Arma melee
-    const melee = {range:50, cooldown:2000, lastAttack:0};
-    function meleeAttack(){
-        const now = Date.now();
-        if(now - melee.lastAttack < melee.cooldown) return;
-        melee.lastAttack = now;
-        vampires.forEach((v,vi)=>{
-            const dist = Math.hypot(player.x - v.x, player.y - v.y);
-            if(dist <= melee.range){
-                const xpAmount = Math.floor(Math.random()*5)+1;
-                xpParticles.push({x:v.x, y:v.y, size:12, color:'lime', xp:xpAmount});
-                vampires.splice(vi,1);
-                score += 1;
-                document.getElementById('score').textContent = "Puntuación: "+score;
-            }
-        });
-    }
+    const melee = {range:50, interval:2500, lastAttack:0};
 
-    document.addEventListener('keydown', e => {
-        keys[e.key.toLowerCase()] = true;
-        if(e.code === 'Space') meleeAttack();
-    });
+    const abilities=[
+        {name:"Bala doble", apply:()=>player.doubleShot=true},
+        {name:"Disparo rápido", apply:()=>{player.shootInterval=Math.max(500,player.shootInterval-500); resetShootTimer();}},
+        {name:"Más velocidad", apply:()=>player.speed+=1},
+        {name:"Bala rápida", apply:()=>player.bulletSpeed+=3},
+        {name:"Bala grande", apply:()=>player.bulletSize+=2},
+        {name:"Control enemigos", apply:()=>player.freezeEnemies=true},
+        {name:"Más XP", apply:()=>playerXP+=3},
+        {name:"Espadazo", apply:()=>player.meleeUnlocked=true}
+    ];
 
     function spawnVampire(){
         if(gamePaused) return;
@@ -150,16 +150,6 @@ function startGame(){
         vampires.push({x,y,size:30,speed:2,color});
     }
     setInterval(spawnVampire,2000);
-
-    const abilities=[
-        {name:"Bala doble", apply:()=>player.doubleShot=true},
-        {name:"Disparo rápido", apply:()=>{player.shootInterval=Math.max(500,player.shootInterval-500); resetShootTimer();}},
-        {name:"Más velocidad", apply:()=>player.speed+=1},
-        {name:"Bala rápida", apply:()=>player.bulletSpeed+=3},
-        {name:"Bala grande", apply:()=>player.bulletSize+=2},
-        {name:"Control enemigos", apply:()=>player.freezeEnemies=true},
-        {name:"Más XP", apply:()=>playerXP+=3}
-    ];
 
     function shootAtClosestVampire(){
         if(gamePaused || vampires.length===0) return;
@@ -180,7 +170,24 @@ function startGame(){
     let shootTimer=setInterval(shootAtClosestVampire, player.shootInterval);
     function resetShootTimer(){ clearInterval(shootTimer); shootTimer=setInterval(shootAtClosestVampire, player.shootInterval); }
 
-    // Panel de habilidades
+    function autoMeleeAttack(){
+        if(!player.meleeUnlocked) return;
+        const now = Date.now();
+        if(now - melee.lastAttack < melee.interval) return;
+        melee.lastAttack = now;
+
+        vampires.forEach((v,vi)=>{
+            const dist = Math.hypot(player.x - v.x, player.y - v.y);
+            if(dist <= melee.range){
+                const xpAmount = Math.floor(Math.random()*5)+1;
+                xpParticles.push({x:v.x, y:v.y, size:12, color:'lime', xp:xpAmount});
+                vampires.splice(vi,1);
+                score += 1;
+                document.getElementById('score').textContent = "Puntuación: "+score;
+            }
+        });
+    }
+
     function showLevelMenu(){
         gamePaused = true;
         const menu=document.getElementById('levelMenu');
@@ -257,22 +264,22 @@ function startGame(){
                 updateXPLevelText();
             }
         });
+
+        autoMeleeAttack(); // espadazo automático
     }
 
     function draw(){
         ctx.clearRect(0,0,canvas.width,canvas.height);
-        // Jugador
         ctx.fillStyle=player.color; ctx.beginPath(); ctx.arc(player.x,player.y,player.size/2,0,Math.PI*2); ctx.fill();
-        // Bullets
         bullets.forEach(b=>{ ctx.fillStyle='yellow'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); });
-        // Enemigos
         vampires.forEach(v=>{ ctx.fillStyle=v.color; ctx.beginPath(); ctx.arc(v.x,v.y,v.size/2,0,Math.PI*2); ctx.fill(); });
-        // Partículas XP
         xpParticles.forEach(p=>{ ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size/2,0,Math.PI*2); ctx.fill(); });
-        // Melee visual
-        if(Date.now() - melee.lastAttack < 100){
+
+        // Visual espadazo
+        if(player.meleeUnlocked && Date.now() - melee.lastAttack < 100){
             ctx.fillStyle='rgba(255,0,0,0.3)';
-            ctx.beginPath(); ctx.arc(player.x,player.y,melee.range,0,Math.PI*2); ctx.fill();
+            ctx.beginPath(); ctx.arc(player.x, player.y, melee.range, 0, Math.PI*2);
+            ctx.fill();
         }
     }
 
@@ -280,6 +287,5 @@ function startGame(){
     loop();
 }
 </script>
-
 </body>
 </html>
