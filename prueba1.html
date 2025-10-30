@@ -8,6 +8,7 @@
   body { margin:0; overflow:hidden; background:#111; font-family:Arial, sans-serif; }
   canvas { display:block; margin:0 auto; background:#111; }
   #score { position:absolute; top:10px; left:10px; color:white; font-size:20px; }
+  #xpLevel { position:absolute; top:40px; left:10px; color:white; font-size:20px; }
   #levelMenu {
     position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
     background:rgba(0,0,0,0.9); padding:20px; border:2px solid white;
@@ -22,6 +23,7 @@
 </head>
 <body>
 <div id="score">Puntuación: 0</div>
+<div id="xpLevel">Nivel: 1 | XP: 0/15</div>
 <div id="levelMenu">
   <div>¡Subiste de nivel! Elige una habilidad:</div>
   <div id="abilityButtons"></div>
@@ -41,7 +43,7 @@ let gamePaused = false;
 
 const player = {
     x: canvas.width/2, y: canvas.height/2, size:30, speed:5,
-    color:'cyan', bulletSpeed:10, shootInterval:2500, doubleShot:false
+    color:'cyan', bulletSpeed:10, shootInterval:2500, doubleShot:false, bulletSize:5
 };
 
 const keys = {};
@@ -62,12 +64,15 @@ function spawnVampire(){
 }
 setInterval(spawnVampire,2000);
 
+// Habilidades inspiradas en Vampire Survivors
 const abilities=[
     {name:"Bala doble", apply:()=>player.doubleShot=true},
     {name:"Disparo más rápido", apply:()=>{player.shootInterval=Math.max(500,player.shootInterval-500); resetShootTimer();}},
     {name:"Más velocidad", apply:()=>player.speed+=1},
     {name:"Bala más rápida", apply:()=>player.bulletSpeed+=3},
-    {name:"Bala más grande", apply:()=>player.bulletSize=(player.bulletSize||5)+2}
+    {name:"Bala más grande", apply:()=>player.bulletSize+=2},
+    {name:"Control de enemigos", apply:()=>player.freezeEnemies=true}, // puedes implementar efecto extra
+    {name:"Más XP", apply:()=>playerXP+=3} // pequeño bonus XP al elegir
 ];
 
 function shootAtClosestVampire(){
@@ -78,11 +83,11 @@ function shootAtClosestVampire(){
         if(dist<minDist){minDist=dist; closest=vampires[i];}
     }
     const angle=Math.atan2(closest.y-player.y, closest.x-player.x);
-    bullets.push({x:player.x, y:player.y, dx:Math.cos(angle)*player.bulletSpeed, dy:Math.sin(angle)*player.bulletSpeed, size:player.bulletSize||5});
+    bullets.push({x:player.x, y:player.y, dx:Math.cos(angle)*player.bulletSpeed, dy:Math.sin(angle)*player.bulletSpeed, size:player.bulletSize});
     if(player.doubleShot){
         const offset=Math.PI/12;
-        bullets.push({x:player.x, y:player.y, dx:Math.cos(angle+offset)*player.bulletSpeed, dy:Math.sin(angle+offset)*player.bulletSpeed, size:player.bulletSize||5});
-        bullets.push({x:player.x, y:player.y, dx:Math.cos(angle-offset)*player.bulletSpeed, dy:Math.sin(angle-offset)*player.bulletSpeed, size:player.bulletSize||5});
+        bullets.push({x:player.x, y:player.y, dx:Math.cos(angle+offset)*player.bulletSpeed, dy:Math.sin(angle+offset)*player.bulletSpeed, size:player.bulletSize});
+        bullets.push({x:player.x, y:player.y, dx:Math.cos(angle-offset)*player.bulletSpeed, dy:Math.sin(angle-offset)*player.bulletSpeed, size:player.bulletSize});
     }
 }
 
@@ -90,7 +95,7 @@ let shootTimer=setInterval(shootAtClosestVampire, player.shootInterval);
 function resetShootTimer(){ clearInterval(shootTimer); shootTimer=setInterval(shootAtClosestVampire, player.shootInterval); }
 
 function showLevelMenu(){
-    gamePaused = true; // Pausar el juego
+    gamePaused = true;
     const menu=document.getElementById('levelMenu');
     const buttonsDiv=document.getElementById('abilityButtons');
     buttonsDiv.innerHTML='';
@@ -99,17 +104,22 @@ function showLevelMenu(){
         const ability=abilities[Math.floor(Math.random()*abilities.length)];
         if(!options.includes(ability)) options.push(ability);
     }
-    options.forEach((a,i)=>{
+    options.forEach(a=>{
         const btn=document.createElement('button');
         btn.textContent=a.name;
         btn.onclick=()=>{
             a.apply();
             menu.style.display='none';
-            gamePaused = false; // Reanudar juego
+            gamePaused = false;
+            updateXPLevelText();
         };
         buttonsDiv.appendChild(btn);
     });
     menu.style.display='block';
+}
+
+function updateXPLevelText(){
+    document.getElementById('xpLevel').textContent="Nivel: "+playerLevel+" | XP: "+playerXP+"/"+xpToNextLevel;
 }
 
 function update(){
@@ -158,6 +168,7 @@ function update(){
                 xpToNextLevel=Math.floor(xpToNextLevel*1.5);
                 showLevelMenu();
             }
+            updateXPLevelText();
         }
     });
 }
@@ -168,8 +179,6 @@ function draw(){
     bullets.forEach(b=>{ ctx.fillStyle='yellow'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); });
     vampires.forEach(v=>{ ctx.fillStyle=v.color; ctx.beginPath(); ctx.arc(v.x,v.y,v.size/2,0,Math.PI*2); ctx.fill(); });
     xpParticles.forEach(p=>{ ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size/2,0,Math.PI*2); ctx.fill(); });
-    ctx.fillStyle='white'; ctx.font='20px Arial';
-    ctx.fillText("Nivel: "+playerLevel+" | XP: "+playerXP+"/"+xpToNextLevel,10,30);
 }
 
 function loop(){ update(); draw(); requestAnimationFrame(loop); }
