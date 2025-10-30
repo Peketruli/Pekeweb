@@ -1,256 +1,321 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Vampire Survival Arcade</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Arcade - Vampire Survival</title>
 <style>
-  body { margin:0; padding:0; font-family:Arial, sans-serif; background:#111; color:white; text-align:center; overflow:hidden; }
-  #mainMenu, #gameCanvasContainer, #dictionary, #levelMenu { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); }
-  #mainMenu { display:block; }
-  #gameCanvasContainer, #dictionary, #levelMenu { display:none; }
-  button { display:block; margin:10px auto; padding:10px 25px; font-size:18px; cursor:pointer; background:#222; color:white; border:2px solid white; border-radius:8px; }
-  button:hover { background:#444; }
-  .character { display:inline-block; margin:10px; width:60px; height:60px; background:#333; border:2px solid white; line-height:60px; font-weight:bold; cursor:pointer; }
-  .locked { opacity:0.4; cursor:not-allowed; }
-  #score, #xpLevel { position:fixed; left:10px; font-size:18px; background:rgba(0,0,0,0.5); padding:5px 10px; border-radius:5px; }
-  #score { top:10px; }
-  #xpLevel { top:40px; }
-  #levelMenu { background:#000c; padding:30px; border:2px solid white; border-radius:10px; text-align:center; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    font-family: sans-serif;
+    background: #111;
+    color: white;
+  }
+  #gameCanvas {
+    display: none;
+    background: radial-gradient(circle at center, #222 0%, #000 100%);
+  }
+  #menu {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    background: #111;
+  }
+  button {
+    padding: 10px 20px;
+    font-size: 18px;
+    cursor: pointer;
+    border: none;
+    border-radius: 10px;
+    background: #3a3a3a;
+    color: white;
+    transition: 0.3s;
+  }
+  button:hover {
+    background: #5a5a5a;
+  }
+  #upgradeMenu {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+  }
+  #hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 18px;
+  }
+  #healthBar {
+    width: 200px;
+    height: 20px;
+    background: #333;
+    border-radius: 5px;
+    margin-bottom: 5px;
+    overflow: hidden;
+  }
+  #healthFill {
+    height: 100%;
+    width: 100%;
+    background: limegreen;
+    transition: width 0.2s linear, background 0.3s;
+  }
 </style>
 </head>
 <body>
-
-<!-- ======== MENÚ PRINCIPAL ======== -->
-<div id="mainMenu">
-  <h1>🧛 Vampire Survival Arcade</h1>
-  <h3>Personajes disponibles:</h3>
-  <div id="characters">
-    <div class="character">Disparo</div>
-    <div class="character locked">Espada</div>
+  <div id="menu">
+    <h1>🧛 Vampire Survival</h1>
+    <button id="playBtn">Jugar</button>
+    <button onclick="alert('Diccionario próximamente')">Diccionario</button>
+    <button onclick="window.location.href='golf.html'">Volver a Golf</button>
   </div>
-  <button id="playBtn">Jugar</button>
-  <button id="dictBtn">Diccionario</button>
-  <button id="backBtn">Volver a Golf</button>
-</div>
 
-<!-- ======== CANVAS DEL JUEGO ======== -->
-<div id="gameCanvasContainer">
   <canvas id="gameCanvas" width="800" height="600"></canvas>
-  <div id="score">Puntuación: 0</div>
-  <div id="xpLevel">Nivel: 1 | XP: 0/15</div>
-</div>
-
-<!-- ======== MENÚ DE NIVEL ======== -->
-<div id="levelMenu">
-  <h2>🎯 ¡Has subido de nivel!</h2>
-  <div id="abilityButtons"></div>
-</div>
-
-<!-- ======== DICCIONARIO ======== -->
-<div id="dictionary">
-  <h2>Diccionario</h2>
-  <div id="dictionaryContent" style="text-align:left; max-height:400px; overflow:auto;">
-    <h3>Armas</h3>
-    <p>- Disparo básico: dispara automáticamente cada 2.5 segundos.</p>
-    <p>- Espadazo: ataque cuerpo a cuerpo que golpea cerca del jugador.</p>
-
-    <h3>Habilidades</h3>
-    <p>- Bala doble: dispara dos proyectiles por ataque.</p>
-    <p>- Disparo rápido: reduce el tiempo entre disparos.</p>
-    <p>- Más velocidad: el jugador se mueve más rápido.</p>
-    <p>- Más vida: aumenta la resistencia del jugador.</p>
-    <p>- Espadazo: desbloquea ataques cuerpo a cuerpo automáticos.</p>
+  <div id="hud">
+    <div id="healthBar"><div id="healthFill"></div></div>
+    <div id="xpDisplay">XP: 0 / 15</div>
+    <div id="levelDisplay">Nivel: 1</div>
+    <div id="scoreDisplay">Puntos: 0</div>
   </div>
-  <button id="dictBackBtn">Volver al menú</button>
-</div>
+
+  <div id="upgradeMenu"></div>
 
 <script>
-const mainMenu=document.getElementById('mainMenu');
-const gameContainer=document.getElementById('gameCanvasContainer');
-const dictionary=document.getElementById('dictionary');
-const levelMenu=document.getElementById('levelMenu');
-const abilityButtons=document.getElementById('abilityButtons');
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const menu = document.getElementById('menu');
+const upgradeMenu = document.getElementById('upgradeMenu');
+const xpDisplay = document.getElementById('xpDisplay');
+const levelDisplay = document.getElementById('levelDisplay');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const healthFill = document.getElementById('healthFill');
 
-document.getElementById('playBtn').onclick=()=>{mainMenu.style.display='none';gameContainer.style.display='block';startGame();};
-document.getElementById('dictBtn').onclick=()=>{mainMenu.style.display='none';dictionary.style.display='block';};
-document.getElementById('backBtn').onclick=()=>{window.location.href='golf.html';};
-document.getElementById('dictBackBtn').onclick=()=>{dictionary.style.display='none';mainMenu.style.display='block';};
+let keys = {};
+let player = { x: 400, y: 300, size: 20, speed: 3, hp: 5, maxHp: 5, xp: 0, level: 1, damage: 1 };
+let bullets = [];
+let enemies = [];
+let orbs = [];
+let score = 0;
+let lastShot = 0;
+let lastSlash = 0;
+let difficultyTimer = 0;
+let gamePaused = false;
+let abilities = [];
+let difficultyInterval = 45000;
+let xpToNext = 15;
+let meleeUnlocked = false;
+let regenUnlocked = false;
+let regenTimer = 0;
 
-function startGame(){
-const canvas=document.getElementById('gameCanvas');
-const ctx=canvas.getContext('2d');
-canvas.width=window.innerWidth;
-canvas.height=window.innerHeight;
+document.getElementById('playBtn').onclick = () => {
+  menu.style.display = 'none';
+  canvas.style.display = 'block';
+  startGame();
+};
 
-let score=0, playerXP=0, playerLevel=1, xpToNextLevel=15, gamePaused=false;
-let difficultyTimer=0, spawnInterval=2000, enemyBaseSpeed=1.5;
-
-const player={x:canvas.width/2,y:canvas.height/2,size:30,speed:5,color:'cyan',hp:5,maxHp:5,bulletSpeed:10,shootInterval:2500,doubleShot:false,meleeUnlocked:false};
-const bullets=[],vampires=[],xpParticles=[];
-
-const keys={};
-document.addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
-document.addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
-
-function spawnVampire(){
-    if(gamePaused)return;
-    const type=Math.random();
-    const edge=Math.floor(Math.random()*4);
-    let x,y;
-    if(edge===0){x=0;y=Math.random()*canvas.height;}
-    else if(edge===1){x=canvas.width;y=Math.random()*canvas.height;}
-    else if(edge===2){x=Math.random()*canvas.width;y=0;}
-    else{x=Math.random()*canvas.width;y=canvas.height;}
-
-    if(type<0.6){vampires.push({x,y,size:30,speed:enemyBaseSpeed,color:'red',hp:2,xpDrop:Math.floor(Math.random()*4)+1});}
-    else if(type<0.9){vampires.push({x,y,size:25,speed:enemyBaseSpeed+1,color:'orange',hp:1,xpDrop:2});}
-    else{vampires.push({x,y,size:40,speed:enemyBaseSpeed-0.3,color:'purple',hp:5,xpDrop:Math.floor(Math.random()*8)+2});}
+function startGame() {
+  window.requestAnimationFrame(update);
+  spawnEnemy();
+  setInterval(spawnEnemy, 2000);
 }
-let spawnTimer=setInterval(spawnVampire,spawnInterval);
 
-function resetShootTimer(){clearInterval(shootTimer);shootTimer=setInterval(shootAtClosestVampire,player.shootInterval);}
-function resetMeleeTimer(){clearInterval(meleeTimer);meleeTimer=setInterval(meleeAttack,2500);}
+function update(timestamp) {
+  if (gamePaused) return requestAnimationFrame(update);
 
-function shootAtClosestVampire(){
-    if(gamePaused||vampires.length===0)return;
-    let closest=vampires[0],minDist=Math.hypot(player.x-closest.x,player.y-closest.y);
-    for(let i=1;i<vampires.length;i++){
-        const dist=Math.hypot(player.x-vampires[i].x,player.y-vampires[i].y);
-        if(dist<minDist){minDist=dist;closest=vampires[i];}
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Movimiento
+  if (keys['w']) player.y -= player.speed;
+  if (keys['s']) player.y += player.speed;
+  if (keys['a']) player.x -= player.speed;
+  if (keys['d']) player.x += player.speed;
+  player.x = Math.max(0, Math.min(canvas.width, player.x));
+  player.y = Math.max(0, Math.min(canvas.height, player.y));
+
+  // Dibuja jugador
+  ctx.fillStyle = 'cyan';
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Regeneración
+  if (regenUnlocked) {
+    regenTimer += 1/60;
+    if (regenTimer > 1) {
+      regenTimer = 0;
+      if (player.hp < player.maxHp) player.hp = Math.min(player.maxHp, player.hp + 0.1);
     }
-    const angle=Math.atan2(closest.y-player.y,closest.x-player.x);
-    bullets.push({x:player.x,y:player.y,dx:Math.cos(angle)*player.bulletSpeed,dy:Math.sin(angle)*player.bulletSpeed,size:6,damage:1});
-    if(player.doubleShot){
-        const offset=Math.PI/12;
-        bullets.push({x:player.x,y:player.y,dx:Math.cos(angle+offset)*player.bulletSpeed,dy:Math.sin(angle+offset)*player.bulletSpeed,size:6,damage:1});
-        bullets.push({x:player.x,y:player.y,dx:Math.cos(angle-offset)*player.bulletSpeed,dy:Math.sin(angle-offset)*player.bulletSpeed,size:6,damage:1});
+  }
+
+  // Disparo automático
+  if (timestamp - lastShot > 2500) {
+    shootNearestEnemy();
+    lastShot = timestamp;
+  }
+
+  // Ataque melee automático
+  if (meleeUnlocked && timestamp - lastSlash > 2500) {
+    meleeAttack();
+    lastSlash = timestamp;
+  }
+
+  updateBullets();
+  updateEnemies();
+  updateOrbs();
+  drawHUD();
+
+  difficultyTimer += 16;
+  if (difficultyTimer > difficultyInterval) {
+    difficultyTimer = 0;
+    difficultyInterval *= 0.98;
+    enemies.forEach(e => e.hp += 0.5);
+  }
+
+  requestAnimationFrame(update);
+}
+
+function drawHUD() {
+  const hpPct = (player.hp / player.maxHp) * 100;
+  healthFill.style.width = hpPct + '%';
+  healthFill.style.background = hpPct < 30 ? 'red' : hpPct < 60 ? 'orange' : 'limegreen';
+  xpDisplay.textContent = `XP: ${Math.floor(player.xp)} / ${xpToNext}`;
+  levelDisplay.textContent = `Nivel: ${player.level}`;
+  scoreDisplay.textContent = `Puntos: ${score}`;
+}
+
+function shootNearestEnemy() {
+  if (enemies.length === 0) return;
+  const target = enemies.reduce((a, b) => 
+    distance(a, player) < distance(b, player) ? a : b
+  );
+  const angle = Math.atan2(target.y - player.y, target.x - player.x);
+  bullets.push({
+    x: player.x, y: player.y, dx: Math.cos(angle) * 5, dy: Math.sin(angle) * 5
+  });
+}
+
+function meleeAttack() {
+  const range = 40;
+  ctx.strokeStyle = 'yellow';
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, range, 0, Math.PI * 2);
+  ctx.stroke();
+  enemies.forEach((e) => {
+    if (distance(player, e) < range) e.hp -= player.damage + 1;
+  });
+}
+
+function updateBullets() {
+  ctx.fillStyle = 'white';
+  bullets.forEach((b, i) => {
+    b.x += b.dx;
+    b.y += b.dy;
+    ctx.fillRect(b.x, b.y, 4, 4);
+    enemies.forEach((e, j) => {
+      if (distance(b, e) < 15) {
+        e.hp -= player.damage;
+        bullets.splice(i, 1);
+      }
+    });
+  });
+}
+
+function spawnEnemy() {
+  const x = Math.random() < 0.5 ? 0 : canvas.width;
+  const y = Math.random() * canvas.height;
+  enemies.push({ x, y, size: 15, hp: 3, speed: 1.2 });
+}
+
+function updateEnemies() {
+  enemies.forEach((e, i) => {
+    const ang = Math.atan2(player.y - e.y, player.x - e.x);
+    e.x += Math.cos(ang) * e.speed;
+    e.y += Math.sin(ang) * e.speed;
+    ctx.fillStyle = 'red';
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (distance(player, e) < e.size + player.size) {
+      player.hp -= 0.02;
+      if (player.hp <= 0) location.reload();
     }
-}
-let shootTimer=setInterval(shootAtClosestVampire,player.shootInterval);
 
-// Melee Attack
-let meleeTimer;
-function meleeAttack(){
-    if(gamePaused||!player.meleeUnlocked)return;
-    const range=100;
-    vampires.forEach((v,vi)=>{
-        const dist=Math.hypot(player.x-v.x,player.y-v.y);
-        if(dist<range){v.hp-=2;if(v.hp<=0)killVampire(vi,v);}
-    });
-}
-
-function killVampire(index,v){
-    vampires.splice(index,1);
-    score++;document.getElementById('score').textContent="Puntuación: "+score;
-    xpParticles.push({x:v.x,y:v.y,size:10,color:'lime',xp:v.xpDrop});
-}
-
-function showLevelMenu(){
-    gamePaused=true;
-    levelMenu.style.display='block';
-    abilityButtons.innerHTML='';
-    const options=[];
-    while(options.length<3){
-        const ability=abilities[Math.floor(Math.random()*abilities.length)];
-        if(!options.includes(ability))options.push(ability);
+    if (e.hp <= 0) {
+      enemies.splice(i, 1);
+      score++;
+      orbs.push({ x: e.x, y: e.y, value: Math.floor(Math.random() * 5) + 1 });
     }
-    options.forEach(a=>{
-        const btn=document.createElement('button');
-        btn.textContent=a.name;
-        btn.onclick=()=>{
-            a.apply();
-            levelMenu.style.display='none';
-            gamePaused=false;
-        };
-        abilityButtons.appendChild(btn);
-    });
+  });
 }
 
-const abilities=[
-    {name:"Bala doble",apply:()=>player.doubleShot=true},
-    {name:"Disparo rápido",apply:()=>{player.shootInterval=Math.max(500,player.shootInterval-500);resetShootTimer();}},
-    {name:"Más velocidad",apply:()=>player.speed+=1},
-    {name:"Más vida",apply:()=>{player.maxHp+=1;player.hp=player.maxHp;}},
-    {name:"Espadazo",apply:()=>{player.meleeUnlocked=true;resetMeleeTimer();}}
-];
-
-function updateXPLevelText(){document.getElementById('xpLevel').textContent="Nivel: "+playerLevel+" | XP: "+playerXP+"/"+xpToNextLevel;}
-
-function update(){
-    if(gamePaused)return;
-    difficultyTimer+=16;
-    if(difficultyTimer>45000){ // cada 45s sube dificultad
-        difficultyTimer=0;
-        if(spawnInterval>1000){spawnInterval-=50;clearInterval(spawnTimer);spawnTimer=setInterval(spawnVampire,spawnInterval);}
-        enemyBaseSpeed+=0.1;
-        vampires.forEach(v=>v.hp+=0.5);
+function updateOrbs() {
+  ctx.fillStyle = 'lime';
+  orbs.forEach((o, i) => {
+    ctx.beginPath();
+    ctx.arc(o.x, o.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    if (distance(player, o) < 20) {
+      player.xp += o.value;
+      orbs.splice(i, 1);
+      if (player.xp >= xpToNext) levelUp();
     }
-
-    if(keys['w'])player.y-=player.speed;
-    if(keys['s'])player.y+=player.speed;
-    if(keys['a'])player.x-=player.speed;
-    if(keys['d'])player.x+=player.speed;
-
-    player.x=Math.max(player.size/2,Math.min(canvas.width-player.size/2,player.x));
-    player.y=Math.max(player.size/2,Math.min(canvas.height-player.size/2,player.y));
-
-    bullets.forEach((b,bi)=>{
-        b.x+=b.dx;b.y+=b.dy;
-        if(b.x<0||b.x>canvas.width||b.y<0||b.y>canvas.height)bullets.splice(bi,1);
-    });
-
-    vampires.forEach((v,vi)=>{
-        const angle=Math.atan2(player.y-v.y,player.x-v.x);
-        v.x+=Math.cos(angle)*v.speed;
-        v.y+=Math.sin(angle)*v.speed;
-
-        bullets.forEach((b,bi)=>{
-            const dist=Math.hypot(b.x-v.x,b.y-v.y);
-            if(dist<v.size/2+b.size/2){
-                v.hp-=b.damage;
-                bullets.splice(bi,1);
-                if(v.hp<=0)killVampire(vi,v);
-            }
-        });
-
-        const distPlayer=Math.hypot(player.x-v.x,player.y-v.y);
-        if(distPlayer<v.size/2+player.size/2){
-            player.hp-=1;
-            vampires.splice(vi,1);
-            if(player.hp<=0){alert('💀 Has muerto\nPuntuación: '+score+' | Nivel: '+playerLevel);window.location.reload();}
-        }
-    });
-
-    xpParticles.forEach((p,i)=>{
-        const distPlayer=Math.hypot(player.x-p.x,player.y-p.y);
-        if(distPlayer<player.size/2+p.size/2){
-            playerXP+=p.xp;
-            xpParticles.splice(i,1);
-            if(playerXP>=xpToNextLevel){
-                playerLevel++;
-                playerXP-=xpToNextLevel;
-                xpToNextLevel=Math.floor(xpToNextLevel*1.5);
-                showLevelMenu();
-            }
-            updateXPLevelText();
-        }
-    });
+  });
 }
 
-function draw(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    ctx.fillStyle=player.color;
-    ctx.beginPath();ctx.arc(player.x,player.y,player.size/2,0,Math.PI*2);ctx.fill();
-
-    bullets.forEach(b=>{ctx.fillStyle='yellow';ctx.beginPath();ctx.arc(b.x,b.y,b.size,0,Math.PI*2);ctx.fill();});
-    vampires.forEach(v=>{ctx.fillStyle=v.color;ctx.beginPath();ctx.arc(v.x,v.y,v.size/2,0,Math.PI*2);ctx.fill();});
-    xpParticles.forEach(p=>{ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.size/2,0,Math.PI*2);ctx.fill();});
+function levelUp() {
+  player.level++;
+  player.xp = 0;
+  xpToNext *= 1.2;
+  gamePaused = true;
+  showUpgradeMenu();
 }
 
-function loop(){update();draw();requestAnimationFrame(loop);}
-loop();
+function showUpgradeMenu() {
+  upgradeMenu.style.display = 'flex';
+  upgradeMenu.innerHTML = `<h2>Subes de Nivel</h2>`;
+  const allUpgrades = [
+    { name: 'Bala doble', action: () => player.damage++ },
+    { name: 'Disparo rápido', action: () => (lastShot -= 500) },
+    { name: 'Más velocidad', action: () => (player.speed += 0.5) },
+    { name: 'Más vida', action: () => (player.maxHp += 1, player.hp = player.maxHp) },
+    { name: 'Espadazo', action: () => (meleeUnlocked = true) },
+    { name: 'Espada fuerte', action: () => (player.damage += 1) },
+    { name: 'Espada amplia', action: () => (player.size += 2) },
+    { name: 'Regeneración', action: () => (regenUnlocked = true) },
+  ];
+  const choices = [];
+  while (choices.length < 3) {
+    const r = allUpgrades[Math.floor(Math.random() * allUpgrades.length)];
+    if (!choices.includes(r)) choices.push(r);
+  }
+  choices.forEach((up) => {
+    const btn = document.createElement('button');
+    btn.textContent = up.name;
+    btn.onclick = () => {
+      up.action();
+      upgradeMenu.style.display = 'none';
+      gamePaused = false;
+    };
+    upgradeMenu.appendChild(btn);
+  });
 }
+
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+window.addEventListener('keydown', e => keys[e.key] = true);
+window.addEventListener('keyup', e => keys[e.key] = false);
 </script>
 </body>
 </html>
