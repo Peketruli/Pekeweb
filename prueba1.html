@@ -2,37 +2,34 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 <title>Vampire Survival Arcade</title>
 <style>
-  body {
-    margin: 0;
-    overflow: hidden;
-    background: #111;
-    color: #fff;
-    font-family: Arial, sans-serif;
+  body { margin:0; overflow:hidden; background:#111; font-family:Arial, sans-serif; }
+  canvas { display:block; margin:0 auto; background:#111; }
+  #score { position:absolute; top:10px; left:10px; color:white; font-size:20px; }
+  #levelMenu {
+    position:absolute; top:50%; left:50%; transform:translate(-50%, -50%);
+    background:rgba(0,0,0,0.9); padding:20px; border:2px solid white;
+    display:none; color:white; text-align:center; width:300px; font-size:18px;
   }
-  canvas {
-    display: block;
-    background: #111;
-    margin: 0 auto;
+  #levelMenu button {
+    display:block; width:80%; margin:10px auto; padding:10px; font-size:16px;
+    cursor:pointer; background:#222; color:white; border:1px solid white;
   }
-  #score {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    font-size: 20px;
-  }
+  #levelMenu button:hover { background:#444; }
 </style>
 </head>
 <body>
 <div id="score">Puntuación: 0</div>
+<div id="levelMenu">
+  <div>¡Subiste de nivel! Elige una habilidad:</div>
+  <div id="abilityButtons"></div>
+</div>
 <canvas id="gameCanvas"></canvas>
-
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
@@ -42,225 +39,134 @@ let playerLevel = 1;
 let xpToNextLevel = 50;
 
 const player = {
-    x: canvas.width / 2,
-    y: canvas.height / 2,
-    size: 30,
-    speed: 5,
-    color: 'cyan',
-    bulletSpeed: 10,
-    shootInterval: 2500,
-    doubleShot: false
+    x: canvas.width/2, y: canvas.height/2, size:30, speed:5,
+    color:'cyan', bulletSpeed:10, shootInterval:2500, doubleShot:false
 };
 
 const keys = {};
-document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
 
-const bullets = [];
-const vampires = [];
-const xpParticles = [];
+const bullets=[], vampires=[], xpParticles=[];
 
-function spawnVampire() {
-    const edge = Math.floor(Math.random() * 4);
-    let x, y;
-    if(edge === 0) { x = 0; y = Math.random() * canvas.height; }
-    else if(edge === 1) { x = canvas.width; y = Math.random() * canvas.height; }
-    else if(edge === 2) { x = Math.random() * canvas.width; y = 0; }
-    else { x = Math.random() * canvas.width; y = canvas.height; }
-
-    vampires.push({ x, y, size: 30, speed: 2, color: 'red' });
+function spawnVampire(){
+    const edge = Math.floor(Math.random()*4);
+    let x,y;
+    if(edge===0){x=0; y=Math.random()*canvas.height;}
+    else if(edge===1){x=canvas.width; y=Math.random()*canvas.height;}
+    else if(edge===2){x=Math.random()*canvas.width; y=0;}
+    else{x=Math.random()*canvas.width; y=canvas.height;}
+    vampires.push({x,y,size:30,speed:2,color:'red'});
 }
+setInterval(spawnVampire,2000);
 
-setInterval(spawnVampire, 2000);
-
-// Habilidades posibles
-const abilities = [
-    { name: "Bala doble", apply: () => player.doubleShot = true },
-    { name: "Disparo más rápido", apply: () => player.shootInterval = Math.max(500, player.shootInterval - 500) },
-    { name: "Más velocidad", apply: () => player.speed += 1 },
-    { name: "Bala más rápida", apply: () => player.bulletSpeed += 3 },
-    { name: "Bala más grande", apply: () => player.bulletSize = (player.bulletSize || 5) + 2 }
+const abilities=[
+    {name:"Bala doble", apply:()=>player.doubleShot=true},
+    {name:"Disparo más rápido", apply:()=>{player.shootInterval=Math.max(500,player.shootInterval-500); resetShootTimer();}},
+    {name:"Más velocidad", apply:()=>player.speed+=1},
+    {name:"Bala más rápida", apply:()=>player.bulletSpeed+=3},
+    {name:"Bala más grande", apply:()=>player.bulletSize=(player.bulletSize||5)+2}
 ];
 
-// Función para disparar al vampiro más cercano
-function shootAtClosestVampire() {
-    if(vampires.length === 0) return;
-
-    let closest = vampires[0];
-    let minDist = Math.hypot(player.x - closest.x, player.y - closest.y);
-    for(let i=1; i<vampires.length; i++){
-        const dist = Math.hypot(player.x - vampires[i].x, player.y - vampires[i].y);
-        if(dist < minDist){
-            minDist = dist;
-            closest = vampires[i];
-        }
+function shootAtClosestVampire(){
+    if(vampires.length===0) return;
+    let closest=vampires[0], minDist=Math.hypot(player.x-closest.x,player.y-closest.y);
+    for(let i=1;i<vampires.length;i++){
+        const dist=Math.hypot(player.x-vampires[i].x,player.y-vampires[i].y);
+        if(dist<minDist){minDist=dist; closest=vampires[i];}
     }
-
-    const angle = Math.atan2(closest.y - player.y, closest.x - player.x);
-
-    // Disparo simple
-    bullets.push({
-        x: player.x,
-        y: player.y,
-        dx: Math.cos(angle) * player.bulletSpeed,
-        dy: Math.sin(angle) * player.bulletSpeed,
-        size: player.bulletSize || 5
-    });
-
-    // Disparo doble si se tiene habilidad
+    const angle=Math.atan2(closest.y-player.y, closest.x-player.x);
+    bullets.push({x:player.x, y:player.y, dx:Math.cos(angle)*player.bulletSpeed, dy:Math.sin(angle)*player.bulletSpeed, size:player.bulletSize||5});
     if(player.doubleShot){
-        const angleOffset = Math.PI / 12; // 15 grados
-        bullets.push({
-            x: player.x,
-            y: player.y,
-            dx: Math.cos(angle + angleOffset) * player.bulletSpeed,
-            dy: Math.sin(angle + angleOffset) * player.bulletSpeed,
-            size: player.bulletSize || 5
-        });
-        bullets.push({
-            x: player.x,
-            y: player.y,
-            dx: Math.cos(angle - angleOffset) * player.bulletSpeed,
-            dy: Math.sin(angle - angleOffset) * player.bulletSpeed,
-            size: player.bulletSize || 5
-        });
+        const offset=Math.PI/12;
+        bullets.push({x:player.x, y:player.y, dx:Math.cos(angle+offset)*player.bulletSpeed, dy:Math.sin(angle+offset)*player.bulletSpeed, size:player.bulletSize||5});
+        bullets.push({x:player.x, y:player.y, dx:Math.cos(angle-offset)*player.bulletSpeed, dy:Math.sin(angle-offset)*player.bulletSpeed, size:player.bulletSize||5});
     }
 }
 
-// Disparo automático
-let shootTimer = setInterval(shootAtClosestVampire, player.shootInterval);
+let shootTimer=setInterval(shootAtClosestVampire, player.shootInterval);
+function resetShootTimer(){ clearInterval(shootTimer); shootTimer=setInterval(shootAtClosestVampire, player.shootInterval); }
 
-function chooseAbility() {
-    const options = [];
-    while(options.length < 3){
-        const ability = abilities[Math.floor(Math.random() * abilities.length)];
+function showLevelMenu(){
+    const menu=document.getElementById('levelMenu');
+    const buttonsDiv=document.getElementById('abilityButtons');
+    buttonsDiv.innerHTML='';
+    const options=[];
+    while(options.length<3){
+        const ability=abilities[Math.floor(Math.random()*abilities.length)];
         if(!options.includes(ability)) options.push(ability);
     }
-
-    const choice = prompt(
-        "¡Subiste de nivel! Elige una habilidad:\n1: " + options[0].name +
-        "\n2: " + options[1].name +
-        "\n3: " + options[2].name
-    );
-
-    const selected = options[parseInt(choice)-1];
-    if(selected) selected.apply();
+    options.forEach((a,i)=>{
+        const btn=document.createElement('button');
+        btn.textContent=a.name;
+        btn.onclick=()=>{
+            a.apply();
+            menu.style.display='none';
+        };
+        buttonsDiv.appendChild(btn);
+    });
+    menu.style.display='block';
 }
 
-function update() {
-    // Movimiento jugador
-    if(keys['w']) player.y -= player.speed;
-    if(keys['s']) player.y += player.speed;
-    if(keys['a']) player.x -= player.speed;
-    if(keys['d']) player.x += player.speed;
+function update(){
+    if(keys['w']) player.y-=player.speed;
+    if(keys['s']) player.y+=player.speed;
+    if(keys['a']) player.x-=player.speed;
+    if(keys['d']) player.x+=player.speed;
 
-    player.x = Math.max(player.size/2, Math.min(canvas.width - player.size/2, player.x));
-    player.y = Math.max(player.size/2, Math.min(canvas.height - player.size/2, player.y));
+    player.x=Math.max(player.size/2, Math.min(canvas.width-player.size/2, player.x));
+    player.y=Math.max(player.size/2, Math.min(canvas.height-player.size/2, player.y));
 
-    // Movimiento balas
-    bullets.forEach((b, i) => {
-        b.x += b.dx;
-        b.y += b.dy;
-        if(b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) bullets.splice(i,1);
-    });
+    bullets.forEach((b,i)=>{ b.x+=b.dx; b.y+=b.dy; if(b.x<0||b.x>canvas.width||b.y<0||b.y>canvas.height) bullets.splice(i,1); });
 
-    // Movimiento vampiros
-    vampires.forEach((v, vi) => {
-        const angle = Math.atan2(player.y - v.y, player.x - v.x);
-        v.x += Math.cos(angle) * v.speed;
-        v.y += Math.sin(angle) * v.speed;
+    vampires.forEach((v,vi)=>{
+        const angle=Math.atan2(player.y-v.y, player.x-v.x);
+        v.x+=Math.cos(angle)*v.speed;
+        v.y+=Math.sin(angle)*v.speed;
 
-        // Colisión con balas
-        bullets.forEach((b, bi) => {
-            const dist = Math.hypot(b.x - v.x, b.y - v.y);
-            if(dist < v.size/2 + b.size/2) {
-                // Partícula XP fija
-                const xpAmount = Math.floor(Math.random() * 5) + 1;
-                xpParticles.push({
-                    x: v.x,
-                    y: v.y,
-                    size: 10,
-                    color: 'lime',
-                    xp: xpAmount
-                });
-
-                vampires.splice(vi,1);
-                bullets.splice(bi,1);
-                score += 1;
-                document.getElementById('score').textContent = "Puntuación: " + score;
+        bullets.forEach((b,bi)=>{
+            const dist=Math.hypot(b.x-v.x, b.y-v.y);
+            if(dist<v.size/2+b.size/2){
+                const xpAmount=Math.floor(Math.random()*5)+1;
+                xpParticles.push({x:v.x, y:v.y, size:10, color:'lime', xp:xpAmount});
+                vampires.splice(vi,1); bullets.splice(bi,1);
+                score+=1; document.getElementById('score').textContent="Puntuación: "+score;
             }
         });
 
-        // Colisión con jugador
-        const distPlayer = Math.hypot(player.x - v.x, player.y - v.y);
-        if(distPlayer < v.size/2 + player.size/2) {
-            alert('¡Has sido atrapado! Puntuación final: ' + score + ', Nivel: ' + playerLevel);
+        const distPlayer=Math.hypot(player.x-v.x, player.y-v.y);
+        if(distPlayer<v.size/2+player.size/2){
+            alert('¡Has sido atrapado! Puntuación final: '+score+', Nivel: '+playerLevel);
             window.location.reload();
         }
     });
 
-    // Recolectar partículas XP
-    xpParticles.forEach((p, i) => {
-        const distPlayer = Math.hypot(player.x - p.x, player.y - p.y);
-        if(distPlayer < player.size/2 + p.size/2) {
-            playerXP += p.xp;
+    xpParticles.forEach((p,i)=>{
+        const distPlayer=Math.hypot(player.x-p.x, player.y-p.y);
+        if(distPlayer<player.size/2+p.size/2){
+            playerXP+=p.xp;
             xpParticles.splice(i,1);
-
-            if(playerXP >= xpToNextLevel) {
-                playerLevel += 1;
-                playerXP = playerXP - xpToNextLevel;
-                xpToNextLevel = Math.floor(xpToNextLevel * 1.5);
-                chooseAbility();
+            if(playerXP>=xpToNextLevel){
+                playerLevel+=1;
+                playerXP=playerXP-xpToNextLevel;
+                xpToNextLevel=Math.floor(xpToNextLevel*1.5);
+                showLevelMenu();
             }
         }
     });
 }
 
-function draw() {
+function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    // Dibujar jugador
-    ctx.fillStyle = player.color;
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, player.size/2, 0, Math.PI*2);
-    ctx.fill();
-
-    // Dibujar balas
-    bullets.forEach(b => {
-        ctx.fillStyle = 'yellow';
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, b.size, 0, Math.PI*2);
-        ctx.fill();
-    });
-
-    // Dibujar vampiros
-    vampires.forEach(v => {
-        ctx.fillStyle = v.color;
-        ctx.beginPath();
-        ctx.arc(v.x, v.y, v.size/2, 0, Math.PI*2);
-        ctx.fill();
-    });
-
-    // Dibujar partículas XP
-    xpParticles.forEach(p => {
-        ctx.fillStyle = p.color;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size/2, 0, Math.PI*2);
-        ctx.fill();
-    });
-
-    // Mostrar XP y nivel
-    ctx.fillStyle = 'white';
-    ctx.font = '20px Arial';
-    ctx.fillText("Nivel: " + playerLevel + " | XP: " + playerXP + "/" + xpToNextLevel, 10, 30);
+    ctx.fillStyle=player.color; ctx.beginPath(); ctx.arc(player.x,player.y,player.size/2,0,Math.PI*2); ctx.fill();
+    bullets.forEach(b=>{ ctx.fillStyle='yellow'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); });
+    vampires.forEach(v=>{ ctx.fillStyle=v.color; ctx.beginPath(); ctx.arc(v.x,v.y,v.size/2,0,Math.PI*2); ctx.fill(); });
+    xpParticles.forEach(p=>{ ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size/2,0,Math.PI*2); ctx.fill(); });
+    ctx.fillStyle='white'; ctx.font='20px Arial';
+    ctx.fillText("Nivel: "+playerLevel+" | XP: "+playerXP+"/"+xpToNextLevel,10,30);
 }
 
-function loop() {
-    update();
-    draw();
-    requestAnimationFrame(loop);
-}
-
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
 loop();
 </script>
 </body>
