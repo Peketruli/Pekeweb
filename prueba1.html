@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vampire Survival Arcade</title>
+<style>
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: #111;
+    color: #fff;
+    font-family: Arial, sans-serif;
+  }
+  canvas {
+    display: block;
+    background: #111;
+    margin: 0 auto;
+  }
+  #score {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 20px;
+  }
+</style>
+</head>
+<body>
+<div id="score">Puntuación: 0</div>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+let score = 0;
+const player = {
+    x: canvas.width / 2,
+    y: canvas.height / 2,
+    size: 30,
+    speed: 5,
+    color: 'cyan'
+};
+
+const keys = {};
+document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+const bullets = [];
+canvas.addEventListener('click', e => {
+    const angle = Math.atan2(e.clientY - player.y, e.clientX - player.x);
+    bullets.push({
+        x: player.x,
+        y: player.y,
+        dx: Math.cos(angle) * 10,
+        dy: Math.sin(angle) * 10,
+        size: 5
+    });
+});
+
+const vampires = [];
+function spawnVampire() {
+    const edge = Math.floor(Math.random() * 4);
+    let x, y;
+    if(edge === 0) { x = 0; y = Math.random() * canvas.height; }
+    else if(edge === 1) { x = canvas.width; y = Math.random() * canvas.height; }
+    else if(edge === 2) { x = Math.random() * canvas.width; y = 0; }
+    else { x = Math.random() * canvas.width; y = canvas.height; }
+
+    vampires.push({ x, y, size: 30, speed: 2, color: 'red' });
+}
+
+setInterval(spawnVampire, 2000);
+
+function update() {
+    // Movimiento jugador
+    if(keys['w']) player.y -= player.speed;
+    if(keys['s']) player.y += player.speed;
+    if(keys['a']) player.x -= player.speed;
+    if(keys['d']) player.x += player.speed;
+
+    // Limites de pantalla
+    player.x = Math.max(player.size/2, Math.min(canvas.width - player.size/2, player.x));
+    player.y = Math.max(player.size/2, Math.min(canvas.height - player.size/2, player.y));
+
+    // Movimiento balas
+    bullets.forEach((b, i) => {
+        b.x += b.dx;
+        b.y += b.dy;
+        if(b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) bullets.splice(i,1);
+    });
+
+    // Movimiento vampiros
+    vampires.forEach((v, vi) => {
+        const angle = Math.atan2(player.y - v.y, player.x - v.x);
+        v.x += Math.cos(angle) * v.speed;
+        v.y += Math.sin(angle) * v.speed;
+
+        // Colisión con balas
+        bullets.forEach((b, bi) => {
+            const dist = Math.hypot(b.x - v.x, b.y - v.y);
+            if(dist < v.size/2 + b.size/2) {
+                vampires.splice(vi,1);
+                bullets.splice(bi,1);
+                score += 1;
+                document.getElementById('score').textContent = "Puntuación: " + score;
+            }
+        });
+
+        // Colisión con jugador
+        const distPlayer = Math.hypot(player.x - v.x, player.y - v.y);
+        if(distPlayer < v.size/2 + player.size/2) {
+            alert('¡Has sido atrapado! Puntuación final: ' + score);
+            window.location.reload();
+        }
+    });
+}
+
+function draw() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // Dibujar jugador
+    ctx.fillStyle = player.color;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size/2, 0, Math.PI*2);
+    ctx.fill();
+
+    // Dibujar balas
+    bullets.forEach(b => {
+        ctx.fillStyle = 'yellow';
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.size, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    // Dibujar vampiros
+    vampires.forEach(v => {
+        ctx.fillStyle = v.color;
+        ctx.beginPath();
+        ctx.arc(v.x, v.y, v.size/2, 0, Math.PI*2);
+        ctx.fill();
+    });
+}
+
+function loop() {
+    update();
+    draw();
+    requestAnimationFrame(loop);
+}
+
+loop();
+</script>
+</body>
+</html>
