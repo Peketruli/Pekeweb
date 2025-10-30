@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Casino — Sala y Pasillo con Física</title>
+<title>Casino — Sala, Pasillo y Ruleta</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;background:#111;font-family:Inter,Arial,Helvetica,sans-serif}
 canvas{display:block;width:100vw;height:100vh}
@@ -37,7 +37,7 @@ canvas{display:block;width:100vw;height:100vh}
 </head>
 <body>
 <div id="prompt">Presiona <b>E</b> para abrir</div>
-<div id="hint">W/S/A/D mover • Flechas girar cámara • Shift correr • Espacio saltar • Acércate a la puerta</div>
+<div id="hint">W/S/A/D mover • Flechas cámara • Shift correr • Espacio saltar • Acércate a la puerta</div>
 <canvas id="c"></canvas>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
@@ -53,7 +53,7 @@ scene.background=new THREE.Color(0xebe6dc);
 
 const camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,50);
 camera.position.set(0,1.7,0.5);
-camera.rotation.order = 'YXZ'; // importante para topes verticales
+camera.lookAt(0,1.7,-4);
 scene.add(camera);
 
 // ------------------------
@@ -66,6 +66,7 @@ const doorMat=new THREE.MeshBasicMaterial({color:0x3f2a18});
 const frameMat=new THREE.MeshBasicMaterial({color:0x2e1d12});
 const roomFloorMat=new THREE.MeshBasicMaterial({color:0x5a0b0b});
 const roomWallMat=new THREE.MeshBasicMaterial({color:0xCFC0B0});
+const rouletteMat=new THREE.MeshBasicMaterial({color:0x1a1a1a});
 
 // ------------------------
 // Parámetros
@@ -96,10 +97,10 @@ backWall.position.set(0,pasillo.H/2,0.1);
 scene.add(backWall);
 
 // ------------------------
-// Puerta ajustada
+// Puerta principal (interactiva)
 // ------------------------
 const doorW=1,doorH=2,doorD=0.12;
-const hingeX=-pasillo.W/2 + 0.4;  
+const hingeX=-pasillo.W/2 + 0.4;
 const hingeY=doorH/2 + 0.1;
 const hingeZ=-pasillo.L-0.01;
 const doorPivot=new THREE.Object3D();
@@ -119,6 +120,27 @@ const frameTop=new THREE.Mesh(new THREE.BoxGeometry(doorW+0.24,0.12,0.2),frameMa
 frameTop.position.set(hingeX+doorW/2,doorH+0.06,hingeZ-0.06); scene.add(frameTop);
 
 // ------------------------
+// Puerta de salida al final del pasillo
+// ------------------------
+const exitDoorW = 1, exitDoorH = 2, exitDoorD = 0.12;
+const exitHingeX = 0;
+const exitHingeY = exitDoorH/2;
+const exitHingeZ = -pasillo.L; 
+const exitDoor = new THREE.Mesh(new THREE.BoxGeometry(exitDoorW, exitDoorH, exitDoorD), doorMat);
+exitDoor.position.set(exitHingeX, exitHingeY, exitHingeZ);
+scene.add(exitDoor);
+
+const exitFrameLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, exitDoorH+0.12, 0.2), frameMat);
+exitFrameLeft.position.set(exitHingeX - exitDoorW/2 - 0.06, exitHingeY, exitHingeZ - 0.06);
+scene.add(exitFrameLeft);
+const exitFrameRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, exitDoorH+0.12, 0.2), frameMat);
+exitFrameRight.position.set(exitHingeX + exitDoorW/2 + 0.06, exitHingeY, exitHingeZ - 0.06);
+scene.add(exitFrameRight);
+const exitFrameTop = new THREE.Mesh(new THREE.BoxGeometry(exitDoorW+0.24, 0.12, 0.2), frameMat);
+exitFrameTop.position.set(exitHingeX, exitDoorH + 0.06, exitHingeZ - 0.06);
+scene.add(exitFrameTop);
+
+// ------------------------
 // Sala
 // ------------------------
 const roomFloor=new THREE.Mesh(new THREE.PlaneGeometry(sala.W,sala.L),roomFloorMat);
@@ -132,38 +154,47 @@ const roomLeft=new THREE.Mesh(new THREE.BoxGeometry(0.2,sala.H,sala.L),roomWallM
 roomLeft.position.set(-sala.W/2,sala.H/2,hingeZ-sala.L/2); scene.add(roomLeft);
 const roomRight=roomLeft.clone(); roomRight.position.set(sala.W/2,sala.H/2,hingeZ-sala.L/2); scene.add(roomRight);
 
-// Techo sala
 const roomCeiling=new THREE.Mesh(new THREE.BoxGeometry(sala.W,pasillo.thick,sala.L),ceilingMat);
 roomCeiling.position.set(0,sala.H-pasillo.thick/2,hingeZ-sala.L/2);
 scene.add(roomCeiling);
 
-// Pared frontal dividida para no tapar la puerta
 const roomFrontLeft=new THREE.Mesh(new THREE.BoxGeometry((sala.W-doorW)/2,sala.H,0.2),roomWallMat);
 roomFrontLeft.position.set(-doorW/2-(sala.W-doorW)/4,sala.H/2,hingeZ); scene.add(roomFrontLeft);
 const roomFrontRight=new THREE.Mesh(new THREE.BoxGeometry((sala.W-doorW)/2,sala.H,0.2),roomWallMat);
 roomFrontRight.position.set(doorW/2+(sala.W-doorW)/4,sala.H/2,hingeZ); scene.add(roomFrontRight);
 
 // ------------------------
-// Sonido puerta
+// Ruleta en la sala
+// ------------------------
+const rouletteRadius = 1.2;
+const rouletteHeight = 0.2;
+const rouletteGeometry = new THREE.CylinderGeometry(rouletteRadius, rouletteRadius, rouletteHeight, 32);
+const roulette = new THREE.Mesh(rouletteGeometry, rouletteMat);
+roulette.position.set(0, rouletteHeight/2, hingeZ - sala.L/2);
+roulette.rotation.x = Math.PI/2;
+scene.add(roulette);
+
+// ------------------------
+// Audio puerta principal
 // ------------------------
 const doorAudio=new Audio('https://cdn.jsdelivr.net/gh/Peketruli/sounds/door-light.mp3');
 function playDoorSound(opening=true){doorAudio.currentTime=0;doorAudio.play();}
 
 // ------------------------
-// Estados puerta
+// Estados puerta principal
 // ------------------------
 let doorState='closed',animT=0,autoCloseTimeout=null;
 const openAngle=-Math.PI*0.45,closedAngle=0,animDur=0.6;
 
 // ------------------------
-// Movimiento jugador con físicas
+// Movimiento jugador
 // ------------------------
 const keys={};
 window.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE') triggerDoor();});
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
 let velY=0, canJump=true, walkSpeed=0.1, runSpeed=0.24, rotSpeed=0.05;
-const maxCamX=Math.PI/3, minCamX=-Math.PI/6; // límites arriba/abajo
+const minCamX=-Math.PI/4, maxCamX=Math.PI/4;
 
 function distToDoor(){
   const doorWorld=new THREE.Vector3();
@@ -173,7 +204,6 @@ function distToDoor(){
   const dy=camera.position.y-doorWorld.y;
   return Math.sqrt(dx*dx+dy*dy+dz*dz);
 }
-
 const promptEl=document.getElementById('prompt');
 function updatePrompt(){ promptEl.style.display = distToDoor()<2 ? 'block' : 'none'; }
 
@@ -188,18 +218,31 @@ function triggerDoor(){
 }
 
 // ------------------------
-// Animación y límites físicos
+// Teletransporte puerta salida
+// ------------------------
+function checkExitDoor(){
+  const dx = camera.position.x - exitDoor.position.x;
+  const dz = camera.position.z - exitDoor.position.z;
+  const dy = camera.position.y - exitDoor.position.y;
+  const dist = Math.sqrt(dx*dx + dy*dy + dz*dz);
+  if(dist < 2 && keys['KeyE']){
+    window.location.href = 'h.html';
+  }
+}
+
+// ------------------------
+// Animación y colisiones
 // ------------------------
 const clock=new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
   const dt=Math.min(0.05,clock.getDelta());
 
-  // Rotación con flechas
-  if(keys['ArrowLeft']) camera.rotation.y += rotSpeed;
-  if(keys['ArrowRight']) camera.rotation.y -= rotSpeed;
-  if(keys['ArrowUp']) camera.rotation.x += rotSpeed/2;
-  if(keys['ArrowDown']) camera.rotation.x -= rotSpeed/2;
+  // Cámara flechas
+  if(keys['ArrowUp']) camera.rotation.x -= rotSpeed/2;
+  if(keys['ArrowDown']) camera.rotation.x += rotSpeed/2;
+  if(keys['ArrowLeft']) camera.rotation.y += rotSpeed/2;
+  if(keys['ArrowRight']) camera.rotation.y -= rotSpeed/2;
   camera.rotation.x = Math.max(minCamX, Math.min(maxCamX, camera.rotation.x));
 
   // Movimiento WASD con strafe
@@ -218,19 +261,15 @@ function animate(){
   velY-=0.02; camera.position.y+=velY;
   if(camera.position.y<1.7){ camera.position.y=1.7; velY=0; canJump=true; }
 
-  // ----------------
-  // Colisiones puerta
-  // ----------------
+  // Colisión puerta principal
   const doorOpen = (doorState==='open');
   const camX = camera.position.x, camZ = camera.position.z;
   if(!doorOpen){
-    // límite frontal de la puerta
     const doorFront = hingeZ;
     const doorBack = hingeZ - 0.2;
     const doorLeft = hingeX;
     const doorRight = hingeX + doorW;
     if(camZ>doorBack && camZ<doorFront && camX>doorLeft && camX<doorRight){
-      // retroceder un poco
       if(keys['KeyW']) camera.position.addScaledVector(dir,-speed);
       if(keys['KeyS']) camera.position.addScaledVector(dir,speed);
       if(keys['KeyA']) camera.position.addScaledVector(strafe,-speed);
@@ -239,31 +278,29 @@ function animate(){
   }
 
   // Límites pasillo
-  const inPasillo = camera.position.z > hingeZ-0.05;
-  if(inPasillo){
-    const halfW=pasillo.W/2-0.05;
-    if(camera.position.x<-halfW) camera.position.x=-halfW;
-    if(camera.position.x>halfW) camera.position.x=halfW;
-    if(camera.position.z>0) camera.position.z=0;
-  }
+  const halfW=pasillo.W/2-0.05;
+  if(camera.position.x<-halfW) camera.position.x=-halfW;
+  if(camera.position.x>halfW) camera.position.x=halfW;
+  if(camera.position.z>0) camera.position.z=0;
 
   // Límites sala
-  const inSala = camera.position.z < hingeZ-0.05 || doorOpen;
-  if(inSala){
-    const roomHalfW=sala.W/2-0.05;
-    const roomFrontZ=hingeZ;
-    const roomBackZ=hingeZ-sala.L;
-    if(camera.position.x<-roomHalfW) camera.position.x=-roomHalfW;
-    if(camera.position.x>roomHalfW) camera.position.x=roomHalfW;
-    if(!doorOpen && camera.position.z>roomFrontZ-0.05) camera.position.z=roomFrontZ-0.05;
-    if(camera.position.z<roomBackZ) camera.position.z=roomBackZ;
-  }
+  const roomHalfW=sala.W/2-0.05;
+  const roomFrontZ=hingeZ;
+  const roomBackZ=hingeZ-sala.L;
+  if(camera.position.x<-roomHalfW) camera.position.x=-roomHalfW;
+  if(camera.position.x>roomHalfW) camera.position.x=roomHalfW;
+  if(!doorOpen && camera.position.z>roomFrontZ-0.05) camera.position.z=roomFrontZ-0.05;
+  if(camera.position.z<roomBackZ) camera.position.z=roomBackZ;
 
   updatePrompt();
+  checkExitDoor();
 
-  // Animar puerta
+  // Animar puerta principal
   if(doorState==='opening'){animT+=dt; const t=Math.min(1,animT/animDur); const ease=t*(2-t); doorPivot.rotation.y=closedAngle+(openAngle-closedAngle)*ease; if(t>=1) doorState='open';}
   else if(doorState==='closing'){animT+=dt; const t=Math.min(1,animT/animDur); const ease=t*(2-t); doorPivot.rotation.y=openAngle+(closedAngle-openAngle)*ease;if(t>=1) doorState='closed';}
+
+  // Ruleta animación simple (gira lentamente)
+  roulette.rotation.z += 0.01;
 
   renderer.render(scene,camera);
 }
