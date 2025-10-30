@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Casino — Sala y Pasillo ajustados</title>
+<title>Casino — Sala y Pasillo con Física</title>
 <style>
 html,body{height:100%;margin:0;overflow:hidden;background:#111;font-family:Inter,Arial,Helvetica,sans-serif}
 canvas{display:block;width:100vw;height:100vh}
@@ -53,7 +53,7 @@ scene.background=new THREE.Color(0xebe6dc);
 
 const camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,50);
 camera.position.set(0,1.7,0.5);
-camera.lookAt(0,1.7,-4);
+camera.rotation.order = 'YXZ'; // importante para topes verticales
 scene.add(camera);
 
 // ------------------------
@@ -99,7 +99,7 @@ scene.add(backWall);
 // Puerta ajustada
 // ------------------------
 const doorW=1,doorH=2,doorD=0.12;
-const hingeX=-pasillo.W/2 + 0.4;  // ajustado a tu gusto
+const hingeX=-pasillo.W/2 + 0.4;  
 const hingeY=doorH/2 + 0.1;
 const hingeZ=-pasillo.L-0.01;
 const doorPivot=new THREE.Object3D();
@@ -156,13 +156,14 @@ let doorState='closed',animT=0,autoCloseTimeout=null;
 const openAngle=-Math.PI*0.45,closedAngle=0,animDur=0.6;
 
 // ------------------------
-// Movimiento jugador
+// Movimiento jugador con físicas
 // ------------------------
 const keys={};
 window.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE') triggerDoor();});
 window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
 let velY=0, canJump=true, walkSpeed=0.1, runSpeed=0.24, rotSpeed=0.05;
+const maxCamX=Math.PI/3, minCamX=-Math.PI/6; // límites arriba/abajo
 
 function distToDoor(){
   const doorWorld=new THREE.Vector3();
@@ -199,8 +200,9 @@ function animate(){
   if(keys['ArrowRight']) camera.rotation.y -= rotSpeed;
   if(keys['ArrowUp']) camera.rotation.x -= rotSpeed/2;
   if(keys['ArrowDown']) camera.rotation.x += rotSpeed/2;
+  camera.rotation.x = Math.max(minCamX, Math.min(maxCamX, camera.rotation.x));
 
-  // Movimiento con WASD
+  // Movimiento WASD con strafe
   const dir=new THREE.Vector3();
   camera.getWorldDirection(dir); dir.y=0; dir.normalize();
   const speed=(keys['ShiftLeft']||keys['ShiftRight'])?runSpeed:walkSpeed;
@@ -216,6 +218,26 @@ function animate(){
   velY-=0.02; camera.position.y+=velY;
   if(camera.position.y<1.7){ camera.position.y=1.7; velY=0; canJump=true; }
 
+  // ----------------
+  // Colisiones puerta
+  // ----------------
+  const doorOpen = (doorState==='open');
+  const camX = camera.position.x, camZ = camera.position.z;
+  if(!doorOpen){
+    // límite frontal de la puerta
+    const doorFront = hingeZ;
+    const doorBack = hingeZ - 0.2;
+    const doorLeft = hingeX;
+    const doorRight = hingeX + doorW;
+    if(camZ>doorBack && camZ<doorFront && camX>doorLeft && camX<doorRight){
+      // retroceder un poco
+      if(keys['KeyW']) camera.position.addScaledVector(dir,-speed);
+      if(keys['KeyS']) camera.position.addScaledVector(dir,speed);
+      if(keys['KeyA']) camera.position.addScaledVector(strafe,-speed);
+      if(keys['KeyD']) camera.position.addScaledVector(strafe,speed);
+    }
+  }
+
   // Límites pasillo
   const inPasillo = camera.position.z > hingeZ-0.05;
   if(inPasillo){
@@ -226,9 +248,8 @@ function animate(){
   }
 
   // Límites sala
-  const doorOpen = (doorState==='open');
-  const inSala = camera.position.z < hingeZ-0.05;
-  if(inSala || doorOpen){
+  const inSala = camera.position.z < hingeZ-0.05 || doorOpen;
+  if(inSala){
     const roomHalfW=sala.W/2-0.05;
     const roomFrontZ=hingeZ;
     const roomBackZ=hingeZ-sala.L;
