@@ -58,6 +58,7 @@ button:hover { background:#444; }
     <p>- Disparo básico: tu arma inicial, dispara automáticamente.</p>
     <p>- Bala doble: dispara dos balas por disparo.</p>
     <p>- Bala rápida: aumenta la velocidad de las balas.</p>
+    <p>- Melee: ataque cuerpo a cuerpo con barra espaciadora.</p>
     <h3>Enemigos</h3>
     <p>- Vampiro rojo: enemigo básico, lento.</p>
     <p>- Vampiro rápido: enemigo más rápido y peligroso.</p>
@@ -99,7 +100,6 @@ document.getElementById('dictBackBtn').onclick = () => { dictionary.style.displa
 const characters = document.querySelectorAll('.character');
 characters.forEach(c => { if(!c.classList.contains('locked')) c.onclick = () => alert('Personaje seleccionado: '+c.textContent); });
 
-// Función principal del juego
 function startGame(){
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
@@ -114,6 +114,29 @@ function startGame(){
     document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
 
     const bullets=[], vampires=[], xpParticles=[];
+
+    // Arma melee
+    const melee = {range:50, cooldown:2000, lastAttack:0};
+    function meleeAttack(){
+        const now = Date.now();
+        if(now - melee.lastAttack < melee.cooldown) return;
+        melee.lastAttack = now;
+        vampires.forEach((v,vi)=>{
+            const dist = Math.hypot(player.x - v.x, player.y - v.y);
+            if(dist <= melee.range){
+                const xpAmount = Math.floor(Math.random()*5)+1;
+                xpParticles.push({x:v.x, y:v.y, size:12, color:'lime', xp:xpAmount});
+                vampires.splice(vi,1);
+                score += 1;
+                document.getElementById('score').textContent = "Puntuación: "+score;
+            }
+        });
+    }
+
+    document.addEventListener('keydown', e => {
+        keys[e.key.toLowerCase()] = true;
+        if(e.code === 'Space') meleeAttack();
+    });
 
     function spawnVampire(){
         if(gamePaused) return;
@@ -187,10 +210,12 @@ function startGame(){
 
     function update(){
         if(gamePaused) return;
+
         if(keys['w']) player.y-=player.speed;
         if(keys['s']) player.y+=player.speed;
         if(keys['a']) player.x-=player.speed;
         if(keys['d']) player.x+=player.speed;
+
         player.x=Math.max(player.size/2, Math.min(canvas.width-player.size/2, player.x));
         player.y=Math.max(player.size/2, Math.min(canvas.height-player.size/2, player.y));
 
@@ -200,6 +225,7 @@ function startGame(){
             const angle=Math.atan2(player.y-v.y, player.x-v.x);
             v.x+=Math.cos(angle)*v.speed;
             v.y+=Math.sin(angle)*v.speed;
+
             bullets.forEach((b,bi)=>{
                 const dist=Math.hypot(b.x-v.x, b.y-v.y);
                 if(dist<v.size/2+b.size/2){
@@ -209,6 +235,7 @@ function startGame(){
                     score+=1; document.getElementById('score').textContent="Puntuación: "+score;
                 }
             });
+
             const distPlayer=Math.hypot(player.x-v.x, player.y-v.y);
             if(distPlayer<v.size/2+player.size/2){
                 alert('¡Has sido atrapado! Puntuación final: '+score+', Nivel: '+playerLevel);
@@ -234,10 +261,19 @@ function startGame(){
 
     function draw(){
         ctx.clearRect(0,0,canvas.width,canvas.height);
+        // Jugador
         ctx.fillStyle=player.color; ctx.beginPath(); ctx.arc(player.x,player.y,player.size/2,0,Math.PI*2); ctx.fill();
+        // Bullets
         bullets.forEach(b=>{ ctx.fillStyle='yellow'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); });
+        // Enemigos
         vampires.forEach(v=>{ ctx.fillStyle=v.color; ctx.beginPath(); ctx.arc(v.x,v.y,v.size/2,0,Math.PI*2); ctx.fill(); });
+        // Partículas XP
         xpParticles.forEach(p=>{ ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size/2,0,Math.PI*2); ctx.fill(); });
+        // Melee visual
+        if(Date.now() - melee.lastAttack < 100){
+            ctx.fillStyle='rgba(255,0,0,0.3)';
+            ctx.beginPath(); ctx.arc(player.x,player.y,melee.range,0,Math.PI*2); ctx.fill();
+        }
     }
 
     function loop(){ update(); draw(); requestAnimationFrame(loop); }
