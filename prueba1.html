@@ -5,37 +5,46 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Vampire Survival Arcade</title>
 <style>
-  body { margin:0; padding:0; font-family: Arial, sans-serif; background:#111; color:white; overflow:hidden; }
-  canvas { display:block; background:#111; }
+body { margin:0; padding:0; font-family: Arial, sans-serif; background:#111; color:white; overflow:hidden; }
+canvas { display:block; background:#111; }
 
-  #hud {
-      position:absolute; top:10px; left:10px;
-      width:300px; font-size:16px;
-      z-index:10;
-  }
-  .barContainer {
-      background:#333; border:2px solid white; margin:5px 0; height:20px; width:100%;
-      position:relative;
-  }
-  .barFill {
-      background:lime; height:100%; width:100%;
-      transition: width 0.2s;
-  }
-  #xpFill { background:gold; }
-  #levelText, #scoreText { margin:5px 0; font-weight:bold; }
+#hud {
+    position:absolute; top:10px; left:50%; transform:translateX(-50%);
+    width:500px; font-size:16px; text-align:center; z-index:10;
+}
+.barContainer {
+    background:#333; border:2px solid white; margin:5px 0; height:20px; width:100%;
+    position:relative;
+}
+.barFill { background:lime; height:100%; width:100%; transition: width 0.2s; }
+#xpFill { background:gold; }
+#scoreText, #levelText { font-weight:bold; margin:3px 0; }
 
-  #levelMenu {
-      display:none;
-      position:absolute;
-      top:50%; left:50%;
-      transform:translate(-50%, -50%);
-      background:#222;
-      padding:20px;
-      border:2px solid white;
-      text-align:center;
-      z-index:100;
-  }
-  #levelMenu button { margin:5px; padding:10px 20px; font-size:16px; cursor:pointer; }
+#levelMenu {
+    display:none;
+    position:absolute;
+    top:50%; left:50%;
+    transform:translate(-50%, -50%);
+    background:#222;
+    padding:20px;
+    border:2px solid white;
+    text-align:center;
+    z-index:100;
+}
+#levelMenu button { margin:5px; padding:10px 20px; font-size:16px; cursor:pointer; }
+
+#deathPanel {
+    display:none;
+    position:absolute;
+    top:50%; left:50%;
+    transform:translate(-50%, -50%);
+    background:#222;
+    padding:20px;
+    border:2px solid red;
+    text-align:center;
+    z-index:100;
+}
+#deathPanel button { margin-top:10px; padding:10px 20px; font-size:16px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -60,38 +69,45 @@
     <div id="abilityButtons"></div>
 </div>
 
+<div id="deathPanel">
+    <h2>Has muerto</h2>
+    <button id="restartBtn">Reiniciar</button>
+</div>
+
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// -------------------- VARIABLES --------------------
+// ---------------- VARIABLES ----------------
 let score = 0;
 let playerXP = 0;
 let playerLevel = 1;
 let xpToNextLevel = 15;
 let gamePaused = false;
+let gameTime = 0; // ms
+let bossInterval = 150000; // 2.5 minutos
+let bosses = [];
 
-// Player
 const player = {
     x: canvas.width/2, y: canvas.height/2,
     size:30, speed:5, color:'cyan',
     bulletSpeed:10, shootInterval:2500, doubleShot:false, multiShot:false,
-    melee:false, meleeInterval:2500, hp:100, maxHp:100, meleeDamage:10
+    melee:false, meleeInterval:2500, meleeDamage:10,
+    solar:false, solarDamage:5, solarAreas:[],
+    hp:100, maxHp:100
 };
 
-// Input
 const keys = {};
 document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
 document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
 
-// Entities
 const bullets=[], vampires=[], xpParticles=[], meleeAttacks=[];
 
-// -------------------- ENEMIGOS --------------------
+// ---------------- ENEMIGOS ----------------
 const vampireTypes=[
-    {name:'Rojo', size:30, speed:2, hp:1},       // más fácil al principio
+    {name:'Rojo', size:30, speed:2, hp:1},
     {name:'Rápido', size:20, speed:3, hp:1},
     {name:'Resistente', size:35, speed:1.5, hp:5}
 ];
@@ -101,17 +117,22 @@ let spawnTimer = setInterval(spawnVampire, spawnRate);
 
 function spawnVampire(){
     if(gamePaused) return;
-    const type=vampireTypes[Math.floor(Math.random()*vampireTypes.length)];
+    let type;
+    if(gameTime<120000){ // primeros 2 minutos
+        type = vampireTypes[0];
+    } else {
+        type=vampireTypes[Math.floor(Math.random()*vampireTypes.length)];
+    }
     const edge=Math.floor(Math.random()*4);
     let x,y;
     if(edge===0){ x=0; y=Math.random()*canvas.height; }
     else if(edge===1){ x=canvas.width; y=Math.random()*canvas.height; }
     else if(edge===2){ x=Math.random()*canvas.width; y=0; }
     else{ x=Math.random()*canvas.width; y=canvas.height; }
-    vampires.push({x,y,type: type.name, size:type.size, speed:type.speed, hp:type.hp});
+    vampires.push({x,y,type:type.name,size:type.size,speed:type.speed,hp:type.hp});
 }
 
-// Incremento de dificultad progresivo
+// Incremento progresivo de dificultad
 setInterval(()=>{
     if(spawnRate>800){
         spawnRate -= 200;
@@ -120,7 +141,7 @@ setInterval(()=>{
     }
 }, 20000);
 
-// -------------------- HABILIDADES / MEJORAS --------------------
+// ---------------- HABILIDADES ----------------
 const abilities=[
     {name:"Doble bala", apply:()=>player.doubleShot=true},
     {name:"Multidisparo", apply:()=>player.multiShot=true},
@@ -129,10 +150,12 @@ const abilities=[
     {name:"Más vida", apply:()=>{player.maxHp+=20; player.hp+=20; updateHUD();}},
     {name:"Espada", apply:()=>player.melee=true},
     {name:"Mejora espada", apply:()=>player.meleeDamage+=5},
+    {name:"Área solar", apply:()=>{player.solar=true; player.solarAreas.push({x:player.x, y:player.y, size:80, damage:player.solarDamage});}},
+    {name:"Mejora solar", apply:()=>{player.solarDamage+=2; player.solarAreas.forEach(a=>a.damage+=2);}},
     {name:"Más XP", apply:()=>playerXP+=3}
 ];
 
-// -------------------- DISPARO AUTOMÁTICO --------------------
+// ---------------- DISPARO ----------------
 function shootAtClosestVampire(){
     if(gamePaused || vampires.length===0) return;
     let closest=vampires[0], minDist=Math.hypot(player.x-closest.x, player.y-closest.y);
@@ -154,7 +177,7 @@ function shootAtClosestVampire(){
 let shootTimer=setInterval(shootAtClosestVampire, player.shootInterval);
 function resetShootTimer(){ clearInterval(shootTimer); shootTimer=setInterval(shootAtClosestVampire, player.shootInterval); }
 
-// -------------------- ATAQUE MELEE --------------------
+// ---------------- MELEE ----------------
 function startMelee(){
     if(player.melee && !gamePaused){
         meleeAttacks.push({x:player.x, y:player.y, size:50, damage:player.meleeDamage, lifetime:5});
@@ -162,16 +185,25 @@ function startMelee(){
 }
 setInterval(startMelee, player.meleeInterval);
 
-// -------------------- MENU DE NIVELES --------------------
+// ---------------- BOSSES ----------------
+setInterval(()=>{
+    if(!gamePaused){
+        const x=Math.random()*canvas.width;
+        const y=Math.random()*canvas.height;
+        bosses.push({x,y,size:60,hp:50,speed:1.5});
+    }
+}, bossInterval);
+
+// ---------------- LEVEL MENU ----------------
 function showLevelMenu(){
-    gamePaused = true;
+    gamePaused=true;
     const menu=document.getElementById('levelMenu');
     const buttonsDiv=document.getElementById('abilityButtons');
     buttonsDiv.innerHTML='';
     const options=[];
     while(options.length<3){
         const ability=abilities[Math.floor(Math.random()*abilities.length)];
-        if(!options.includes(ability) && !(ability.name==="Espada" && player.melee)) options.push(ability);
+        if(!options.includes(ability) && !(ability.name==="Espada" && player.melee) && !(ability.name==="Área solar" && player.solar)) options.push(ability);
     }
     options.forEach(a=>{
         const btn=document.createElement('button');
@@ -179,7 +211,7 @@ function showLevelMenu(){
         btn.onclick=()=>{
             a.apply();
             menu.style.display='none';
-            gamePaused = false;
+            gamePaused=false;
             updateHUD();
         };
         buttonsDiv.appendChild(btn);
@@ -187,7 +219,7 @@ function showLevelMenu(){
     menu.style.display='block';
 }
 
-// -------------------- HUD --------------------
+// ---------------- HUD ----------------
 function updateHUD(){
     document.getElementById('scoreText').textContent="Puntuación: "+score;
     document.getElementById('levelText').textContent="Nivel: "+playerLevel;
@@ -199,9 +231,10 @@ function updateHUD(){
     document.getElementById('xpText').textContent=playerXP+"/"+xpToNextLevel;
 }
 
-// -------------------- UPDATE --------------------
-function update(){
+// ---------------- UPDATE ----------------
+function update(delta){
     if(gamePaused) return;
+    gameTime+=delta;
 
     // Movimiento
     if(keys['w']) player.y-=player.speed;
@@ -217,13 +250,13 @@ function update(){
     // Melee
     meleeAttacks.forEach((m,i)=>{ m.lifetime--; if(m.lifetime<=0) meleeAttacks.splice(i,1); });
 
-    // Enemigos
+    // Vampires
     vampires.forEach((v,vi)=>{
         const angle=Math.atan2(player.y-v.y, player.x-v.x);
         v.x+=Math.cos(angle)*v.speed;
         v.y+=Math.sin(angle)*v.speed;
 
-        // Colisión con balas
+        // Balas
         bullets.forEach((b,bi)=>{
             const dist=Math.hypot(b.x-v.x, b.y-v.y);
             if(dist<v.size/2+b.size/2){
@@ -239,7 +272,7 @@ function update(){
             }
         });
 
-        // Colisión con melee
+        // Melee
         meleeAttacks.forEach(m=>{
             const dist=Math.hypot(m.x-v.x, m.y-v.y);
             if(dist<m.size/2+v.size/2){
@@ -254,14 +287,25 @@ function update(){
             }
         });
 
-        // Colisión con player
+        // Player contacto
         const distPlayer=Math.hypot(player.x-v.x, player.y-v.y);
         if(distPlayer<v.size/2+player.size/2){
-            player.hp -= 20; 
-            if(player.hp<=0){
-                alert('¡Has sido atrapado! Puntuación final: '+score+', Nivel: '+playerLevel);
-                window.location.reload();
-            }
+            player.hp-=10;
+            if(player.hp<=0) showDeathPanel();
+            updateHUD();
+        }
+    });
+
+    // Bosses
+    bosses.forEach((b,bi)=>{
+        const angle=Math.atan2(player.y-b.y, player.x-b.x);
+        b.x+=Math.cos(angle)*b.speed;
+        b.y+=Math.sin(angle)*b.speed;
+
+        const distPlayer=Math.hypot(player.x-b.x, player.y-b.y);
+        if(distPlayer<b.size/2+player.size/2){
+            player.hp-=20;
+            if(player.hp<=0) showDeathPanel();
             updateHUD();
         }
     });
@@ -281,17 +325,53 @@ function update(){
             updateHUD();
         }
     });
+
+    // Solar Area Damage
+    if(player.solar){
+        player.solarAreas.forEach(a=>{
+            vampires.forEach((v,vi)=>{
+                const dist=Math.hypot(a.x-v.x, a.y-v.y);
+                if(dist<a.size/2){
+                    v.hp-=a.damage;
+                    if(v.hp<=0){
+                        const xpAmount=Math.floor(Math.random()*5)+1;
+                        xpParticles.push({x:v.x, y:v.y, size:10, color:'lime', xp:xpAmount});
+                        vampires.splice(vi,1);
+                        score+=1;
+                        updateHUD();
+                    }
+                }
+            });
+        });
+    }
 }
 
-// -------------------- DRAW --------------------
+// ---------------- DEATH ----------------
+function showDeathPanel(){
+    gamePaused=true;
+    document.getElementById('deathPanel').style.display='block';
+}
+
+document.getElementById('restartBtn').onclick=()=>{
+    location.reload();
+}
+
+// ---------------- DRAW ----------------
 function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    // Solar Areas
+    player.solarAreas.forEach(a=>{
+        ctx.fillStyle='orange';
+        ctx.globalAlpha=0.3;
+        ctx.beginPath(); ctx.arc(a.x,a.y,a.size/2,0,Math.PI*2); ctx.fill();
+        ctx.globalAlpha=1;
+    });
 
     // Player
     ctx.fillStyle=player.color;
     ctx.beginPath();
-    ctx.arc(player.x, player.y, player.size/2,0,Math.PI*2);
-    ctx.fill();
+    ctx.arc(player.x, player.y, player.size/2,0,Math.PI*2); ctx.fill();
 
     // Balas
     bullets.forEach(b=>{ ctx.fillStyle='yellow'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); });
@@ -302,15 +382,24 @@ function draw(){
     // Vampires
     vampires.forEach(v=>{ ctx.fillStyle='red'; ctx.beginPath(); ctx.arc(v.x,v.y,v.size/2,0,Math.PI*2); ctx.fill(); });
 
+    // Bosses
+    bosses.forEach(b=>{ ctx.fillStyle='purple'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size/2,0,Math.PI*2); ctx.fill(); });
+
     // XP
     xpParticles.forEach(p=>{ ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size/2,0,Math.PI*2); ctx.fill(); });
 }
 
-// -------------------- LOOP --------------------
-function loop(){ update(); draw(); requestAnimationFrame(loop); }
+// ---------------- LOOP ----------------
+let lastTime=0;
+function loop(timestamp){
+    let delta = timestamp-lastTime;
+    lastTime=timestamp;
+    update(delta);
+    draw();
+    requestAnimationFrame(loop);
+}
 loop();
 updateHUD();
 </script>
-
 </body>
 </html>
