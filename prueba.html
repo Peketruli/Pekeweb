@@ -3,11 +3,10 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Casino — Pasillo y Sala (puerta con bisagras + sonido) - Mejorado</title>
+<title>Casino — Pasillo Corto (puerta ligera)</title>
 <style>
-  html,body{height:100%;margin:0;overflow:hidden;background:#0b0b0c;font-family:Inter,Arial,Helvetica,sans-serif}
+  html,body{height:100%;margin:0;overflow:hidden;background:#111;font-family:Inter,Arial,Helvetica,sans-serif}
   canvas{display:block;width:100vw;height:100vh}
-  /* HUD prompt centrado */
   #prompt {
     position: fixed;
     left: 50%;
@@ -34,398 +33,164 @@
     border-radius: 6px;
     font-size: 13px;
   }
-  a.credit { position: fixed; left: 12px; bottom: 12px; color: #ddd; text-decoration:none; z-index:10; background: rgba(0,0,0,0.35); padding:6px 8px; border-radius:6px; font-size:13px; }
 </style>
 </head>
 <body>
 <div id="prompt">Presiona <b>E</b> para abrir</div>
 <div id="hint">W/S mover • A/D girar • Shift correr • Espacio saltar • Acércate a la puerta</div>
-<a class="credit" href="#" onclick="alert('Casino demo - Peketruli');return false;">Casino 3D — demo</a>
 <canvas id="c"></canvas>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
 <script>
-/* ============================
-   Escena basica: renderer/scene
-   ============================ */
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x1a1a1a);
+scene.background = new THREE.Color(0xebe6dc);
 
-/* ============================
-   Cámara: altura ~1.7 m
-   ============================ */
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 500);
-// spawn INSIDE the pasillo, a la entrada (mirando hacia -Z, donde está la puerta).
-camera.position.set(0, 1.7, 0.8);
-camera.lookAt(0, 1.7, -2.2);
+// Cámara dentro del pasillo
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 50);
+camera.position.set(0,1.7,0.5);
+camera.lookAt(0,1.7,-4);
 scene.add(camera);
 
-/* ============================
-   Materiales y parámetros
-   ============================ */
-const wallColor = 0xD3C6B2;
-const floorColor = 0x5a5a5a;
-const ceilingColor = 0x2f2f2f;
-const doorColor = 0x3f2a18;
-const frameColor = 0x2e1d12;
-const roomFloorColor = 0x5a0b0b;
+// Materiales básicos
+const wallMat = new THREE.MeshBasicMaterial({color:0xD3C6B2});
+const floorMat = new THREE.MeshBasicMaterial({color:0x7a7a7a});
+const ceilingMat = new THREE.MeshBasicMaterial({color:0x3b3b3b});
+const doorMat = new THREE.MeshBasicMaterial({color:0x3f2a18});
+const frameMat = new THREE.MeshBasicMaterial({color:0x2e1d12});
+const roomFloorMat = new THREE.MeshBasicMaterial({color:0x5a0b0b});
 
-const wallMat = new THREE.MeshStandardMaterial({ color: wallColor, roughness: 0.85, metalness: 0.02 });
-const floorMat = new THREE.MeshStandardMaterial({ color: floorColor, roughness: 0.6, metalness: 0.05 });
-const ceilingMat = new THREE.MeshStandardMaterial({ color: ceilingColor, roughness: 0.9 });
-const doorMat = new THREE.MeshStandardMaterial({ color: doorColor, roughness: 0.7 });
-const frameMat = new THREE.MeshStandardMaterial({ color: frameColor, roughness: 0.8 });
-const roomFloorMat = new THREE.MeshStandardMaterial({ color: roomFloorColor, roughness: 0.7 });
+// Parámetros
+const L=5, W=2, H=2.5, wallThick=0.12;
 
-/* ============================
-   Parámetros del pasillo
-   ============================ */
-const L = 4.5;   // longitud del pasillo (m)
-const W = 2.0;   // anchura pasillo
-const H = 2.8;   // altura
-const wallThickness = 0.12;
-
-/* Suelo del pasillo (centrado entre z=0 y z=-L) */
-const floorGeo = new THREE.PlaneGeometry(W + 0.001, L + 0.001);
-const floor = new THREE.Mesh(floorGeo, floorMat);
-floor.rotation.x = -Math.PI/2;
-floor.receiveShadow = true;
-floor.position.set(0, 0, -L/2);
+// Suelo
+const floorGeo = new THREE.PlaneGeometry(W,L);
+const floor = new THREE.Mesh(floorGeo,floorMat);
+floor.rotation.x=-Math.PI/2;
+floor.position.set(0,0,-L/2);
 scene.add(floor);
 
-/* Techo */
-const ceiling = new THREE.Mesh(new THREE.BoxGeometry(W + 0.4, wallThickness, L + 0.4), ceilingMat);
-ceiling.position.set(0, H - wallThickness/2, -L/2);
-ceiling.receiveShadow = true;
+// Techo
+const ceiling = new THREE.Mesh(new THREE.BoxGeometry(W,wallThick,L),ceilingMat);
+ceiling.position.set(0,H-wallThick/2,-L/2);
 scene.add(ceiling);
 
-/* Paredes laterales: colocadas exactamente a los bordes del suelo */
-const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, H, L + 0.4), wallMat);
-leftWall.position.set(-W/2 - wallThickness/2, H/2, -L/2);
-leftWall.receiveShadow = true;
-leftWall.castShadow = false;
+// Paredes laterales
+const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThick,H,L),wallMat);
+leftWall.position.set(-W/2-wallThick/2,H/2,-L/2);
 scene.add(leftWall);
-
 const rightWall = leftWall.clone();
-rightWall.position.set(W/2 + wallThickness/2, H/2, -L/2);
+rightWall.position.set(W/2+wallThick/2,H/2,-L/2);
 scene.add(rightWall);
 
-/* Pared posterior (detrás del spawn) — colocada ligeramente detrás de la cámara para cerrar el pasillo */
-const backWall = new THREE.Mesh(new THREE.BoxGeometry(W + 0.4, H, wallThickness), wallMat);
-backWall.position.set(0, H/2, camera.position.z + 0.5); // detrás del jugador, a ~0.5m
-backWall.receiveShadow = true;
+// Pared posterior (spawn)
+const backWall = new THREE.Mesh(new THREE.BoxGeometry(W, H, wallThick), wallMat);
+backWall.position.set(0,H/2,0.1);
 scene.add(backWall);
 
-/* Lámparas/luces de pared (objetos visibles y que emiten luz) */
-const lampMatVis = new THREE.MeshStandardMaterial({ color: 0xfff0d6, emissive: 0xffe6b8, emissiveIntensity: 0.8, roughness:1 });
-const lampL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.04), lampMatVis);
-lampL.position.set(-W/2 + 0.14, H - 0.7, -L/2 + 0.9);
-lampL.castShadow = false;
-lampL.receiveShadow = true;
-scene.add(lampL);
-
-const lampR = lampL.clone(); lampR.position.set(W/2 - 0.14, H - 0.7, -L/2 + 0.9); scene.add(lampR);
-
-/* ============================
-   Decor simples
-   ============================ */
-const decoMat = new THREE.MeshStandardMaterial({ color: 0x9a9a9a, roughness: 0.85 });
-const deco1 = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.6, 0.28), decoMat);
-deco1.position.set(-0.64, 0.3, -1.6);
-deco1.castShadow = true;
-deco1.receiveShadow = true;
-scene.add(deco1);
-const deco2 = deco1.clone(); deco2.position.set(0.64, 0.3, -3.1); scene.add(deco2);
-
-/* ============================
-   Puerta con bisagra (lado izquierdo)
-   ============================ */
-// puerta empotrada al final del pasillo, da acceso a la sala grande (en -Z)
-const doorW = 1.0, doorH = 2.0, doorD = 0.12;
-const hingeY = doorH/2;
-const hingeZ = -L - 0.02; // justo después del final del pasillo (un pelín dentro del marco)
-
-// pivot para la bisagra: lo posicionamos en el borde izquierdo del marco (x = -W/2)
-const hingeX_world = -W/2 + 0.0; // coordenada X global donde estará la bisagra
+// Puerta
+const doorW=1, doorH=2, doorD=0.12;
+const hingeX=-W/2, hingeY=doorH/2, hingeZ=-L-0.02;
 const doorPivot = new THREE.Object3D();
-doorPivot.position.set(hingeX_world, hingeY, hingeZ);
+doorPivot.position.set(hingeX, hingeY, hingeZ);
 scene.add(doorPivot);
 
-// puerta (offset respecto pivot). Construyo la puerta centrada en su propio ancho de modo que el borde esté en x=0 del pivot
-const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(doorW, doorH, doorD), doorMat);
-doorMesh.position.set(doorW/2, 0, 0); // desplazar para que su borde izquierdo coincida con pivot.x
-doorMesh.castShadow = true;
-doorMesh.receiveShadow = true;
+const doorMesh = new THREE.Mesh(new THREE.BoxGeometry(doorW,doorH,doorD),doorMat);
+doorMesh.position.set(doorW/2,0,0);
 doorPivot.add(doorMesh);
 
-// marco de la puerta (3 piezas)
-const frameLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorH + 0.12, 0.3), frameMat);
-frameLeft.position.set(hingeX_world - 0.06, hingeY, hingeZ - 0.06);
-frameLeft.receiveShadow = true;
-scene.add(frameLeft);
+// Marco puerta
+const frameLeft = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorH +0.12,0.2), frameMat);
+frameLeft.position.set(hingeX-0.06,hingeY,hingeZ-0.06); scene.add(frameLeft);
+const frameRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorH +0.12,0.2), frameMat);
+frameRight.position.set(hingeX+doorW+0.06,hingeY,hingeZ-0.06); scene.add(frameRight);
+const frameTop = new THREE.Mesh(new THREE.BoxGeometry(doorW+0.24,0.12,0.2), frameMat);
+frameTop.position.set(hingeX+doorW/2,doorH+0.06,hingeZ-0.06); scene.add(frameTop);
 
-const frameRight = new THREE.Mesh(new THREE.BoxGeometry(0.12, doorH + 0.12, 0.3), frameMat);
-frameRight.position.set(hingeX_world + doorW + 0.06, hingeY, hingeZ - 0.06);
-frameRight.receiveShadow = true;
-scene.add(frameRight);
-
-const frameTop = new THREE.Mesh(new THREE.BoxGeometry(doorW + 0.24, 0.12, 0.3), frameMat);
-frameTop.position.set(hingeX_world + doorW/2, doorH + 0.06, hingeZ - 0.06);
-frameTop.receiveShadow = true;
-scene.add(frameTop);
-
-/* ============================
-   Sala del casino (vacía por ahora)
-   ============================ */
-const roomW = 12, roomL = 10, roomH = 3.2;
-const roomFloor = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomL), roomFloorMat);
-roomFloor.rotation.x = -Math.PI/2;
-roomFloor.position.set(0, 0, hingeZ - roomL/2 - 0.15);
-roomFloor.receiveShadow = true;
+// Sala simple
+const roomFloor = new THREE.Mesh(new THREE.PlaneGeometry(12,10),roomFloorMat);
+roomFloor.rotation.x=-Math.PI/2;
+roomFloor.position.set(0,0,hingeZ-5);
 scene.add(roomFloor);
 
-/* Paredes de referencia de la sala, ajustadas para no solapar */
-const roomWallMat = new THREE.MeshStandardMaterial({ color: 0xCFC0B0, roughness:0.9 });
-const roomBack = new THREE.Mesh(new THREE.BoxGeometry(roomW, roomH, 0.2), roomWallMat);
-roomBack.position.set(0, roomH/2, roomFloor.position.z - roomL/2 + 0.1);
-roomBack.receiveShadow = true;
-scene.add(roomBack);
-const roomLeft = new THREE.Mesh(new THREE.BoxGeometry(0.2, roomH, roomL), roomWallMat);
-roomLeft.position.set(-roomW/2 + 0.1, roomH/2, roomFloor.position.z);
-roomLeft.receiveShadow = true;
-scene.add(roomLeft);
-const roomRight = roomLeft.clone(); roomRight.position.set(roomW/2 - 0.1, roomH/2, roomFloor.position.z);
-scene.add(roomRight);
+// Estados puerta
+let doorState='closed', animT=0, autoCloseTimeout=null;
+const openAngle=-Math.PI*0.45, closedAngle=0, animDur=0.6;
 
-/* ============================
-   Luces (ambient + directional + pequeñas puntuales)
-   ============================ */
-const ambient = new THREE.HemisphereLight(0xddddff, 0x222222, 0.45);
-scene.add(ambient);
+// Sonido ligero puerta
+const doorAudio = new Audio('https://cdn.jsdelivr.net/gh/Peketruli/sounds/door-light.mp3');
+function playDoorSound(opening=true){ doorAudio.currentTime=0; doorAudio.play(); }
 
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.6);
-dirLight.position.set(2, 6, 2);
-dirLight.castShadow = true;
-dirLight.shadow.mapSize.set(1024, 1024);
-dirLight.shadow.camera.near = 0.5;
-dirLight.shadow.camera.far = 20;
-dirLight.shadow.camera.left = -6;
-dirLight.shadow.camera.right = 6;
-dirLight.shadow.camera.top = 6;
-dirLight.shadow.camera.bottom = -6;
-scene.add(dirLight);
+// Movimiento jugador
+const keys={};
+window.addEventListener('keydown',e=>{keys[e.code]=true; if(e.code==='KeyE') triggerDoor();});
+window.addEventListener('keyup',e=>{keys[e.code]=false;});
 
-/* pequeñas luces para simular las lámparas de pared */
-const lampLeftLight = new THREE.PointLight(0xffe6c6, 0.9, 4);
-lampLeftLight.position.copy(lampL.position).add(new THREE.Vector3(0, -0.02, -0.02));
-lampLeftLight.castShadow = true;
-scene.add(lampLeftLight);
-
-const lampRightLight = new THREE.PointLight(0xffe6c6, 0.9, 4);
-lampRightLight.position.copy(lampR.position).add(new THREE.Vector3(0, -0.02, -0.02));
-lampRightLight.castShadow = true;
-scene.add(lampRightLight);
-
-/* ============================
-   Estados y animación de puerta
-   ============================ */
-let doorState = 'closed'; // closed, opening, open, closing
-const openAngle = -Math.PI * 0.5; // -90° (abre hacia dentro)
-const closedAngle = 0;
-let animT = 0;
-const animDur = 0.6; // segs
-let autoCloseTimeout = null;
-
-/* ============================
-   Audio: sintetizar sonido suave de madera (Web Audio)
-   ============================ */
-let audioCtx = null;
-function ensureAudio(){
-  if(!audioCtx){
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-}
-function playDoorSound(opening=true){
-  ensureAudio();
-  const now = audioCtx.currentTime;
-
-  // noise burst (creak)
-  const bufferSize = Math.floor(audioCtx.sampleRate * 0.18);
-  const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for(let i=0;i<bufferSize;i++){
-    data[i] = (Math.random()*2 - 1) * Math.exp(-4*i/bufferSize) * (opening ? 0.6 : 0.5);
-  }
-  const noise = audioCtx.createBufferSource();
-  noise.buffer = buffer;
-  const noiseFilter = audioCtx.createBiquadFilter();
-  noiseFilter.type = 'lowpass';
-  noiseFilter.frequency.value = opening ? 1300 : 900;
-  const env = audioCtx.createGain();
-  env.gain.setValueAtTime(0.0001, now);
-  env.gain.linearRampToValueAtTime(opening?0.6:0.45, now + 0.01);
-  env.gain.exponentialRampToValueAtTime(0.0001, now + (opening?0.35:0.28));
-  noise.connect(noiseFilter);
-  noiseFilter.connect(env);
-  env.connect(audioCtx.destination);
-  noise.start(now);
-  noise.stop(now + 0.2);
-
-  // sine body
-  const sine = audioCtx.createOscillator();
-  sine.type = 'sine';
-  sine.frequency.setValueAtTime(opening?220:180, now);
-  const sineGain = audioCtx.createGain();
-  sineGain.gain.setValueAtTime(0.0001, now);
-  sineGain.gain.linearRampToValueAtTime(opening?0.16:0.12, now + 0.02);
-  sineGain.gain.exponentialRampToValueAtTime(0.0001, now + (opening?0.5:0.45));
-  sine.connect(sineGain);
-  sineGain.connect(audioCtx.destination);
-  sine.start(now);
-  sine.stop(now + 0.5);
-}
-
-/* ============================
-   Movimiento del jugador (cámara)
-   ============================ */
-const keys = {};
-window.addEventListener('keydown', (e) => {
-  // evitar bloquear inputs (no prevenir default salvo E)
-  keys[e.code] = true;
-  // resume/create audio on first gesture
-  if(!audioCtx){
-    try { ensureAudio(); if(audioCtx.state === 'suspended') audioCtx.resume(); } catch(e) {}
-  }
-});
-window.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-let velY = 0;
-let canJump = true;
-const walkSpeed = 0.10;
-const runSpeed = 0.24;
-const rotSpeed = 0.05;
-
-/* proximidad a la puerta (distancia desde la cara exterior de la puerta) */
+let velY=0, canJump=true, walkSpeed=0.1, runSpeed=0.24, rotSpeed=0.05;
 function distToDoor(){
-  // puerta world position of door center (approx)
-  const doorWorld = new THREE.Vector3();
+  const doorWorld=new THREE.Vector3();
   doorMesh.getWorldPosition(doorWorld);
-  const dx = camera.position.x - doorWorld.x;
-  const dz = camera.position.z - doorWorld.z;
-  const dy = camera.position.y - doorWorld.y;
-  return Math.sqrt(dx*dx + dy*dy + dz*dz);
+  const dx=camera.position.x-doorWorld.x;
+  const dz=camera.position.z-doorWorld.z;
+  const dy=camera.position.y-doorWorld.y;
+  return Math.sqrt(dx*dx+dy*dy+dz*dz);
 }
+const promptEl=document.getElementById('prompt');
+function updatePrompt(){ promptEl.style.display = distToDoor()<2 ? 'block' : 'none'; }
 
-/* Mostrar prompt si está cerca */
-const promptEl = document.getElementById('prompt');
-function updatePrompt(){
-  promptEl.style.display = distToDoor() < 2.0 ? 'block' : 'none';
-}
-
-/* abrir/cerrar puerta (iniciadores) */
 function triggerDoor(){
-  if(distToDoor() < 2.0){
-    if(doorState === 'closed' || doorState === 'closing'){
-      doorState = 'opening'; animT = 0;
-      playDoorSound(true);
-      if(autoCloseTimeout){ clearTimeout(autoCloseTimeout); autoCloseTimeout = null; }
-      setTimeout(()=> {
-        if(doorState === 'open') {
-          autoCloseTimeout = setTimeout(()=> { if(doorState==='open'){ doorState='closing'; animT=0; playDoorSound(false); } }, 3000);
-        }
-      }, animDur*1000 + 60);
-    } else if(doorState === 'open'){
-      doorState = 'closing'; animT = 0;
-      playDoorSound(false);
-      if(autoCloseTimeout){ clearTimeout(autoCloseTimeout); autoCloseTimeout = null; }
-    }
+  if(distToDoor()<2){
+    if(doorState==='closed'||doorState==='closing'){
+      doorState='opening'; animT=0; playDoorSound(true);
+      if(autoCloseTimeout) clearTimeout(autoCloseTimeout);
+      setTimeout(()=>{if(doorState==='open') autoCloseTimeout=setTimeout(()=>{if(doorState==='open'){doorState='closing';animT=0;playDoorSound(false);}},3000);}, animDur*1000);
+    } else if(doorState==='open'){ doorState='closing'; animT=0; playDoorSound(false); if(autoCloseTimeout) clearTimeout(autoCloseTimeout);}
   }
 }
 
-/* ligar tecla E al trigger */
-window.addEventListener('keydown', (e) => { if(e.code === 'KeyE') triggerDoor(); });
-
-/* ============================
-   Loop animación
-   ============================ */
-const clock = new THREE.Clock();
+// Animación loop
+const clock=new THREE.Clock();
 function animate(){
   requestAnimationFrame(animate);
-  const dt = Math.min(0.05, clock.getDelta());
+  const dt=Math.min(0.05,clock.getDelta());
 
-  // rotación con A/D (girar la cámara)
-  if(keys['KeyA']) camera.rotation.y += rotSpeed;
-  if(keys['KeyD']) camera.rotation.y -= rotSpeed;
+  // Rotación
+  if(keys['KeyA']) camera.rotation.y+=rotSpeed;
+  if(keys['KeyD']) camera.rotation.y-=rotSpeed;
 
-  // movimiento forward/back relativo a la dirección actual
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  dir.y = 0; dir.normalize();
+  // Movimiento
+  const dir=new THREE.Vector3(); camera.getWorldDirection(dir); dir.y=0; dir.normalize();
+  const speed=(keys['ShiftLeft']||keys['ShiftRight'])?runSpeed:walkSpeed;
+  if(keys['KeyW']) camera.position.addScaledVector(dir,speed);
+  if(keys['KeyS']) camera.position.addScaledVector(dir,-speed);
 
-  const speed = (keys['ShiftLeft'] || keys['ShiftRight']) ? runSpeed : walkSpeed;
-  if(keys['KeyW']) camera.position.addScaledVector(dir, speed);
-  if(keys['KeyS']) camera.position.addScaledVector(dir, -speed);
+  // Salto y gravedad
+  if(keys['Space'] && canJump) { velY=0.32; canJump=false; }
+  velY-=0.02; camera.position.y+=velY;
+  if(camera.position.y<1.7){camera.position.y=1.7; velY=0; canJump=true;}
 
-  // salto & gravedad simple
-  if(keys['Space'] && canJump){ velY = 0.32; canJump = false; }
-  velY -= 0.02;
-  camera.position.y += velY;
-  if(camera.position.y < 1.7){ camera.position.y = 1.7; velY = 0; canJump = true; }
+  // Límite pasillo
+  if(camera.position.z>0) camera.position.z=0;
+  const halfW=W/2-0.1;
+  if(camera.position.x<-halfW) camera.position.x=-halfW;
+  if(camera.position.x>halfW) camera.position.x=halfW;
 
-  // evitar atravesar el backWall: simple check para no avanzar +Z más allá de backWall
-  if(camera.position.z > backWall.position.z - 0.25){
-    camera.position.z = backWall.position.z - 0.25;
-  }
-
-  // evitar salirse por los laterales (limites del pasillo)
-  const halfW = W/2 - 0.15;
-  if(camera.position.x < -halfW) camera.position.x = -halfW;
-  if(camera.position.x > halfW) camera.position.x = halfW;
-
-  // actualizar prompt HUD
   updatePrompt();
 
-  // animar puerta suavemente (ease)
-  if(doorState === 'opening'){
-    animT += dt;
-    const t = Math.min(1, animT / animDur);
-    const ease = t * (2 - t);
-    doorPivot.rotation.y = closedAngle + (openAngle - closedAngle) * ease;
-    if(t >= 1) doorState = 'open';
-  } else if(doorState === 'closing'){
-    animT += dt;
-    const t = Math.min(1, animT / animDur);
-    const ease = t * (2 - t);
-    doorPivot.rotation.y = openAngle + (closedAngle - openAngle) * ease;
-    if(t >= 1) doorState = 'closed';
-  }
+  // Animar puerta
+  if(doorState==='opening'){animT+=dt; const t=Math.min(1,animT/animDur); const ease=t*(2-t); doorPivot.rotation.y=closedAngle+(openAngle-closedAngle)*ease; if(t>=1) doorState='open';}
+  else if(doorState==='closing'){animT+=dt; const t=Math.min(1,animT/animDur); const ease=t*(2-t); doorPivot.rotation.y=openAngle+(closedAngle-openAngle)*ease;if(t>=1) doorState='closed';}
 
-  renderer.render(scene, camera);
+  renderer.render(scene,camera);
 }
 animate();
 
-/* ============================
-   Resize handling
-   ============================ */
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
+window.addEventListener('resize',()=>{
+  camera.aspect=window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-
-/* ============================
-   Pequeña ayuda: centre camera when clicking canvas (no PointerLock)
-   ============================ */
-canvas.addEventListener('click', () => {
-  // opcional: llevar la camara a una buena vista si la colocas fuera
-  // no hacemos pointerlock para compatibilidad Chromebook
+  renderer.setSize(window.innerWidth,window.innerHeight);
 });
 </script>
 </body>
