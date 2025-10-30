@@ -1,494 +1,268 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vampire Survival - Mejorado</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vampire Survival Arcade</title>
 <style>
-  html,body{height:100%;margin:0;background:#0a0a0a;color:#fff;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
-  canvas{display:block;background:radial-gradient(circle at center,#1f1f1f 0%, #000 100%);}
-  #hud{position:fixed;left:12px;top:12px;z-index:20}
-  #hud div{margin:4px 0;font-size:15px;background:rgba(0,0,0,0.35);padding:6px 10px;border-radius:6px}
-  #healthBar{width:220px;height:18px;background:#222;border-radius:6px;overflow:hidden}
-  #healthFill{height:100%;width:100%;background:limegreen;transition:width .15s linear,background .2s}
-  #upgradeOverlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);z-index:30}
-  #upgradeBox{background:#111;border:2px solid #fff;padding:18px;border-radius:10px;width:340px;text-align:center}
-  #upgradeBox h2{margin:0 0 10px}
-  #upgradeBox button{display:block;width:80%;margin:8px auto;padding:10px;border-radius:8px;border:1px solid #fff;background:#222;color:#fff;cursor:pointer}
-  #menu{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:40}
-  #menuBox{background:#0f0f0f;padding:24px;border-radius:12px;border:2px solid #fff;text-align:center}
-  #menuBox button{margin:8px;padding:10px 18px;border-radius:8px;border:none;background:#2b2b2b;color:#fff;cursor:pointer}
+  body { margin:0; padding:0; font-family: Arial, sans-serif; background:#111; color:white; overflow:hidden; }
+  canvas { display:block; background:#111; }
+  #hud { position:absolute; top:10px; left:10px; color:white; font-size:18px; }
+  #levelMenu {
+      display:none;
+      position:absolute;
+      top:50%; left:50%;
+      transform:translate(-50%, -50%);
+      background:#222;
+      padding:20px;
+      border:2px solid white;
+      text-align:center;
+      z-index:100;
+  }
+  #levelMenu button { margin:5px; padding:10px 20px; font-size:16px; cursor:pointer; }
 </style>
 </head>
 <body>
-  <div id="menu">
-    <div id="menuBox">
-      <h1>🧛 Vampire Survival</h1>
-      <div style="margin:10px 0">Personaje: Disparo (automático)</div>
-      <button id="btnPlay">Jugar</button>
-      <button id="btnDict">Diccionario</button>
-      <button id="btnBack">Volver a Golf</button>
-    </div>
-  </div>
-
-  <canvas id="c"></canvas>
-
-  <div id="hud">
-    <div id="healthBar"><div id="healthFill"></div></div>
-    <div id="xpText">XP: 0 / 15</div>
-    <div id="lvlText">Nivel: 1</div>
-    <div id="scoreText">Puntos: 0</div>
-  </div>
-
-  <div id="upgradeOverlay">
-    <div id="upgradeBox">
-      <h2>¡Subiste de nivel!</h2>
-      <div id="upgradeChoices"></div>
-    </div>
-  </div>
-
+<canvas id="gameCanvas"></canvas>
+<div id="hud">
+    <div id="score">Puntuación: 0</div>
+    <div id="xpLevel">Nivel: 1 | XP: 0/15</div>
+    <div id="hpBar">Vida: 100/100</div>
+</div>
+<div id="levelMenu">
+    <h2>¡Subiste de nivel!</h2>
+    <div id="abilityButtons"></div>
+</div>
 <script>
-/* ==========================
-   Juego: Vampire Survival
-   ========================== */
-
-const canvas = document.getElementById('c');
+const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
-addEventListener('resize', resize);
-resize();
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-/* HUD elems */
-const healthFill = document.getElementById('healthFill');
-const xpText = document.getElementById('xpText');
-const lvlText = document.getElementById('lvlText');
-const scoreText = document.getElementById('scoreText');
-const upgradeOverlay = document.getElementById('upgradeOverlay');
-const upgradeChoices = document.getElementById('upgradeChoices');
-const menu = document.getElementById('menu');
-const btnPlay = document.getElementById('btnPlay');
-const btnDict = document.getElementById('btnDict');
-const btnBack = document.getElementById('btnBack');
-
-btnPlay.onclick = ()=>{ menu.style.display='none'; startGame(); };
-btnDict.onclick = ()=> alert('Diccionario: armas, enemigos y habilidades próximamente.');
-btnBack.onclick = ()=> location.href = 'golf.html';
-
-/* Juego - estado */
-let keys = {};
-addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-let player = {
-  x: canvas.width/2, y: canvas.height/2,
-  size: 20,
-  speed: 3,
-  hp: 5, maxHp:5,
-  damage: 1,
-  shootInterval: 2500,
-  lastShot: 0
-};
-
-let bullets = [];
-let enemies = [];
-let orbs = [];
+// -------------------- VARIABLES --------------------
 let score = 0;
-let xp = 0;
-let level = 1;
-let xpToNext = 15;
+let playerXP = 0;
+let playerLevel = 1;
+let xpToNextLevel = 15;
 let gamePaused = false;
 
-/* Upgrades (niveles) */
-let upgrades = {
-  'Bala doble': 0,         // añade proyectiles extra (cada nivel +1 proyectil)
-  'Multidisparo': 0,      // añade niveles de multishot (cada nivel => +2 proyectiles en abanico)
-  'Disparo rápido': 0,     // reduce shootInterval
-  'Más velocidad': 0,      // aumenta speed
-  'Más vida': 0,           // aumenta maxHp
-  'Espadazo': 0,           // desbloquea melee (nivel 0 = no)
-  'Espada fuerte': 0,      // aumenta daño melee
-  'Espada amplia': 0,      // aumenta rango melee
-  'Regeneración': 0        // activa regeneración y mejora con niveles
+// Player
+const player = {
+    x: canvas.width/2, y: canvas.height/2,
+    size:30, speed:5, color:'cyan',
+    bulletSpeed:10, shootInterval:2500, doubleShot:false, multiShot:false,
+    melee:false, meleeInterval:2500, hp:100, maxHp:100, meleeDamage:10
 };
 
-/* Dificultad */
-let spawnInterval = 2500;
-let spawnTimer = null;
-let difficultyTimer = 0;
-let difficultyInterval = 45000; // cada tantos ms sube dificultad
-let enemyBaseSpeed = 1.0;
-let enemyHpBoost = 0;
+// Input
+const keys = {};
+document.addEventListener('keydown', e=>keys[e.key.toLowerCase()]=true);
+document.addEventListener('keyup', e=>keys[e.key.toLowerCase()]=false);
 
-/* Config inicial: enemigos débiles al inicio (1 hp) */
-function spawnEnemy(){
-  if(gamePaused) return;
-  const edge = Math.floor(Math.random()*4);
-  let x = (edge===0) ? 0 : (edge===1 ? canvas.width : Math.random()*canvas.width);
-  let y = (edge===2) ? 0 : (edge===3 ? canvas.height : Math.random()*canvas.height);
-  // Tipo simple por ahora: hp inicial 1 (fácil)
-  const r = Math.random();
-  if(r < 0.7){
-    enemies.push({ x, y, size: 16, speed: enemyBaseSpeed + Math.random()*0.4, hp: 1 + enemyHpBoost, xpDrop: 1 + Math.floor(Math.random()*3), color:'#c0392b' });
-  } else if (r < 0.92){
-    enemies.push({ x, y, size: 18, speed: enemyBaseSpeed + 0.8 + Math.random()*0.6, hp: 1 + enemyHpBoost, xpDrop: 2, color:'#e67e22' });
-  } else {
-    enemies.push({ x, y, size: 26, speed: Math.max(0.6, enemyBaseSpeed - 0.3), hp: 3 + enemyHpBoost, xpDrop: 3 + Math.floor(Math.random()*4), color:'#8e44ad' });
-  }
-}
+// Entities
+const bullets=[], vampires=[], xpParticles=[], meleeAttacks=[];
 
-/* Helper distancia */
-function dist(a,b){
-  const dx = a.x - b.x, dy = a.y - b.y; return Math.hypot(dx,dy);
-}
-
-/* Disparo: ahora combina base + Bala doble + Multidisparo
-   Lógica:
-   - baseShotCount = 1
-   - doubleExtra = upgrades['Bala doble'] (cada nivel suma 1 proyectil)
-   - multiLevel = upgrades['Multidisparo'] (cada nivel produce +2 proyectiles en abanico)
-   - totalShots = base + doubleExtra + (multiLevel>0 ? multiLevel*2 : 0)
-   - Dispersión: center angle towards target, spread depends on totalShots
-*/
-function shootAtNearest(){
-  if(gamePaused || enemies.length===0) return;
-  const now = performance.now();
-  if(now - player.lastShot < player.shootInterval) return;
-  player.lastShot = now;
-
-  // elegir objetivo más cercano
-  let target = enemies[0];
-  for(let e of enemies) if(dist(e, player) < dist(target, player)) target = e;
-  const centerAng = Math.atan2(target.y - player.y, target.x - player.x);
-
-  const base = 1;
-  const doubleExtra = upgrades['Bala doble'] || 0;
-  const multiLevel = upgrades['Multidisparo'] || 0;
-  const multiExtra = multiLevel * 2; // cada nivel añade 2 proyectiles (uno por lado)
-  const total = base + doubleExtra + multiExtra;
-
-  // spread angle (radians)
-  const spread = Math.min(Math.PI/3, 0.28 + 0.05 * total); // controlado
-  const step = (total>1) ? spread / (total - 1) : 0;
-  const start = centerAng - spread/2;
-
-  for(let i=0;i<total;i++){
-    const ang = start + step * i;
-    bullets.push({
-      x: player.x,
-      y: player.y,
-      dx: Math.cos(ang) * (4 + (upgrades['Multidisparo']*0.6)),
-      dy: Math.sin(ang) * (4 + (upgrades['Multidisparo']*0.6)),
-      size: 5,
-      damage: player.damage
-    });
-  }
-}
-
-/* Melee automático (si desbloqueado): golpea en rango cada X ms.
-   Mejora por niveles:
-   - Espadazo lvl 1 desbloquea; más niveles reducirán cooldown.
-   - Espada fuerte aumenta daño melee.
-   - Espada amplia aumenta rango.
-*/
-let melee = { last:0, baseInterval:2500, baseRange:40, baseDamage:2 };
-function tryMelee(){
-  if(upgrades['Espadazo'] === 0) return;
-  const now = performance.now();
-  const lvl = upgrades['Espadazo'];
-  const interval = Math.max(600, melee.baseInterval - (lvl-1)*300); // reduce con niveles
-  if(now - melee.last < interval) return;
-  melee.last = now;
-
-  // calcular rango y daño según mejoras
-  const range = melee.baseRange + (upgrades['Espada amplia'] || 0) * 12;
-  const dmg = melee.baseDamage + (upgrades['Espada fuerte'] || 0) * 1;
-
-  // dibujito breve
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255,230,140,0.6)';
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, range, 0, Math.PI*2);
-  ctx.stroke();
-  ctx.restore();
-
-  // aplicar daño
-  for(let i = enemies.length-1; i>=0; i--){
-    const e = enemies[i];
-    if(dist(e, player) <= range + e.size){
-      e.hp -= dmg;
-      if(e.hp <= 0){
-        spawnOrb(e);
-        enemies.splice(i,1);
-        score++;
-      }
-    }
-  }
-}
-
-/* Orbs / XP fijo */
-function spawnOrb(e){
-  orbs.push({ x: e.x, y: e.y, size:10, value: e.xpDrop });
-}
-
-/* Update de balas */
-function updateBullets(){
-  for(let i = bullets.length-1; i>=0; i--){
-    const b = bullets[i];
-    b.x += b.dx; b.y += b.dy;
-    // out of screen
-    if(b.x< -20 || b.x>canvas.width+20 || b.y<-20 || b.y>canvas.height+20){ bullets.splice(i,1); continue; }
-    // hit enemy
-    for(let j = enemies.length-1; j>=0; j--){
-      const e = enemies[j];
-      if(dist(b,e) < e.size + 6){
-        e.hp -= b.damage;
-        bullets.splice(i,1);
-        if(e.hp <= 0){
-          spawnOrb(e);
-          enemies.splice(j,1);
-          score++;
-        }
-        break;
-      }
-    }
-  }
-}
-
-/* Update enemies */
-function updateEnemies(dt){
-  for(let i = enemies.length-1; i>=0; i--){
-    const e = enemies[i];
-    const ang = Math.atan2(player.y - e.y, player.x - e.x);
-    e.x += Math.cos(ang) * e.speed * (1 + (difficultyTimer/600000)); // leve scaling
-    e.y += Math.sin(ang) * e.speed * (1 + (difficultyTimer/600000));
-    // collision with player
-    if(dist(e, player) < e.size + player.size){
-      // daño al tocar
-      player.hp -= 0.2;
-      // enemigo muere al tocar para evitar stacking
-      spawnOrb(e);
-      enemies.splice(i,1);
-      if(player.hp <= 0){ alert('Has muerto\nPuntuación: '+score); location.reload(); }
-    }
-  }
-}
-
-/* Update orbs (recoger) */
-function updateOrbs(){
-  for(let i = orbs.length-1; i>=0; i--){
-    const o = orbs[i];
-    if(dist(o, player) < player.size + 12){
-      xp += o.value;
-      orbs.splice(i,1);
-      if(xp >= xpToNext) levelUp();
-    }
-  }
-}
-
-/* Level up */
-function levelUp(){
-  level++;
-  xp -= xpToNext;
-  xpToNext = Math.floor(xpToNext * 1.25);
-  gamePaused = true;
-  showUpgradeUI();
-}
-
-/* Mostrar menú de upgrades - 3 opciones aleatorias.
-   Si skill ya tiene nivel, mostrará "Nombre (Lv N)" y al elegir hará LEVEL UP.
-*/
-const allUpgrades = [
-  { id:'Bala doble', label:'Bala doble' },
-  { id:'Multidisparo', label:'Multidisparo' },
-  { id:'Disparo rápido', label:'Disparo rápido' },
-  { id:'Más velocidad', label:'Más velocidad' },
-  { id:'Más vida', label:'Más vida' },
-  { id:'Espadazo', label:'Espadazo' },
-  { id:'Espada fuerte', label:'Espada fuerte' },
-  { id:'Espada amplia', label:'Espada amplia' },
-  { id:'Regeneración', label:'Regeneración' }
+// -------------------- ENEMIGOS --------------------
+const vampireTypes=[
+    {name:'Rojo', size:30, speed:2, hp:10},
+    {name:'Rápido', size:20, speed:3, hp:8},
+    {name:'Resistente', size:35, speed:1.5, hp:30}
 ];
 
-function showUpgradeUI(){
-  upgradeChoices.innerHTML = '';
-  upgradeOverlay.style.display = 'flex';
-  const opts = [];
-  while(opts.length < 3){
-    const pick = allUpgrades[Math.floor(Math.random()*allUpgrades.length)];
-    // allow duplicates in picks? ensure unique in this choice set
-    if(!opts.find(o=>o.id===pick.id)) opts.push(pick);
-  }
-  opts.forEach(opt=>{
-    const btn = document.createElement('button');
-    const levelNow = upgrades[opt.id] || 0;
-    btn.textContent = `${opt.label}${levelNow>0 ? ' (Lv '+levelNow+')' : ''}`;
-    btn.onclick = ()=>{
-      // aplicar upgrade: incrementar contador y aplicar efecto
-      upgrades[opt.id] = (upgrades[opt.id]||0) + 1;
-      applyUpgradeEffect(opt.id);
-      upgradeOverlay.style.display = 'none';
-      gamePaused = false;
-    };
-    upgradeChoices.appendChild(btn);
-  });
+function spawnVampire(){
+    if(gamePaused) return;
+    const type=vampireTypes[Math.floor(Math.random()*vampireTypes.length)];
+    const edge=Math.floor(Math.random()*4);
+    let x,y;
+    if(edge===0){ x=0; y=Math.random()*canvas.height; }
+    else if(edge===1){ x=canvas.width; y=Math.random()*canvas.height; }
+    else if(edge===2){ x=Math.random()*canvas.width; y=0; }
+    else{ x=Math.random()*canvas.width; y=canvas.height; }
+    vampires.push({x,y,type: type.name, size:type.size, speed:type.speed, hp:type.hp});
+}
+let spawnTimer=setInterval(spawnVampire,2000);
+
+// -------------------- HABILIDADES / MEJORAS --------------------
+const abilities=[
+    {name:"Doble bala", apply:()=>player.doubleShot=true},
+    {name:"Multidisparo", apply:()=>player.multiShot=true},
+    {name:"Disparo rápido", apply:()=>{player.shootInterval=Math.max(500,player.shootInterval-500); resetShootTimer();}},
+    {name:"Más velocidad", apply:()=>player.speed+=1},
+    {name:"Más vida", apply:()=>{player.maxHp+=20; player.hp+=20;}},
+    {name:"Espada", apply:()=>player.melee=true},
+    {name:"Mejora espada", apply:()=>player.meleeDamage+=5},
+    {name:"Más XP", apply:()=>playerXP+=3}
+];
+
+// -------------------- DISPARO AUTOMÁTICO --------------------
+function shootAtClosestVampire(){
+    if(gamePaused || vampires.length===0) return;
+    let closest=vampires[0], minDist=Math.hypot(player.x-closest.x, player.y-closest.y);
+    for(let i=1;i<vampires.length;i++){
+        const dist=Math.hypot(player.x-vampires[i].x, player.y-vampires[i].y);
+        if(dist<minDist){ minDist=dist; closest=vampires[i]; }
+    }
+    const angle=Math.atan2(closest.y-player.y, closest.x-player.x);
+    bullets.push({x:player.x, y:player.y, dx:Math.cos(angle)*player.bulletSpeed, dy:Math.sin(angle)*player.bulletSpeed, size:5});
+    if(player.doubleShot){
+        setTimeout(()=>{ bullets.push({x:player.x, y:player.y, dx:Math.cos(angle)*player.bulletSpeed, dy:Math.sin(angle)*player.bulletSpeed, size:5}); }, 200);
+    }
+    if(player.multiShot){
+        const spread=0.3;
+        bullets.push({x:player.x, y:player.y, dx:Math.cos(angle+spread)*player.bulletSpeed, dy:Math.sin(angle+spread)*player.bulletSpeed, size:5});
+        bullets.push({x:player.x, y:player.y, dx:Math.cos(angle-spread)*player.bulletSpeed, dy:Math.sin(angle-spread)*player.bulletSpeed, size:5});
+    }
+}
+let shootTimer=setInterval(shootAtClosestVampire, player.shootInterval);
+function resetShootTimer(){ clearInterval(shootTimer); shootTimer=setInterval(shootAtClosestVampire, player.shootInterval); }
+
+// -------------------- ATAQUE MELEE --------------------
+let meleeTimer;
+function startMelee(){
+    if(player.melee && !gamePaused){
+        meleeAttacks.push({x:player.x, y:player.y, size:50, damage:player.meleeDamage, lifetime:5});
+    }
+}
+setInterval(startMelee, player.meleeInterval);
+
+// -------------------- MENU DE NIVELES --------------------
+function showLevelMenu(){
+    gamePaused = true;
+    const menu=document.getElementById('levelMenu');
+    const buttonsDiv=document.getElementById('abilityButtons');
+    buttonsDiv.innerHTML='';
+    const options=[];
+    while(options.length<3){
+        const ability=abilities[Math.floor(Math.random()*abilities.length)];
+        if(!options.includes(ability) && !(ability.name==="Espada" && player.melee)) options.push(ability);
+    }
+    options.forEach(a=>{
+        const btn=document.createElement('button');
+        btn.textContent=a.name;
+        btn.onclick=()=>{
+            a.apply();
+            menu.style.display='none';
+            gamePaused = false;
+            updateHUD();
+        };
+        buttonsDiv.appendChild(btn);
+    });
+    menu.style.display='block';
 }
 
-/* Aplicar efectos según id (acumulativos) */
-function applyUpgradeEffect(id){
-  const lv = upgrades[id];
-  switch(id){
-    case 'Bala doble':
-      // cada nivel incrementa player.damage? No, mejor: añade proyectiles extra (handled in shoot)
-      // no extra code needed here besides feedback
-      break;
-    case 'Multidisparo':
-      // effect handled in shootAtNearest: number of extra shots increases
-      break;
-    case 'Disparo rápido':
-      // reduce interval progressively
-      player.shootInterval = Math.max(300, player.shootInterval - 300);
-      break;
-    case 'Más velocidad':
-      player.speed += 0.4;
-      break;
-    case 'Más vida':
-      player.maxHp += 1;
-      player.hp = player.maxHp;
-      break;
-    case 'Espadazo':
-      // unlock - melee handled in tryMelee
-      break;
-    case 'Espada fuerte':
-      // increases melee damage indirectly via upgrades value
-      break;
-    case 'Espada amplia':
-      // increases melee range indirectly via upgrades value
-      break;
-    case 'Regeneración':
-      // regen unlocked (handled in update)
-      break;
-  }
+// -------------------- HUD --------------------
+function updateHUD(){
+    document.getElementById('score').textContent="Puntuación: "+score;
+    document.getElementById('xpLevel').textContent="Nivel: "+playerLevel+" | XP: "+playerXP+"/"+xpToNextLevel;
+    document.getElementById('hpBar').textContent="Vida: "+player.hp+"/"+player.maxHp;
 }
 
-/* Dificultad incremental (más lenta que antes) */
-function increaseDifficulty(){
-  // spawnInterval reduce slowly but not below min
-  spawnInterval = Math.max(1100, spawnInterval - 80);
-  // reset timer
-  clearInterval(spawnTimer);
-  spawnTimer = setInterval(spawnEnemy, spawnInterval);
-  enemyBaseSpeed += 0.08;
-  enemyHpBoost += 0.2;
+// -------------------- UPDATE --------------------
+function update(){
+    if(gamePaused) return;
+
+    // Movimiento
+    if(keys['w']) player.y-=player.speed;
+    if(keys['s']) player.y+=player.speed;
+    if(keys['a']) player.x-=player.speed;
+    if(keys['d']) player.x+=player.speed;
+    player.x=Math.max(player.size/2, Math.min(canvas.width-player.size/2, player.x));
+    player.y=Math.max(player.size/2, Math.min(canvas.height-player.size/2, player.y));
+
+    // Balas
+    bullets.forEach((b,i)=>{ b.x+=b.dx; b.y+=b.dy; if(b.x<0||b.x>canvas.width||b.y<0||b.y>canvas.height) bullets.splice(i,1); });
+
+    // Melee
+    meleeAttacks.forEach((m,i)=>{ m.lifetime--; if(m.lifetime<=0) meleeAttacks.splice(i,1); });
+
+    // Enemigos
+    vampires.forEach((v,vi)=>{
+        const angle=Math.atan2(player.y-v.y, player.x-v.x);
+        v.x+=Math.cos(angle)*v.speed;
+        v.y+=Math.sin(angle)*v.speed;
+
+        // Colisión con balas
+        bullets.forEach((b,bi)=>{
+            const dist=Math.hypot(b.x-v.x, b.y-v.y);
+            if(dist<v.size/2+b.size/2){
+                v.hp-=1;
+                bullets.splice(bi,1);
+                if(v.hp<=0){
+                    const xpAmount=Math.floor(Math.random()*5)+1;
+                    xpParticles.push({x:v.x, y:v.y, size:10, color:'lime', xp:xpAmount});
+                    vampires.splice(vi,1);
+                    score+=1;
+                    updateHUD();
+                }
+            }
+        });
+
+        // Colisión con melee
+        meleeAttacks.forEach(m=>{
+            const dist=Math.hypot(m.x-v.x, m.y-v.y);
+            if(dist<m.size/2+v.size/2){
+                v.hp-=m.damage;
+                if(v.hp<=0){
+                    const xpAmount=Math.floor(Math.random()*5)+1;
+                    xpParticles.push({x:v.x, y:v.y, size:10, color:'lime', xp:xpAmount});
+                    vampires.splice(vi,1);
+                    score+=1;
+                    updateHUD();
+                }
+            }
+        });
+
+        // Colisión con player
+        const distPlayer=Math.hypot(player.x-v.x, player.y-v.y);
+        if(distPlayer<v.size/2+player.size/2){
+            alert('¡Has sido atrapado! Puntuación final: '+score+', Nivel: '+playerLevel);
+            window.location.reload();
+        }
+    });
+
+    // XP
+    xpParticles.forEach((p,i)=>{
+        const distPlayer=Math.hypot(player.x-p.x, player.y-p.y);
+        if(distPlayer<player.size/2+p.size/2){
+            playerXP+=p.xp;
+            xpParticles.splice(i,1);
+            if(playerXP>=xpToNextLevel){
+                playerLevel+=1;
+                playerXP=playerXP-xpToNextLevel;
+                xpToNextLevel=Math.floor(xpToNextLevel*1.5);
+                showLevelMenu();
+            }
+            updateHUD();
+        }
+    });
 }
 
-/* HUD draw */
-function drawHUD(){
-  const pct = Math.max(0, Math.min(1, player.hp / player.maxHp));
-  healthFill.style.width = (pct*100) + '%';
-  healthFill.style.background = pct < 0.3 ? '#e74c3c' : pct < 0.6 ? '#f1c40f' : '#2ecc71';
-  xpText.textContent = `XP: ${Math.floor(xp)} / ${xpToNext}`;
-  lvlText.textContent = `Nivel: ${level}`;
-  scoreText.textContent = `Puntos: ${score}`;
-}
-
-/* Main loop */
-let lastTime = performance.now();
-function loop(now){
-  const dt = now - lastTime;
-  lastTime = now;
-  if(!gamePaused){
+// -------------------- DRAW --------------------
+function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // player movement
-    if(keys['w']) player.y -= player.speed;
-    if(keys['s']) player.y += player.speed;
-    if(keys['a']) player.x -= player.speed;
-    if(keys['d']) player.x += player.speed;
-    player.x = Math.max(0, Math.min(canvas.width, player.x));
-    player.y = Math.max(0, Math.min(canvas.height, player.y));
+    // Player
+    ctx.fillStyle=player.color;
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size/2,0,Math.PI*2);
+    ctx.fill();
 
-    // auto shoot (based on shootInterval, with triple compatibility)
-    shootAtNearest();
+    // Bullets
+    bullets.forEach(b=>{ ctx.fillStyle='yellow'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); });
 
-    // melee automatic (if unlocked)
-    tryMelee();
+    // Melee
+    meleeAttacks.forEach(m=>{ ctx.fillStyle='orange'; ctx.beginPath(); ctx.arc(m.x,m.y,m.size/2,0,Math.PI*2); ctx.fill(); });
 
-    // update bullets
-    updateBullets();
+    // Vampires
+    vampires.forEach(v=>{ ctx.fillStyle='red'; ctx.beginPath(); ctx.arc(v.x,v.y,v.size/2,0,Math.PI*2); ctx.fill(); });
 
-    // update enemies
-    updateEnemies(dt);
-
-    // update orbs
-    updateOrbs();
-
-    // draw player
-    ctx.fillStyle = '#16a085';
-    ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
-
-    // draw bullets
-    for(let b of bullets){
-      ctx.fillStyle = '#f9e79f';
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI*2); ctx.fill();
-    }
-
-    // draw enemies
-    for(let e of enemies){
-      ctx.fillStyle = e.color;
-      ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI*2); ctx.fill();
-      // hp text
-      ctx.fillStyle = '#fff';
-      ctx.font = '12px Arial';
-      ctx.fillText('HP:'+Math.max(0,Math.round(e.hp)), e.x - e.size, e.y - e.size - 6);
-    }
-
-    // draw orbs
-    for(let o of orbs){
-      ctx.fillStyle = 'lime';
-      ctx.beginPath(); ctx.arc(o.x, o.y, 6, 0, Math.PI*2); ctx.fill();
-    }
-
-    // regeneration
-    if(upgrades['Regeneración'] && player.hp < player.maxHp){
-      // regen rate scales with level
-      const regenAmount = 0.03 * upgrades['Regeneración']; // por frame acumulable
-      player.hp = Math.min(player.maxHp, player.hp + regenAmount * (dt/16));
-    }
-
-    // difficulty timer increment
-    difficultyTimer += dt;
-    if(difficultyTimer > difficultyInterval){
-      difficultyTimer = 0;
-      increaseDifficulty();
-    }
-  }
-
-  drawHUD();
-  requestAnimationFrame(loop);
+    // XP
+    xpParticles.forEach(p=>{ ctx.fillStyle=p.color; ctx.beginPath(); ctx.arc(p.x,p.y,p.size/2,0,Math.PI*2); ctx.fill(); });
 }
 
-/* Start the game */
-function startGame(){
-  // reset basic timers
-  lastTime = performance.now();
-  // initial easy state: enemies 1hp already set in spawnEnemy
-  spawnInterval = 2500;
-  clearInterval(spawnTimer);
-  spawnTimer = setInterval(spawnEnemy, spawnInterval);
-  // start loop
-  requestAnimationFrame(loop);
-}
-
-/* Show upgrade overlay helper */
-const upgradeOverlayElem = document.getElementById('upgradeOverlay');
-
-/* init key listening already set above */
-
-/* Prevent sword being useless: if already have Espadazo, choosing it increases level (handled) */
-
-/* small helpers: spawn first enemies lightly */
-for(let i=0;i<2;i++) spawnEnemy();
-
+// -------------------- LOOP --------------------
+function loop(){ update(); draw(); requestAnimationFrame(loop); }
+loop();
 </script>
 </body>
 </html>
