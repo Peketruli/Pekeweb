@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vampire Survival - Mejorado</title>
+<title>Vampire Survival - Avanzado</title>
 <style>
 body { margin:0; overflow:hidden; background:#111; font-family:Arial,sans-serif; }
 canvas { display:block; margin:0 auto; background:#222; }
@@ -47,11 +47,12 @@ canvas.width = 800;
 canvas.height = 600;
 
 let gameRunning = false;
-let player, enemies = [], bullets = [];
+let player, enemies = [], bullets = [], powerups = [];
 let keys = {};
 let weaponChoice = '';
 let level = 1, xp = 0;
 let spawnTimer = 0;
+let bossActive = false;
 
 document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -60,25 +61,50 @@ function startGame(weapon) {
     weaponChoice = weapon;
     document.getElementById('weaponSelect').style.display = 'none';
     gameRunning = true;
-    player = { x: canvas.width/2, y: canvas.height/2, speed: 3, life: 100, weapon: weaponChoice };
+    player = { x: canvas.width/2, y: canvas.height/2, speed: 3, life: 100, weapon: weaponChoice, damage:5 };
     enemies = [];
     bullets = [];
-    level = 1; xp = 0;
+    powerups = [];
+    level = 1; xp = 0; bossActive = false;
     spawnEnemies();
     requestAnimationFrame(gameLoop);
 }
 
 function spawnEnemies() {
-    for (let i = 0; i < level + 2; i++) {
+    let count = level + 2;
+    enemies = [];
+    for (let i = 0; i < count; i++) {
         enemies.push({
             x: Math.random() * canvas.width,
             y: Math.random() * canvas.height,
             size: 20,
             speed: 1 + Math.random(),
             life: 10 + level * 3,
-            maxLife: 10 + level * 3
+            maxLife: 10 + level * 3,
+            boss: false
         });
     }
+}
+
+function spawnBoss() {
+    bossActive = true;
+    enemies.push({
+        x: canvas.width/2,
+        y: 50,
+        size: 50,
+        speed: 1,
+        life: 200 + level*20,
+        maxLife: 200 + level*20,
+        boss:true
+    });
+}
+
+function spawnPowerup() {
+    powerups.push({
+        x: Math.random()*canvas.width,
+        y: Math.random()*canvas.height,
+        type: ['life','speed','damage'][Math.floor(Math.random()*3)]
+    });
 }
 
 function updatePlayer() {
@@ -101,11 +127,11 @@ function shoot() {
         const angle = Math.atan2(dy, dx);
 
         if (player.weapon === 'sword') {
-            bullets.push({ x: player.x, y: player.y, vx:0, vy:0, type:'melee', life:10 });
+            bullets.push({ x: player.x, y: player.y, vx:0, vy:0, type:'melee', life:10, damage:player.damage });
         } else if (player.weapon === 'fireball') {
-            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*5, vy: Math.sin(angle)*5, type:'ranged' });
+            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*5, vy: Math.sin(angle)*5, type:'ranged', damage:player.damage });
         } else if (player.weapon === 'crossbow') {
-            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*8, vy: Math.sin(angle)*8, type:'ranged' });
+            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*8, vy: Math.sin(angle)*8, type:'ranged', damage:player.damage });
         }
     });
 }
@@ -120,16 +146,16 @@ function updateBullets() {
             const dy = e.y - b.y;
             const dist = Math.sqrt(dx*dx+dy*dy);
             if ((b.type==='melee' && dist<30) || (b.type==='ranged' && dist<10)) {
-                e.life -= 5;
+                e.life -= b.damage;
                 if (e.life <= 0) {
                     enemies.splice(j,1);
-                    xp += 5;
+                    xp += e.boss?50:5;
                     document.getElementById('xp').innerText = xp;
-                    if (xp >= level*20) {
+                    if (!bossActive && xp >= level*20) {
                         level++;
                         xp=0;
                         document.getElementById('level').innerText = level;
-                        spawnEnemies();
+                        if(level % 5 === 0) spawnBoss(); else spawnEnemies();
                     }
                 }
             }
@@ -148,16 +174,31 @@ function updateEnemies() {
         e.y += dy/dist * e.speed;
 
         if (dist<20) {
-            player.life -= 0.5;
+            player.life -= e.boss?1:0.5;
             document.getElementById('lifeFill').style.width = Math.max(0, player.life) + '%';
         }
     });
 }
 
+function updatePowerups() {
+    powerups.forEach((p,i)=>{
+        const dx = player.x - p.x;
+        const dy = player.y - p.y;
+        const dist = Math.sqrt(dx*dx+dy*dy);
+        if(dist<20){
+            if(p.type==='life') player.life=Math.min(100,player.life+20);
+            if(p.type==='speed') player.speed+=1;
+            if(p.type==='damage') player.damage+=2;
+            powerups.splice(i,1);
+        }
+    });
+    if(Math.random()<0.005) spawnPowerup();
+}
+
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // Fondo con áreas visibles
+    // Fondo
     ctx.fillStyle = '#222';
     ctx.fillRect(0,0,canvas.width,canvas.height);
     ctx.strokeStyle = '#444';
@@ -180,9 +221,9 @@ function draw() {
     ctx.arc(player.x,player.y,15,0,Math.PI*2);
     ctx.fill();
 
-    // Enemigos con barra de vida
+    // Enemigos
     enemies.forEach(e=>{
-        ctx.fillStyle='red';
+        ctx.fillStyle=e.boss?'purple':'red';
         ctx.beginPath();
         ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
         ctx.fill();
@@ -200,6 +241,16 @@ function draw() {
         ctx.arc(b.x,b.y,5,0,Math.PI*2);
         ctx.fill();
     });
+
+    // Powerups
+    powerups.forEach(p=>{
+        if(p.type==='life') ctx.fillStyle='pink';
+        if(p.type==='speed') ctx.fillStyle='blue';
+        if(p.type==='damage') ctx.fillStyle='gold';
+        ctx.beginPath();
+        ctx.arc(p.x,p.y,10,0,Math.PI*2);
+        ctx.fill();
+    });
 }
 
 function gameLoop() {
@@ -208,6 +259,7 @@ function gameLoop() {
     shoot();
     updateBullets();
     updateEnemies();
+    updatePowerups();
     draw();
 
     if (player.life<=0){
