@@ -3,10 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vampire Survival - Avanzado</title>
+<title>Vampire Survival - XP Balls</title>
 <style>
 body { margin:0; overflow:hidden; background:#111; font-family:Arial,sans-serif; }
-canvas { display:block; margin:0 auto; background:#222; }
 #ui {
     position:absolute; top:10px; left:10px; color:#fff;
 }
@@ -43,16 +42,20 @@ button { margin:5px; padding:10px 20px; font-size:16px; cursor:pointer; }
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-canvas.width = 800;
-canvas.height = 600;
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+window.addEventListener('resize', () => {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+});
 
 let gameRunning = false;
-let player, enemies = [], bullets = [], powerups = [];
+let player, enemies = [], bullets = [], powerups = [], xpBalls = [];
 let keys = {};
 let weaponChoice = '';
 let level = 1, xp = 0;
 let spawnTimer = 0;
-let bossActive = false;
 
 document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -61,11 +64,12 @@ function startGame(weapon) {
     weaponChoice = weapon;
     document.getElementById('weaponSelect').style.display = 'none';
     gameRunning = true;
-    player = { x: canvas.width/2, y: canvas.height/2, speed: 3, life: 100, weapon: weaponChoice, damage:5 };
+    player = { x: canvas.width/2, y: canvas.height/2, speed: 3, life: 100, weapon: weaponChoice, damage:2 };
     enemies = [];
     bullets = [];
     powerups = [];
-    level = 1; xp = 0; bossActive = false;
+    xpBalls = [];
+    level = 1; xp = 0;
     spawnEnemies();
     requestAnimationFrame(gameLoop);
 }
@@ -80,30 +84,18 @@ function spawnEnemies() {
             size: 20,
             speed: 1 + Math.random(),
             life: 10 + level * 3,
-            maxLife: 10 + level * 3,
-            boss: false
+            maxLife: 10 + level * 3
         });
     }
 }
 
-function spawnBoss() {
-    bossActive = true;
-    enemies.push({
-        x: canvas.width/2,
-        y: 50,
-        size: 50,
-        speed: 1,
-        life: 200 + level*20,
-        maxLife: 200 + level*20,
-        boss:true
-    });
-}
-
-function spawnPowerup() {
-    powerups.push({
-        x: Math.random()*canvas.width,
-        y: Math.random()*canvas.height,
-        type: ['life','speed','damage'][Math.floor(Math.random()*3)]
+function spawnXPBall(x,y) {
+    xpBalls.push({
+        x: x,
+        y: y,
+        vx: (Math.random()-0.5)*2,
+        vy: (Math.random()-0.5)*2,
+        value: 5
     });
 }
 
@@ -119,7 +111,7 @@ function updatePlayer() {
 
 function shoot() {
     spawnTimer++;
-    if (spawnTimer % 15 !== 0) return; // velocidad de disparo
+    if (spawnTimer % 15 !== 0) return;
 
     enemies.forEach(e => {
         const dx = e.x - player.x;
@@ -127,11 +119,11 @@ function shoot() {
         const angle = Math.atan2(dy, dx);
 
         if (player.weapon === 'sword') {
-            bullets.push({ x: player.x, y: player.y, vx:0, vy:0, type:'melee', life:10, damage:player.damage });
+            bullets.push({ x: player.x, y: player.y, vx:0, vy:0, type:'melee', damage:player.damage });
         } else if (player.weapon === 'fireball') {
-            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*5, vy: Math.sin(angle)*5, type:'ranged', damage:player.damage });
+            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*3, vy: Math.sin(angle)*3, type:'ranged', damage:player.damage });
         } else if (player.weapon === 'crossbow') {
-            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*8, vy: Math.sin(angle)*8, type:'ranged', damage:player.damage });
+            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*4, vy: Math.sin(angle)*4, type:'ranged', damage:player.damage });
         }
     });
 }
@@ -148,15 +140,8 @@ function updateBullets() {
             if ((b.type==='melee' && dist<30) || (b.type==='ranged' && dist<10)) {
                 e.life -= b.damage;
                 if (e.life <= 0) {
+                    spawnXPBall(e.x, e.y);
                     enemies.splice(j,1);
-                    xp += e.boss?50:5;
-                    document.getElementById('xp').innerText = xp;
-                    if (!bossActive && xp >= level*20) {
-                        level++;
-                        xp=0;
-                        document.getElementById('level').innerText = level;
-                        if(level % 5 === 0) spawnBoss(); else spawnEnemies();
-                    }
                 }
             }
         });
@@ -174,46 +159,44 @@ function updateEnemies() {
         e.y += dy/dist * e.speed;
 
         if (dist<20) {
-            player.life -= e.boss?1:0.5;
+            player.life -= 0.5;
             document.getElementById('lifeFill').style.width = Math.max(0, player.life) + '%';
         }
     });
 }
 
-function updatePowerups() {
-    powerups.forEach((p,i)=>{
-        const dx = player.x - p.x;
-        const dy = player.y - p.y;
+function updateXPBalls() {
+    xpBalls.forEach((xpB,i)=>{
+        xpB.x += xpB.vx;
+        xpB.y += xpB.vy;
+
+        const dx = player.x - xpB.x;
+        const dy = player.y - xpB.y;
         const dist = Math.sqrt(dx*dx+dy*dy);
+
         if(dist<20){
-            if(p.type==='life') player.life=Math.min(100,player.life+20);
-            if(p.type==='speed') player.speed+=1;
-            if(p.type==='damage') player.damage+=2;
-            powerups.splice(i,1);
+            xp += xpB.value;
+            document.getElementById('xp').innerText = xp;
+            xpBalls.splice(i,1);
+
+            if(xp >= level*20){
+                level++;
+                xp = 0;
+                document.getElementById('level').innerText = level;
+                spawnEnemies();
+            }
         }
+
+        if (xpB.x<0 || xpB.x>canvas.width || xpB.y<0 || xpB.y>canvas.height) xpBalls.splice(i,1);
     });
-    if(Math.random()<0.005) spawnPowerup();
 }
 
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
     // Fondo
-    ctx.fillStyle = '#222';
+    ctx.fillStyle = '#111';
     ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.strokeStyle = '#444';
-    for (let i=0;i<canvas.width;i+=100){
-        ctx.beginPath();
-        ctx.moveTo(i,0);
-        ctx.lineTo(i,canvas.height);
-        ctx.stroke();
-    }
-    for (let i=0;i<canvas.height;i+=100){
-        ctx.beginPath();
-        ctx.moveTo(0,i);
-        ctx.lineTo(canvas.width,i);
-        ctx.stroke();
-    }
 
     // Jugador
     ctx.fillStyle='cyan';
@@ -223,7 +206,7 @@ function draw() {
 
     // Enemigos
     enemies.forEach(e=>{
-        ctx.fillStyle=e.boss?'purple':'red';
+        ctx.fillStyle='red';
         ctx.beginPath();
         ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
         ctx.fill();
@@ -242,13 +225,11 @@ function draw() {
         ctx.fill();
     });
 
-    // Powerups
-    powerups.forEach(p=>{
-        if(p.type==='life') ctx.fillStyle='pink';
-        if(p.type==='speed') ctx.fillStyle='blue';
-        if(p.type==='damage') ctx.fillStyle='gold';
+    // XP Balls
+    xpBalls.forEach(xpB=>{
+        ctx.fillStyle='gold';
         ctx.beginPath();
-        ctx.arc(p.x,p.y,10,0,Math.PI*2);
+        ctx.arc(xpB.x,xpB.y,8,0,Math.PI*2);
         ctx.fill();
     });
 }
@@ -259,7 +240,7 @@ function gameLoop() {
     shoot();
     updateBullets();
     updateEnemies();
-    updatePowerups();
+    updateXPBalls();
     draw();
 
     if (player.life<=0){
