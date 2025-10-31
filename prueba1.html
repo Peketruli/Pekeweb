@@ -104,395 +104,225 @@
 <div id="debug"></div>
 
 <script>
-/* ========= Vampire Survival — Versión corregida ========= */
-/* Notas: 
-   - El juego arranca PAUSADO mostrando #mainMenu.
-   - Al pulsar Comenzar: se inicializa jugador (HP completo), arma inicial = pistola | whip (lvl1), se oculta el menú y se despausa.
-   - El whip está protegido con timers para evitar referencias nulas y congelaciones.
-*/
-
-/* Canvas */
-const canvas = document.getElementById('c');
+const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
-addEventListener('resize', resize);
-resize();
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
 
-/* Estado global */
-let timeMs = 0;
-let score = 0;
+// =================== VARIABLES PRINCIPALES ===================
+let player = {
+  x: canvas.width / 2,
+  y: canvas.height / 2,
+  radius: 20,
+  speed: 4,
+  hp: 100,
+  maxHp: 100
+};
+
+let keys = {};
+let gamePaused = false;
+let dead = false;
 let xp = 0;
 let level = 1;
-let xpToNext = 15;
-let gamePaused = true;    // IMPORTANT: start paused (menu visible)
-let dead = false;
-let bossTimer = 150000;
-let lastBossSpawn = performance.now();
-let lastSpawnTime = performance.now();
-let spawnInterval = 2500;
+let enemies = [];
+let projectiles = [];
+let pickups = [];
+let angle = 0;
 
-/* Player */
-const player = { x: canvas.width/2, y: canvas.height/2, size:18, speed:3.6, hp:100, maxHp:100 };
-let lastMoveDir = { x:1, y:0 };
-
-/* Input */
-const keys = {};
-addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true);
-addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
-
-/* Entities */
-let bullets = [], enemies = [], orbs = [], bosses = [], puddles = [];
-
-/* Weapons lib (same as antes) */
-const weaponsLib = {};
-/* PISTOL */
-weaponsLib.pistol = {
-  id:'pistol', name:'Pistola', maxLevel:10,
-  statsForLevel(level){
-    const interval = Math.max(220, 2500 - (level-1)*230);
-    let bullets = 1; if(level>=5) bullets++; if(level>=8) bullets++; if(level>=10) bullets++;
-    const damage = 1 + Math.floor((level-1)/3);
-    const speed = 4 + (level-1)*0.4; const size = 4 + Math.floor((level-1)/4);
-    return { interval, bullets, damage, speed, size };
-  },
-  shoot(state){
-    if(!state.level) return;
-    const now = performance.now();
-    const s = this.statsForLevel(state.level);
-    if(now - state.lastShot < s.interval) return;
-    if(enemies.length === 0 && bosses.length === 0) return;
-    state.lastShot = now;
-    const pool = enemies.length ? enemies : bosses;
-    const target = pool.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
-    const baseAngle = Math.atan2(target.y - player.y, target.x - player.x);
-    const total = s.bullets; const spread = 0.28 + 0.04 * total;
-    const step = total>1 ? spread/(total-1) : 0; const start = baseAngle - spread/2;
-    for(let i=0;i<total;i++){ const a = start + step*i; bullets.push({ x:player.x, y:player.y, dx: Math.cos(a)*s.speed, dy: Math.sin(a)*s.speed, damage:s.damage, size:s.size, life:2500 }); }
-  }
-};
-/* SOLAR */
-weaponsLib.solar = {
-  id:'solar', name:'Área Solar', maxLevel:10,
-  statsForLevel(level){ const radius = Math.round(60 + (level-1)*14); const damage = 2 + Math.floor((level-1)*1.4); const tick = Math.max(110, Math.round(450 - (level-1)*35)); return { radius, damage, tick }; }
-};
-/* STAFF */
-weaponsLib.staff = {
-  id:'staff', name:'Bastón', maxLevel:10,
-  statsForLevel(level){ const interval = Math.max(400, 2000 - (level-1)*140); const projectiles = 1 + Math.floor((level-1)/3); const damage = 2 + Math.floor((level-1)/4); const speed = 3 + (level-1)*0.3; return { interval, projectiles, damage, speed }; },
-  shoot(state){ if(!state.level) return; const now = performance.now(); const s = this.statsForLevel(state.level); if(now - state.lastShot < s.interval) return; if(enemies.length === 0 && bosses.length === 0) return; state.lastShot = now; for(let i=0;i<s.projectiles;i++){ const angle = Math.random()*Math.PI*2; bullets.push({ x:player.x, y:player.y, dx: Math.cos(angle)*s.speed, dy: Math.sin(angle)*s.speed, damage:s.damage, size:5, life:3500, homing:true, speedBase:s.speed }); } }
-};
-/* POTION */
-weaponsLib.potion = {
-  id:'potion', name:'Poción', maxLevel:10,
-  statsForLevel(level){ const interval = Math.max(600, 3000 - (level-1)*180); const puddleRadius = Math.round(40 + (level-1)*11); const puddleDuration = 1000 + (level-1)*300; const puddleDamage = 2 + Math.floor((level-1)*1.2); return { interval, puddleRadius, puddleDuration, puddleDamage }; },
-  shoot(state){ if(!state.level) return; const now = performance.now(); const s = this.statsForLevel(state.level); if(now - state.lastShot < s.interval) return; state.lastShot = now; const angle = Math.random()*Math.PI*2; bullets.push({ x:player.x, y:player.y, dx: Math.cos(angle)*2.2, dy: Math.sin(angle)*2.2, damage:0, size:6, life:1200, potion:true, stats:s }); }
-};
-/* SWORD */
-weaponsLib.sword = {
-  id:'sword', name:'Espada', maxLevel:10,
-  statsForLevel(level){ const interval = Math.max(400, 2500 - (level-1)*200); const arcRadius = 36 + (level-1)*8; const damage = 3 + Math.floor((level-1)/2); const arcAngle = Math.PI*0.9 - (level-1)*0.04; return { interval, arcRadius, damage, arcAngle }; },
-  slash(state){ if(!state.level) return; const now = performance.now(); const s = this.statsForLevel(state.level); if(now - state.lastSlash < s.interval) return; state.lastSlash = now; const dir = (Math.hypot(lastMoveDir.x,lastMoveDir.y) < 0.1) ? {x:1,y:0} : lastMoveDir; const baseAng = Math.atan2(dir.y, dir.x); state.pendingSlash = { x: player.x, y: player.y, baseAng, arc: s.arcAngle, radius: s.arcRadius, dmg: s.damage, created: now, duration: 160 }; }
-};
-/* WHIP */
-weaponsLib.whip = {
-  id:'whip', name:'Látigo', maxLevel:10,
-  statsForLevel(level){ const interval = Math.max(220, 2000 - (level-1)*190); const arcRadius = 28 + (level-1)*6; const damage = 2 + Math.floor((level-1)/2); const arcAngle = Math.PI*0.6 + (level-1)*0.02; return { interval, arcRadius, damage, arcAngle }; },
-  slash(state){ if(!state.level) return; const now = performance.now(); const s = this.statsForLevel(state.level); if(now - state.lastSlash < s.interval) return; state.lastSlash = now; const dir = (Math.hypot(lastMoveDir.x,lastMoveDir.y) < 0.1) ? {x:1,y:0} : lastMoveDir; const baseAng = Math.atan2(dir.y, dir.x); state.pendingSlash = { x: player.x, y: player.y, baseAng, arc: s.arcAngle, radius: s.arcRadius, dmg: s.damage, created: now, duration: 140 }; }
-};
-
-/* Weapons state: ensure initial sane values */
+// =================== CONFIGURACIÓN DE ARMAS ===================
 const weaponsState = {
-  pistol: { level:0, lastShot:0 },
-  solar: { level:0, lastTick:0, areas:[] },
-  staff: { level:0, lastShot:0 },
-  potion: { level:0, lastShot:0 },
-  sword: { level:0, lastSlash:0, pendingSlash:null },
-  whip: { level:0, lastSlash:0, pendingSlash:null }
+  sword: { level: 0, cooldown: 800, last: 0 },
+  axe: { level: 0, cooldown: 1000, last: 0 },
+  dagger: { level: 0, cooldown: 400, last: 0 },
+  whip: { level: 0, cooldown: 900, last: 0 }
 };
 
-/* Helpers */
-function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
-function randChoice(a){ return a[Math.floor(Math.random()*a.length)]; }
+let initialChoice = 'sword'; // Se cambia en el menú
 
-/* Spawning */
-function spawnEnemy(){
-  const edge = Math.floor(Math.random()*4);
-  let x = edge===0 ? -30 : edge===1 ? canvas.width+30 : Math.random()*canvas.width;
-  let y = edge===2 ? -30 : edge===3 ? canvas.height+30 : Math.random()*canvas.height;
-  const easyWindow = 120000;
-  const hp = timeMs < easyWindow ? 1 : 1 + Math.floor(timeMs/90000);
-  const speed = 0.8 + Math.random()*1.2 + Math.min(1.0, timeMs/120000);
-  const size = 10 + Math.random()*10;
-  enemies.push({ x,y,hp,speed,size,color:'#c0392b' });
+// =================== INPUT ===================
+window.addEventListener('keydown', e => keys[e.key] = true);
+window.addEventListener('keyup', e => keys[e.key] = false);
+
+// =================== FUNCIONES DEL JUEGO ===================
+function movePlayer() {
+  if (keys['w'] || keys['ArrowUp']) player.y -= player.speed;
+  if (keys['s'] || keys['ArrowDown']) player.y += player.speed;
+  if (keys['a'] || keys['ArrowLeft']) player.x -= player.speed;
+  if (keys['d'] || keys['ArrowRight']) player.x += player.speed;
+
+  player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
+  player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
 }
-function spawnBoss(){ const x = Math.random()*canvas.width, y = Math.random()*canvas.height; bosses.push({ x,y,hp:80 + Math.floor(timeMs/60000)*10,size:60,speed:0.9,color:'#8e44ad' }); }
 
-/* Bullets/puddles/orbs logic */
-function updateBullets(dt){
-  for(let i=bullets.length-1;i>=0;i--){
-    const b = bullets[i];
-    if(b.homing){
-      const pool = enemies.length?enemies:bosses;
-      if(pool.length){
-        let target = pool.reduce((a,b2)=> dist(a,player) < dist(b2,player) ? a : b2);
-        const ang = Math.atan2(target.y - b.y, target.x - b.x);
-        const speed = b.speedBase;
-        b.dx += (Math.cos(ang)*speed - b.dx)*0.18;
-        b.dy += (Math.sin(ang)*speed - b.dy)*0.18;
-      }
+function spawnEnemy() {
+  const side = Math.floor(Math.random() * 4);
+  let x, y;
+  switch (side) {
+    case 0: x = 0; y = Math.random() * canvas.height; break;
+    case 1: x = canvas.width; y = Math.random() * canvas.height; break;
+    case 2: x = Math.random() * canvas.width; y = 0; break;
+    case 3: x = Math.random() * canvas.width; y = canvas.height; break;
+  }
+  enemies.push({ x, y, radius: 15, speed: 1.5 });
+}
+
+function drawPlayer() {
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
+  ctx.fillStyle = '#3cf';
+  ctx.fill();
+  ctx.closePath();
+}
+
+function drawEnemies() {
+  ctx.fillStyle = 'red';
+  for (const e of enemies) {
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function updateEnemies() {
+  for (const e of enemies) {
+    const dx = player.x - e.x;
+    const dy = player.y - e.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 0) {
+      e.x += (dx / dist) * e.speed;
+      e.y += (dy / dist) * e.speed;
     }
-    b.x += b.dx * (dt/16); b.y += b.dy * (dt/16);
-    b.life -= dt;
-    if(b.life <= 0){
-      if(b.potion && b.stats) puddles.push({ x:b.x, y:b.y, radius: b.stats.puddleRadius, dmg: b.stats.puddleDamage, ttl: b.stats.puddleDuration, lastTick: performance.now() });
-      bullets.splice(i,1); continue;
+
+    if (dist < player.radius + e.radius) {
+      player.hp -= 0.2;
+      if (player.hp <= 0) dead = true;
     }
-    for(let j=enemies.length-1;j>=0;j--){
+  }
+}
+
+function attackMelee() {
+  const now = Date.now();
+  const ws = weaponsState[initialChoice];
+  if (!ws) return;
+
+  if (now - ws.last > ws.cooldown && ws.level > 0) {
+    ws.last = now;
+    // Efecto visual de ataque (rápido arco)
+    projectiles.push({
+      type: 'slash',
+      x: player.x,
+      y: player.y,
+      r: 80, // radio más grande para que se vea más
+      life: 150,
+      angle: Math.random() * Math.PI * 2
+    });
+  }
+}
+
+function drawProjectiles() {
+  for (const p of projectiles) {
+    if (p.type === 'slash') {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      ctx.beginPath();
+      ctx.arc(0, 0, p.r, 0, Math.PI / 3);
+      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+      ctx.lineWidth = 8;
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+}
+
+function updateProjectiles() {
+  const now = Date.now();
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.life -= 16;
+    if (p.life <= 0) {
+      projectiles.splice(i, 1);
+      continue;
+    }
+
+    // Colisiones con enemigos
+    for (let j = enemies.length - 1; j >= 0; j--) {
       const e = enemies[j];
-      if(dist(b,e) < e.size + (b.size||4)){
-        e.hp -= b.damage;
-        bullets.splice(i,1);
-        if(e.hp <= 0){ orbs.push({ x:e.x, y:e.y, value:1 + Math.floor(Math.random()*2) }); enemies.splice(j,1); score++; }
-        break;
-      }
-    }
-    for(let j=bosses.length-1;j>=0;j--){
-      const B = bosses[j];
-      if(dist(b,B) < B.size + (b.size||4)){
-        B.hp -= b.damage;
-        bullets.splice(i,1);
-        if(B.hp <= 0){ orbs.push({ x:B.x, y:B.y, value:8 + Math.floor(Math.random()*6) }); bosses.splice(j,1); score += 12; }
-        break;
+      const dx = e.x - p.x;
+      const dy = e.y - p.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < p.r + e.radius) {
+        enemies.splice(j, 1);
       }
     }
   }
 }
-function updatePuddles(dt){
-  for(let i=puddles.length-1;i>=0;i--){
-    const p = puddles[i];
-    p.ttl -= dt;
-    const now = performance.now();
-    if(!p.lastTick) p.lastTick = now;
-    if(now - p.lastTick >= 200){
-      p.lastTick = now;
-      for(let j=enemies.length-1;j>=0;j--){
-        const e = enemies[j];
-        if(dist(e,p) < p.radius){ e.hp -= p.dmg; if(e.hp <= 0){ orbs.push({ x:e.x, y:e.y, value:1 + Math.floor(Math.random()*2) }); enemies.splice(j,1); score++; } }
-      }
+
+function drawHUD() {
+  ctx.fillStyle = 'white';
+  ctx.fillText(`HP: ${Math.floor(player.hp)}`, 20, 30);
+  ctx.fillText(`LVL: ${level}`, 20, 50);
+  ctx.fillText(`XP: ${xp}`, 20, 70);
+}
+
+function loop() {
+  if (gamePaused || dead) {
+    if (dead) {
+      ctx.fillStyle = 'rgba(0,0,0,0.7)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'red';
+      ctx.font = '40px Arial';
+      ctx.fillText('HAS MUERTO', canvas.width / 2 - 100, canvas.height / 2);
     }
-    if(p.ttl <= 0) puddles.splice(i,1);
+    requestAnimationFrame(loop);
+    return;
   }
-}
-function processSlashes(){
-  for(const id of ['sword','whip']){
-    const st = weaponsState[id];
-    if(st && st.pendingSlash){
-      const sl = st.pendingSlash;
-      const now = performance.now();
-      if(now - sl.created > sl.duration){ st.pendingSlash = null; continue; }
-      for(let i=enemies.length-1;i>=0;i--){
-        const e = enemies[i];
-        const dx = e.x - player.x, dy = e.y - player.y; const r = Math.hypot(dx,dy);
-        if(r <= sl.radius + e.size){
-          const angToEnemy = Math.atan2(dy, dx);
-          let dAng = Math.abs(angleDiff(sl.baseAng, angToEnemy));
-          if(dAng <= sl.arc/2){ e.hp -= sl.dmg; if(e.hp <= 0){ orbs.push({ x:e.x, y:e.y, value:1 + Math.floor(Math.random()*2) }); enemies.splice(i,1); score++; } }
-        }
-      }
-      for(let i=bosses.length-1;i>=0;i--){
-        const B = bosses[i];
-        const dx=B.x - player.x, dy=B.y - player.y, r=Math.hypot(dx,dy);
-        if(r <= sl.radius + B.size){ const angToBoss = Math.atan2(dy, dx); let dAng = Math.abs(angleDiff(sl.baseAng, angToBoss)); if(dAng <= sl.arc/2){ B.hp -= sl.dmg; if(B.hp<=0){ orbs.push({x:B.x,y:B.y,value:8+Math.floor(Math.random()*6)}); bosses.splice(i,1); score+=12; } } }
-      }
-    }
-  }
-}
-function angleDiff(a,b){ let d=a-b; while(d>Math.PI)d-=2*Math.PI; while(d<-Math.PI)d+=2*Math.PI; return d; }
-function updateOrbs(){
-  for(let i=orbs.length-1;i>=0;i--){
-    const o = orbs[i];
-    if(dist(o,player) < player.size + 10){ xp += o.value; orbs.splice(i,1); if(xp >= xpToNext) levelUp(); }
-  }
-}
-function updateSolar(now){
-  if(!weaponsState.solar.level) return;
-  const lvl = weaponsState.solar.level; const s = weaponsLib.solar.statsForLevel(lvl);
-  if(!weaponsState.solar.lastTick) weaponsState.solar.lastTick = 0;
-  if(now - weaponsState.solar.lastTick < s.tick) return;
-  weaponsState.solar.lastTick = now;
-  for(let i=enemies.length-1;i>=0;i--){
-    const e = enemies[i];
-    if(dist(e,player) < s.radius){ e.hp -= s.damage; if(e.hp <= 0){ orbs.push({x:e.x,y:e.y,value:1 + Math.floor(Math.random()*2)}); enemies.splice(i,1); score++; } }
-  }
-  for(let i=bosses.length-1;i>=0;i--){
-    const B = bosses[i];
-    if(dist(B,player) < s.radius){ B.hp -= s.damage; if(B.hp <= 0){ orbs.push({x:B.x,y:B.y,value:8 + Math.floor(Math.random()*6)}); bosses.splice(i,1); score+=12; } }
-  }
-}
 
-/* Weapon orchestration (safe calls) */
-function weaponAutos(now){
-  try{ if(weaponsState.pistol.level) weaponsLib.pistol.shoot(weaponsState.pistol); }catch(e){ console.error('pistol error',e); }
-  try{ if(weaponsState.staff.level) weaponsLib.staff.shoot(weaponsState.staff); }catch(e){ console.error('staff error',e); }
-  try{ if(weaponsState.potion.level) weaponsLib.potion.shoot(weaponsState.potion); }catch(e){ console.error('potion error',e); }
-  try{ if(weaponsState.sword.level) weaponsLib.sword.slash(weaponsState.sword); }catch(e){ console.error('sword error',e); }
-  try{ if(weaponsState.whip.level) weaponsLib.whip.slash(weaponsState.whip); }catch(e){ console.error('whip error',e); }
-}
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  movePlayer();
+  updateEnemies();
+  updateProjectiles();
+  drawPlayer();
+  drawEnemies();
+  drawProjectiles();
+  drawHUD();
 
-/* Spawn control (single definition) */
-function trySpawn(now){ if(now - lastSpawnTime > spawnInterval){ lastSpawnTime = now; spawnEnemy(); } }
+  attackMelee();
 
-/* Level menu */
-const levelMenuEl = document.getElementById('levelMenu');
-const levelChoicesEl = document.getElementById('levelChoices');
-function openLevelMenu(){
-  gamePaused = true;
-  levelMenuEl.style.display = 'block';
-  levelChoicesEl.innerHTML = '';
-  const pool = [];
-  for(const id in weaponsLib){ const lvl = weaponsState[id].level || 0; if(lvl < weaponsLib[id].maxLevel) pool.push({ type:'weapon', id }); }
-  const bonuses = [ { type:'bonus', id:'hp', name:'Más vida +10' }, { type:'bonus', id:'spd', name:'Velocidad +0.4' }, { type:'bonus', id:'xp', name:'Recoge +2 XP' } ];
-  while(pool.length < 4) pool.push(randChoice(bonuses));
-  const picks = [];
-  while(picks.length < 3){ const p = randChoice(pool); if(!picks.find(x=>x.type===p.type && x.id===p.id)) picks.push(p); }
-  picks.forEach(p=>{
-    const btn = document.createElement('button'); btn.className='choice';
-    if(p.type==='weapon'){
-      const lvl = weaponsState[p.id].level || 0;
-      btn.textContent = `${weaponsLib[p.id].name}${lvl?(' (Lv '+lvl+')'):''}`;
-      btn.onclick = ()=>{ weaponsState[p.id].level = Math.min(weaponsLib[p.id].maxLevel, (weaponsState[p.id].level||0)+1); if(p.id === 'solar' && weaponsState.solar.level === 1) weaponsState.solar.areas.push({ x:player.x, y:player.y, created: performance.now() }); levelMenuEl.style.display='none'; gamePaused=false; };
-    } else {
-      btn.textContent = p.name;
-      btn.onclick = ()=>{ if(p.id==='hp'){ player.maxHp += 10; player.hp = player.maxHp; } if(p.id==='spd'){ player.speed += 0.4; } if(p.id==='xp'){ xp += 2; if(xp >= xpToNext) levelUp(); } levelMenuEl.style.display='none'; gamePaused=false; };
-    }
-    levelChoicesEl.appendChild(btn);
-  });
-}
-
-/* Level / XP */
-function levelUp(){ level++; xp = xp - xpToNext; xpToNext = Math.max(8, Math.floor(xpToNext * 1.25)); openLevelMenu(); }
-
-/* Death */
-const deathPanel = document.getElementById('deathPanel');
-function onDeath(){ dead = true; gamePaused = true; deathPanel.style.display = 'flex'; document.getElementById('deathStats').textContent = `Puntos: ${score} · Nivel: ${level}`; }
-document.getElementById('btnRestart').addEventListener('click', ()=> location.reload());
-
-/* HUD rendering */
-function renderHUD(){
-  const pct = Math.max(0, Math.min(1, player.hp / player.maxHp));
-  document.getElementById('hpFill').style.width = (pct*100)+'%';
-  document.getElementById('hpText').textContent = Math.round(player.hp)+' / '+player.maxHp;
-  document.getElementById('xpFill').style.width = Math.min(100, (xp/xpToNext)*100)+'%';
-  document.getElementById('xpText').textContent = Math.floor(xp)+' / '+xpToNext;
-  document.getElementById('levelText').textContent = level;
-  document.getElementById('scoreText').textContent = 'Puntos: '+score;
-  const invEl = document.getElementById('inv'); invEl.innerHTML = '';
-  for(const id in weaponsLib){
-    const lvl = weaponsState[id].level || 0;
-    const slot = document.createElement('div'); slot.className='slot'; slot.style.opacity = lvl?1:0.45;
-    slot.innerHTML = `<b>${weaponsLib[id].name}</b> ${lvl?('<small style="float:right">Lv '+lvl+'</small>'):''}<div style="font-size:12px;color:#bbb">${lvl?weaponShortDesc(id,lvl):'No equipado'}</div>`;
-    invEl.appendChild(slot);
-  }
-}
-function weaponShortDesc(id,lvl){ if(!lvl) return ''; const s = weaponsLib[id].statsForLevel(lvl); if(id==='pistol') return `${s.bullets} disparo(s) · dmg ${s.damage}`; if(id==='solar') return `radio ${s.radius}px · dmg ${s.damage}/${s.tick}ms`; if(id==='staff') return `${s.projectiles} homing · cada ${s.interval}ms`; if(id==='potion') return `charco ${s.puddleRadius}px`; if(id==='sword') return `arco ${Math.round(s.arcRadius)}px`; if(id==='whip') return `rápido ${Math.round(s.arcRadius)}px`; return ''; }
-
-/* Player movement & facing */
-function updatePlayer(dt){
-  if(keys['w'] || keys['arrowup']){ player.y -= player.speed * (dt/16); lastMoveDir.y = -1; }
-  if(keys['s'] || keys['arrowdown']){ player.y += player.speed * (dt/16); lastMoveDir.y = 1; }
-  if(keys['a'] || keys['arrowleft']){ player.x -= player.speed * (dt/16); lastMoveDir.x = -1; }
-  if(keys['d'] || keys['arrowright']){ player.x += player.speed * (dt/16); lastMoveDir.x = 1; }
-  const mag = Math.hypot(lastMoveDir.x,lastMoveDir.y); if(mag>0.0001){ lastMoveDir.x/=mag; lastMoveDir.y/=mag; }
-  player.x = Math.max(0, Math.min(canvas.width, player.x)); player.y = Math.max(0, Math.min(canvas.height, player.y));
-  if(weaponsState.solar.level) weaponsState.solar.areas.forEach(a => { a.x = player.x; a.y = player.y; });
-}
-
-/* Orchestration: main loop */
-let lastFrame = performance.now();
-function loop(now){
-  const dt = now - lastFrame; lastFrame = now;
-  if(!gamePaused && !dead){
-    timeMs += dt;
-    trySpawn(now);
-    if(now - lastBossSpawn > bossTimer){ lastBossSpawn = now; spawnBoss(); }
-    updatePlayer(dt);
-    weaponAutos(now);
-    updateBullets(dt);
-    updatePuddles(dt);
-    processSlashes();
-    updateEnemies(dt);
-    updateBosses(dt);
-    updateSolar(now);
-    updateOrbs();
-  }
-  render();
-  renderHUD();
+  if (Math.random() < 0.02) spawnEnemy();
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
 
-/* Rendering */
-function render(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.save(); ctx.strokeStyle='rgba(255,255,255,0.02)';
-  for(let i=0;i<canvas.width;i+=80){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,canvas.height); ctx.stroke(); }
-  for(let j=0;j<canvas.height;j+=80){ ctx.beginPath(); ctx.moveTo(0,j); ctx.lineTo(canvas.width,j); ctx.stroke(); }
-  ctx.restore();
-  if(weaponsState.solar.level){ const s = weaponsLib.solar.statsForLevel(weaponsState.solar.level); ctx.fillStyle='rgba(255,200,50,0.06)'; ctx.beginPath(); ctx.arc(player.x, player.y, s.radius, 0, Math.PI*2); ctx.fill(); }
-  for(const p of puddles){ ctx.fillStyle='rgba(120,20,160,0.16)'; ctx.beginPath(); ctx.arc(p.x,p.y,p.radius,0,Math.PI*2); ctx.fill(); }
-  for(const o of orbs){ ctx.fillStyle='#f1c40f'; ctx.beginPath(); ctx.arc(o.x,o.y,6,0,Math.PI*2); ctx.fill(); }
-  for(const e of enemies){ ctx.fillStyle=e.color||'#c0392b'; ctx.beginPath(); ctx.arc(e.x,e.y,e.size,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='11px sans-serif'; ctx.fillText(Math.max(0,Math.round(e.hp||0)), e.x-10, e.y - e.size - 4); }
-  for(const B of bosses){ ctx.fillStyle=B.color; ctx.beginPath(); ctx.arc(B.x,B.y,B.size,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='13px sans-serif'; ctx.fillText('BOSS', B.x-18, B.y-6); }
-  for(const b of bullets){ ctx.fillStyle='#fff59d'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size||4,0,Math.PI*2); ctx.fill(); }
-  for(const id of ['sword','whip']){ const st = weaponsState[id]; if(st && st.pendingSlash){ const sl = st.pendingSlash; ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(sl.baseAng); ctx.fillStyle='rgba(255,120,60,0.12)'; ctx.beginPath(); ctx.moveTo(0,0); const steps = 24; for(let i=0;i<=steps;i++){ const a = -sl.arc/2 + (sl.arc/steps)*i; const rx = Math.cos(a)*sl.radius, ry = Math.sin(a)*sl.radius; ctx.lineTo(rx,ry); } ctx.closePath(); ctx.fill(); ctx.restore(); } }
-  ctx.fillStyle='#3ddc84'; ctx.beginPath(); ctx.arc(player.x, player.y, player.size,0,Math.PI*2); ctx.fill();
-}
+loop();
 
-/* update enemies / bosses */
-function updateEnemies(dt){
-  for(let i=enemies.length-1;i>=0;i--){
-    const e = enemies[i]; const ang = Math.atan2(player.y - e.y, player.x - e.x); e.x += Math.cos(ang) * e.speed * (dt/16); e.y += Math.sin(ang) * e.speed * (dt/16);
-    if(dist(e,player) < e.size + player.size){ player.hp -= 6 * (dt/16); orbs.push({ x:e.x, y:e.y, value:1 + Math.floor(Math.random()*2) }); enemies.splice(i,1); if(player.hp <= 0) onDeath(); }
-  }
-}
-function updateBosses(dt){
-  for(let i=bosses.length-1;i>=0;i--){ const b = bosses[i]; const ang = Math.atan2(player.y - b.y, player.x - b.x); b.x += Math.cos(ang) * b.speed * (dt/16); b.y += Math.sin(ang) * b.speed * (dt/16); if(dist(b,player) < b.size + player.size){ player.hp -= 20 * (dt/16); if(player.hp <= 0) onDeath(); } }
-}
-
-/* Selector logic: ensure pause and clean init */
-const cardPistol = document.getElementById('card-pistol');
-const cardWhip = document.getElementById('card-whip');
-let initialChoice = 'pistol';
-cardPistol.addEventListener('click', ()=>{ initialChoice='pistol'; cardPistol.classList.add('selected'); cardWhip.classList.remove('selected'); });
-cardWhip.addEventListener('click', ()=>{ initialChoice='whip'; cardWhip.classList.add('selected'); cardPistol.classList.remove('selected'); });
-
-document.getElementById('btnStart').addEventListener('click', ()=>{
-  // Reset core state to safe defaults
-  player.x = canvas.width/2; player.y = canvas.height/2; player.hp = player.maxHp = 100; score = 0; xp = 0; level = 1; xpToNext = 15;
-  bullets = []; enemies = []; orbs = []; bosses = []; puddles = [];
-  spawnInterval = 2500; timeMs = 0;
-  // Give initial chosen weapon level 1
-  for(const id in weaponsState) weaponsState[id].level = 0; // reset all
+// =================== MENÚ PRINCIPAL ===================
+document.getElementById('btnStart').addEventListener('click', () => {
+  for (const id in weaponsState) weaponsState[id].level = 0;
   weaponsState[initialChoice].level = 1;
-  // Hide menu and unpause
+
   document.getElementById('mainMenu').style.display = 'none';
-  gamePaused = false; dead = false;
-  lastSpawnTime = performance.now(); lastBossSpawn = performance.now();
-  // small initial spawns
-  for(let i=0;i<3;i++) spawnEnemy();
+  dead = false;
+  player.hp = player.maxHp;
+  gamePaused = false;
 });
 
-document.getElementById('btnDict').addEventListener('click', ()=> alert('Diccionario próximamente'));
-document.getElementById('btnBack').addEventListener('click', ()=> location.href='golf.html');
+// Botones extra del menú
+document.getElementById('btnDict').addEventListener('click', () => {
+  alert('Aquí iría el Diccionario de enemigos, habilidades y armas (en desarrollo)');
+});
 
-/* Debug */
-const debugEl = document.getElementById('debug');
-setInterval(()=> debugEl.textContent = `Enemies:${enemies.length} Orbs:${orbs.length} Bullets:${bullets.length} Time:${Math.floor(timeMs/1000)}s`, 800);
+document.getElementById('btnBack').addEventListener('click', () => {
+  location.href = 'golf.html';
+});
 
-/* Expose for console */
-window.__VS = { weaponsLib, weaponsState, player, enemies, orbs, bullets, spawnEnemy, openLevelMenu };
-
-/* End */
+// Selección de arma
+document.querySelectorAll('#mainMenu button[data-weapon]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    initialChoice = btn.getAttribute('data-weapon');
+    document.querySelectorAll('#mainMenu button[data-weapon]').forEach(b => b.style.border = '');
+    btn.style.border = '3px solid #0f0';
+  });
+});
 </script>
 </body>
 </html>
