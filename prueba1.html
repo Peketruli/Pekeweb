@@ -3,232 +3,182 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vampire Survival</title>
+<title>Vampire Survival - Mini</title>
 <style>
-  body {
-    margin: 0;
-    overflow: hidden;
-    background: #111;
-    font-family: Arial, sans-serif;
-    color: white;
-  }
-  canvas {
-    display: block;
-    background: #222;
-  }
-  #hud {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    z-index: 10;
-  }
-  .bar {
-    width: 200px;
-    height: 20px;
-    background: #444;
-    margin-bottom: 5px;
-    border-radius: 5px;
-    overflow: hidden;
-  }
-  .bar-inner {
-    height: 100%;
-    background: #0f0;
-    width: 100%;
-  }
-  #weaponSelect {
-    margin-top: 10px;
-  }
-  #weaponSelect button {
-    margin-right: 5px;
-  }
+    body { margin: 0; overflow: hidden; background: #111; color: #fff; font-family: Arial, sans-serif; }
+    canvas { display: block; background: #222; margin: 0 auto; }
+    #ui { position: absolute; top: 10px; left: 10px; }
+    #weaponSelect { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #333; padding: 20px; border-radius: 10px; }
+    button { margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer; }
 </style>
 </head>
 <body>
-<div id="hud">
-  <div>Vida jugador</div>
-  <div class="bar"><div class="bar-inner" id="playerHealth"></div></div>
-  <div id="weaponSelect">
-    <button onclick="selectWeapon('pistol')">Pistola</button>
-    <button onclick="selectWeapon('shotgun')">Escopeta</button>
-    <button onclick="selectWeapon('rifle')">Rifle</button>
-  </div>
-  <div>Nivel: <span id="level">1</span></div>
+<div id="ui">
+    Vida: <span id="life">100</span> | Nivel: <span id="level">1</span> | XP: <span id="xp">0</span>
 </div>
+
+<div id="weaponSelect">
+    <h2>Elige tu arma</h2>
+    <button onclick="startGame('sword')">Espada</button>
+    <button onclick="startGame('magic')">Bola de Fuego</button>
+    <button onclick="startGame('crossbow')">Ballesta</button>
+</div>
+
 <canvas id="gameCanvas"></canvas>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+canvas.width = 800;
+canvas.height = 600;
 
-// --- Jugador ---
-const player = {
-  x: canvas.width/2,
-  y: canvas.height/2,
-  size: 30,
-  speed: 5,
-  health: 100,
-  weapon: 'pistol'
-};
+let gameRunning = false;
+let player, enemies = [], bullets = [];
+let keys = {};
+let weaponChoice = '';
+let level = 1, xp = 0;
 
-// --- Armas ---
-const weapons = {
-  pistol: {damage: 10, speed: 10, cooldown: 300},
-  shotgun: {damage: 20, speed: 8, cooldown: 800},
-  rifle: {damage: 15, speed: 12, cooldown: 500}
-};
-let lastShot = 0;
+document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
 
-// --- Enemigos ---
-let vampires = [];
-let level = 1;
-
-// --- Balas ---
-let bullets = [];
-
-// --- Controles ---
-const keys = {};
-window.addEventListener('keydown', e => keys[e.key] = true);
-window.addEventListener('keyup', e => keys[e.key] = false);
-canvas.addEventListener('click', shoot);
-
-// --- Funciones ---
-function selectWeapon(name) {
-  player.weapon = name;
+function startGame(weapon) {
+    weaponChoice = weapon;
+    document.getElementById('weaponSelect').style.display = 'none';
+    gameRunning = true;
+    player = { x: canvas.width/2, y: canvas.height/2, speed: 3, life: 100, weapon: weaponChoice };
+    enemies = [];
+    bullets = [];
+    level = 1;
+    xp = 0;
+    spawnEnemies();
+    requestAnimationFrame(gameLoop);
 }
 
-function spawnVampires(num) {
-  for(let i=0;i<num;i++){
-    vampires.push({
-      x: Math.random()*canvas.width,
-      y: Math.random()*canvas.height,
-      size: 25,
-      health: 30 + level*5
+function spawnEnemies() {
+    for (let i = 0; i < level + 2; i++) {
+        enemies.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            size: 20,
+            speed: 1 + Math.random(),
+            life: 10 + level * 2
+        });
+    }
+}
+
+function updatePlayer() {
+    if (keys['w'] || keys['arrowup']) player.y -= player.speed;
+    if (keys['s'] || keys['arrowdown']) player.y += player.speed;
+    if (keys['a'] || keys['arrowleft']) player.x -= player.speed;
+    if (keys['d'] || keys['arrowright']) player.x += player.speed;
+
+    // Mantener dentro del canvas
+    player.x = Math.max(0, Math.min(canvas.width, player.x));
+    player.y = Math.max(0, Math.min(canvas.height, player.y));
+}
+
+function shoot() {
+    // Disparo automático según arma
+    if (player.weapon === 'sword') {
+        // Ataque melee: crea un corto rango alrededor del jugador
+        bullets.push({ x: player.x, y: player.y, vx: 0, vy: 0, type: 'melee', life: 10 });
+    } else {
+        // Ataque a distancia
+        enemies.forEach(e => {
+            const angle = Math.atan2(e.y - player.y, e.x - player.x);
+            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle) * 5, vy: Math.sin(angle) * 5, type: 'ranged' });
+        });
+    }
+}
+
+function updateBullets() {
+    bullets.forEach((b, i) => {
+        b.x += b.vx;
+        b.y += b.vy;
+
+        enemies.forEach((e, j) => {
+            const dx = e.x - b.x;
+            const dy = e.y - b.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+
+            if ((b.type === 'melee' && dist < 30) || (b.type === 'ranged' && dist < 10)) {
+                e.life -= 5;
+                if (e.life <= 0) {
+                    enemies.splice(j, 1);
+                    xp += 5;
+                    document.getElementById('xp').innerText = xp;
+                    if (xp >= level * 20) {
+                        level++;
+                        xp = 0;
+                        document.getElementById('level').innerText = level;
+                        spawnEnemies();
+                    }
+                }
+            }
+        });
+
+        // eliminar bala si fuera del canvas
+        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) bullets.splice(i, 1);
     });
-  }
 }
 
-function shoot(e) {
-  const now = Date.now();
-  const weapon = weapons[player.weapon];
-  if(now - lastShot < weapon.cooldown) return;
-  lastShot = now;
-  
-  const rect = canvas.getBoundingClientRect();
-  const targetX = e.clientX - rect.left;
-  const targetY = e.clientY - rect.top;
-  
-  bullets.push({
-    x: player.x,
-    y: player.y,
-    dx: targetX - player.x,
-    dy: targetY - player.y,
-    size: 5,
-    damage: weapon.damage,
-    speed: weapon.speed
-  });
-}
+function updateEnemies() {
+    enemies.forEach(e => {
+        const dx = player.x - e.x;
+        const dy = player.y - e.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        e.x += dx/dist * e.speed;
+        e.y += dy/dist * e.speed;
 
-// --- Game Loop ---
-function update() {
-  // Movimiento jugador
-  if(keys['w'] || keys['ArrowUp']) player.y -= player.speed;
-  if(keys['s'] || keys['ArrowDown']) player.y += player.speed;
-  if(keys['a'] || keys['ArrowLeft']) player.x -= player.speed;
-  if(keys['d'] || keys['ArrowRight']) player.x += player.speed;
-
-  player.x = Math.max(0, Math.min(canvas.width, player.x));
-  player.y = Math.max(0, Math.min(canvas.height, player.y));
-
-  // Actualizar balas
-  bullets.forEach((b, i) => {
-    const dist = Math.sqrt(b.dx*b.dx + b.dy*b.dy);
-    b.x += (b.dx/dist)*b.speed;
-    b.y += (b.dy/dist)*b.speed;
-    
-    // Revisar colisión con vampiros
-    vampires.forEach((v,j) => {
-      const d = Math.hypot(b.x-v.x, b.y-v.y);
-      if(d < v.size + b.size){
-        v.health -= b.damage;
-        bullets.splice(i,1);
-      }
+        if (dist < 20) {
+            player.life -= 0.5;
+            document.getElementById('life').innerText = Math.max(0, Math.floor(player.life));
+        }
     });
-    
-    if(b.x<0 || b.x>canvas.width || b.y<0 || b.y>canvas.height){
-      bullets.splice(i,1);
-    }
-  });
-
-  // Vampiros se mueven hacia jugador
-  vampires.forEach((v,i) => {
-    const dx = player.x - v.x;
-    const dy = player.y - v.y;
-    const dist = Math.hypot(dx,dy);
-    if(dist > 0){
-      v.x += dx/dist * 1.5;
-      v.y += dy/dist * 1.5;
-    }
-    if(dist < v.size + player.size){
-      player.health -= 0.5;
-    }
-    if(v.health <=0){
-      vampires.splice(i,1);
-    }
-  });
-
-  // Si todos muertos, subir nivel
-  if(vampires.length === 0){
-    level++;
-    document.getElementById('level').innerText = level;
-    spawnVampires(level + 2);
-  }
-
-  // Actualizar HUD
-  document.getElementById('playerHealth').style.width = player.health + '%';
-  if(player.health <= 0){
-    alert("¡Has muerto! Recarga la página para volver a jugar.");
-    location.reload();
-  }
 }
 
 function draw() {
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  
-  // Dibujar jugador
-  ctx.fillStyle = 'green';
-  ctx.beginPath();
-  ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
-  ctx.fill();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Dibujar vampiros
-  ctx.fillStyle = 'purple';
-  vampires.forEach(v => {
+    // Dibujar jugador
+    ctx.fillStyle = 'cyan';
     ctx.beginPath();
-    ctx.arc(v.x,v.y,v.size,0,Math.PI*2);
+    ctx.arc(player.x, player.y, 15, 0, Math.PI*2);
     ctx.fill();
-  });
 
-  // Dibujar balas
-  ctx.fillStyle = 'yellow';
-  bullets.forEach(b => {
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
-    ctx.fill();
-  });
+    // Dibujar enemigos
+    enemies.forEach(e => {
+        ctx.fillStyle = 'red';
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.size, 0, Math.PI*2);
+        ctx.fill();
+    });
+
+    // Dibujar balas
+    bullets.forEach(b => {
+        ctx.fillStyle = b.type === 'melee' ? 'yellow' : 'orange';
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 5, 0, Math.PI*2);
+        ctx.fill();
+    });
 }
 
-function gameLoop(){
-  update();
-  draw();
-  requestAnimationFrame(gameLoop);
+function gameLoop() {
+    if (!gameRunning) return;
+    updatePlayer();
+    shoot();
+    updateBullets();
+    updateEnemies();
+    draw();
+
+    if (player.life <= 0) {
+        alert('Has muerto. Recarga la página para volver a jugar.');
+        gameRunning = false;
+        return;
+    }
+
+    requestAnimationFrame(gameLoop);
 }
-
-// --- Iniciar juego ---
-spawnVampires(3);
-gameLoop();
-
 </script>
 </body>
 </html>
