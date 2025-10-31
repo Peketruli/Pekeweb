@@ -5,355 +5,162 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Vampire Survival</title>
 <style>
-html, body {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background: #111;
-  color: white;
-  font-family: Arial, sans-serif;
-}
-
-canvas {
-  display: block;
-  background: radial-gradient(circle at center, #222 0%, #000 100%);
-}
-
-/* ==== MENÚ PRINCIPAL ==== */
-#mainMenu, #levelMenu, #deathPanel {
-  position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  display: none;
-  justify-content: center;
-  align-items: center;
-  flex-direction: column;
-  background: rgba(0, 0, 0, 0.8);
-  z-index: 10;
-}
-
-button {
-  padding: 10px 20px;
-  margin: 5px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 16px;
-  background: #444;
-  color: white;
-}
-
-button:hover { background: #666; }
-
-#hud {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  font-size: 14px;
-  line-height: 1.4em;
-}
-
-#hpBar, #xpBar {
-  height: 8px;
-  background: #222;
-  border-radius: 4px;
-  overflow: hidden;
-  margin-top: 3px;
-}
-
-#hpFill {
-  height: 100%;
-  width: 100%;
-  background: #f33;
-}
-
-#xpFill {
-  height: 100%;
-  width: 0%;
-  background: #3f3;
-}
+body{margin:0;overflow:hidden;background:#000;color:#fff;font-family:sans-serif}
+#ui{position:absolute;top:10px;left:10px;z-index:10}
+#menu{position:absolute;top:0;left:0;width:100%;height:100%;background:#000a;display:flex;flex-direction:column;align-items:center;justify-content:center}
+button{padding:10px 20px;margin:10px;font-size:18px;background:#222;color:#fff;border:2px solid #555;cursor:pointer;border-radius:8px}
+button:hover{background:#444}
+#hud{position:absolute;top:10px;left:10px;font-size:18px}
+#gameover{position:absolute;top:0;left:0;width:100%;height:100%;background:#000a;display:flex;align-items:center;justify-content:center;font-size:32px;flex-direction:column}
+#weapon-select{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#111;color:white}
+.weapon-button{margin:10px;padding:10px 20px;background:#222;color:#fff;border:2px solid #555;cursor:pointer;border-radius:8px;font-size:18px}
+.weapon-button:hover{background:#444}
 </style>
 </head>
 <body>
-
-<canvas id="game"></canvas>
-
-<!-- ===== Menú principal ===== -->
-<div id="mainMenu" style="display:flex">
-  <h1>🧛 Vampire Survival</h1>
-  <p>Selecciona tu arma inicial:</p>
-  <div>
-    <button onclick="selectWeapon('pistol')">🔫 Pistola</button>
-    <button onclick="selectWeapon('whip')">🩸 Látigo</button>
-  </div>
-  <button id="btnStart">Comenzar Partida</button>
+<div id="menu">
+<h1>Vampire Survival</h1>
+<button id="startBtn">Iniciar Juego</button>
 </div>
-
-<!-- ===== Menú de subida de nivel ===== -->
-<div id="levelMenu">
-  <h2>Subiste de nivel</h2>
-  <div id="levelOptions"></div>
+<div id="hud" style="display:none;">Vida: <span id="vida">100</span></div>
+<div id="gameover" style="display:none;">
+  <div>💀 Has muerto 💀</div>
+  <button id="restartBtn">Reiniciar</button>
 </div>
-
-<!-- ===== Pantalla de muerte ===== -->
-<div id="deathPanel">
-  <div id="deathInner">
-    <h2>Has muerto</h2>
-    <div id="deathStats" style="margin-top:8px;color:#ddd"></div>
-    <div style="margin-top:12px">
-      <button id="btnRestart">Reiniciar</button>
-    </div>
-  </div>
-</div>
-
-<!-- ===== HUD ===== -->
-<div id="hud">
-  <div>❤️ Vida</div>
-  <div id="hpBar"><div id="hpFill"></div></div>
-  <div>⭐ Experiencia</div>
-  <div id="xpBar"><div id="xpFill"></div></div>
-  <div>🔪 Armas: <span id="weaponsList"></span></div>
-  <div>🏆 Puntuación: <span id="scoreText">0</span></div>
-</div>
-
+<canvas id="gameCanvas"></canvas>
 <script>
-// =================== VARIABLES ===================
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+const canvas=document.getElementById("gameCanvas");
+const ctx=canvas.getContext("2d");
+canvas.width=window.innerWidth;
+canvas.height=window.innerHeight;
 
-let player = {x: canvas.width/2, y: canvas.height/2, size: 16, speed: 3, hp: 100, maxHp: 100};
-let enemies = [];
-let bullets = [];
-let orbs = [];
-let keys = {};
-let score = 0;
-let level = 1;
-let xp = 0, xpToNext = 8;
-let gamePaused = false;
-let dead = false;
-let started = false; // 🔹 FIX: controla si ya comenzó el juego
-let selectedWeapon = "pistol";
+let player={x:canvas.width/2,y:canvas.height/2,size:20,speed:4,vida:100};
+let enemies=[];
+let bullets=[];
+let gameRunning=false;
+let keys={};
+let spawnInterval;
+let weapon="basic";
 
-let weaponsState = {
-  pistol: {unlocked:true, level:1, damage:1},
-  whip: {unlocked:false, level:0, damage:2},
-  sword: {unlocked:false, level:0, damage:3},
-  staff: {unlocked:false, level:0, damage:2},
-  potion: {unlocked:false, level:0, damage:1},
-  solar: {unlocked:false, level:0, damage:2}
-};
+document.addEventListener("keydown",e=>keys[e.key]=true);
+document.addEventListener("keyup",e=>keys[e.key]=false);
 
-const hpFill = document.getElementById('hpFill');
-const xpFill = document.getElementById('xpFill');
-const weaponsList = document.getElementById('weaponsList');
-const scoreText = document.getElementById('scoreText');
-const mainMenu = document.getElementById('mainMenu');
-const levelMenu = document.getElementById('levelMenu');
-const levelOptions = document.getElementById('levelOptions');
-const deathPanel = document.getElementById('deathPanel');
-const deathStats = document.getElementById('deathStats');
-
-// =================== CONTROLES ===================
-document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-document.getElementById('btnStart').addEventListener('click', ()=>{
-  mainMenu.style.display = 'none';
-  started = true;
-  gamePaused = false;
-  dead = false;
-  player.hp = player.maxHp;
-  score = 0;
-  level = 1;
-  xp = 0;
+function startGame(){
+  document.getElementById("menu").style.display="none";
+  document.getElementById("hud").style.display="block";
+  document.getElementById("gameover").style.display="none";
+  player.vida=100;
+  enemies=[];
+  bullets=[];
+  gameRunning=true;
+  spawnEnemies();
   gameLoop();
-});
-
-document.getElementById('btnRestart').addEventListener('click', ()=>{
-  location.reload();
-});
-
-function selectWeapon(name){
-  selectedWeapon = name;
-  Object.keys(weaponsState).forEach(w => weaponsState[w].unlocked = false);
-  weaponsState[name].unlocked = true;
 }
 
-// =================== FUNCIONES ===================
-function spawnEnemy(){
-  enemies.push({
-    x: Math.random()*canvas.width,
-    y: Math.random()*canvas.height,
-    size: 20,
-    hp: 5 + Math.random()*5,
-    speed: 1 + Math.random()*1.5
-  });
+function endGame(){
+  gameRunning=false;
+  clearInterval(spawnInterval);
+  document.getElementById("gameover").style.display="flex";
+}
+
+function spawnEnemies(){
+  spawnInterval=setInterval(()=>{
+    let side=Math.floor(Math.random()*4);
+    let x,y;
+    if(side===0){x=0;y=Math.random()*canvas.height;}
+    else if(side===1){x=canvas.width;y=Math.random()*canvas.height;}
+    else if(side===2){x=Math.random()*canvas.width;y=0;}
+    else{ x=Math.random()*canvas.width;y=canvas.height;}
+    enemies.push({x,y,size:20,speed:1.5});
+  },1000);
+}
+
+function movePlayer(){
+  if(keys["w"]||keys["ArrowUp"])player.y-=player.speed;
+  if(keys["s"]||keys["ArrowDown"])player.y+=player.speed;
+  if(keys["a"]||keys["ArrowLeft"])player.x-=player.speed;
+  if(keys["d"]||keys["ArrowRight"])player.x+=player.speed;
 }
 
 function shoot(){
-  if(selectedWeapon === "pistol"){
-    bullets.push({
-      x: player.x,
-      y: player.y,
-      vx: 5,
-      vy: 0,
-      damage: weaponsState.pistol.damage
-    });
-  }
+  bullets.push({x:player.x,y:player.y,dx:Math.cos(Math.random()*2*Math.PI)*5,dy:Math.sin(Math.random()*2*Math.PI)*5});
 }
 
-function update(dt){
-  if(!started || dead) return; // 🔹 FIX: evita que se ejecute sin empezar
-  if(gamePaused) return;
+setInterval(()=>{if(gameRunning)shoot();},500);
 
-  // Movimiento
-  if(keys['w']) player.y -= player.speed;
-  if(keys['s']) player.y += player.speed;
-  if(keys['a']) player.x -= player.speed;
-  if(keys['d']) player.x += player.speed;
-
-  // Limites pantalla
-  player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
-  player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
-
-  // Disparo automático
-  if(selectedWeapon === "pistol" && Math.random() < 0.04) shoot();
-
-  // Balas
-  bullets.forEach(b => {
-    b.x += b.vx; b.y += b.vy;
-  });
-
-  // Enemigos
-  enemies.forEach(e => {
-    const dx = player.x - e.x;
-    const dy = player.y - e.y;
-    const dist = Math.hypot(dx, dy);
-    if(dist > 0){
-      e.x += dx/dist * e.speed;
-      e.y += dy/dist * e.speed;
-    }
-    // Daño al jugador
-    if(dist < player.size + e.size){
-      player.hp -= 0.2;
-      if(player.hp <= 0) onDeath();
+function update(){
+  movePlayer();
+  bullets.forEach(b=>{b.x+=b.dx;b.y+=b.dy;});
+  enemies.forEach(e=>{
+    let dx=player.x-e.x,dy=player.y-e.y;
+    let dist=Math.hypot(dx,dy);
+    e.x+=e.speed*dx/dist;
+    e.y+=e.speed*dy/dist;
+    if(dist<player.size+e.size){
+      player.vida-=0.5;
+      if(player.vida<=0){endGame();}
     }
   });
-
-  // Colisiones balas/enemigos
-  bullets.forEach(b=>{
-    enemies.forEach(e=>{
-      const dx = b.x - e.x;
-      const dy = b.y - e.y;
-      const dist = Math.hypot(dx, dy);
-      if(dist < e.size){
-        e.hp -= b.damage;
-        b.hit = true;
-        if(e.hp <= 0){
-          score++;
-          xp++;
-          e.dead = true;
-        }
+  bullets.forEach((b,bi)=>{
+    enemies.forEach((e,ei)=>{
+      if(Math.hypot(b.x-e.x,b.y-e.y)<e.size){
+        enemies.splice(ei,1);
+        bullets.splice(bi,1);
       }
     });
   });
-
-  // Limpieza
-  enemies = enemies.filter(e=>!e.dead);
-  bullets = bullets.filter(b=>!b.hit);
-
-  // Spawn
-  if(Math.random()<0.01) spawnEnemy();
-
-  // Nivel
-  if(xp >= xpToNext){
-    xp -= xpToNext;
-    xpToNext = Math.max(8, Math.floor(xpToNext*1.25));
-    level++;
-    openLevelMenu();
-  }
+  document.getElementById("vida").textContent=Math.max(0,Math.floor(player.vida));
 }
 
-function render(){
+function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  // Fondo rejilla
-  ctx.strokeStyle = '#222';
-  for(let x=0;x<canvas.width;x+=50){
-    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,canvas.height); ctx.stroke();
-  }
-  for(let y=0;y<canvas.height;y+=50){
-    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvas.width,y); ctx.stroke();
+  // Fondo cuadriculado tenue
+  ctx.strokeStyle="#111";
+  ctx.lineWidth=1;
+  for(let i=0;i<canvas.width;i+=80){
+    for(let j=0;j<canvas.height;j+=80){
+      ctx.strokeRect(i,j,80,80);
+    }
   }
 
-  // Player
-  ctx.fillStyle = 'cyan';
+  // Jugador
+  ctx.fillStyle="red";
   ctx.beginPath();
-  ctx.arc(player.x, player.y, player.size, 0, Math.PI*2);
+  ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
   ctx.fill();
 
-  // Enemigos
-  ctx.fillStyle = 'red';
-  enemies.forEach(e=>{
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, e.size, 0, Math.PI*2);
-    ctx.fill();
-  });
-
   // Balas
-  ctx.fillStyle = 'yellow';
+  ctx.fillStyle="lime";
   bullets.forEach(b=>{
     ctx.beginPath();
-    ctx.arc(b.x, b.y, 4, 0, Math.PI*2);
+    ctx.arc(b.x,b.y,5,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  // Enemigos
+  ctx.fillStyle="white";
+  enemies.forEach(e=>{
+    ctx.beginPath();
+    ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
     ctx.fill();
   });
 }
 
-function updateHUD(){
-  hpFill.style.width = (player.hp/player.maxHp*100)+'%';
-  xpFill.style.width = (xp/xpToNext*100)+'%';
-  weaponsList.textContent = Object.keys(weaponsState).filter(w=>weaponsState[w].unlocked).join(', ');
-  scoreText.textContent = score;
+function gameLoop(){
+  if(!gameRunning)return;
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
 }
 
-function onDeath(){
-  if(!started || dead) return; // 🔹 FIX: evita muerte antes del juego
-  dead = true;
-  gamePaused = true;
-  deathPanel.style.display = 'flex';
-  deathStats.textContent = `Puntos: ${score} · Nivel: ${level}`;
-}
+document.getElementById("startBtn").onclick=startGame;
+document.getElementById("restartBtn").onclick=startGame;
 
-function openLevelMenu(){
-  levelMenu.style.display = 'flex';
-  levelOptions.innerHTML = '';
-  const options = [
-    {text:'+1 MaxHP', action:()=>{player.maxHp++; player.hp++;}},
-    {text:'+Speed', action:()=>{player.speed += 0.5;}},
-    {text:'+Damage', action:()=>{weaponsState[selectedWeapon].damage++;}}
-  ];
-  options.forEach(o=>{
-    const btn = document.createElement('button');
-    btn.textContent = o.text;
-    btn.onclick = ()=>{
-      o.action();
-      levelMenu.style.display = 'none';
-    };
-    levelOptions.appendChild(btn);
-  });
-}
-
-let lastTime = 0;
-function gameLoop(time){
-  const dt = time - lastTime;
-  lastTime = time;
-  update(dt);
-  render();
-  updateHUD();
-  if(!dead) requestAnimationFrame(gameLoop);
-}
+window.addEventListener("resize",()=>{
+  canvas.width=window.innerWidth;
+  canvas.height=window.innerHeight;
+});
 </script>
 </body>
 </html>
