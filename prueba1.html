@@ -3,285 +3,235 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vampire Survival Mejorado</title>
+<title>Vampire Survival</title>
 <style>
-body { margin:0; overflow:hidden; background:#111; font-family:Arial,sans-serif; }
-#ui { position:absolute; top:10px; left:10px; color:#fff; }
-#lifeBar { width:200px; height:20px; background:#555; border-radius:5px; overflow:hidden; }
-#lifeFill { width:100%; height:100%; background:limegreen; }
-#weaponSelect, #upgradeMenu {
+  body, html { margin:0; padding:0; overflow:hidden; background:black; }
+  #upgradeMenu {
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-    background:#333; padding:20px; border-radius:10px; text-align:center;
-}
-button { margin:5px; padding:10px 20px; font-size:16px; cursor:pointer; }
+    background:#222; color:white; padding:20px; border-radius:10px; text-align:center;
+    display:none; z-index:10;
+  }
+  #upgradeMenu button {
+    margin:5px; padding:10px 20px; font-size:16px; cursor:pointer;
+  }
+  #ui {
+    position:absolute; top:10px; left:10px; color:white; font-family:Arial;
+    font-size:18px; z-index:5;
+  }
 </style>
 </head>
 <body>
-
-<div id="ui">
-Vida:
-<div id="lifeBar"><div id="lifeFill"></div></div>
-| Nivel: <span id="level">1</span> | XP: <span id="xp">0</span> | XP para siguiente: <span id="xpNext">20</span>
-</div>
-
-<div id="weaponSelect">
-<h2>Elige tu arma</h2>
-<button onclick="startGame('sword')">Espada</button>
-<button onclick="startGame('fireball')">Bola de Fuego</button>
-<button onclick="startGame('crossbow')">Ballesta</button>
-</div>
-
-<div id="upgradeMenu" style="display:none;">
-<h2>Mejora tus armas</h2>
-<button onclick="upgradeWeapon('damage')">Aumentar daño +1</button>
-<button onclick="upgradeWeapon('speed')">Aumentar velocidad +0.5</button>
-<button onclick="resumeGame()">Continuar juego</button>
-</div>
-
 <canvas id="gameCanvas"></canvas>
-
+<div id="upgradeMenu"></div>
+<div id="ui">
+  Vida: <span id="life">100</span> | Nivel: <span id="level">1</span> | XP: <span id="xp">0</span>/<span id="xpNext">50</span>
+</div>
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-window.addEventListener('resize', () => {
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+let gameRunning = true;
+
+const player = {x:canvas.width/2, y:canvas.height/2, radius:15, color:'cyan', speed:5, damage:5, life:100, maxLife:100};
+let keys = {};
+document.addEventListener('keydown', e=>keys[e.key]=true);
+document.addEventListener('keyup', e=>keys[e.key]=false);
+
+let enemies = [];
+let xpBalls = [];
+let bullets = [];
+let lastFireTime = 0;
+const fireCooldown = 1500; // 1.5s
+
+let level = 1;
+let xp = 0;
+let xpToNext = 50;
+const maxLevelBeforeUpgrade = 15;
+
+// Upgrades
+const upgradesList = [
+    {name:'Aumentar daño', type:'damage', value:1},
+    {name:'Aumentar velocidad', type:'speed', value:0.5},
+    {name:'Aumentar vida máxima', type:'maxLife', value:10}
+];
+
+function showUpgradeMenu() {
+    gameRunning=false;
+    const menu = document.getElementById('upgradeMenu');
+    menu.innerHTML = '<h2>Elige una mejora</h2>';
+    let options = [];
+    while(options.length<3){
+        const candidate = upgradesList[Math.floor(Math.random()*upgradesList.length)];
+        if(!options.includes(candidate)) options.push(candidate);
+    }
+    options.forEach(opt=>{
+        const btn=document.createElement('button');
+        btn.innerText = opt.name;
+        btn.onclick = () => {
+            applyUpgrade(opt);
+            menu.style.display='none';
+            gameRunning=true;
+        };
+        menu.appendChild(btn);
+    });
+    menu.style.display='block';
+}
+
+function applyUpgrade(upgrade){
+    if(upgrade.type==='damage') player.damage += upgrade.value;
+    if(upgrade.type==='speed') player.speed += upgrade.value;
+    if(upgrade.type==='maxLife'){
+        player.maxLife += upgrade.value;
+        player.life += upgrade.value;
+        document.getElementById('life').innerText = player.life;
+    }
+}
+
+// Movimiento jugador
+function movePlayer(){
+    if(keys['w'] || keys['ArrowUp']) player.y -= player.speed;
+    if(keys['s'] || keys['ArrowDown']) player.y += player.speed;
+    if(keys['a'] || keys['ArrowLeft']) player.x -= player.speed;
+    if(keys['d'] || keys['ArrowRight']) player.x += player.speed;
+    // Limites
+    player.x = Math.max(player.radius, Math.min(canvas.width-player.radius, player.x));
+    player.y = Math.max(player.radius, Math.min(canvas.height-player.radius, player.y));
+}
+
+// Disparo
+document.addEventListener('click', (e)=>{
+    const now = Date.now();
+    if(now - lastFireTime > fireCooldown){
+        lastFireTime = now;
+        const angle = Math.atan2(e.clientY - player.y, e.clientX - player.x);
+        bullets.push({x:player.x, y:player.y, angle:angle, speed:8});
+    }
 });
 
-let gameRunning = false;
-let player, enemies = [], bullets = [], xpBalls = [];
-let keys = {};
-let weaponChoice = '';
-let level = 1, xp = 0, xpToNext = 20;
-let spawnTimer = 0, enemySpawnInterval = 100;
-let maxLevelBeforeUpgrade = 15;
-
-document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-function startGame(weapon) {
-    weaponChoice = weapon;
-    document.getElementById('weaponSelect').style.display = 'none';
-    gameRunning = true;
-    player = { x: canvas.width/2, y: canvas.height/2, speed: 3, life: 100, weapon: weaponChoice, damage:1 };
-    enemies = [];
-    bullets = [];
-    xpBalls = [];
-    level = 1; xp = 0; xpToNext = 20;
-    document.getElementById('level').innerText = level;
-    document.getElementById('xp').innerText = xp;
-    document.getElementById('xpNext').innerText = xpToNext;
-    requestAnimationFrame(gameLoop);
-}
-
-function upgradeWeapon(type){
-    if(type==='damage') player.damage +=1;
-    if(type==='speed') player.speed +=0.5;
-}
-
-function resumeGame(){
-    document.getElementById('upgradeMenu').style.display='none';
-    gameRunning=true;
-}
-
-function spawnEnemyFromEdge(){
+// Crear enemigos desde bordes
+function spawnEnemy(){
     const side = Math.floor(Math.random()*4);
-    let x=0, y=0;
-    if(side===0){ x=0; y=Math.random()*canvas.height; }
-    else if(side===1){ x=canvas.width; y=Math.random()*canvas.height; }
-    else if(side===2){ x=Math.random()*canvas.width; y=0; }
-    else{ x=Math.random()*canvas.width; y=canvas.height; }
-
-    enemies.push({
-        x: x,
-        y: y,
-        size: 20,
-        speed: 1 + Math.random(),
-        life: 10 + level * 2,
-        maxLife: 10 + level * 2
-    });
+    let enemy = {radius:15, color:'red', speed:2, life:20};
+    if(side===0){enemy.x=0; enemy.y=Math.random()*canvas.height;} // Izquierda
+    if(side===1){enemy.x=canvas.width; enemy.y=Math.random()*canvas.height;} // Derecha
+    if(side===2){enemy.x=Math.random()*canvas.width; enemy.y=0;} // Arriba
+    if(side===3){enemy.x=Math.random()*canvas.width; enemy.y=canvas.height;} // Abajo
+    enemies.push(enemy);
 }
 
-function spawnXPBall(x,y) {
-    xpBalls.push({
-        x: x,
-        y: y,
-        value: 5
-    });
+// XP
+function spawnXP(x,y){
+    xpBalls.push({x:x, y:y, radius:7, value:10});
 }
 
-function updatePlayer() {
-    if (keys['w'] || keys['arrowup']) player.y -= player.speed;
-    if (keys['s'] || keys['arrowdown']) player.y += player.speed;
-    if (keys['a'] || keys['arrowleft']) player.x -= player.speed;
-    if (keys['d'] || keys['arrowright']) player.x += player.speed;
+// Update
+function update(){
+    if(!gameRunning) return;
 
-    player.x = Math.max(0, Math.min(canvas.width, player.x));
-    player.y = Math.max(0, Math.min(canvas.height, player.y));
-}
+    movePlayer();
 
-function shoot() {
-    spawnTimer++;
-    if (spawnTimer % 20 !== 0) return;
-
-    enemies.forEach(e => {
-        const dx = e.x - player.x;
-        const dy = e.y - player.y;
-        const angle = Math.atan2(dy, dx);
-
-        if (player.weapon === 'sword') {
-            bullets.push({ x: player.x, y: player.y, vx:0, vy:0, type:'melee', damage:player.damage });
-        } else if (player.weapon === 'fireball') {
-            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*2, vy: Math.sin(angle)*2, type:'ranged', damage:player.damage });
-        } else if (player.weapon === 'crossbow') {
-            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*3, vy: Math.sin(angle)*3, type:'ranged', damage:player.damage });
-        }
-    });
-}
-
-function updateBullets() {
+    // Mover bullets
     bullets.forEach((b,i)=>{
-        if(b.type==='ranged'){
-            b.x += b.vx;
-            b.y += b.vy;
-        }
-
+        b.x += Math.cos(b.angle)*b.speed;
+        b.y += Math.sin(b.angle)*b.speed;
+        // Colisiones con enemigos
         enemies.forEach((e,j)=>{
-            const dx = e.x - b.x;
-            const dy = e.y - b.y;
+            const dx = b.x-e.x;
+            const dy = b.y-e.y;
             const dist = Math.sqrt(dx*dx+dy*dy);
-            if ((b.type==='melee' && dist<25) || (b.type==='ranged' && dist<10)) {
-                e.life -= b.damage;
-                if (e.life <= 0) {
-                    spawnXPBall(e.x, e.y);
-                    enemies.splice(j,1);
-                }
+            if(dist < e.radius){
+                e.life -= player.damage;
+                bullets.splice(i,1);
             }
         });
-
-        if (b.x<0 || b.x>canvas.width || b.y<0 || b.y>canvas.height) bullets.splice(i,1);
     });
-}
 
-function updateEnemies() {
-    enemies.forEach(e=>{
+    // Mover enemigos
+    enemies.forEach((e,i)=>{
         const dx = player.x - e.x;
         const dy = player.y - e.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
+        const dist = Math.sqrt(dx*dx+dy*dy);
         e.x += dx/dist * e.speed;
         e.y += dy/dist * e.speed;
-
-        if (dist<20) {
+        if(dist < player.radius + e.radius){
             player.life -= 0.5;
-            document.getElementById('lifeFill').style.width = Math.max(0, player.life) + '%';
+            if(player.life<=0) {
+                alert('Has muerto!');
+                location.reload();
+            }
+            document.getElementById('life').innerText = Math.floor(player.life);
+        }
+        if(e.life<=0){
+            spawnXP(e.x,e.y);
+            enemies.splice(i,1);
         }
     });
-}
 
-function updateXPBalls() {
-    xpBalls.forEach((xpB,i)=>{
-        const dx = player.x - xpB.x;
-        const dy = player.y - xpB.y;
-        const dist = Math.sqrt(dx*dx+dy*dy);
-
-        if(dist<20){
-            xp += xpB.value;
+    // Mover XP
+    xpBalls.forEach((xpb,i)=>{
+        const dx = player.x - xpb.x;
+        const dy = player.y - xpb.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        if(dist<player.radius + xpb.radius){
+            xp += xpb.value;
             xpBalls.splice(i,1);
             document.getElementById('xp').innerText = xp;
-
-            if(xp >= xpToNext){
+            if(xp>=xpToNext){
                 level++;
                 xp = 0;
                 xpToNext = Math.floor(xpToNext*1.3);
                 document.getElementById('level').innerText = level;
                 document.getElementById('xpNext').innerText = xpToNext;
-
-                if(level===maxLevelBeforeUpgrade){
-                    gameRunning=false;
-                    document.getElementById('upgradeMenu').style.display='block';
-                }
+                if(level % maxLevelBeforeUpgrade === 0) showUpgradeMenu();
             }
         }
     });
+
+    // Spawn de enemigos cada cierto tiempo
+    if(Math.random()<0.02) spawnEnemy();
 }
 
-function draw() {
+// Draw
+function draw(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    ctx.fillStyle = '#111';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-
     // Jugador
-    ctx.fillStyle='cyan';
     ctx.beginPath();
-    ctx.arc(player.x,player.y,15,0,Math.PI*2);
+    ctx.arc(player.x,player.y,player.radius,0,Math.PI*2);
+    ctx.fillStyle = player.color;
     ctx.fill();
-
-    // Espada como triángulo delante del jugador
-    if(player.weapon==='sword'){
-        ctx.fillStyle='yellow';
-        ctx.beginPath();
-        ctx.moveTo(player.x, player.y-15);
-        ctx.lineTo(player.x-5, player.y-25);
-        ctx.lineTo(player.x+5, player.y-25);
-        ctx.closePath();
-        ctx.fill();
-    }
-
-    // Enemigos
-    enemies.forEach(e=>{
-        ctx.fillStyle='red';
-        ctx.beginPath();
-        ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
-        ctx.fill();
-
-        ctx.fillStyle='lime';
-        ctx.fillRect(e.x - e.size, e.y - e.size - 8, e.size*2*(e.life/e.maxLife), 5);
-        ctx.strokeStyle='#000';
-        ctx.strokeRect(e.x - e.size, e.y - e.size - 8, e.size*2,5);
-    });
-
-    // Balas
+    // Bullets
     bullets.forEach(b=>{
-        ctx.fillStyle = b.type==='melee'?'yellow':'orange';
         ctx.beginPath();
         ctx.arc(b.x,b.y,5,0,Math.PI*2);
+        ctx.fillStyle='yellow';
         ctx.fill();
     });
-
-    // XP Balls estáticas
-    xpBalls.forEach(xpB=>{
-        ctx.fillStyle='gold';
+    // Enemies
+    enemies.forEach(e=>{
         ctx.beginPath();
-        ctx.arc(xpB.x,xpB.y,8,0,Math.PI*2);
+        ctx.arc(e.x,e.y,e.radius,0,Math.PI*2);
+        ctx.fillStyle=e.color;
+        ctx.fill();
+    });
+    // XP
+    xpBalls.forEach(xpb=>{
+        ctx.beginPath();
+        ctx.arc(xpb.x,xpb.y,xpb.radius,0,Math.PI*2);
+        ctx.fillStyle='green';
         ctx.fill();
     });
 }
 
-function gameLoop() {
-    if (!gameRunning) return;
-
-    if(spawnTimer % enemySpawnInterval === 0) spawnEnemyFromEdge();
-    spawnTimer++;
-
-    updatePlayer();
-    shoot();
-    updateBullets();
-    updateEnemies();
-    updateXPBalls();
+// Loop
+function loop(){
+    update();
     draw();
-
-    if (player.life<=0){
-        alert('Has muerto. Recarga la página para volver a jugar.');
-        gameRunning=false;
-        return;
-    }
-
-    requestAnimationFrame(gameLoop);
+    requestAnimationFrame(loop);
 }
+
+loop();
 </script>
 </body>
 </html>
