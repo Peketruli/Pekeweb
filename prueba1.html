@@ -3,24 +3,38 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vampire Survival - Mini</title>
+<title>Vampire Survival - Mejorado</title>
 <style>
-    body { margin: 0; overflow: hidden; background: #111; color: #fff; font-family: Arial, sans-serif; }
-    canvas { display: block; background: #222; margin: 0 auto; }
-    #ui { position: absolute; top: 10px; left: 10px; }
-    #weaponSelect { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #333; padding: 20px; border-radius: 10px; }
-    button { margin: 5px; padding: 10px 20px; font-size: 16px; cursor: pointer; }
+body { margin:0; overflow:hidden; background:#111; font-family:Arial,sans-serif; }
+canvas { display:block; margin:0 auto; background:#222; }
+#ui {
+    position:absolute; top:10px; left:10px; color:#fff;
+}
+#lifeBar {
+    width:200px; height:20px; background:#555; border-radius:5px; overflow:hidden;
+}
+#lifeFill {
+    width:100%; height:100%; background:limegreen;
+}
+#weaponSelect {
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    background:#333; padding:20px; border-radius:10px; text-align:center;
+}
+button { margin:5px; padding:10px 20px; font-size:16px; cursor:pointer; }
 </style>
 </head>
 <body>
+
 <div id="ui">
-    Vida: <span id="life">100</span> | Nivel: <span id="level">1</span> | XP: <span id="xp">0</span>
+    Vida:
+    <div id="lifeBar"><div id="lifeFill"></div></div>
+    | Nivel: <span id="level">1</span> | XP: <span id="xp">0</span>
 </div>
 
 <div id="weaponSelect">
     <h2>Elige tu arma</h2>
     <button onclick="startGame('sword')">Espada</button>
-    <button onclick="startGame('magic')">Bola de Fuego</button>
+    <button onclick="startGame('fireball')">Bola de Fuego</button>
     <button onclick="startGame('crossbow')">Ballesta</button>
 </div>
 
@@ -37,6 +51,7 @@ let player, enemies = [], bullets = [];
 let keys = {};
 let weaponChoice = '';
 let level = 1, xp = 0;
+let spawnTimer = 0;
 
 document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -48,8 +63,7 @@ function startGame(weapon) {
     player = { x: canvas.width/2, y: canvas.height/2, speed: 3, life: 100, weapon: weaponChoice };
     enemies = [];
     bullets = [];
-    level = 1;
-    xp = 0;
+    level = 1; xp = 0;
     spawnEnemies();
     requestAnimationFrame(gameLoop);
 }
@@ -61,7 +75,8 @@ function spawnEnemies() {
             y: Math.random() * canvas.height,
             size: 20,
             speed: 1 + Math.random(),
-            life: 10 + level * 2
+            life: 10 + level * 3,
+            maxLife: 10 + level * 3
         });
     }
 }
@@ -72,44 +87,47 @@ function updatePlayer() {
     if (keys['a'] || keys['arrowleft']) player.x -= player.speed;
     if (keys['d'] || keys['arrowright']) player.x += player.speed;
 
-    // Mantener dentro del canvas
     player.x = Math.max(0, Math.min(canvas.width, player.x));
     player.y = Math.max(0, Math.min(canvas.height, player.y));
 }
 
 function shoot() {
-    // Disparo automático según arma
-    if (player.weapon === 'sword') {
-        // Ataque melee: crea un corto rango alrededor del jugador
-        bullets.push({ x: player.x, y: player.y, vx: 0, vy: 0, type: 'melee', life: 10 });
-    } else {
-        // Ataque a distancia
-        enemies.forEach(e => {
-            const angle = Math.atan2(e.y - player.y, e.x - player.x);
-            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle) * 5, vy: Math.sin(angle) * 5, type: 'ranged' });
-        });
-    }
+    spawnTimer++;
+    if (spawnTimer % 15 !== 0) return; // velocidad de disparo
+
+    enemies.forEach(e => {
+        const dx = e.x - player.x;
+        const dy = e.y - player.y;
+        const angle = Math.atan2(dy, dx);
+
+        if (player.weapon === 'sword') {
+            bullets.push({ x: player.x, y: player.y, vx:0, vy:0, type:'melee', life:10 });
+        } else if (player.weapon === 'fireball') {
+            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*5, vy: Math.sin(angle)*5, type:'ranged' });
+        } else if (player.weapon === 'crossbow') {
+            bullets.push({ x: player.x, y: player.y, vx: Math.cos(angle)*8, vy: Math.sin(angle)*8, type:'ranged' });
+        }
+    });
 }
 
 function updateBullets() {
-    bullets.forEach((b, i) => {
+    bullets.forEach((b,i)=>{
         b.x += b.vx;
         b.y += b.vy;
 
-        enemies.forEach((e, j) => {
+        enemies.forEach((e,j)=>{
             const dx = e.x - b.x;
             const dy = e.y - b.y;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-
-            if ((b.type === 'melee' && dist < 30) || (b.type === 'ranged' && dist < 10)) {
+            const dist = Math.sqrt(dx*dx+dy*dy);
+            if ((b.type==='melee' && dist<30) || (b.type==='ranged' && dist<10)) {
                 e.life -= 5;
                 if (e.life <= 0) {
-                    enemies.splice(j, 1);
+                    enemies.splice(j,1);
                     xp += 5;
                     document.getElementById('xp').innerText = xp;
-                    if (xp >= level * 20) {
+                    if (xp >= level*20) {
                         level++;
-                        xp = 0;
+                        xp=0;
                         document.getElementById('level').innerText = level;
                         spawnEnemies();
                     }
@@ -117,48 +135,69 @@ function updateBullets() {
             }
         });
 
-        // eliminar bala si fuera del canvas
-        if (b.x < 0 || b.x > canvas.width || b.y < 0 || b.y > canvas.height) bullets.splice(i, 1);
+        if (b.x<0 || b.x>canvas.width || b.y<0 || b.y>canvas.height) bullets.splice(i,1);
     });
 }
 
 function updateEnemies() {
-    enemies.forEach(e => {
+    enemies.forEach(e=>{
         const dx = player.x - e.x;
         const dy = player.y - e.y;
         const dist = Math.sqrt(dx*dx + dy*dy);
         e.x += dx/dist * e.speed;
         e.y += dy/dist * e.speed;
 
-        if (dist < 20) {
+        if (dist<20) {
             player.life -= 0.5;
-            document.getElementById('life').innerText = Math.max(0, Math.floor(player.life));
+            document.getElementById('lifeFill').style.width = Math.max(0, player.life) + '%';
         }
     });
 }
 
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // Dibujar jugador
-    ctx.fillStyle = 'cyan';
+    // Fondo con áreas visibles
+    ctx.fillStyle = '#222';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    ctx.strokeStyle = '#444';
+    for (let i=0;i<canvas.width;i+=100){
+        ctx.beginPath();
+        ctx.moveTo(i,0);
+        ctx.lineTo(i,canvas.height);
+        ctx.stroke();
+    }
+    for (let i=0;i<canvas.height;i+=100){
+        ctx.beginPath();
+        ctx.moveTo(0,i);
+        ctx.lineTo(canvas.width,i);
+        ctx.stroke();
+    }
+
+    // Jugador
+    ctx.fillStyle='cyan';
     ctx.beginPath();
-    ctx.arc(player.x, player.y, 15, 0, Math.PI*2);
+    ctx.arc(player.x,player.y,15,0,Math.PI*2);
     ctx.fill();
 
-    // Dibujar enemigos
-    enemies.forEach(e => {
-        ctx.fillStyle = 'red';
+    // Enemigos con barra de vida
+    enemies.forEach(e=>{
+        ctx.fillStyle='red';
         ctx.beginPath();
-        ctx.arc(e.x, e.y, e.size, 0, Math.PI*2);
+        ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
         ctx.fill();
+
+        ctx.fillStyle='lime';
+        ctx.fillRect(e.x - e.size, e.y - e.size - 8, e.size*2*(e.life/e.maxLife), 5);
+        ctx.strokeStyle='#000';
+        ctx.strokeRect(e.x - e.size, e.y - e.size - 8, e.size*2,5);
     });
 
-    // Dibujar balas
-    bullets.forEach(b => {
-        ctx.fillStyle = b.type === 'melee' ? 'yellow' : 'orange';
+    // Balas
+    bullets.forEach(b=>{
+        ctx.fillStyle = b.type==='melee'?'yellow':'orange';
         ctx.beginPath();
-        ctx.arc(b.x, b.y, 5, 0, Math.PI*2);
+        ctx.arc(b.x,b.y,5,0,Math.PI*2);
         ctx.fill();
     });
 }
@@ -171,9 +210,9 @@ function gameLoop() {
     updateEnemies();
     draw();
 
-    if (player.life <= 0) {
+    if (player.life<=0){
         alert('Has muerto. Recarga la página para volver a jugar.');
-        gameRunning = false;
+        gameRunning=false;
         return;
     }
 
