@@ -7,7 +7,7 @@
 <style>
   :root{--hud-bg:rgba(0,0,0,0.45);--accent:#f39c12}
   html,body{height:100%;margin:0;background:#070707;color:#eee;font-family:Inter,Arial,sans-serif;overflow:hidden}
-  canvas{display:block;background:linear-gradient(#111,#050505);width:100vw;height:100vh}
+  canvas{display:block;background:linear-gradient(#111,#050505);width:100vw;height:100vh;position:absolute;top:0;left:0;z-index:1}
   #hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:92vw;max-width:1100px;z-index:40;display:flex;gap:10px;align-items:center;}
   .box{background:var(--hud-bg);padding:8px 10px;border-radius:10px;border:1px solid rgba(255,255,255,0.06)}
   .bars{flex:1;display:flex;flex-direction:column;gap:6px}
@@ -28,28 +28,26 @@
   #selector{display:flex;gap:12px;justify-content:center;margin-top:12px}
   .card{width:180px;padding:12px;border-radius:8px;background:#121212;border:1px solid rgba(255,255,255,0.03);cursor:pointer}
   .card.selected{outline:3px solid rgba(243,156,18,0.16);box-shadow:0 4px 12px rgba(0,0,0,0.6)}
-  /* ---- FIX: start hidden (display none) ---- */
   #deathPanel{display:none;position:fixed;inset:0;align-items:center;justify-content:center;z-index:90}
-  /* ---- FIX: end ---- */
   #deathInner{background:#120000;padding:18px;border-radius:10px;border:2px solid #c0392b;color:#fff;text-align:center}
   #debug{position:fixed;right:8px;bottom:8px;color:#999;font-size:12px;z-index:50}
 </style>
 </head>
 <body>
 
-<!-- Main menu / selector -->
+<!-- MENÚ PRINCIPAL -->
 <div id="mainMenu">
   <div id="menuBox">
     <h1>🧛 Vampire Survival</h1>
     <div style="font-size:14px;margin-bottom:8px;color:#ccc">Elige tu arma inicial</div>
     <div id="selector">
-      <div class="card selected" id="card-pistol" data-id="pistol">
-        <h3>Pistola</h3>
-        <small>Disparo automático a enemigos</small>
+      <div class="card selected" data-id="sword">
+        <h3>Espada</h3>
+        <small>Tajo corto, rápido y visible</small>
       </div>
-      <div class="card" id="card-whip" data-id="whip">
+      <div class="card" data-id="whip">
         <h3>Látigo</h3>
-        <small>Tajo frontal automático</small>
+        <small>Golpe largo y de gran alcance</small>
       </div>
     </div>
     <div style="margin-top:12px">
@@ -62,35 +60,13 @@
 
 <canvas id="c"></canvas>
 
-<!-- HUD -->
 <div id="hud">
   <div class="box" style="min-width:200px">
     <div style="font-size:15px"><strong id="scoreText">Puntos: 0</strong></div>
     <div style="font-size:13px;color:#ccc">Nivel <span id="levelText">1</span></div>
   </div>
-  <div class="box bars">
-    <div style="display:flex;align-items:center;gap:8px">
-      <div style="width:70px">Vida</div>
-      <div class="bar" style="flex:1"><div id="hpFill" class="fill hpFill" style="width:100%"></div></div>
-      <div style="width:70px;text-align:right;font-size:13px" id="hpText">100/100</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px">
-      <div style="width:70px">XP</div>
-      <div class="bar" style="flex:1"><div id="xpFill" class="fill xpFill" style="width:0%"></div></div>
-      <div style="width:70px;text-align:right;font-size:13px" id="xpText">0/15</div>
-    </div>
-  </div>
-  <div id="inv" class="box"></div>
 </div>
 
-<!-- Level menu -->
-<div id="levelMenu" class="overlay">
-  <h2>¡Subiste de nivel!</h2>
-  <div style="color:#ccc;font-size:13px">Elige una mejora o arma (si ya la tienes, sube nivel)</div>
-  <div id="levelChoices" class="choices"></div>
-</div>
-
-<!-- Death panel -->
 <div id="deathPanel">
   <div id="deathInner">
     <h2>Has muerto</h2>
@@ -101,227 +77,162 @@
   </div>
 </div>
 
-<div id="debug"></div>
-
 <script>
-const canvas = document.getElementById('gameCanvas');
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-canvas.width = window.innerWidth;
-canvas.height = window.innerHeight;
+canvas.width = innerWidth;
+canvas.height = innerHeight;
 
-// =================== VARIABLES PRINCIPALES ===================
-let player = {
-  x: canvas.width / 2,
-  y: canvas.height / 2,
-  radius: 20,
-  speed: 4,
-  hp: 100,
-  maxHp: 100
+let player = {x:canvas.width/2,y:canvas.height/2,r:20,speed:4,hp:100,maxHp:100};
+let enemies=[], projectiles=[], keys={}, dead=false, gamePaused=false, xp=0, level=1;
+let initialChoice='sword';
+
+const weaponsState={
+  sword:{level:0,cooldown:600,last:0},
+  whip:{level:0,cooldown:900,last:0}
 };
 
-let keys = {};
-let gamePaused = false;
-let dead = false;
-let xp = 0;
-let level = 1;
-let enemies = [];
-let projectiles = [];
-let pickups = [];
-let angle = 0;
+// === INPUT ===
+onkeydown=e=>keys[e.key]=true;
+onkeyup=e=>keys[e.key]=false;
 
-// =================== CONFIGURACIÓN DE ARMAS ===================
-const weaponsState = {
-  sword: { level: 0, cooldown: 800, last: 0 },
-  axe: { level: 0, cooldown: 1000, last: 0 },
-  dagger: { level: 0, cooldown: 400, last: 0 },
-  whip: { level: 0, cooldown: 900, last: 0 }
-};
-
-let initialChoice = 'sword'; // Se cambia en el menú
-
-// =================== INPUT ===================
-window.addEventListener('keydown', e => keys[e.key] = true);
-window.addEventListener('keyup', e => keys[e.key] = false);
-
-// =================== FUNCIONES DEL JUEGO ===================
-function movePlayer() {
-  if (keys['w'] || keys['ArrowUp']) player.y -= player.speed;
-  if (keys['s'] || keys['ArrowDown']) player.y += player.speed;
-  if (keys['a'] || keys['ArrowLeft']) player.x -= player.speed;
-  if (keys['d'] || keys['ArrowRight']) player.x += player.speed;
-
-  player.x = Math.max(player.radius, Math.min(canvas.width - player.radius, player.x));
-  player.y = Math.max(player.radius, Math.min(canvas.height - player.radius, player.y));
+// === FUNCIONES DE MOVIMIENTO Y DIBUJO ===
+function movePlayer(){
+  if(keys['w']||keys['ArrowUp'])player.y-=player.speed;
+  if(keys['s']||keys['ArrowDown'])player.y+=player.speed;
+  if(keys['a']||keys['ArrowLeft'])player.x-=player.speed;
+  if(keys['d']||keys['ArrowRight'])player.x+=player.speed;
+  player.x=Math.max(player.r,Math.min(canvas.width-player.r,player.x));
+  player.y=Math.max(player.r,Math.min(canvas.height-player.r,player.y));
 }
 
-function spawnEnemy() {
-  const side = Math.floor(Math.random() * 4);
-  let x, y;
-  switch (side) {
-    case 0: x = 0; y = Math.random() * canvas.height; break;
-    case 1: x = canvas.width; y = Math.random() * canvas.height; break;
-    case 2: x = Math.random() * canvas.width; y = 0; break;
-    case 3: x = Math.random() * canvas.width; y = canvas.height; break;
-  }
-  enemies.push({ x, y, radius: 15, speed: 1.5 });
+function spawnEnemy(){
+  const s=Math.floor(Math.random()*4);
+  let x,y;
+  if(s===0){x=0;y=Math.random()*canvas.height}
+  else if(s===1){x=canvas.width;y=Math.random()*canvas.height}
+  else if(s===2){x=Math.random()*canvas.width;y=0}
+  else {x=Math.random()*canvas.width;y=canvas.height}
+  enemies.push({x,y,r:15,speed:1.5});
 }
 
-function drawPlayer() {
+function drawPlayer(){
   ctx.beginPath();
-  ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-  ctx.fillStyle = '#3cf';
+  ctx.arc(player.x,player.y,player.r,0,Math.PI*2);
+  ctx.fillStyle='#3cf';
   ctx.fill();
-  ctx.closePath();
 }
 
-function drawEnemies() {
-  ctx.fillStyle = 'red';
-  for (const e of enemies) {
+function drawEnemies(){
+  ctx.fillStyle='red';
+  for(const e of enemies){
     ctx.beginPath();
-    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+    ctx.arc(e.x,e.y,e.r,0,Math.PI*2);
     ctx.fill();
   }
 }
 
-function updateEnemies() {
-  for (const e of enemies) {
-    const dx = player.x - e.x;
-    const dy = player.y - e.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist > 0) {
-      e.x += (dx / dist) * e.speed;
-      e.y += (dy / dist) * e.speed;
-    }
-
-    if (dist < player.radius + e.radius) {
-      player.hp -= 0.2;
-      if (player.hp <= 0) dead = true;
-    }
+function updateEnemies(){
+  for(const e of enemies){
+    const dx=player.x-e.x, dy=player.y-e.y, d=Math.hypot(dx,dy);
+    if(d>0){e.x+=(dx/d)*e.speed; e.y+=(dy/d)*e.speed;}
+    if(d<player.r+e.r){player.hp-=0.2; if(player.hp<=0)dead=true;}
   }
 }
 
-function attackMelee() {
-  const now = Date.now();
-  const ws = weaponsState[initialChoice];
-  if (!ws) return;
-
-  if (now - ws.last > ws.cooldown && ws.level > 0) {
-    ws.last = now;
-    // Efecto visual de ataque (rápido arco)
-    projectiles.push({
-      type: 'slash',
-      x: player.x,
-      y: player.y,
-      r: 80, // radio más grande para que se vea más
-      life: 150,
-      angle: Math.random() * Math.PI * 2
-    });
+// === ATAQUES ===
+function attackMelee(){
+  const now=Date.now();
+  const w=weaponsState[initialChoice];
+  if(!w||w.level<=0)return;
+  if(now-w.last<w.cooldown)return;
+  w.last=now;
+  if(initialChoice==='sword'){
+    projectiles.push({type:'slash',x:player.x,y:player.y,r:90,life:200,angle:Math.random()*Math.PI*2});
+  }else if(initialChoice==='whip'){
+    projectiles.push({type:'whip',x:player.x,y:player.y,r:160,life:200,angle:Math.random()*Math.PI*2});
   }
 }
 
-function drawProjectiles() {
-  for (const p of projectiles) {
-    if (p.type === 'slash') {
-      ctx.save();
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.angle);
+function drawProjectiles(){
+  for(const p of projectiles){
+    ctx.save();
+    ctx.translate(p.x,p.y);
+    ctx.rotate(p.angle);
+    if(p.type==='slash'){
       ctx.beginPath();
-      ctx.arc(0, 0, p.r, 0, Math.PI / 3);
-      ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-      ctx.lineWidth = 8;
+      ctx.arc(0,0,p.r,0,Math.PI/2);
+      ctx.strokeStyle='rgba(255,255,255,0.8)';
+      ctx.lineWidth=8;
       ctx.stroke();
-      ctx.restore();
+    }else if(p.type==='whip'){
+      ctx.beginPath();
+      ctx.arc(0,0,p.r,Math.PI/6,Math.PI/2);
+      ctx.strokeStyle='rgba(255,200,100,0.9)';
+      ctx.lineWidth=10;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
+function updateProjectiles(){
+  for(let i=projectiles.length-1;i>=0;i--){
+    const p=projectiles[i];
+    p.life-=16;
+    if(p.life<=0){projectiles.splice(i,1);continue;}
+    for(let j=enemies.length-1;j>=0;j--){
+      const e=enemies[j];
+      const dx=e.x-p.x,dy=e.y-p.y,dist=Math.hypot(dx,dy);
+      if(dist<p.r+e.r){enemies.splice(j,1);}
     }
   }
 }
 
-function updateProjectiles() {
-  const now = Date.now();
-  for (let i = projectiles.length - 1; i >= 0; i--) {
-    const p = projectiles[i];
-    p.life -= 16;
-    if (p.life <= 0) {
-      projectiles.splice(i, 1);
-      continue;
-    }
-
-    // Colisiones con enemigos
-    for (let j = enemies.length - 1; j >= 0; j--) {
-      const e = enemies[j];
-      const dx = e.x - p.x;
-      const dy = e.y - p.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist < p.r + e.radius) {
-        enemies.splice(j, 1);
-      }
-    }
-  }
-}
-
-function drawHUD() {
-  ctx.fillStyle = 'white';
-  ctx.fillText(`HP: ${Math.floor(player.hp)}`, 20, 30);
-  ctx.fillText(`LVL: ${level}`, 20, 50);
-  ctx.fillText(`XP: ${xp}`, 20, 70);
-}
-
-function loop() {
-  if (gamePaused || dead) {
-    if (dead) {
-      ctx.fillStyle = 'rgba(0,0,0,0.7)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = 'red';
-      ctx.font = '40px Arial';
-      ctx.fillText('HAS MUERTO', canvas.width / 2 - 100, canvas.height / 2);
+function loop(){
+  if(gamePaused||dead){
+    if(dead){
+      document.getElementById('deathPanel').style.display='flex';
     }
     requestAnimationFrame(loop);
     return;
   }
-
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
   movePlayer();
   updateEnemies();
   updateProjectiles();
   drawPlayer();
   drawEnemies();
   drawProjectiles();
-  drawHUD();
-
   attackMelee();
-
-  if (Math.random() < 0.02) spawnEnemy();
+  if(Math.random()<0.02)spawnEnemy();
   requestAnimationFrame(loop);
 }
 
 loop();
 
-// =================== MENÚ PRINCIPAL ===================
-document.getElementById('btnStart').addEventListener('click', () => {
-  for (const id in weaponsState) weaponsState[id].level = 0;
-  weaponsState[initialChoice].level = 1;
+// === MENÚ ===
+document.getElementById('btnStart').onclick=()=>{
+  for(const k in weaponsState)weaponsState[k].level=0;
+  weaponsState[initialChoice].level=1;
+  document.getElementById('mainMenu').style.display='none';
+  document.getElementById('deathPanel').style.display='none';
+  player.hp=player.maxHp;
+  dead=false;
+  gamePaused=false;
+};
 
-  document.getElementById('mainMenu').style.display = 'none';
-  dead = false;
-  player.hp = player.maxHp;
-  gamePaused = false;
-});
+document.getElementById('btnDict').onclick=()=>alert('Diccionario de enemigos y armas en desarrollo');
+document.getElementById('btnBack').onclick=()=>location.href='golf.html';
+document.getElementById('btnRestart').onclick=()=>location.reload();
 
-// Botones extra del menú
-document.getElementById('btnDict').addEventListener('click', () => {
-  alert('Aquí iría el Diccionario de enemigos, habilidades y armas (en desarrollo)');
-});
-
-document.getElementById('btnBack').addEventListener('click', () => {
-  location.href = 'golf.html';
-});
-
-// Selección de arma
-document.querySelectorAll('#mainMenu button[data-weapon]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    initialChoice = btn.getAttribute('data-weapon');
-    document.querySelectorAll('#mainMenu button[data-weapon]').forEach(b => b.style.border = '');
-    btn.style.border = '3px solid #0f0';
-  });
+// selección de arma
+document.querySelectorAll('.card').forEach(c=>{
+  c.onclick=()=>{
+    document.querySelectorAll('.card').forEach(x=>x.classList.remove('selected'));
+    c.classList.add('selected');
+    initialChoice=c.dataset.id;
+  };
 });
 </script>
 </body>
