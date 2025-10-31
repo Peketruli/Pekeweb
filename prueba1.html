@@ -8,13 +8,13 @@
   body {
     margin: 0;
     overflow: hidden;
-    background-color: #111;
+    background: #111;
     font-family: Arial, sans-serif;
     color: white;
   }
   canvas {
     display: block;
-    background-color: #222;
+    background: #222;
   }
   #hud {
     position: absolute;
@@ -35,56 +35,100 @@
     background: #0f0;
     width: 100%;
   }
-  .boss-bar-inner {
-    background: red;
+  #weaponSelect {
+    margin-top: 10px;
+  }
+  #weaponSelect button {
+    margin-right: 5px;
   }
 </style>
 </head>
 <body>
-
 <div id="hud">
   <div>Vida jugador</div>
   <div class="bar"><div class="bar-inner" id="playerHealth"></div></div>
-  <div>Vida Boss</div>
-  <div class="bar"><div class="bar-inner boss-bar-inner" id="bossHealth"></div></div>
+  <div id="weaponSelect">
+    <button onclick="selectWeapon('pistol')">Pistola</button>
+    <button onclick="selectWeapon('shotgun')">Escopeta</button>
+    <button onclick="selectWeapon('rifle')">Rifle</button>
+  </div>
+  <div>Nivel: <span id="level">1</span></div>
 </div>
-
 <canvas id="gameCanvas"></canvas>
 
 <script>
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// --- Juego ---
+// --- Jugador ---
 const player = {
-  x: canvas.width / 2,
-  y: canvas.height / 2,
+  x: canvas.width/2,
+  y: canvas.height/2,
   size: 30,
   speed: 5,
-  health: 100
+  health: 100,
+  weapon: 'pistol'
 };
 
-const boss = {
-  x: canvas.width/2 + 200,
-  y: canvas.height/2,
-  size: 50,
-  health: 300
+// --- Armas ---
+const weapons = {
+  pistol: {damage: 10, speed: 10, cooldown: 300},
+  shotgun: {damage: 20, speed: 8, cooldown: 800},
+  rifle: {damage: 15, speed: 12, cooldown: 500}
 };
+let lastShot = 0;
 
-const vampires = [
-  {x: 100, y: 100, size: 25, health: 50},
-  {x: 400, y: 200, size: 25, health: 50},
-  {x: 700, y: 150, size: 25, health: 50}
-];
+// --- Enemigos ---
+let vampires = [];
+let level = 1;
 
-const keys = {};
+// --- Balas ---
+let bullets = [];
 
 // --- Controles ---
+const keys = {};
 window.addEventListener('keydown', e => keys[e.key] = true);
 window.addEventListener('keyup', e => keys[e.key] = false);
+canvas.addEventListener('click', shoot);
+
+// --- Funciones ---
+function selectWeapon(name) {
+  player.weapon = name;
+}
+
+function spawnVampires(num) {
+  for(let i=0;i<num;i++){
+    vampires.push({
+      x: Math.random()*canvas.width,
+      y: Math.random()*canvas.height,
+      size: 25,
+      health: 30 + level*5
+    });
+  }
+}
+
+function shoot(e) {
+  const now = Date.now();
+  const weapon = weapons[player.weapon];
+  if(now - lastShot < weapon.cooldown) return;
+  lastShot = now;
+  
+  const rect = canvas.getBoundingClientRect();
+  const targetX = e.clientX - rect.left;
+  const targetY = e.clientY - rect.top;
+  
+  bullets.push({
+    x: player.x,
+    y: player.y,
+    dx: targetX - player.x,
+    dy: targetY - player.y,
+    size: 5,
+    damage: weapon.damage,
+    speed: weapon.speed
+  });
+}
 
 // --- Game Loop ---
 function update() {
@@ -94,74 +138,97 @@ function update() {
   if(keys['a'] || keys['ArrowLeft']) player.x -= player.speed;
   if(keys['d'] || keys['ArrowRight']) player.x += player.speed;
 
-  // Limites del canvas
   player.x = Math.max(0, Math.min(canvas.width, player.x));
   player.y = Math.max(0, Math.min(canvas.height, player.y));
 
-  // Vampiros simples se mueven hacia jugador
-  vampires.forEach(v => {
+  // Actualizar balas
+  bullets.forEach((b, i) => {
+    const dist = Math.sqrt(b.dx*b.dx + b.dy*b.dy);
+    b.x += (b.dx/dist)*b.speed;
+    b.y += (b.dy/dist)*b.speed;
+    
+    // Revisar colisión con vampiros
+    vampires.forEach((v,j) => {
+      const d = Math.hypot(b.x-v.x, b.y-v.y);
+      if(d < v.size + b.size){
+        v.health -= b.damage;
+        bullets.splice(i,1);
+      }
+    });
+    
+    if(b.x<0 || b.x>canvas.width || b.y<0 || b.y>canvas.height){
+      bullets.splice(i,1);
+    }
+  });
+
+  // Vampiros se mueven hacia jugador
+  vampires.forEach((v,i) => {
     const dx = player.x - v.x;
     const dy = player.y - v.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if(dist > 0) {
+    const dist = Math.hypot(dx,dy);
+    if(dist > 0){
       v.x += dx/dist * 1.5;
       v.y += dy/dist * 1.5;
     }
-    // Contacto con jugador
-    if(dist < v.size + player.size) player.health -= 0.5;
+    if(dist < v.size + player.size){
+      player.health -= 0.5;
+    }
+    if(v.health <=0){
+      vampires.splice(i,1);
+    }
   });
 
-  // Boss sigue al jugador más lento
-  const dxB = player.x - boss.x;
-  const dyB = player.y - boss.y;
-  const distB = Math.sqrt(dxB*dxB + dyB*dyB);
-  if(distB > 0) {
-    boss.x += dxB/distB * 1;
-    boss.y += dyB/distB * 1;
-    if(distB < boss.size + player.size) player.health -= 1;
+  // Si todos muertos, subir nivel
+  if(vampires.length === 0){
+    level++;
+    document.getElementById('level').innerText = level;
+    spawnVampires(level + 2);
   }
 
   // Actualizar HUD
   document.getElementById('playerHealth').style.width = player.health + '%';
-  document.getElementById('bossHealth').style.width = boss.health + '%';
+  if(player.health <= 0){
+    alert("¡Has muerto! Recarga la página para volver a jugar.");
+    location.reload();
+  }
 }
 
 function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Dibujar areas (más visibles)
-  ctx.fillStyle = 'rgba(100,100,255,0.2)';
-  ctx.fillRect(50,50,200,200);
-  ctx.fillRect(400,100,300,300);
-
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  
   // Dibujar jugador
   ctx.fillStyle = 'green';
   ctx.beginPath();
-  ctx.arc(player.x, player.y, player.size, 0, Math.PI*2);
+  ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
   ctx.fill();
 
   // Dibujar vampiros
   ctx.fillStyle = 'purple';
   vampires.forEach(v => {
     ctx.beginPath();
-    ctx.arc(v.x, v.y, v.size, 0, Math.PI*2);
+    ctx.arc(v.x,v.y,v.size,0,Math.PI*2);
     ctx.fill();
   });
 
-  // Dibujar boss
-  ctx.fillStyle = 'red';
-  ctx.beginPath();
-  ctx.arc(boss.x, boss.y, boss.size, 0, Math.PI*2);
-  ctx.fill();
+  // Dibujar balas
+  ctx.fillStyle = 'yellow';
+  bullets.forEach(b => {
+    ctx.beginPath();
+    ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
+    ctx.fill();
+  });
 }
 
-function gameLoop() {
+function gameLoop(){
   update();
   draw();
   requestAnimationFrame(gameLoop);
 }
 
+// --- Iniciar juego ---
+spawnVampires(3);
 gameLoop();
+
 </script>
 </body>
 </html>
