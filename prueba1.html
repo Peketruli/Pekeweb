@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vampire Survival - XP Balls</title>
+<title>Vampire Survival - Mejora de armas</title>
 <style>
 body { margin:0; overflow:hidden; background:#111; font-family:Arial,sans-serif; }
 #ui {
@@ -12,10 +12,8 @@ body { margin:0; overflow:hidden; background:#111; font-family:Arial,sans-serif;
 #lifeBar {
     width:200px; height:20px; background:#555; border-radius:5px; overflow:hidden;
 }
-#lifeFill {
-    width:100%; height:100%; background:limegreen;
-}
-#weaponSelect {
+#lifeFill { width:100%; height:100%; background:limegreen; }
+#weaponSelect, #upgradeMenu {
     position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
     background:#333; padding:20px; border-radius:10px; text-align:center;
 }
@@ -27,7 +25,7 @@ button { margin:5px; padding:10px 20px; font-size:16px; cursor:pointer; }
 <div id="ui">
     Vida:
     <div id="lifeBar"><div id="lifeFill"></div></div>
-    | Nivel: <span id="level">1</span> | XP: <span id="xp">0</span>
+    | Nivel: <span id="level">1</span> | XP: <span id="xp">0</span> | XP para siguiente: <span id="xpNext">20</span>
 </div>
 
 <div id="weaponSelect">
@@ -35,6 +33,13 @@ button { margin:5px; padding:10px 20px; font-size:16px; cursor:pointer; }
     <button onclick="startGame('sword')">Espada</button>
     <button onclick="startGame('fireball')">Bola de Fuego</button>
     <button onclick="startGame('crossbow')">Ballesta</button>
+</div>
+
+<div id="upgradeMenu" style="display:none;">
+    <h2>Mejora tus armas</h2>
+    <button onclick="upgradeWeapon('damage')">Aumentar daño +2</button>
+    <button onclick="upgradeWeapon('speed')">Aumentar velocidad +1</button>
+    <button onclick="resumeGame()">Continuar juego</button>
 </div>
 
 <canvas id="gameCanvas"></canvas>
@@ -51,11 +56,12 @@ window.addEventListener('resize', () => {
 });
 
 let gameRunning = false;
-let player, enemies = [], bullets = [], powerups = [], xpBalls = [];
+let player, enemies = [], bullets = [], xpBalls = [];
 let keys = {};
 let weaponChoice = '';
-let level = 1, xp = 0;
-let spawnTimer = 0;
+let level = 1, xp = 0, xpToNext = 20;
+let spawnTimer = 0, enemySpawnInterval = 100;
+let maxLevelBeforeUpgrade = 15;
 
 document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
@@ -67,26 +73,37 @@ function startGame(weapon) {
     player = { x: canvas.width/2, y: canvas.height/2, speed: 3, life: 100, weapon: weaponChoice, damage:2 };
     enemies = [];
     bullets = [];
-    powerups = [];
     xpBalls = [];
-    level = 1; xp = 0;
-    spawnEnemies();
+    level = 1; xp = 0; xpToNext = 20;
     requestAnimationFrame(gameLoop);
 }
 
-function spawnEnemies() {
-    let count = level + 2;
-    enemies = [];
-    for (let i = 0; i < count; i++) {
-        enemies.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            size: 20,
-            speed: 1 + Math.random(),
-            life: 10 + level * 3,
-            maxLife: 10 + level * 3
-        });
-    }
+function upgradeWeapon(type){
+    if(type==='damage') player.damage +=2;
+    if(type==='speed') player.speed +=1;
+}
+
+function resumeGame(){
+    document.getElementById('upgradeMenu').style.display='none';
+    gameRunning=true;
+}
+
+function spawnEnemyFromEdge(){
+    const side = Math.floor(Math.random()*4);
+    let x=0, y=0;
+    if(side===0){ x=0; y=Math.random()*canvas.height; }
+    else if(side===1){ x=canvas.width; y=Math.random()*canvas.height; }
+    else if(side===2){ x=Math.random()*canvas.width; y=0; }
+    else{ x=Math.random()*canvas.width; y=canvas.height; }
+
+    enemies.push({
+        x: x,
+        y: y,
+        size: 20,
+        speed: 1 + Math.random(),
+        life: 10 + level * 3,
+        maxLife: 10 + level * 3
+    });
 }
 
 function spawnXPBall(x,y) {
@@ -176,14 +193,19 @@ function updateXPBalls() {
 
         if(dist<20){
             xp += xpB.value;
-            document.getElementById('xp').innerText = xp;
             xpBalls.splice(i,1);
 
-            if(xp >= level*20){
+            if(xp >= xpToNext){
                 level++;
                 xp = 0;
+                xpToNext = Math.floor(xpToNext*1.3); // subir nivel cuesta más progresivamente
                 document.getElementById('level').innerText = level;
-                spawnEnemies();
+                document.getElementById('xpNext').innerText = xpToNext;
+
+                if(level===maxLevelBeforeUpgrade){
+                    gameRunning=false;
+                    document.getElementById('upgradeMenu').style.display='block';
+                }
             }
         }
 
@@ -194,7 +216,6 @@ function updateXPBalls() {
 function draw() {
     ctx.clearRect(0,0,canvas.width,canvas.height);
 
-    // Fondo
     ctx.fillStyle = '#111';
     ctx.fillRect(0,0,canvas.width,canvas.height);
 
@@ -236,6 +257,10 @@ function draw() {
 
 function gameLoop() {
     if (!gameRunning) return;
+
+    if(spawnTimer % enemySpawnInterval === 0) spawnEnemyFromEdge();
+    spawnTimer++;
+
     updatePlayer();
     shoot();
     updateBullets();
