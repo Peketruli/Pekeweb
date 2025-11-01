@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vampire Survival — Sistema Base (Pistola + Área Solar)</title>
+<title>Vampire Survival — Sistema Base (Armas ampliadas)</title>
 <style>
   :root{--hud-bg:rgba(0,0,0,0.5);--accent:#f1c40f}
   html,body{height:100%;margin:0;background:#080808;color:#eee;font-family:Inter,Arial,Helvetica,sans-serif;overflow:hidden}
@@ -77,9 +77,10 @@
 
 <script>
 /* -------------------------
-   Sistema base: armas por nivel
-   Implementa: Pistola + Área Solar
-   Estructura para añadir más armas (Ver comentarios)
+   Sistema base ampliado: nuevas armas balanceadas
+   - Área Solar empieza en nivel 0 (desbloqueable)
+   - Armas añadidas: Espada, Bastón, Bolas de fuego, Biblia, Pociones
+   - Pistol lvl1 por defecto
    ------------------------- */
 
 const canvas = document.getElementById('c');
@@ -92,7 +93,7 @@ resize();
 let time = 0;           // ms desde inicio
 let score = 0;
 let xp = 0;
-let level = 100;
+let level = 1;
 let xpToNext = 15;
 let gamePaused = false;
 let dead = false;
@@ -102,7 +103,7 @@ const player = {
   x: canvas.width/2,
   y: canvas.height/2,
   size: 18,
-  speed: 3.5,
+  speed: 3.2,
   hp: 100,
   maxHp: 100
 };
@@ -113,160 +114,262 @@ addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true);
 addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
 
 /* ---------- Entities ---------- */
-let bullets = [];
+let bullets = [];           // generic projectiles (pistol, staff, fireball homing included)
 let enemies = [];
 let orbs = [];
-let bosses = [];
+let meleeAttacks = [];      // sword arcs
+let orbiters = [];          // bible orbs
+let lastSpawnTime = performance.now();
 
 /* ---------- Balance constants (ajustables) ---------- */
-const BASE_SPAWN = 25;    // ms initial spawn
-let spawnRate = BASE_SPAWN;
-let lastSpawn = 0;
+const BASE_SPAWN_INTERVAL = 1200; // ms between spawns
+let spawnInterval = BASE_SPAWN_INTERVAL;
 
-/* ---------- Weapon system design ----------
+/* ---------- Helper utilities ---------- */
+function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
 
-We keep a 'library' of weapons definitions (static) and an active 'inventory' object
-where each weapon has a level (1..10) and an enabled flag if learned.
-
-Weapon data structure:
-weaponsLib = {
-  id: { displayName, slotType, applyLevelStats(level, weaponState), tick... }
-}
-inventory = { id: { level: 0..10, lastShot:0, extraState... } }
-
-When leveling up, we show 3 choices chosen from library (excluding fully maxed weapons)
-and when player selects:
-- if in inventory: increase level (min 10), applyLevelStats to upgrade state
-- else: add to inventory with level 1, apply initial stats
-
-We'll implement Pistola and AreaSolar fully as example.
-
----------- */
-
-/* ---------- Library (weapon definitions) ---------- */
-
+/* ---------- Weapons library ---------- */
 const weaponsLib = {};
 
-/* PISTOLA
-   - level 1: shot every 2500ms, 1 bullet, damage 1
-   - each level: reduce interval, increase bullets and damage
-   - level scaling parameters can be adjusted
-*/
+/* PISTOLA (existente, auto) */
 weaponsLib.pistol = {
   id: 'pistol',
   name: 'Pistola',
   maxLevel: 10,
-  // get stats for *this* weapon at a given level (returns object)
   statsForLevel(level){
-    // simple progression (tune numbers as desired)
-    const baseInterval = 2500; // ms at level 1
-    const interval = Math.max(220, Math.round(baseInterval - (level-1)*200)); // faster with level
-    // bullets count: 1 at lvl1, +1 at lvl5, +1 at lvl8, +1 at lvl10
-    let bullets = 1;
-    if(level >= 2) bullets += 1;
-    if(level >= 3) bullets += 1;
-    if(level >= 4) bullets += 1;
-    if(level >= 5) bullets += 1;
-    if(level >= 6) bullets += 1;
-    if(level >= 7) bullets += 1;
-    if(level >= 8) bullets += 1;
-    if(level >= 9) bullets += 1;
-    if(level >= 10) bullets += 1;
-    // damage scales
-    const damage = 1 + Math.floor((level-1)/3); // every 3 levels +1 damage
-    // bullet speed slightly increases
-    const speed = 4 + (level-1)*0.25;
-    // bullet size increase at high level
-    const size = 4 + Math.floor((level-1)/4);
-    return { interval, bullets, damage, speed, size };
+    const baseInterval = 500; // ms at lvl1 (balanced)
+    const interval = Math.max(120, Math.round(baseInterval - (level-1)*40));
+    const bulletsCount = 1 + Math.floor((level-1)/3); // +1 cada 3 niveles
+    const damage = 2 + Math.floor((level-1)/4); // escala suave
+    const speed = 5 + (level-1)*0.3;
+    const size = 3 + Math.floor((level-1)/6);
+    return { interval, bulletsCount, damage, speed, size };
   },
-  // shoot function receives weaponState (inventory entry) and performs shots
-  shoot(weaponState){
-    if(gamePaused || !weaponsState.pistol.level) return;
+  shoot(state){
+    if(gamePaused || !state.level) return;
     const now = performance.now();
-    const lvl = weaponsState.pistol.level;
-    const s = weaponsLib.pistol.statsForLevel(lvl);
-    if(now - weaponState.lastShot < s.interval) return;
-    weaponState.lastShot = now;
+    const s = weaponsLib.pistol.statsForLevel(state.level);
+    if(now - (state.lastShot||0) < s.interval) return;
+    state.lastShot = now;
+    if(enemies.length + 0 === 0) return;
     // target nearest enemy
-    if(enemies.length === 0 && bosses.length === 0) return;
-    let target = null;
-    const pool = enemies.length ? enemies : bosses;
-    target = pool.reduce((a,b) => (dist(a,player) < dist(b,player) ? a : b));
+    const pool = enemies.length ? enemies : [];
+    if(pool.length === 0) return;
+    const target = pool.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
     const ang = Math.atan2(target.y - player.y, target.x - player.x);
-    // spread bullets around center
-    const total = s.bullets;
-    const spread = 0.28 + 0.04 * total;
-    const step = total>1 ? spread/(total-1) : 0;
+    const total = s.bulletsCount;
+    const spread = (total > 1) ? 0.18 : 0;
+    const step = total > 1 ? spread/(total-1) : 0;
     const start = ang - spread/2;
     for(let i=0;i<total;i++){
       const a = start + step*i;
       bullets.push({
         x: player.x, y: player.y,
         dx: Math.cos(a)*s.speed, dy: Math.sin(a)*s.speed,
-        damage: s.damage, size: s.size, life: 4000
+        damage: s.damage, size: s.size, life: 3000, friendly:true, type:'pistol'
       });
     }
   }
 };
 
-/* AREA SOLAR
-   - creates a persistent area (follows player) that pulses damage every tickInterval
-   - level scales size and damage and shortens tick interval slightly
-*/
+/* AREA SOLAR (desbloqueable) */
 weaponsLib.solar = {
   id: 'solar',
   name: 'Área Solar',
   maxLevel: 10,
   statsForLevel(level){
-    // level 1 radius 80, damage 3, tick 300ms
-    const radius = Math.round(60 + (level-1)*14); // 60 -> ~196 at lvl10
-    const damage = 2 + Math.floor((level-1)*1.4);  // about 2 -> 15
-    const tick = Math.max(120, Math.round(450 - (level-1)*35)); // faster at higher levels
+    const radius = Math.round(40 + (level-1)*12); // 40 -> ~148
+    const damage = 3 + Math.floor((level-1)*1.2);
+    const tick = Math.max(180, Math.round(420 - (level-1)*24)); // ms between damage pulses
     return { radius, damage, tick };
+  }
+};
+
+/* ESPADA (melee arco corto, auto) */
+weaponsLib.sword = {
+  id: 'sword',
+  name: 'Espada',
+  maxLevel: 10,
+  statsForLevel(level){
+    const arc = Math.PI/3 - (level-1)*0.02; // arc size slightly better with levels
+    const range = 36 + Math.floor((level-1)*3); // alcance
+    const damage = 6 + Math.floor((level-1)*1.2);
+    const interval = Math.max(250, 450 - (level-1)*20); // cooldown
+    return { arc, range, damage, interval };
   },
-  // solar is a persistent area in inventory.solarAreas
-  // no shoot function — handled by update loop
+  attack(state){
+    if(gamePaused || !state.level) return;
+    const now = performance.now();
+    const s = weaponsLib.sword.statsForLevel(state.level);
+    if(now - (state.lastAttack||0) < s.interval) return;
+    state.lastAttack = now;
+    // auto-attack towards nearest enemy
+    if(enemies.length === 0) {
+      // small forward arc if no enemies
+      meleeAttacks.push({ x:player.x, y:player.y, angle:0, arc:s.arc, range:s.range, damage:s.damage, life:120 });
+      return;
+    }
+    const target = enemies.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
+    const ang = Math.atan2(target.y - player.y, target.x - player.x);
+    meleeAttacks.push({ x:player.x, y:player.y, angle:ang, arc:s.arc, range:s.range, damage:s.damage, life:120 });
+  }
 };
 
-/* Add more weapons to library later:
-   weaponsLib.staff = { ... }
-   weaponsLib.potion = { ... }
-   weaponsLib.whip = { ... }
-*/
+/* BASTON (rayos mágicos lentos, alta potencia) */
+weaponsLib.staff = {
+  id: 'staff',
+  name: 'Bastón',
+  maxLevel: 10,
+  statsForLevel(level){
+    const interval = Math.max(600, 1400 - (level-1)*90); // faster con lvl
+    const damage = 12 + Math.floor((level-1)*2.2);
+    const speed = 2.2 + (level-1)*0.15;
+    const size = 6 + Math.floor((level-1)/3);
+    return { interval, damage, speed, size };
+  },
+  shoot(state){
+    if(gamePaused || !state.level) return;
+    const now = performance.now();
+    const s = weaponsLib.staff.statsForLevel(state.level);
+    if(now - (state.lastShot||0) < s.interval) return;
+    state.lastShot = now;
+    if(enemies.length === 0) return;
+    const target = enemies.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
+    const ang = Math.atan2(target.y - player.y, target.x - player.x);
+    bullets.push({
+      x: player.x, y: player.y,
+      dx: Math.cos(ang)*s.speed, dy: Math.sin(ang)*s.speed,
+      damage: s.damage, size: s.size, life: 4000, friendly:true, type:'staff'
+    });
+  }
+};
 
-/* ---------- Inventory / weapons state ----------
-   inventory entries: { level:0..10, lastShot:number, extra: {} }
-*/
+/* BOLAS DE FUEGO (proyectiles buscadores; cadencia controlada) */
+weaponsLib.fireball = {
+  id: 'fireball',
+  name: 'Bolas de Fuego',
+  maxLevel: 10,
+  statsForLevel(level){
+    const interval = Math.max(1100, 2500 - (level-1)*140); // ~1.1s to slower at low lvls
+    const damage = 8 + Math.floor((level-1)*1.6);
+    const speed = 3.2 + (level-1)*0.18;
+    const size = 5 + Math.floor((level-1)/4);
+    const homingStrength = 0.12 + (level-1)*0.01; // how strongly it turns towards target
+    return { interval, damage, speed, size, homingStrength };
+  },
+  shoot(state){
+    if(gamePaused || !state.level) return;
+    const now = performance.now();
+    const s = weaponsLib.fireball.statsForLevel(state.level);
+    if(now - (state.lastShot||0) < s.interval) return;
+    state.lastShot = now;
+    // spawn one homing projectile
+    bullets.push({
+      x: player.x, y: player.y,
+      dx: 0, dy: -s.speed, // initial
+      damage: s.damage, size: s.size, life: 5000, friendly:true,
+      homing: true, homingStrength: s.homingStrength, speed: s.speed, type:'fireball'
+    });
+  }
+};
+
+/* BIBLIA (orbs que orbitan al jugador) */
+weaponsLib.bible = {
+  id: 'bible',
+  name: 'Biblia',
+  maxLevel: 10,
+  statsForLevel(level){
+    const count = 2 + Math.floor((level-1)/2); // 2-> up to ~6
+    const radius = 36 + Math.floor((level-1)*3);
+    const damage = 4 + Math.floor((level-1)*1.1);
+    const speed = 0.02 + (level-1)*0.0025; // angular speed
+    return { count, radius, damage, speed };
+  },
+  ensureOrbiters(state){
+    if(!state.level) return;
+    const s = weaponsLib.bible.statsForLevel(state.level);
+    // create desired number of orbiters
+    while((state.orbiters?.length||0) < s.count){
+      const idx = state.orbiters ? state.orbiters.length : 0;
+      state.orbiters = state.orbiters || [];
+      state.orbiters.push({ angle: (Math.PI*2/state.count || 0) * idx, life: Infinity });
+    }
+  },
+  update(state, dt){
+    if(!state.level) return;
+    state.orbiters = state.orbiters || [];
+    const s = weaponsLib.bible.statsForLevel(state.level);
+    // ensure orbiters count correct
+    while(state.orbiters.length < s.count) state.orbiters.push({ angle: Math.random()*Math.PI*2 });
+    // rotate and handle collisions (drawn in render)
+    for(const o of state.orbiters){
+      o.angle += s.speed * dt;
+      // compute orb position and check collision with enemies
+      const ox = player.x + Math.cos(o.angle) * s.radius;
+      const oy = player.y + Math.sin(o.angle) * s.radius;
+      for(let i=enemies.length-1;i>=0;i--){
+        const e = enemies[i];
+        if(Math.hypot(e.x-ox,e.y-oy) < e.size + 8){
+          e.hp -= s.damage;
+          if(e.hp <= 0){
+            spawnOrbAt(e.x,e.y);
+            enemies.splice(i,1);
+            score += 1;
+          }
+        }
+      }
+    }
+  }
+};
+
+/* POCIONES (curación pasiva periódica) */
+weaponsLib.potion = {
+  id: 'potion',
+  name: 'Pociones',
+  maxLevel: 10,
+  statsForLevel(level){
+    const healAmount = 6 + Math.floor((level-1)*1.6);
+    const interval = Math.max(3500, 9000 - (level-1)*500); // ms between heals
+    return { healAmount, interval };
+  },
+  tick(state){
+    if(!state.level) return;
+    const now = performance.now();
+    const s = weaponsLib.potion.statsForLevel(state.level);
+    if(now - (state.lastHeal||0) < s.interval) return;
+    state.lastHeal = now;
+    player.hp = Math.min(player.maxHp, player.hp + s.healAmount);
+  }
+};
+
+/* ---------- Inventory / weapons state ---------- */
 const weaponsState = {
-  pistol: { level: 0, lastShot: 0 },
-  solar: { level: 20, lastDamageTick: 0, areas: [] },
-  // future: staff, potion, whip...
+  pistol: { level: 1, lastShot: 0 },
+  solar: { level: 0, lastTick: 0, areas: [] }, // ¡empieza en 0 según pediste!
+  sword: { level: 0, lastAttack: 0 },
+  staff: { level: 0, lastShot: 0 },
+  fireball: { level: 0, lastShot: 0 },
+  bible: { level: 0, orbiters: [] },
+  potion: { level: 0, lastHeal: 0 }
 };
-
-/* ---------- Helper utilities ---------- */
-function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
-function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 
 /* ---------- Spawning enemies & orbs ---------- */
-let lastTime = performance.now();
-let lastSpawnTime = performance.now();
-
 function spawnEnemy(){
   const edge = Math.floor(Math.random()*4); // 0 left,1 right,2 top,3 bottom
   let x = edge===0 ? -20 : edge===1 ? canvas.width+20 : Math.random()*canvas.width;
   let y = edge===2 ? -20 : edge===3 ? canvas.height+20 : Math.random()*canvas.height;
-  // early game: first 2 minutes easier enemies hp=1
   const easyWindow = 120000;
-  let hp = time < easyWindow ? 1 : 1 + Math.floor(time/90000); // slowly increase
-  const speed = 0.9 + Math.random()*1.4 + Math.min(1.5, time/120000); // slowly grows
-  const size = 12 + Math.random()*10;
+  let hp = time < easyWindow ? 3 : 3 + Math.floor(time/90000); // slowly increase
+  const speed = 0.6 + Math.random()*1.0 + Math.min(1.2, time/120000);
+  const size = 10 + Math.random()*10;
   enemies.push({ x,y, hp, speed, size, color:'#c0392b' });
 }
 
-/* ---------- Orbs (XP drops) ---------- */
+/* Orbs (XP) */
 function spawnOrbAt(x,y){
-  const value = 1 + Math.floor(Math.random()*3);
+  const value = 1 + Math.floor(Math.random()*2);
   orbs.push({ x,y, value });
 }
 
@@ -276,28 +379,23 @@ function openLevelMenu(){
   const menu = document.getElementById('levelMenu');
   const choicesDiv = document.getElementById('levelChoices');
   choicesDiv.innerHTML = '';
-  // Build candidate pool: all weapons from library that are not maxed + some generic bonuses
   const candidates = [];
   for(const id in weaponsLib){
     const curLevel = weaponsState[id].level || 0;
     if(curLevel < weaponsLib[id].maxLevel) candidates.push({ type:'weapon', id });
   }
-  // add some generic bonuses if needed
   const genericBonuses = [
     { type:'bonus', id:'hpUp', name:'Más vida (+10)' },
-    { type:'bonus', id:'speed', name:'Velocidad +0.4' },
-    { type:'bonus', id:'xpBoost', name:'Más XP (recoge +1)' }
+    { type:'bonus', id:'speed', name:'Velocidad +0.3' },
+    { type:'bonus', id:'xpBoost', name:'Más XP (orb +1)' }
   ];
-  // merge and pick 3 unique options (if pool small, include generic)
   const pool = [...candidates];
-  while(pool.length < 6) { pool.push(randChoice(genericBonuses)); } // pad
-  // choose 3 unique
+  while(pool.length < 6) { pool.push(randChoice(genericBonuses)); }
   const picks = [];
   while(picks.length < 3){
     const p = randChoice(pool);
     if(!picks.find(x=>x.type===p.type && x.id===p.id)) picks.push(p);
   }
-  // render choices
   picks.forEach(p=>{
     const btn = document.createElement('button');
     btn.className = 'choice';
@@ -305,17 +403,11 @@ function openLevelMenu(){
       const lvl = weaponsState[p.id].level || 0;
       btn.textContent = `${weaponsLib[p.id].name} ${lvl?('(Lv '+lvl+')'):''}`;
       btn.onclick = ()=>{
-        // increase level or add weapon
         weaponsState[p.id].level = Math.min(weaponsLib[p.id].maxLevel, (weaponsState[p.id].level||0) + 1);
-        // if picking solar at level 1 we create area anchored to player
-        if(p.id === 'solar' && weaponsState.solar.level === 1){
-          // add one area following player
-          weaponsState.solar.areas.push({ x: player.x, y: player.y, since: performance.now() });
-        }
         applyWeaponLevelEffects(p.id);
         closeLevelMenu();
       };
-    } else { // bonus
+    } else {
       btn.textContent = p.name;
       btn.onclick = ()=>{
         applyGenericBonus(p.id);
@@ -332,23 +424,28 @@ function closeLevelMenu(){
   updateHUD();
 }
 
-/* ---------- Apply weapon effects (called when a weapon gains a level) ---------- */
+/* ---------- Apply weapon-level immediate effects ---------- */
 function applyWeaponLevelEffects(id){
-  // For modularity: most weapon effects are applied at runtime via statsForLevel,
-  // but some immediate effects (like spawning initial solar area or unlocking) handled here.
-  if(id === 'pistol'){
-    // nothing immediate — pistol.shoot reads weaponsState.pistol.level
-  }
   if(id === 'solar'){
-    // if newly unlocked, ensure area exists (handled in openLevelMenu when level==1)
+    if(weaponsState.solar.level === 1){
+      weaponsState.solar.areas.push({ x: player.x, y: player.y, since: performance.now() });
+    }
   }
+  if(id === 'bible'){
+    // ensure orbiters updated
+    weaponsLib.bible.ensureOrbiters(weaponsState.bible);
+  }
+  // other weapons mostly operate via their stats at runtime
 }
 
 /* ---------- Generic bonuses ---------- */
 function applyGenericBonus(id){
   if(id === 'hpUp'){ player.maxHp += 10; player.hp = player.maxHp; }
-  if(id === 'speed'){ player.speed += 0.4; }
-  if(id === 'xpBoost'){ /* simple: next orbs give +1; we'll implement by increment on pick */ }
+  if(id === 'speed'){ player.speed += 0.3; }
+  if(id === 'xpBoost'){ /* implement as passive: next orbs give +1 temporarily */ 
+    // implement simple short flag
+    weaponsState.__xpBoost = (weaponsState.__xpBoost||0) + 5; // next 5 orbs extra
+  }
 }
 
 /* ---------- HUD ---------- */
@@ -383,43 +480,49 @@ function renderInventory(){
   }
 }
 function weaponShortDesc(id, lvl){
-  if(id==='pistol'){
-    const s = weaponsLib.pistol.statsForLevel(lvl);
-    return `${s.bullets} disparo(s), dmg ${s.damage}, cadencia ${s.interval}ms`;
-  }
-  if(id==='solar'){
-    const s = weaponsLib.solar.statsForLevel(lvl);
-    return `radio ${s.radius}px, dmg ${s.damage}/${s.tick}ms`;
-  }
+  if(id==='pistol'){ const s=weaponsLib.pistol.statsForLevel(lvl); return `${s.bulletsCount} disparo(s), dmg ${s.damage}, cad ${s.interval}ms`; }
+  if(id==='solar'){ const s=weaponsLib.solar.statsForLevel(lvl); return `radio ${s.radius}px, dmg ${s.damage}/${s.tick}ms`; }
+  if(id==='sword'){ const s=weaponsLib.sword.statsForLevel(lvl); return `arco ${(s.arc*180/Math.PI).toFixed(0)}°, rango ${s.range}px, dmg ${s.damage}`; }
+  if(id==='staff'){ const s=weaponsLib.staff.statsForLevel(lvl); return `rayo lento dmg ${s.damage}, cad ${s.interval}ms`; }
+  if(id==='fireball'){ const s=weaponsLib.fireball.statsForLevel(lvl); return `homing dmg ${s.damage}, cad ${s.interval}ms`; }
+  if(id==='bible'){ const s=weaponsLib.bible.statsForLevel(lvl); return `${s.count} orbe(s), radio ${s.radius}px`; }
+  if(id==='potion'){ const s=weaponsLib.potion.statsForLevel(lvl); return `cura ${s.healAmount} cada ${s.interval}ms`; }
   return '';
 }
 
-/* ---------- Game loop & updates ---------- */
-
+/* ---------- Game loop ---------- */
 let lastFrame = performance.now();
 function gameLoop(now){
   const dt = now - lastFrame;
   lastFrame = now;
   if(!gamePaused && !dead){
     time += dt;
-    // spawn
-    if(now - lastSpawnTime > spawnRate){
+    // spawn control: adapt spawnInterval slowly to time
+    spawnInterval = Math.max(400, BASE_SPAWN_INTERVAL - Math.floor(time/10000)*20);
+    if(now - lastSpawnTime > spawnInterval){
       lastSpawnTime = now;
-      spawnEnemy();
+      // control number of enemies to avoid overload
+      if(enemies.length < 30) spawnEnemy();
     }
     // movement
     updatePlayer(dt);
-    // weapons: pistol shoot
+    // weapons auto actions
     if(weaponsState.pistol.level) weaponsLib.pistol.shoot(weaponsState.pistol);
-    // bullets movement & collisions
+    if(weaponsState.sword.level) weaponsLib.sword.attack(weaponsState.sword);
+    if(weaponsState.staff.level) weaponsLib.staff.shoot(weaponsState.staff);
+    if(weaponsState.fireball.level) weaponsLib.fireball.shoot(weaponsState.fireball);
+    if(weaponsState.bible.level) weaponsLib.bible.update(weaponsState.bible, dt);
+    if(weaponsState.potion.level) weaponsLib.potion.tick(weaponsState.potion);
+    // bullets move & collision
     updateBullets(dt);
-    // enemies move
+    // melee hits
+    updateMelee(dt);
+    // enemies move & contact damage
     updateEnemies(dt);
-    // solar damage tick
+    // solar damage
     updateSolar(now);
     // orbs collect
     updateOrbs();
-    // bosses? (not implemented fully here)
   }
   render();
   updateHUD();
@@ -427,7 +530,7 @@ function gameLoop(now){
 }
 requestAnimationFrame(gameLoop);
 
-/* ---------- Update helpers ---------- */
+/* ---------- Updates ---------- */
 
 function updatePlayer(dt){
   if(keys['w'] || keys['arrowup']) player.y -= player.speed;
@@ -435,9 +538,9 @@ function updatePlayer(dt){
   if(keys['a'] || keys['arrowleft']) player.x -= player.speed;
   if(keys['d'] || keys['arrowright']) player.x += player.speed;
   // clamp
-  player.x = Math.max(0, Math.min(canvas.width, player.x));
-  player.y = Math.max(0, Math.min(canvas.height, player.y));
-  // update solar area positions (they follow player)
+  player.x = clamp(player.x, 0, canvas.width);
+  player.y = clamp(player.y, 0, canvas.height);
+  // solar areas follow player
   if(weaponsState.solar.level){
     weaponsState.solar.areas.forEach(a => { a.x = player.x; a.y = player.y; });
   }
@@ -446,26 +549,62 @@ function updatePlayer(dt){
 function updateBullets(dt){
   for(let i = bullets.length-1; i>=0; i--){
     const b = bullets[i];
-    b.x += b.dx;
-    b.y += b.dy;
+    // homing behavior
+    if(b.homing){
+      // find nearest enemy
+      if(enemies.length){
+        const target = enemies.reduce((a,b2)=> dist(a,player) < dist(b2,player) ? a : b2);
+        // desired angle
+        const angTo = Math.atan2(target.y - b.y, target.x - b.x);
+        const curAng = Math.atan2(b.dy, b.dx);
+        let newAng = curAng + (angTo - curAng) * (b.homingStrength || 0.12);
+        b.dx = Math.cos(newAng) * b.speed;
+        b.dy = Math.sin(newAng) * b.speed;
+      }
+    }
+    b.x += b.dx * (dt/16);
+    b.y += b.dy * (dt/16);
     b.life -= dt;
-    if(b.life <= 0 || b.x < -50 || b.x > canvas.width+50 || b.y < -50 || b.y > canvas.height+50){ bullets.splice(i,1); continue; }
+    if(b.life <= 0 || b.x < -60 || b.x > canvas.width+60 || b.y < -60 || b.y > canvas.height+60){ bullets.splice(i,1); continue; }
     // collide with enemies
     for(let j = enemies.length-1; j>=0; j--){
       const e = enemies[j];
-      if(dist(b,e) < e.size){
+      if(Math.hypot(b.x - e.x, b.y - e.y) < e.size + (b.size||4)){
         e.hp -= b.damage;
         bullets.splice(i,1);
         if(e.hp <= 0){
           spawnOrbAt(e.x, e.y);
           enemies.splice(j,1);
           score += 1;
-          // small xp drop handled in orb collection
         }
         break;
       }
     }
-    // bullets can hit bosses too (not implemented)
+  }
+}
+
+function updateMelee(dt){
+  for(let i = meleeAttacks.length-1; i>=0; i--){
+    const m = meleeAttacks[i];
+    m.life -= dt;
+    // apply immediate damage on creation (simple)
+    for(let j = enemies.length-1; j>=0; j--){
+      const e = enemies[j];
+      const angToE = Math.atan2(e.y - m.y, e.x - m.x);
+      let diff = Math.abs(((angToE - m.angle + Math.PI) % (2*Math.PI)) - Math.PI); // minimal diff
+      if(diff <= m.arc/2 && dist(e,m) <= m.range + e.size){
+        e.hp -= m.damage;
+        // small push
+        e.x += Math.cos(angToE)*6;
+        e.y += Math.sin(angToE)*6;
+        if(e.hp <= 0){
+          spawnOrbAt(e.x, e.y);
+          enemies.splice(j,1);
+          score += 1;
+        }
+      }
+    }
+    if(m.life <= 0) meleeAttacks.splice(i,1);
   }
 }
 
@@ -477,26 +616,22 @@ function updateEnemies(dt){
     e.y += Math.sin(a) * e.speed * (dt/16);
     // collision with player
     if(dist(e,player) < player.size + e.size){
-      // deal gentle damage (not insta-kill)
-      player.hp -= 6 * (dt/16);
+      player.hp -= 8 * (dt/16);
       if(player.hp <= 0) onDeath();
-      // enemy dies on contact to avoid stacking repeatedly
       spawnOrbAt(e.x, e.y);
       enemies.splice(i,1);
     }
   }
 }
 
-/* Solar damage handling: ticks every tick ms per area */
+/* Solar area damage */
 function updateSolar(now){
   if(!weaponsState.solar.level) return;
   const lvl = weaponsState.solar.level;
   const s = weaponsLib.solar.statsForLevel(lvl);
-  // use stored lastDamageTick
   if(!weaponsState.solar.lastTick) weaponsState.solar.lastTick = 0;
   if(now - weaponsState.solar.lastTick < s.tick) return;
   weaponsState.solar.lastTick = now;
-  // apply damage to enemies inside area(s)
   weaponsState.solar.areas.forEach(area=>{
     for(let i = enemies.length-1; i>=0; i--){
       const e = enemies[i];
@@ -512,16 +647,16 @@ function updateSolar(now){
   });
 }
 
-/* Orbs collection */
+/* Orbs collect */
 function updateOrbs(){
   for(let i = orbs.length-1; i>=0; i--){
     const o = orbs[i];
     if(dist(o, player) < player.size + 10){
-      xp += o.value;
+      let gain = o.value;
+      if(weaponsState.__xpBoost && weaponsState.__xpBoost > 0){ gain += 1; weaponsState.__xpBoost--; }
+      xp += gain;
       orbs.splice(i,1);
-      if(xp >= xpToNext){
-        levelUp();
-      }
+      if(xp >= xpToNext) levelUp();
     }
   }
 }
@@ -530,7 +665,9 @@ function updateOrbs(){
 function levelUp(){
   level++;
   xp = xp - xpToNext;
-  xpToNext = Math.max(5, Math.floor(xpToNext * 1.25));
+  xpToNext = Math.max(5, Math.floor(xpToNext * 1.22));
+  // small XP heal on level up
+  player.hp = Math.min(player.maxHp, player.hp + 10);
   openLevelMenu();
 }
 
@@ -540,7 +677,7 @@ function onDeath(){
   gamePaused = true;
   const dp = document.getElementById('deathPanel');
   dp.style.display = 'block';
-  document.getElementById('deathScore').textContent = 'Puntos: '+score+' | Nivel máximo: '+level;
+  document.getElementById('deathScore').textContent = 'Puntos: '+score+' | Nivel alcanzado: '+level;
 }
 document.getElementById('btnRestart').onclick = ()=>{
   location.reload();
@@ -549,23 +686,23 @@ document.getElementById('btnRestart').onclick = ()=>{
 /* ---------- Rendering ---------- */
 function render(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  // draw solar areas (behind)
+  // solar areas (behind)
   if(weaponsState.solar.level){
     const lvl = weaponsState.solar.level;
     const s = weaponsLib.solar.statsForLevel(lvl);
-    ctx.fillStyle = 'rgba(255,200,50,0.08)';
+    ctx.fillStyle = 'rgba(255,200,50,0.06)';
     weaponsState.solar.areas.forEach(a=>{
       ctx.beginPath();
       ctx.arc(a.x, a.y, s.radius, 0, Math.PI*2);
       ctx.fill();
     });
   }
-  // draw orbs
+  // orbs
   for(const o of orbs){
     ctx.fillStyle = '#f1c40f';
     ctx.beginPath(); ctx.arc(o.x, o.y, 6, 0, Math.PI*2); ctx.fill();
   }
-  // draw enemies
+  // enemies
   for(const e of enemies){
     ctx.fillStyle = e.color || '#c0392b';
     ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI*2); ctx.fill();
@@ -574,27 +711,37 @@ function render(){
     ctx.font = '11px sans-serif';
     ctx.fillText(Math.max(0,Math.round(e.hp)), e.x - 8, e.y - e.size - 4);
   }
-  // draw bullets
+  // bullets
   for(const b of bullets){
-    ctx.fillStyle = '#fff59d';
-    ctx.beginPath(); ctx.arc(b.x, b.y, b.size, 0, Math.PI*2); ctx.fill();
+    if(b.type === 'pistol'){ ctx.fillStyle = '#fff59d'; }
+    else if(b.type === 'staff') { ctx.fillStyle = '#9b59b6'; }
+    else if(b.type === 'fireball'){ ctx.fillStyle = '#ff6b6b'; }
+    else ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(b.x, b.y, b.size || 4, 0, Math.PI*2); ctx.fill();
   }
-  // draw player
+  // orbiters (bible)
+  if(weaponsState.bible.level){
+    const s = weaponsLib.bible.statsForLevel(weaponsState.bible.level);
+    const state = weaponsState.bible;
+    for(const o of state.orbiters || []){
+      const ox = player.x + Math.cos(o.angle) * s.radius;
+      const oy = player.y + Math.sin(o.angle) * s.radius;
+      ctx.fillStyle = 'rgba(200,230,255,0.95)';
+      ctx.beginPath(); ctx.arc(ox, oy, 6, 0, Math.PI*2); ctx.fill();
+    }
+  }
+  // melee arcs (visualize shortly)
+  for(const m of meleeAttacks){
+    ctx.beginPath();
+    ctx.moveTo(m.x, m.y);
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.arc(m.x, m.y, m.range, m.angle - m.arc/2, m.angle + m.arc/2);
+    ctx.fill();
+  }
+  // player
   ctx.fillStyle = '#3ddc84';
   ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
 }
-
-/* ---------- Utilities ---------- */
-function spawnOrbAt(x,y){ orbs.push({ x,y, value: 1 + Math.floor(Math.random()*2) }); }
-
-/* ---------- Init: add pistol level 1 by default so player starts with it ---------- */
-weaponsState.pistol.level = 1;
-weaponsState.pistol.lastShot = 0;
-applyWeaponLevelEffects('pistol');
-
-/* ---------- Start debug small waves for testing ---------- */
-lastSpawnTime = performance.now();
-requestAnimationFrame(gameLoop);
 
 /* ---------- Small debug display ---------- */
 const debugEl = document.getElementById('debug');
@@ -602,7 +749,17 @@ setInterval(()=> {
   debugEl.textContent = `Enemies: ${enemies.length} Orbs:${orbs.length} Bullets:${bullets.length} Time:${Math.floor(time/1000)}s`;
 }, 500);
 
-/* ---------- Exported helpers for console tweaking (optional) ---------- */
+/* ---------- Init ---------- */
+// ensure pistol lvl1 exists (already set)
+weaponsState.pistol.level = 1;
+weaponsState.pistol.lastShot = 0;
+// ensure solar is 0
+weaponsState.solar.level = 0;
+weaponsState.solar.areas = [];
+
+// quick starting enemies for testing
+for(let i=0;i<4;i++) spawnEnemy();
+
 window.__VS = { weaponsLib, weaponsState, player, enemies, orbs, bullets, spawnEnemy, levelUp, openLevelMenu, applyWeaponLevelEffects };
 
 </script>
