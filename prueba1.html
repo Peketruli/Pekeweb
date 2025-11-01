@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vampire Survival — Sistema Base (Armas ampliadas)</title>
+<title>Vampire Survival — Con HUD izquierdo, Cronómetro y Bosses</title>
 <style>
-  :root{--hud-bg:rgba(0,0,0,0.5);--accent:#f1c40f}
+  :root{--hud-bg:rgba(0,0,0,0.55);--accent:#f1c40f;--muted:#999}
   html,body{height:100%;margin:0;background:#080808;color:#eee;font-family:Inter,Arial,Helvetica,sans-serif;overflow:hidden}
   canvas{display:block;background:linear-gradient(#111,#040404);width:100vw;height:100vh}
-  /* HUD top */
-  #hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:900px;max-width:95vw;z-index:30}
+  /* TOP HUD (center) */
+  #topHUD{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:760px;max-width:85vw;z-index:30}
   .row{display:flex;gap:10px;align-items:center}
   .box{background:var(--hud-bg);padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.06)}
   #bars{flex:1}
@@ -17,24 +17,46 @@
   .fill{height:100%;transition:width .18s linear}
   .hpFill{background:linear-gradient(90deg,#2ecc71,#27ae60)}
   .xpFill{background:linear-gradient(90deg,#f39c12,#e67e22)}
-  #inv{display:flex;gap:8px}
-  .slot{min-width:120px;background:rgba(255,255,255,0.03);padding:6px;border-radius:6px;text-align:left;font-size:13px}
-  .slot b{display:block}
+  /* Left HUD (weapons column) */
+  #leftHUD{position:fixed;left:10px;top:50%;transform:translateY(-50%);z-index:35;display:flex;flex-direction:column;gap:8px}
+  .weaponSlot{width:160px;background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);font-size:13px;display:flex;align-items:center;gap:8px}
+  .weaponIcon{width:36px;height:36px;border-radius:6px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted)}
+  .weaponInfo{flex:1}
+  .weaponName{font-size:13px}
+  .weaponLvl{font-size:12px;color:var(--muted)}
+  /* Timer top-right */
+  #timer{position:fixed;top:12px;right:12px;background:var(--hud-bg);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);z-index:40;font-size:14px}
+  /* Center HUD retained */
+  #inv{display:none} /* invisible now since leftHUD used */
+  /* Level menu & death panel */
   #levelMenu,#deathPanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#111;padding:18px;border:2px solid #fff;border-radius:10px;z-index:50;display:none;min-width:320px}
   #levelMenu h2,#deathPanel h2{margin:0 0 8px}
   #levelMenu .choices{display:flex;flex-direction:column;gap:8px;margin-top:8px}
   button.choice{padding:10px;border-radius:8px;border:none;background:#222;color:#fff;cursor:pointer}
   button.choice:hover{background:#333}
   #deathPanel button{margin-top:10px;padding:8px 12px;border-radius:8px;border:none;background:#c0392b;color:white;cursor:pointer}
+  /* chest popup */
+  #chestPopup{position:fixed;left:50%;top:20%;transform:translateX(-50%);z-index:60;background:linear-gradient(90deg,#222,#111);padding:12px 16px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);display:none}
+  /* debug */
   #debug{position:fixed;right:10px;bottom:10px;color:#999;font-size:12px;z-index:40}
+  /* subtle chest open animation (CSS used when adding class .open) */
+  @keyframes chestGlow {
+    0%{box-shadow:0 0 0 rgba(255,215,0,0)}
+    50%{box-shadow:0 0 20px rgba(255,215,0,0.7)}
+    100%{box-shadow:0 0 0 rgba(255,215,0,0)}
+  }
+  .chestAnim{animation: chestGlow 1s ease-in-out;}
 </style>
 </head>
 <body>
 
 <canvas id="c"></canvas>
 
-<!-- HUD -->
-<div id="hud">
+<!-- Left HUD: weapon column -->
+<div id="leftHUD" aria-hidden="true"></div>
+
+<!-- Top HUD center -->
+<div id="topHUD">
   <div class="row">
     <div class="box" style="min-width:220px">
       <div style="font-size:14px"><strong id="scoreText">Puntos: 0</strong></div>
@@ -52,12 +74,14 @@
         <div style="width:70px;text-align:right" id="xpText">0/15</div>
       </div>
     </div>
-
     <div id="inv" class="box">
-      <!-- inventory slots rendered dynamically -->
+      <!-- hidden (leftHUD used) -->
     </div>
   </div>
 </div>
+
+<!-- Timer -->
+<div id="timer">00:00</div>
 
 <!-- Level up menu -->
 <div id="levelMenu">
@@ -73,14 +97,18 @@
   <button id="btnRestart">Reiniciar</button>
 </div>
 
+<!-- Chest popup -->
+<div id="chestPopup"></div>
+
 <div id="debug"></div>
 
 <script>
 /* -------------------------
-   Sistema base ampliado: nuevas armas balanceadas
-   - Área Solar empieza en nivel 0 (desbloqueable)
-   - Armas añadidas: Espada, Bastón, Bolas de fuego, Biblia, Pociones
-   - Pistol lvl1 por defecto
+   Versión extendida:
+   - HUD izquierdo (columna de armas)
+   - Cronómetro mm:ss
+   - Boss tipo A cada 150s -> deja cofre que sube 1 nivel aleatorio de tus armas
+   - Mantiene armas previas y solar en lvl0
    ------------------------- */
 
 const canvas = document.getElementById('c');
@@ -90,13 +118,22 @@ addEventListener('resize', resize);
 resize();
 
 /* ---------- Estado global ---------- */
-let time = 0;           // ms desde inicio
+let time = 0;           // ms desde inicio (juego)
 let score = 0;
 let xp = 0;
 let level = 1;
 let xpToNext = 15;
 let gamePaused = false;
 let dead = false;
+
+/* ---------- Timer (display) ---------- */
+let gameStartTimestamp = performance.now();
+function formatTime(ms){
+  const total = Math.floor(ms/1000);
+  const mins = Math.floor(total/60);
+  const secs = total % 60;
+  return String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
+}
 
 /* ---------- Player ---------- */
 const player = {
@@ -114,35 +151,37 @@ addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true);
 addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
 
 /* ---------- Entities ---------- */
-let bullets = [];           // generic projectiles (pistol, staff, fireball homing included)
+let bullets = [];
 let enemies = [];
 let orbs = [];
-let meleeAttacks = [];      // sword arcs
-let orbiters = [];          // bible orbs
+let meleeAttacks = [];
+let boss = null;         // current boss (only one at a time)
+let chests = [];         // chests dropped by boss
 let lastSpawnTime = performance.now();
+let lastBossSpawn = performance.now();
 
-/* ---------- Balance constants (ajustables) ---------- */
+/* ---------- Boss schedule ---------- */
+const BOSS_INTERVAL = 150000; // 150s => 2.5 minutes
+
+/* ---------- Balance constants ---------- */
 const BASE_SPAWN_INTERVAL = 1200; // ms between spawns
 let spawnInterval = BASE_SPAWN_INTERVAL;
 
-/* ---------- Helper utilities ---------- */
+/* ---------- Utils ---------- */
 function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
 function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
 
-/* ---------- Weapons library ---------- */
+/* ---------- Weapons library (igual que antes) ---------- */
 const weaponsLib = {};
-
-/* PISTOLA (existente, auto) */
+/* PISTOLA */
 weaponsLib.pistol = {
-  id: 'pistol',
-  name: 'Pistola',
-  maxLevel: 10,
+  id: 'pistol', name: 'Pistola', maxLevel: 10,
   statsForLevel(level){
-    const baseInterval = 500; // ms at lvl1 (balanced)
+    const baseInterval = 500;
     const interval = Math.max(120, Math.round(baseInterval - (level-1)*40));
-    const bulletsCount = 1 + Math.floor((level-1)/3); // +1 cada 3 niveles
-    const damage = 2 + Math.floor((level-1)/4); // escala suave
+    const bulletsCount = 1 + Math.floor((level-1)/3);
+    const damage = 2 + Math.floor((level-1)/4);
     const speed = 5 + (level-1)*0.3;
     const size = 3 + Math.floor((level-1)/6);
     return { interval, bulletsCount, damage, speed, size };
@@ -153,11 +192,8 @@ weaponsLib.pistol = {
     const s = weaponsLib.pistol.statsForLevel(state.level);
     if(now - (state.lastShot||0) < s.interval) return;
     state.lastShot = now;
-    if(enemies.length + 0 === 0) return;
-    // target nearest enemy
-    const pool = enemies.length ? enemies : [];
-    if(pool.length === 0) return;
-    const target = pool.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
+    if(!enemies.length) return;
+    const target = enemies.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
     const ang = Math.atan2(target.y - player.y, target.x - player.x);
     const total = s.bulletsCount;
     const spread = (total > 1) ? 0.18 : 0;
@@ -173,30 +209,24 @@ weaponsLib.pistol = {
     }
   }
 };
-
-/* AREA SOLAR (desbloqueable) */
+/* SOLAR (desbloqueable) */
 weaponsLib.solar = {
-  id: 'solar',
-  name: 'Área Solar',
-  maxLevel: 10,
+  id:'solar', name:'Área Solar', maxLevel:10,
   statsForLevel(level){
-    const radius = Math.round(40 + (level-1)*12); // 40 -> ~148
+    const radius = Math.round(40 + (level-1)*12);
     const damage = 3 + Math.floor((level-1)*1.2);
-    const tick = Math.max(180, Math.round(420 - (level-1)*24)); // ms between damage pulses
+    const tick = Math.max(180, Math.round(420 - (level-1)*24));
     return { radius, damage, tick };
   }
 };
-
-/* ESPADA (melee arco corto, auto) */
+/* SWORD */
 weaponsLib.sword = {
-  id: 'sword',
-  name: 'Espada',
-  maxLevel: 10,
+  id:'sword', name:'Espada', maxLevel:10,
   statsForLevel(level){
-    const arc = Math.PI/3 - (level-1)*0.02; // arc size slightly better with levels
-    const range = 36 + Math.floor((level-1)*3); // alcance
+    const arc = Math.PI/3 - (level-1)*0.02;
+    const range = 36 + Math.floor((level-1)*3);
     const damage = 6 + Math.floor((level-1)*1.2);
-    const interval = Math.max(250, 450 - (level-1)*20); // cooldown
+    const interval = Math.max(250, 450 - (level-1)*20);
     return { arc, range, damage, interval };
   },
   attack(state){
@@ -205,9 +235,7 @@ weaponsLib.sword = {
     const s = weaponsLib.sword.statsForLevel(state.level);
     if(now - (state.lastAttack||0) < s.interval) return;
     state.lastAttack = now;
-    // auto-attack towards nearest enemy
-    if(enemies.length === 0) {
-      // small forward arc if no enemies
+    if(enemies.length === 0){
       meleeAttacks.push({ x:player.x, y:player.y, angle:0, arc:s.arc, range:s.range, damage:s.damage, life:120 });
       return;
     }
@@ -216,14 +244,11 @@ weaponsLib.sword = {
     meleeAttacks.push({ x:player.x, y:player.y, angle:ang, arc:s.arc, range:s.range, damage:s.damage, life:120 });
   }
 };
-
-/* BASTON (rayos mágicos lentos, alta potencia) */
+/* STAFF */
 weaponsLib.staff = {
-  id: 'staff',
-  name: 'Bastón',
-  maxLevel: 10,
+  id:'staff', name:'Bastón', maxLevel:10,
   statsForLevel(level){
-    const interval = Math.max(600, 1400 - (level-1)*90); // faster con lvl
+    const interval = Math.max(600, 1400 - (level-1)*90);
     const damage = 12 + Math.floor((level-1)*2.2);
     const speed = 2.2 + (level-1)*0.15;
     const size = 6 + Math.floor((level-1)/3);
@@ -235,7 +260,7 @@ weaponsLib.staff = {
     const s = weaponsLib.staff.statsForLevel(state.level);
     if(now - (state.lastShot||0) < s.interval) return;
     state.lastShot = now;
-    if(enemies.length === 0) return;
+    if(!enemies.length) return;
     const target = enemies.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
     const ang = Math.atan2(target.y - player.y, target.x - player.x);
     bullets.push({
@@ -245,18 +270,15 @@ weaponsLib.staff = {
     });
   }
 };
-
-/* BOLAS DE FUEGO (proyectiles buscadores; cadencia controlada) */
+/* FIREBALL */
 weaponsLib.fireball = {
-  id: 'fireball',
-  name: 'Bolas de Fuego',
-  maxLevel: 10,
+  id:'fireball', name:'Bolas de Fuego', maxLevel:10,
   statsForLevel(level){
-    const interval = Math.max(1100, 2500 - (level-1)*140); // ~1.1s to slower at low lvls
+    const interval = Math.max(1100, 2500 - (level-1)*140);
     const damage = 8 + Math.floor((level-1)*1.6);
     const speed = 3.2 + (level-1)*0.18;
     const size = 5 + Math.floor((level-1)/4);
-    const homingStrength = 0.12 + (level-1)*0.01; // how strongly it turns towards target
+    const homingStrength = 0.12 + (level-1)*0.01;
     return { interval, damage, speed, size, homingStrength };
   },
   shoot(state){
@@ -265,48 +287,37 @@ weaponsLib.fireball = {
     const s = weaponsLib.fireball.statsForLevel(state.level);
     if(now - (state.lastShot||0) < s.interval) return;
     state.lastShot = now;
-    // spawn one homing projectile
     bullets.push({
       x: player.x, y: player.y,
-      dx: 0, dy: -s.speed, // initial
+      dx: 0, dy: -s.speed,
       damage: s.damage, size: s.size, life: 5000, friendly:true,
       homing: true, homingStrength: s.homingStrength, speed: s.speed, type:'fireball'
     });
   }
 };
-
-/* BIBLIA (orbs que orbitan al jugador) */
+/* BIBLE */
 weaponsLib.bible = {
-  id: 'bible',
-  name: 'Biblia',
-  maxLevel: 10,
+  id:'bible', name:'Biblia', maxLevel:10,
   statsForLevel(level){
-    const count = 2 + Math.floor((level-1)/2); // 2-> up to ~6
+    const count = 2 + Math.floor((level-1)/2);
     const radius = 36 + Math.floor((level-1)*3);
     const damage = 4 + Math.floor((level-1)*1.1);
-    const speed = 0.02 + (level-1)*0.0025; // angular speed
+    const speed = 0.02 + (level-1)*0.0025;
     return { count, radius, damage, speed };
   },
   ensureOrbiters(state){
     if(!state.level) return;
     const s = weaponsLib.bible.statsForLevel(state.level);
-    // create desired number of orbiters
-    while((state.orbiters?.length||0) < s.count){
-      const idx = state.orbiters ? state.orbiters.length : 0;
-      state.orbiters = state.orbiters || [];
-      state.orbiters.push({ angle: (Math.PI*2/state.count || 0) * idx, life: Infinity });
-    }
+    state.orbiters = state.orbiters || [];
+    while(state.orbiters.length < s.count) state.orbiters.push({ angle: Math.random()*Math.PI*2 });
   },
   update(state, dt){
     if(!state.level) return;
     state.orbiters = state.orbiters || [];
     const s = weaponsLib.bible.statsForLevel(state.level);
-    // ensure orbiters count correct
     while(state.orbiters.length < s.count) state.orbiters.push({ angle: Math.random()*Math.PI*2 });
-    // rotate and handle collisions (drawn in render)
     for(const o of state.orbiters){
       o.angle += s.speed * dt;
-      // compute orb position and check collision with enemies
       const ox = player.x + Math.cos(o.angle) * s.radius;
       const oy = player.y + Math.sin(o.angle) * s.radius;
       for(let i=enemies.length-1;i>=0;i--){
@@ -323,15 +334,12 @@ weaponsLib.bible = {
     }
   }
 };
-
-/* POCIONES (curación pasiva periódica) */
+/* POTION */
 weaponsLib.potion = {
-  id: 'potion',
-  name: 'Pociones',
-  maxLevel: 10,
+  id:'potion', name:'Pociones', maxLevel:10,
   statsForLevel(level){
     const healAmount = 6 + Math.floor((level-1)*1.6);
-    const interval = Math.max(3500, 9000 - (level-1)*500); // ms between heals
+    const interval = Math.max(3500, 9000 - (level-1)*500);
     return { healAmount, interval };
   },
   tick(state){
@@ -344,10 +352,10 @@ weaponsLib.potion = {
   }
 };
 
-/* ---------- Inventory / weapons state ---------- */
+/* ---------- Weapons state ---------- */
 const weaponsState = {
   pistol: { level: 1, lastShot: 0 },
-  solar: { level: 0, lastTick: 0, areas: [] }, // ¡empieza en 0 según pediste!
+  solar: { level: 0, lastTick: 0, areas: [] },
   sword: { level: 0, lastAttack: 0 },
   staff: { level: 0, lastShot: 0 },
   fireball: { level: 0, lastShot: 0 },
@@ -357,23 +365,21 @@ const weaponsState = {
 
 /* ---------- Spawning enemies & orbs ---------- */
 function spawnEnemy(){
-  const edge = Math.floor(Math.random()*4); // 0 left,1 right,2 top,3 bottom
+  const edge = Math.floor(Math.random()*4);
   let x = edge===0 ? -20 : edge===1 ? canvas.width+20 : Math.random()*canvas.width;
   let y = edge===2 ? -20 : edge===3 ? canvas.height+20 : Math.random()*canvas.height;
   const easyWindow = 120000;
-  let hp = time < easyWindow ? 3 : 3 + Math.floor(time/90000); // slowly increase
+  let hp = time < easyWindow ? 3 : 3 + Math.floor(time/90000);
   const speed = 0.6 + Math.random()*1.0 + Math.min(1.2, time/120000);
   const size = 10 + Math.random()*10;
   enemies.push({ x,y, hp, speed, size, color:'#c0392b' });
 }
-
-/* Orbs (XP) */
 function spawnOrbAt(x,y){
   const value = 1 + Math.floor(Math.random()*2);
   orbs.push({ x,y, value });
 }
 
-/* ---------- Level-up selection ---------- */
+/* ---------- Level menu ---------- */
 function openLevelMenu(){
   gamePaused = true;
   const menu = document.getElementById('levelMenu');
@@ -390,7 +396,7 @@ function openLevelMenu(){
     { type:'bonus', id:'xpBoost', name:'Más XP (orb +1)' }
   ];
   const pool = [...candidates];
-  while(pool.length < 6) { pool.push(randChoice(genericBonuses)); }
+  while(pool.length < 6) pool.push(randChoice(genericBonuses));
   const picks = [];
   while(picks.length < 3){
     const p = randChoice(pool);
@@ -432,30 +438,27 @@ function applyWeaponLevelEffects(id){
     }
   }
   if(id === 'bible'){
-    // ensure orbiters updated
     weaponsLib.bible.ensureOrbiters(weaponsState.bible);
   }
-  // other weapons mostly operate via their stats at runtime
 }
 
 /* ---------- Generic bonuses ---------- */
 function applyGenericBonus(id){
   if(id === 'hpUp'){ player.maxHp += 10; player.hp = player.maxHp; }
   if(id === 'speed'){ player.speed += 0.3; }
-  if(id === 'xpBoost'){ /* implement as passive: next orbs give +1 temporarily */ 
-    // implement simple short flag
-    weaponsState.__xpBoost = (weaponsState.__xpBoost||0) + 5; // next 5 orbs extra
-  }
+  if(id === 'xpBoost'){ weaponsState.__xpBoost = (weaponsState.__xpBoost||0) + 5; }
 }
 
-/* ---------- HUD ---------- */
+/* ---------- HUD updates (left column and top) ---------- */
 const hpFill = document.getElementById('hpFill');
 const xpFill = document.getElementById('xpFill');
 const xpText = document.getElementById('xpText');
 const hpText = document.getElementById('hpText');
 const levelText = document.getElementById('levelText');
 const scoreText = document.getElementById('scoreText');
-const invDiv = document.getElementById('inv');
+const leftHUD = document.getElementById('leftHUD');
+const timerEl = document.getElementById('timer');
+const chestPopup = document.getElementById('chestPopup');
 
 function updateHUD(){
   const pct = Math.max(0, Math.min(1, player.hp / player.maxHp));
@@ -465,29 +468,35 @@ function updateHUD(){
   xpText.textContent = Math.floor(xp)+' / '+xpToNext;
   levelText.textContent = level;
   scoreText.textContent = 'Puntos: '+score;
-  renderInventory();
+  renderLeftHUD();
 }
-function renderInventory(){
-  invDiv.innerHTML = '';
-  for(const id in weaponsLib){
+function renderLeftHUD(){
+  leftHUD.innerHTML = '';
+  // order: pistol, sword, staff, fireball, bible, potion, solar
+  const order = ['pistol','sword','staff','fireball','bible','potion','solar'];
+  for(const id of order){
     const lvl = weaponsState[id].level || 0;
-    const el = document.createElement('div');
-    el.className = 'slot';
-    el.style.opacity = lvl?1:0.5;
-    el.innerHTML = `<b>${weaponsLib[id].name}</b> ${lvl?'<span style="float:right">Lv '+lvl+'</span>':''}
-      <div style="font-size:12px;color:#ccc">${lvl?weaponShortDesc(id,lvl):'No equipado'}</div>`;
-    invDiv.appendChild(el);
+    const slot = document.createElement('div');
+    slot.className = 'weaponSlot';
+    slot.style.opacity = lvl?1:0.4;
+    const icon = document.createElement('div');
+    icon.className = 'weaponIcon';
+    // simple icon text
+    icon.textContent = id.charAt(0).toUpperCase();
+    const info = document.createElement('div');
+    info.className = 'weaponInfo';
+    const name = document.createElement('div');
+    name.className = 'weaponName';
+    name.textContent = weaponsLib[id].name;
+    const lvldiv = document.createElement('div');
+    lvldiv.className = 'weaponLvl';
+    lvldiv.textContent = lvl ? `Lv ${lvl}` : 'No equipado';
+    info.appendChild(name);
+    info.appendChild(lvldiv);
+    slot.appendChild(icon);
+    slot.appendChild(info);
+    leftHUD.appendChild(slot);
   }
-}
-function weaponShortDesc(id, lvl){
-  if(id==='pistol'){ const s=weaponsLib.pistol.statsForLevel(lvl); return `${s.bulletsCount} disparo(s), dmg ${s.damage}, cad ${s.interval}ms`; }
-  if(id==='solar'){ const s=weaponsLib.solar.statsForLevel(lvl); return `radio ${s.radius}px, dmg ${s.damage}/${s.tick}ms`; }
-  if(id==='sword'){ const s=weaponsLib.sword.statsForLevel(lvl); return `arco ${(s.arc*180/Math.PI).toFixed(0)}°, rango ${s.range}px, dmg ${s.damage}`; }
-  if(id==='staff'){ const s=weaponsLib.staff.statsForLevel(lvl); return `rayo lento dmg ${s.damage}, cad ${s.interval}ms`; }
-  if(id==='fireball'){ const s=weaponsLib.fireball.statsForLevel(lvl); return `homing dmg ${s.damage}, cad ${s.interval}ms`; }
-  if(id==='bible'){ const s=weaponsLib.bible.statsForLevel(lvl); return `${s.count} orbe(s), radio ${s.radius}px`; }
-  if(id==='potion'){ const s=weaponsLib.potion.statsForLevel(lvl); return `cura ${s.healAmount} cada ${s.interval}ms`; }
-  return '';
 }
 
 /* ---------- Game loop ---------- */
@@ -497,12 +506,18 @@ function gameLoop(now){
   lastFrame = now;
   if(!gamePaused && !dead){
     time += dt;
-    // spawn control: adapt spawnInterval slowly to time
+    // update timer display
+    timerEl.textContent = formatTime(performance.now() - gameStartTimestamp);
+    // spawn control
     spawnInterval = Math.max(400, BASE_SPAWN_INTERVAL - Math.floor(time/10000)*20);
     if(now - lastSpawnTime > spawnInterval){
       lastSpawnTime = now;
-      // control number of enemies to avoid overload
       if(enemies.length < 30) spawnEnemy();
+    }
+    // boss spawn logic: only spawn if none exists and time passed
+    if(!boss && (now - lastBossSpawn > BOSS_INTERVAL)){
+      spawnBoss();
+      lastBossSpawn = now;
     }
     // movement
     updatePlayer(dt);
@@ -513,16 +528,19 @@ function gameLoop(now){
     if(weaponsState.fireball.level) weaponsLib.fireball.shoot(weaponsState.fireball);
     if(weaponsState.bible.level) weaponsLib.bible.update(weaponsState.bible, dt);
     if(weaponsState.potion.level) weaponsLib.potion.tick(weaponsState.potion);
-    // bullets move & collision
+    // bullets
     updateBullets(dt);
-    // melee hits
+    // melee
     updateMelee(dt);
-    // enemies move & contact damage
+    // enemies
     updateEnemies(dt);
-    // solar damage
+    // solar
     updateSolar(now);
-    // orbs collect
+    // orbs & chests pickup
     updateOrbs();
+    updateChests();
+    // boss behavior (if exists)
+    if(boss) updateBoss(dt);
   }
   render();
   updateHUD();
@@ -530,17 +548,15 @@ function gameLoop(now){
 }
 requestAnimationFrame(gameLoop);
 
-/* ---------- Updates ---------- */
+/* ---------- Updates (detailed) ---------- */
 
 function updatePlayer(dt){
   if(keys['w'] || keys['arrowup']) player.y -= player.speed;
   if(keys['s'] || keys['arrowdown']) player.y += player.speed;
   if(keys['a'] || keys['arrowleft']) player.x -= player.speed;
   if(keys['d'] || keys['arrowright']) player.x += player.speed;
-  // clamp
   player.x = clamp(player.x, 0, canvas.width);
   player.y = clamp(player.y, 0, canvas.height);
-  // solar areas follow player
   if(weaponsState.solar.level){
     weaponsState.solar.areas.forEach(a => { a.x = player.x; a.y = player.y; });
   }
@@ -549,15 +565,14 @@ function updatePlayer(dt){
 function updateBullets(dt){
   for(let i = bullets.length-1; i>=0; i--){
     const b = bullets[i];
-    // homing behavior
     if(b.homing){
-      // find nearest enemy
-      if(enemies.length){
-        const target = enemies.reduce((a,b2)=> dist(a,player) < dist(b2,player) ? a : b2);
-        // desired angle
+      if(enemies.length || boss){
+        // include boss as potential target
+        const pool = boss ? enemies.concat([boss]) : enemies;
+        const target = pool.reduce((a,b2)=> dist(a,b) < dist(b2,b) ? a : b2);
         const angTo = Math.atan2(target.y - b.y, target.x - b.x);
         const curAng = Math.atan2(b.dy, b.dx);
-        let newAng = curAng + (angTo - curAng) * (b.homingStrength || 0.12);
+        let newAng = curAng + ( (angTo - curAng) * (b.homingStrength || 0.12) );
         b.dx = Math.cos(newAng) * b.speed;
         b.dy = Math.sin(newAng) * b.speed;
       }
@@ -580,6 +595,13 @@ function updateBullets(dt){
         break;
       }
     }
+    // collide with boss
+    if(boss && Math.hypot(b.x - boss.x, b.y - boss.y) < boss.size + (b.size||4)){
+      boss.hp -= b.damage;
+      bullets.splice(i,1);
+      if(boss.hp <= 0) killBoss();
+      continue;
+    }
   }
 }
 
@@ -587,14 +609,12 @@ function updateMelee(dt){
   for(let i = meleeAttacks.length-1; i>=0; i--){
     const m = meleeAttacks[i];
     m.life -= dt;
-    // apply immediate damage on creation (simple)
     for(let j = enemies.length-1; j>=0; j--){
       const e = enemies[j];
       const angToE = Math.atan2(e.y - m.y, e.x - m.x);
-      let diff = Math.abs(((angToE - m.angle + Math.PI) % (2*Math.PI)) - Math.PI); // minimal diff
+      let diff = Math.abs(((angToE - m.angle + Math.PI) % (2*Math.PI)) - Math.PI);
       if(diff <= m.arc/2 && dist(e,m) <= m.range + e.size){
         e.hp -= m.damage;
-        // small push
         e.x += Math.cos(angToE)*6;
         e.y += Math.sin(angToE)*6;
         if(e.hp <= 0){
@@ -602,6 +622,15 @@ function updateMelee(dt){
           enemies.splice(j,1);
           score += 1;
         }
+      }
+    }
+    // melee vs boss
+    if(boss){
+      const angToB = Math.atan2(boss.y - m.y, boss.x - m.x);
+      let diffB = Math.abs(((angToB - m.angle + Math.PI) % (2*Math.PI)) - Math.PI);
+      if(diffB <= m.arc/2 && dist(boss,m) <= m.range + boss.size){
+        boss.hp -= m.damage;
+        if(boss.hp <= 0) killBoss();
       }
     }
     if(m.life <= 0) meleeAttacks.splice(i,1);
@@ -614,7 +643,6 @@ function updateEnemies(dt){
     const a = Math.atan2(player.y - e.y, player.x - e.x);
     e.x += Math.cos(a) * e.speed * (dt/16);
     e.y += Math.sin(a) * e.speed * (dt/16);
-    // collision with player
     if(dist(e,player) < player.size + e.size){
       player.hp -= 8 * (dt/16);
       if(player.hp <= 0) onDeath();
@@ -624,7 +652,7 @@ function updateEnemies(dt){
   }
 }
 
-/* Solar area damage */
+/* ---------- Solar ---------- */
 function updateSolar(now){
   if(!weaponsState.solar.level) return;
   const lvl = weaponsState.solar.level;
@@ -644,10 +672,14 @@ function updateSolar(now){
         }
       }
     }
+    if(boss && dist(boss, area) < s.radius){
+      boss.hp -= s.damage;
+      if(boss.hp <= 0) killBoss();
+    }
   });
 }
 
-/* Orbs collect */
+/* ---------- Orbs & Chests ---------- */
 function updateOrbs(){
   for(let i = orbs.length-1; i>=0; i--){
     const o = orbs[i];
@@ -660,18 +692,94 @@ function updateOrbs(){
     }
   }
 }
+function updateChests(){
+  for(let i = chests.length-1; i>=0; i--){
+    const c = chests[i];
+    // float animation
+    c.y -= Math.sin((performance.now()+c.offset)/300)*0.04;
+    if(dist(c, player) < player.size + 18){
+      // pickup
+      applyChestReward(c);
+      showChestPopup(`¡Cofre abierto! ${c.rewardText || ''}`);
+      chests.splice(i,1);
+      continue;
+    }
+    // chest expires after some time
+    if(performance.now() - c.spawned > 30000) chests.splice(i,1);
+  }
+}
 
-/* Level up flow */
+/* ---------- Boss logic (Tipo A: bruto) ---------- */
+function spawnBoss(){
+  const side = Math.random() < 0.5 ? -1 : 1;
+  const x = side === -1 ? -120 : canvas.width + 120;
+  const y = Math.random()*canvas.height;
+  // scale boss with elapsed minutes slightly
+  const minutes = Math.floor((performance.now()-gameStartTimestamp)/60000);
+  const baseHp = 200 + minutes*60;
+  const baseSize = 48 + minutes*6;
+  const speed = 0.4 + Math.random()*0.4;
+  boss = { x, y, hp: baseHp, maxHp: baseHp, size: baseSize, speed, color:'#8e44ad', spawned: performance.now() };
+}
+function updateBoss(dt){
+  if(!boss) return;
+  // move slowly toward player (brute)
+  const ang = Math.atan2(player.y - boss.y, player.x - boss.x);
+  boss.x += Math.cos(ang) * boss.speed * (dt/16);
+  boss.y += Math.sin(ang) * boss.speed * (dt/16);
+  // collision with player deals heavy damage
+  if(dist(boss, player) < player.size + boss.size){
+    player.hp -= 28 * (dt/16);
+    if(player.hp <= 0) onDeath();
+  }
+}
+function killBoss(){
+  if(!boss) return;
+  // spawn chest at boss position
+  chests.push({ x: boss.x, y: boss.y, spawned: performance.now(), offset: Math.random()*9999 });
+  // make chest reward data (decided when picked)
+  boss = null;
+}
+
+/* Apply chest reward: level up random owned weapon */
+function applyChestReward(chest){
+  // choose among owned weapons (level>0 and below max)
+  const owned = Object.keys(weaponsState).filter(k => (weaponsState[k].level||0) > 0 && weaponsState[k].level < (weaponsLib[k].maxLevel||10));
+  if(owned.length){
+    const pick = randChoice(owned);
+    weaponsState[pick].level = Math.min(weaponsLib[pick].maxLevel, weaponsState[pick].level + 1);
+    applyWeaponLevelEffects(pick);
+    chest.rewardText = `${weaponsLib[pick].name} +1 nivel`;
+  } else {
+    // fallback: heal full small amount
+    player.hp = Math.min(player.maxHp, player.hp + 25);
+    chest.rewardText = `Vida +25 (fallback)`;
+  }
+}
+
+/* UI popup for chest (simple) */
+let chestPopupTimeout = null;
+function showChestPopup(text){
+  chestPopup.textContent = text;
+  chestPopup.style.display = 'block';
+  chestPopup.classList.add('chestAnim');
+  if(chestPopupTimeout) clearTimeout(chestPopupTimeout);
+  chestPopupTimeout = setTimeout(()=>{
+    chestPopup.style.display = 'none';
+    chestPopup.classList.remove('chestAnim');
+  }, 2200);
+}
+
+/* ---------- Level up flow ---------- */
 function levelUp(){
   level++;
   xp = xp - xpToNext;
   xpToNext = Math.max(5, Math.floor(xpToNext * 1.22));
-  // small XP heal on level up
   player.hp = Math.min(player.maxHp, player.hp + 10);
   openLevelMenu();
 }
 
-/* Death */
+/* ---------- Death ---------- */
 function onDeath(){
   dead = true;
   gamePaused = true;
@@ -686,15 +794,12 @@ document.getElementById('btnRestart').onclick = ()=>{
 /* ---------- Rendering ---------- */
 function render(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  // solar areas (behind)
+  // solar
   if(weaponsState.solar.level){
-    const lvl = weaponsState.solar.level;
-    const s = weaponsLib.solar.statsForLevel(lvl);
+    const s = weaponsLib.solar.statsForLevel(weaponsState.solar.level);
     ctx.fillStyle = 'rgba(255,200,50,0.06)';
     weaponsState.solar.areas.forEach(a=>{
-      ctx.beginPath();
-      ctx.arc(a.x, a.y, s.radius, 0, Math.PI*2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(a.x, a.y, s.radius, 0, Math.PI*2); ctx.fill();
     });
   }
   // orbs
@@ -702,14 +807,26 @@ function render(){
     ctx.fillStyle = '#f1c40f';
     ctx.beginPath(); ctx.arc(o.x, o.y, 6, 0, Math.PI*2); ctx.fill();
   }
+  // chests
+  for(const c of chests){
+    // box
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    // wobble
+    const wob = Math.sin((performance.now()+c.offset)/200)*4;
+    // base
+    ctx.fillStyle = '#7f5f3f';
+    ctx.beginPath(); ctx.rect(-14, -10 + wob, 28, 20); ctx.fill();
+    // lid
+    ctx.fillStyle = '#b88a3b';
+    ctx.beginPath(); ctx.rect(-14, -16 + wob, 28, 8); ctx.fill();
+    ctx.restore();
+  }
   // enemies
   for(const e of enemies){
     ctx.fillStyle = e.color || '#c0392b';
     ctx.beginPath(); ctx.arc(e.x, e.y, e.size, 0, Math.PI*2); ctx.fill();
-    // hp small text
-    ctx.fillStyle = '#fff';
-    ctx.font = '11px sans-serif';
-    ctx.fillText(Math.max(0,Math.round(e.hp)), e.x - 8, e.y - e.size - 4);
+    ctx.fillStyle = '#fff'; ctx.font = '11px sans-serif'; ctx.fillText(Math.max(0,Math.round(e.hp)), e.x - 8, e.y - e.size - 4);
   }
   // bullets
   for(const b of bullets){
@@ -730,7 +847,7 @@ function render(){
       ctx.beginPath(); ctx.arc(ox, oy, 6, 0, Math.PI*2); ctx.fill();
     }
   }
-  // melee arcs (visualize shortly)
+  // melee arcs
   for(const m of meleeAttacks){
     ctx.beginPath();
     ctx.moveTo(m.x, m.y);
@@ -738,29 +855,46 @@ function render(){
     ctx.arc(m.x, m.y, m.range, m.angle - m.arc/2, m.angle + m.arc/2);
     ctx.fill();
   }
+  // boss (if any)
+  if(boss){
+    ctx.fillStyle = boss.color;
+    ctx.beginPath(); ctx.arc(boss.x, boss.y, boss.size, 0, Math.PI*2); ctx.fill();
+    // boss HP bar
+    const barW = boss.size*2;
+    const pct = Math.max(0, boss.hp / boss.maxHp);
+    ctx.fillStyle = '#111'; ctx.fillRect(boss.x - boss.size, boss.y - boss.size - 14, barW, 8);
+    ctx.fillStyle = '#e74c3c'; ctx.fillRect(boss.x - boss.size, boss.y - boss.size - 14, barW * pct, 8);
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'; ctx.strokeRect(boss.x - boss.size, boss.y - boss.size - 14, barW, 8);
+  }
   // player
   ctx.fillStyle = '#3ddc84';
   ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
 }
 
-/* ---------- Small debug display ---------- */
+/* ---------- Small debug ---------- */
 const debugEl = document.getElementById('debug');
 setInterval(()=> {
-  debugEl.textContent = `Enemies: ${enemies.length} Orbs:${orbs.length} Bullets:${bullets.length} Time:${Math.floor(time/1000)}s`;
-}, 500);
+  debugEl.textContent = `Enemies:${enemies.length} Chests:${chests.length} Time:${Math.floor(time/1000)}s`;
+}, 700);
 
 /* ---------- Init ---------- */
-// ensure pistol lvl1 exists (already set)
 weaponsState.pistol.level = 1;
-weaponsState.pistol.lastShot = 0;
-// ensure solar is 0
 weaponsState.solar.level = 0;
 weaponsState.solar.areas = [];
-
-// quick starting enemies for testing
 for(let i=0;i<4;i++) spawnEnemy();
+gameStartTimestamp = performance.now();
+lastBossSpawn = performance.now() + 10000; // 10s grace before first boss
+updateHUD();
 
-window.__VS = { weaponsLib, weaponsState, player, enemies, orbs, bullets, spawnEnemy, levelUp, openLevelMenu, applyWeaponLevelEffects };
+/* Expose for console tweaking */
+window.__VS = { weaponsLib, weaponsState, player, enemies, orbs, bullets, chests, spawnEnemy, spawnBoss, killBoss, levelUp };
+
+/* ---------- Helper functions used earlier but defined later ---------- */
+
+/* spawnEnemy already above; spawnBoss already above; killBoss already above. */
+
+/* show initial instructions in debug for clarity (optional) */
+console.log('Vampire Survival inicializado — HUD izquierdo, cronómetro y bosses tipo A (cada 150s).');
 
 </script>
 </body>
