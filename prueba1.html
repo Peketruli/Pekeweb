@@ -241,14 +241,67 @@ document.querySelectorAll('.characterBtn').forEach(btn => {
   });
 });
 
-// Bucle del juego
-function gameLoop() {
-  if (!inMenu) {
-    updateGame();
-    renderGame();
+/* ---------- Game loop ---------- */
+let lastFrame = performance.now();
+
+function gameLoop(now){
+  const dt = now - lastFrame;
+  lastFrame = now;
+
+  // Solo actualizamos el juego si NO estamos en pausa, NO muertos y NO en menú
+  if(!gamePaused && !dead && !inMenu){
+    time += dt;
+
+    // Update timer display
+    timerEl.textContent = formatTime(performance.now() - gameStartTimestamp);
+
+    // Spawn control
+    spawnInterval = Math.max(400, BASE_SPAWN_INTERVAL - Math.floor(time/10000)*20);
+    if(now - lastSpawnTime > spawnInterval){
+      lastSpawnTime = now;
+      if(enemies.length < 30) spawnEnemy();
+    }
+
+    // Boss spawn logic
+    if(!boss && (now - lastBossSpawn > BOSS_INTERVAL)){
+      spawnBoss();
+      lastBossSpawn = now;
+    }
+
+    // Player movement
+    updatePlayer(dt);
+
+    // Weapons auto actions
+    if(weaponsState.pistol.level) weaponsLib.pistol.shoot(weaponsState.pistol);
+    if(weaponsState.sword.level) weaponsLib.sword.attack(weaponsState.sword);
+    if(weaponsState.staff.level) weaponsLib.staff.shoot(weaponsState.staff);
+    if(weaponsState.fireball.level) weaponsLib.fireball.shoot(weaponsState.fireball);
+    if(weaponsState.bible.level) weaponsLib.bible.update(weaponsState.bible, dt);
+    if(weaponsState.potion.level) weaponsLib.potion.tick(weaponsState.potion);
+    if(weaponsState.magnet.level) weaponsLib.magnet.update(weaponsState.magnet, dt);
+
+    // Update entities
+    updateBullets(dt);
+    updateMelee(dt);
+    updateEnemies(dt);
+    updateSolar(now);
+    updateOrbs();
+    updateChests();
+
+    // Boss behavior
+    if(boss) updateBoss(dt);
   }
+
+  // Render always (para que se vea el menú)
+  render();
+  updateHUD();
+
   requestAnimationFrame(gameLoop);
 }
+
+// Start the loop
+requestAnimationFrame(gameLoop);
+
 
 function updateGame() {
   // Aquí va la lógica del juego
