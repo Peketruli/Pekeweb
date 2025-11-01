@@ -3,36 +3,22 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vampire Survival - Versión Web Completa</title>
+<title>Vampire Survival - Completo</title>
 <style>
-  /* RESET Y BODY */
-  * { margin:0; padding:0; box-sizing:border-box; font-family:Arial, sans-serif; }
-  body { background:#111; color:#eee; overflow:hidden; }
-
-  /* MENÚ PRINCIPAL */
-  #menu { position:absolute; top:0; left:0; width:100%; height:100%; background:#111; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-  #menu h1 { font-size:3em; margin-bottom:40px; }
+  * { margin:0; padding:0; box-sizing:border-box; font-family:Arial,sans-serif;}
+  body { background:#111; color:#eee; overflow:hidden;}
+  canvas { display:block; margin:0 auto; background:#111; }
+  #menu, #character-select { position:absolute; top:0; left:0; width:100%; height:100%; display:flex; align-items:center; justify-content:center; flex-direction:column; background:#111;}
   .menu-btn { padding:15px 30px; margin:10px; background:#222; border:none; color:#eee; font-size:1.2em; cursor:pointer; transition:0.2s; }
   .menu-btn:hover { background:#444; }
-
-  /* PANTALLA DE SELECCIÓN DE PERSONAJE */
-  #character-select { position:absolute; top:0; left:0; width:100%; height:100%; background:#111; display:none; flex-direction:column; align-items:center; justify-content:center; }
-  .character { width:150px; height:150px; margin:20px; border:2px solid #555; display:flex; align-items:center; justify-content:center; cursor:pointer; transition:0.3s; opacity:0.5; }
-  .character.unlocked { opacity:1; border-color:#0f0; }
-  .character.selected { border-color:#ff0; }
   #characters-container { display:flex; }
-
-  /* JUEGO */
-  #gameCanvas { display:none; background:#111; }
-
-  /* HUD */
+  .character { width:150px; height:150px; margin:20px; border:2px solid #555; display:flex; align-items:center; justify-content:center; cursor:pointer; opacity:0.5; transition:0.3s;}
+  .character.unlocked { opacity:1; border-color:#0f0;}
+  .character.selected { border-color:#ff0;}
   #hud { position:absolute; top:10px; left:10px; color:#eee; font-size:1.2em; }
   #hud div { margin-bottom:5px; }
-
-  /* BARRAS */
   .bar-container { width:150px; height:20px; background:#333; border:1px solid #555; margin-bottom:5px; }
   .bar { height:100%; background:#0f0; width:100%; }
-
 </style>
 </head>
 <body>
@@ -41,8 +27,6 @@
 <div id="menu">
   <h1>Vampire Survival</h1>
   <button class="menu-btn" id="playBtn">Jugar</button>
-  <button class="menu-btn" id="reportBtn">Informe</button>
-  <button class="menu-btn" id="backBtn">Volver</button>
 </div>
 
 <!-- PANTALLA DE SELECCIÓN DE PERSONAJE -->
@@ -57,11 +41,10 @@
   <button class="menu-btn" id="startGameBtn">Comenzar</button>
 </div>
 
-<!-- CANVAS DE JUEGO -->
 <canvas id="gameCanvas" width="800" height="600"></canvas>
 
 <!-- HUD -->
-<div id="hud">
+<div id="hud" style="display:none;">
   <div id="timer">Tiempo: 0s</div>
   <div id="healthBarContainer" class="bar-container"><div id="healthBar" class="bar"></div></div>
   <div id="xpBarContainer" class="bar-container"><div id="xpBar" class="bar"></div></div>
@@ -69,11 +52,8 @@
 </div>
 
 <script>
-/* VARIABLES GENERALES */
 const menu = document.getElementById('menu');
 const playBtn = document.getElementById('playBtn');
-const reportBtn = document.getElementById('reportBtn');
-const backBtn = document.getElementById('backBtn');
 const characterSelect = document.getElementById('character-select');
 const characters = document.querySelectorAll('.character');
 const startGameBtn = document.getElementById('startGameBtn');
@@ -87,90 +67,183 @@ const xpBar = document.getElementById('xpBar');
 const pointsEl = document.getElementById('points');
 
 let selectedCharacter = null;
-let gameInterval, spawnInterval, timerInterval;
+let gameInterval, spawnInterval, timerInterval, shootInterval;
 let time = 0, health = 100, xp = 0, points = 0;
 
-/* FUNCIONES MENÚ */
+const player = {x:400, y:300, radius:20, speed:4};
+let bullets = [];
+let enemies = [];
+let bosses = [];
+let chests = [];
+
+let keys = {};
+
+/* MENÚ */
 playBtn.addEventListener('click', () => {
-  menu.style.display = 'none';
-  characterSelect.style.display = 'flex';
+  menu.style.display='none';
+  characterSelect.style.display='flex';
 });
 
-reportBtn.addEventListener('click', () => alert("Informe aún no implementado."));
-backBtn.addEventListener('click', () => alert("Volviendo al menú principal..."));
-
 /* SELECCIÓN DE PERSONAJE */
-characters.forEach(char => {
-  if(char.classList.contains('unlocked')){
-    char.addEventListener('click', () => {
-      characters.forEach(c => c.classList.remove('selected'));
-      char.classList.add('selected');
-      selectedCharacter = char.dataset.name;
+characters.forEach(c => {
+  if(c.classList.contains('unlocked')){
+    c.addEventListener('click', ()=>{
+      characters.forEach(ch => ch.classList.remove('selected'));
+      c.classList.add('selected');
+      selectedCharacter = c.dataset.name;
     });
   }
 });
 
-startGameBtn.addEventListener('click', () => {
-  if(!selectedCharacter) { alert("Selecciona un personaje desbloqueado."); return; }
-  characterSelect.style.display = 'none';
-  gameCanvas.style.display = 'block';
-  hud.style.display = 'block';
+startGameBtn.addEventListener('click', ()=>{
+  if(!selectedCharacter){ alert("Selecciona un personaje desbloqueado"); return; }
+  characterSelect.style.display='none';
+  gameCanvas.style.display='block';
+  hud.style.display='block';
   startGame();
 });
 
-/* INICIO DEL JUEGO */
+/* CONTROLES */
+document.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+document.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+/* INICIO JUEGO */
 function startGame(){
-  health = 100; xp = 0; points = 0; time = 0;
-  timerEl.textContent = `Tiempo: ${time}s`;
-  healthBar.style.width = `${health}%`;
-  xpBar.style.width = `${xp}%`;
-  pointsEl.textContent = `Puntos: ${points}`;
-  
-  // Bucle principal de juego
-  gameInterval = setInterval(gameLoop, 16);
-  spawnInterval = setInterval(spawnEnemy, 1500); // frecuencia original
-  timerInterval = setInterval(() => {
+  health=100; xp=0; points=0; time=0;
+  bullets=[]; enemies=[]; bosses=[]; chests=[];
+  player.x=400; player.y=300;
+  updateHUD();
+
+  gameInterval = setInterval(gameLoop,16);
+  spawnInterval = setInterval(spawnEnemy,1500);
+  shootInterval = setInterval(autoShoot,1500);
+  timerInterval = setInterval(()=>{
     time++;
-    timerEl.textContent = `Tiempo: ${time}s`;
-    if(time % 150 === 0) spawnBoss();
-  }, 1000);
+    timerEl.textContent=`Tiempo: ${time}s`;
+    if(time % 150 ===0) spawnBoss();
+  },1000);
 }
 
-/* FUNCIONES DEL JUEGO */
+/* JUEGO */
 function gameLoop(){
   // Limpiar canvas
-  ctx.fillStyle = '#111';
+  ctx.fillStyle='#111';
   ctx.fillRect(0,0,gameCanvas.width,gameCanvas.height);
 
-  // Aquí irían movimientos, disparos, enemigos, etc.
-  // TODO: agregar lógica completa de juego como en versión anterior estable
+  // Movimiento jugador
+  if(keys['w'] && player.y-player.radius>0) player.y-=player.speed;
+  if(keys['s'] && player.y+player.radius<gameCanvas.height) player.y+=player.speed;
+  if(keys['a'] && player.x-player.radius>0) player.x-=player.speed;
+  if(keys['d'] && player.x+player.radius<gameCanvas.width) player.x+=player.speed;
+
+  // Dibujar jugador
+  ctx.fillStyle='#0ff';
+  ctx.beginPath();
+  ctx.arc(player.x,player.y,player.radius,0,Math.PI*2);
+  ctx.fill();
+
+  // Dibujar y mover enemigos
+  enemies.forEach((e,i)=>{
+    const dx=player.x-e.x, dy=player.y-e.y;
+    const dist=Math.sqrt(dx*dx+dy*dy);
+    e.x+=dx/dist*1.5;
+    e.y+=dy/dist*1.5;
+
+    ctx.fillStyle='#f00';
+    ctx.beginPath();
+    ctx.arc(e.x,e.y,15,0,Math.PI*2);
+    ctx.fill();
+
+    // Colisión jugador
+    if(dist<player.radius+15){
+      updateHealth(-0.5);
+    }
+  });
+
+  // Dibujar bullets
+  bullets.forEach((b,bi)=>{
+    ctx.fillStyle='#ff0';
+    ctx.beginPath();
+    ctx.arc(b.x,b.y,5,0,Math.PI*2);
+    ctx.fill();
+    b.x+=b.vx;
+    b.y+=b.vy;
+
+    // Colisión con enemigos
+    enemies.forEach((e,ei)=>{
+      const dx=e.x-b.x, dy=e.y-b.y;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist<15+5){
+        enemies.splice(ei,1);
+        bullets.splice(bi,1);
+        updatePoints(10);
+      }
+    });
+  });
+
+  // Check Game Over
+  if(health<=0){
+    clearInterval(gameInterval);
+    clearInterval(spawnInterval);
+    clearInterval(timerInterval);
+    clearInterval(shootInterval);
+    alert("¡Has muerto!");
+    location.reload();
+  }
 }
 
+/* SHOOT AUTOMÁTICO */
+function autoShoot(){
+  if(enemies.length===0) return;
+  let nearest=enemies[0];
+  let minD=Infinity;
+  enemies.forEach(e=>{
+    const dx=e.x-player.x, dy=e.y-player.y;
+    const d=Math.sqrt(dx*dx+dy*dy);
+    if(d<minD){ minD=d; nearest=e;}
+  });
+  const dx=nearest.x-player.x;
+  const dy=nearest.y-player.y;
+  const dist=Math.sqrt(dx*dx+dy*dy);
+  bullets.push({x:player.x,y:player.y,vx:dx/dist*6,vy:dy/dist*6});
+}
+
+/* ENEMIGOS */
 function spawnEnemy(){
-  // Aparece un enemigo en coordenadas aleatorias
-  console.log("Enemigo aparecido");
+  const x=Math.random()*gameCanvas.width;
+  const y=Math.random()*gameCanvas.height;
+  enemies.push({x,y});
 }
 
+/* BOSS */
 function spawnBoss(){
-  console.log("Boss aparecido!");
+  const x=Math.random()*gameCanvas.width;
+  const y=Math.random()*gameCanvas.height;
+  bosses.push({x,y,health:50});
+  alert("¡Boss aparecido!");
 }
 
-/* FUNCIONES HUD */
+/* HUD */
+function updateHUD(){
+  healthBar.style.width=`${health}%`;
+  xpBar.style.width=`${xp}%`;
+  pointsEl.textContent=`Puntos: ${points}`;
+}
+
 function updateHealth(amount){
-  health = Math.max(0, Math.min(100, health + amount));
-  healthBar.style.width = `${health}%`;
+  health=Math.max(0,Math.min(100,health+amount));
+  updateHUD();
 }
 
 function updateXP(amount){
-  xp = Math.max(0, Math.min(100, xp + amount));
-  xpBar.style.width = `${xp}%`;
+  xp=Math.max(0,Math.min(100,xp+amount));
+  updateHUD();
 }
 
 function updatePoints(amount){
-  points += amount;
-  pointsEl.textContent = `Puntos: ${points}`;
+  points+=amount;
+  updateHUD();
 }
-
 </script>
 </body>
 </html>
