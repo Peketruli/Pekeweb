@@ -716,27 +716,44 @@ function gameLoop(timestamp) {
   // compute time since start
   time = timestamp - gameStartTimestamp;
 
-  // If paused and not dead, still request next frame but do nothing
-  if (gamePaused && !dead) {
+  // 🩸 Si el jugador está muerto, detenemos todo excepto el render y el HUD
+  if (dead) {
+    // Mantenemos el bucle de frames para que el overlay y la UI sigan visibles
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    updateHUD();
+    timerEl.textContent = formatTime(performance.now() - gameStartTimestamp);
     requestAnimationFrame(gameLoop);
     return;
   }
 
-  const dt = 16; // fixed step (we can evolve to real dt later)
+  // 🩸 Si está en pausa pero no muerto, solo actualizamos interfaz
+  if (gamePaused && !dead) {
+    updateHUD();
+    requestAnimationFrame(gameLoop);
+    return;
+  }
+
+  const dt = 16; // fixed step
+
+  // 🩸 Antes de actualizar el jugador, comprobamos si su HP llegó a 0
+  if (player.hp <= 0) {
+    onDeath(); // llama a tu función de muerte
+    requestAnimationFrame(gameLoop);
+    return;
+  }
 
   // Input & movement
   updatePlayer(dt);
 
-  // automatic weapon actions (only if alive and not paused)
-  if (!dead && !gamePaused) {
-    weaponsLib.pistol.shoot(weaponsState.pistol);
-    weaponsLib.sword.attack(weaponsState.sword);
-    weaponsLib.staff.shoot(weaponsState.staff);
-    weaponsLib.fireball.shoot(weaponsState.fireball);
-    weaponsLib.bible.update(weaponsState.bible, dt);
-    weaponsLib.potion.tick(weaponsState.potion);
-    weaponsLib.magnet.update(weaponsState.magnet, dt);
-  }
+  // automatic weapon actions (solo si vivo y no pausado)
+  weaponsLib.pistol.shoot(weaponsState.pistol);
+  weaponsLib.sword.attack(weaponsState.sword);
+  weaponsLib.staff.shoot(weaponsState.staff);
+  weaponsLib.fireball.shoot(weaponsState.fireball);
+  weaponsLib.bible.update(weaponsState.bible, dt);
+  weaponsLib.potion.tick(weaponsState.potion);
+  weaponsLib.magnet.update(weaponsState.magnet, dt);
 
   // spawn enemies
   const now = performance.now();
@@ -760,7 +777,7 @@ function gameLoop(timestamp) {
   updateBoss(dt);
   updateSolar(now);
 
-  // combos check (cheap)
+  // combos check (barato)
   checkHiddenCombos();
 
   // HUD + timer
@@ -769,17 +786,6 @@ function gameLoop(timestamp) {
 
   // render
   render();
-
-  // if dead, show overlay + don't progress game state (onDeath already handled)
-  if(dead){
-    // draw death overlay so user sees it immediately
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    // do NOT continue game updates
-    // but still request frames to keep UI responsive (optional)
-    requestAnimationFrame(gameLoop);
-    return;
-  }
 
   // loop
   requestAnimationFrame(gameLoop);
