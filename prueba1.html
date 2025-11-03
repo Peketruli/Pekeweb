@@ -708,16 +708,63 @@ function renderLeftHUD(){
   }
 }
 
-/* ---------- Game loop ---------- */
-let lastFrame = performance.now();
+/* ---------- GAME LOOP ---------- */
+function gameLoop(timestamp) {
+  if (gamePaused) return;
 
-function gameLoop(now) {
-  const dt = now - lastFrame;
-  lastFrame = now;
+  const dt = 16; // tiempo base (para animaciones)
 
-  if (!gamePaused && !dead) update(dt);
-  draw();
+  // Borrar pantalla
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+  // Movimiento jugador
+  let dx = 0, dy = 0;
+  if (keys['w'] || keys['arrowup']) dy -= 1;
+  if (keys['s'] || keys['arrowdown']) dy += 1;
+  if (keys['a'] || keys['arrowleft']) dx -= 1;
+  if (keys['d'] || keys['arrowright']) dx += 1;
+  if (dx || dy) {
+    const len = Math.hypot(dx, dy);
+    dx /= len; dy /= len;
+    player.x += dx * player.speed;
+    player.y += dy * player.speed;
+  }
+
+  // Limitar dentro de pantalla
+  player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
+  player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
+
+  // Dibujar jugador
+  ctx.fillStyle = '#4af';
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Dibujar enemigos
+  ctx.fillStyle = '#c33';
+  for (const e of enemies) {
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Movimiento enemigo hacia el jugador
+    const ang = Math.atan2(player.y - e.y, player.x - e.x);
+    e.x += Math.cos(ang) * e.speed;
+    e.y += Math.sin(ang) * e.speed;
+  }
+
+  // Spawn básico de enemigos cada 1.5s
+  const now = performance.now();
+  if (now - lastSpawnTime > spawnInterval) {
+    spawnEnemy();
+    lastSpawnTime = now;
+  }
+
+  // Actualizar HUD y cronómetro
+  updateHUD();
+  timerEl.textContent = formatTime(now - gameStartTimestamp);
+
+  // Siguiente frame
   requestAnimationFrame(gameLoop);
 }
 
