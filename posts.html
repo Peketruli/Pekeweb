@@ -81,94 +81,102 @@ input::placeholder, textarea::placeholder { color: #aaa; }
 
   <div id="estado">Cargando...</div>
 
-  <div id="publicar">
-    <h3>Crear nuevo post</h3>
-    <input type="text" id="titulo" placeholder="Título del post" />
-    <textarea id="contenido" placeholder="Contenido del post..." rows="5"></textarea>
-    <button class="btn" onclick="publicarPost()">Publicar</button>
-  </div>
-
-  <ul id="postsList"></ul>
+<div id="adminPanel">
+  <h2>Nuevo Post</h2>
+  <input id="title" placeholder="Título del post" />
+  <textarea id="content" rows="6" placeholder="Contenido del post (puede ser texto o HTML)"></textarea>
+  <input type="file" id="imageInput" accept="image/*" />
+  <button onclick="publicar()">Publicar</button>
 </div>
 
+<div id="posts"></div>
+
 <script>
-const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const db = supabase.createClient(supabaseUrl, supabaseKey);
 
-let currentUser = null;
+const user = localStorage.getItem('user');
+const adminPanel = document.getElementById('adminPanel');
+const loginMsg = document.getElementById('loginMsg');
 
-document.addEventListener("DOMContentLoaded", async () => {
-  await initUser();
-  await cargarPosts();
-});
-
-async function initUser() {
-  // Leer usuario desde localStorage
-  const saved = localStorage.getItem("currentUser");
-  if (saved) currentUser = JSON.parse(saved);
-
-  const estado = document.getElementById("estado");
-  const publicar = document.getElementById("publicar");
-
-  if (currentUser && currentUser.username === "Peketruli") {
-    estado.textContent = "Sesión iniciada como Peketruli ✅";
-    publicar.style.display = "block";
-  } else {
-    estado.textContent = "Modo lectura (solo Peketruli puede publicar)";
-  }
+if (user === 'Peketruli') {
+  adminPanel.style.display = 'block';
+  loginMsg.textContent = "Estás conectado como Peketruli (modo edición activo)";
+} else {
+  adminPanel.style.display = 'none';
+  loginMsg.textContent = "Solo lectura. Inicia sesión como Peketruli para publicar.";
 }
 
 async function cargarPosts() {
-  const lista = document.getElementById("postsList");
-  lista.innerHTML = "<li>Cargando posts...</li>";
-
-  const { data, error } = await supabase
-    .from("posts")
-    .select("*")
-    .order("fecha_creacion", { ascending: false });
+  const { data, error } = await db
+    .from('posts')
+    .select('*')
+    .order('fecha_creacion', { ascending: false });
 
   if (error) {
-    lista.innerHTML = `<li>Error cargando: ${error.message}</li>`;
+    console.error('Error cargando posts:', error);
     return;
   }
 
-  lista.innerHTML = "";
-  if (!data || data.length === 0) {
-    lista.innerHTML = "<li>No hay posts todavía.</li>";
-    return;
-  }
+  const contenedor = document.getElementById('posts');
+  contenedor.innerHTML = '';
 
   data.forEach(post => {
-    const li = document.createElement("li");
-    li.className = "post";
-    const fecha = new Date(post.fecha_creacion || Date.now()).toLocaleString();
-    li.innerHTML = `
-      <h3>${post.titulo}</h3>
-      <div>${post.contenido}</div>
-      <small>${fecha}</small>
+    const div = document.createElement('div');
+    div.className = 'post';
+    div.innerHTML = `
+      <h2>${post.titulo}</h2>
+      <div class="date">${new Date(post.fecha_creacion).toLocaleString()}</div>
+      ${post.imagen_url ? `<img src="${post.imagen_url}" style="max-width:100%;border-radius:8px;margin-top:10px;">` : ''}
+      <div class="content">${post.contenido}</div>
     `;
-    lista.appendChild(li);
+    contenedor.appendChild(div);
   });
 }
+cargarPosts();
 
-async function publicarPost() {
-  const titulo = document.getElementById("titulo").value.trim();
-  const contenido = document.getElementById("contenido").value.trim();
-  if (!titulo || !contenido) return alert("Debes escribir título y contenido");
+async function publicar() {
+  const title = document.getElementById('title').value.trim();
+  const content = document.getElementById('content').value.trim();
+  const imageInput = document.getElementById('imageInput');
 
-  const { error } = await supabase.from("posts").insert({
-    titulo,
-    contenido,
-    fecha_creacion: new Date().toISOString(),
-  });
+  if (!title || !content) return alert('Completa todos los campos.');
 
-  if (error) return alert("Error publicando: " + error.message);
+  let imageUrl = null;
 
-  document.getElementById("titulo").value = "";
-  document.getElementById("contenido").value = "";
-  await cargarPosts();
-  alert("✅ Post publicado correctamente");
+  // Si hay imagen, subirla primero
+  if (imageInput.files.length > 0) {
+    const file = imageInput.files[0];
+    const fileName = `${Date.now()}_${file.name}`;
+    const { data: imgData, error: uploadError } = await db.storage
+      .from('imagenes_posts')
+      .upload(fileName, file);
+
+    if (uploadError) {
+      console.error(uploadError);
+      alert('Error subiendo la imagen.');
+      return;
+    }
+
+    imageUrl = `${supabaseUrl}/storage/v1/object/public/imagenes_posts/${fileName}`;
+  }
+
+  // Insertar post
+  const { error } = await db.from('posts').insert([
+    { titulo: title, contenido: content, imagen_url: imageUrl }
+  ]);
+
+  if (error) {
+    console.error(error);
+    alert('Error al publicar.');
+  } else {
+    alert('Post publicado correctamente.');
+    document.getElementById('title').value = '';
+    document.getElementById('content').value = '';
+    document.getElementById('imageInput').value = '';
+    cargarPosts();
+  }
 }
 </script>
 </body>
