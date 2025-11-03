@@ -131,9 +131,7 @@
 <script>
 /* -------------------------
    Versión: Boss re-balanceado + Imán (invisible)
-   - Boss: menos vida (~40% menos) y menos daño (ya no mata de 1 golpe)
-   - Imán: habilidad desbloqueable/mejorable que atrae orbes de XP dentro de su radio
-   - HUD izquierdo, cronómetro, cofres, etc.
+   Corregido por ChatGPT — mantiene tus sistemas y arregla bugs.
    ------------------------- */
 
 const canvas = document.getElementById('c');
@@ -181,11 +179,10 @@ btnInfo.onclick = () => {
 };
 
 btnQuit.onclick = () => {
-  // Aquí puedes definir acción de "Volver" si quieres salir del juego
   console.log("Volver pulsado");
 };
 
-  function startGame() {
+function startGame() {
   console.log("Iniciando partida...");
   gamePaused = false;
   dead = false;
@@ -214,6 +211,8 @@ btnQuit.onclick = () => {
   document.getElementById('mainMenu').style.display = 'none';
   document.getElementById('infoPanel').style.display = 'none';
   gameStartTimestamp = performance.now();
+  lastSpawnTime = performance.now();
+  lastBossSpawn = performance.now() + 10000; // grace
   requestAnimationFrame(gameLoop);
 }
 
@@ -237,7 +236,7 @@ function showCharacterSelect() {
       if(c.unlocked){
         charSelectEl.style.display = 'none';
         mainMenuEl.style.display = 'none';
-        startGame(); // NUEVO: inicializamos el juego
+        startGame(); // inicializamos el juego
       }
     };
     charSelectEl.querySelector('#charChoices').appendChild(btn);
@@ -324,14 +323,16 @@ weaponsLib.pistol = {
     return { interval, bulletsCount, damage, speed, size };
   },
   shoot(state){
-    if(gamePaused || !state.level) return;
+    if(gamePaused || !state.level || dead) return;
     const now = performance.now();
     const s = weaponsLib.pistol.statsForLevel(state.level);
     if(now - (state.lastShot||0) < s.interval) return;
     state.lastShot = now;
     if(!enemies.length && !boss) return;
     const pool = boss ? enemies.concat([boss]) : enemies;
-    const target = pool.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
+    // choose nearest target
+    let target = pool[0];
+    for(const p of pool) if(dist(p,player) < dist(target,player)) target = p;
     const ang = Math.atan2(target.y - player.y, target.x - player.x);
     const total = s.bulletsCount;
     const spread = (total > 1) ? 0.18 : 0;
@@ -368,7 +369,7 @@ weaponsLib.sword = {
     return { arc, range, damage, interval };
   },
   attack(state){
-    if(gamePaused || !state.level) return;
+    if(gamePaused || !state.level || dead) return;
     const now = performance.now();
     const s = weaponsLib.sword.statsForLevel(state.level);
     if(now - (state.lastAttack||0) < s.interval) return;
@@ -378,7 +379,8 @@ weaponsLib.sword = {
       return;
     }
     const pool = boss ? enemies.concat([boss]) : enemies;
-    const target = pool.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
+    let target = pool[0];
+    for(const p of pool) if(dist(p,player) < dist(target,player)) target = p;
     const ang = Math.atan2(target.y - player.y, target.x - player.x);
     meleeAttacks.push({ x:player.x, y:player.y, angle:ang, arc:s.arc, range:s.range, damage:s.damage, life:120 });
   }
@@ -394,14 +396,15 @@ weaponsLib.staff = {
     return { interval, damage, speed, size };
   },
   shoot(state){
-    if(gamePaused || !state.level) return;
+    if(gamePaused || !state.level || dead) return;
     const now = performance.now();
     const s = weaponsLib.staff.statsForLevel(state.level);
     if(now - (state.lastShot||0) < s.interval) return;
     state.lastShot = now;
     if(!enemies.length && !boss) return;
     const pool = boss ? enemies.concat([boss]) : enemies;
-    const target = pool.reduce((a,b)=> dist(a,player) < dist(b,player) ? a : b);
+    let target = pool[0];
+    for(const p of pool) if(dist(p,player) < dist(target,player)) target = p;
     const ang = Math.atan2(target.y - player.y, target.x - player.x);
     bullets.push({
       x: player.x, y: player.y,
@@ -422,7 +425,7 @@ weaponsLib.fireball = {
     return { interval, damage, speed, size, homingStrength };
   },
   shoot(state){
-    if(gamePaused || !state.level) return;
+    if(gamePaused || !state.level || dead) return;
     const now = performance.now();
     const s = weaponsLib.fireball.statsForLevel(state.level);
     if(now - (state.lastShot||0) < s.interval) return;
@@ -490,7 +493,7 @@ weaponsLib.potion = {
     return { healAmount, interval };
   },
   tick(state){
-    if(!state.level) return;
+    if(!state.level || dead) return;
     const now = performance.now();
     const s = weaponsLib.potion.statsForLevel(state.level);
     if(now - (state.lastHeal||0) < s.interval) return;
@@ -502,19 +505,16 @@ weaponsLib.potion = {
 weaponsLib.magnet = {
   id:'magnet', name:'Imán', maxLevel:10,
   statsForLevel(level){
-    // radius grows with level; pullStrength controls how fast orbs move toward player
-    const radius = 90 + (level-1)*26; // lvl1=90, lvl5=194, lvl10=324
-    const pullStrength = 0.025 + (level-1)*0.01; // per frame factor (scaled by dt)
+    const radius = 90 + (level-1)*26;
+    const pullStrength = 0.025 + (level-1)*0.01;
     return { radius, pullStrength };
   },
   update(state, dt){
     if(!state.level) return;
     const s = weaponsLib.magnet.statsForLevel(state.level);
-    // attract orbs within radius
     for(const o of orbs){
       const d = Math.hypot(o.x - player.x, o.y - player.y);
       if(d <= s.radius){
-        // move orb towards player; stronger as it is closer
         const k = s.pullStrength * (dt/16);
         o.x += (player.x - o.x) * k * 1.2;
         o.y += (player.y - o.y) * k * 1.2;
@@ -540,7 +540,7 @@ const hiddenCombos = [
     required: ["pistol", "magnet"],
     effect: () => {
       console.log("Combo secreto activado: Pistol + Magnet!");
-      weaponsState.pistol.speedBoost = true; // ejemplo: la pistola dispara más rápido
+      weaponsState.pistol.speedBoost = true;
     },
     activated: false
   },
@@ -549,7 +549,7 @@ const hiddenCombos = [
     required: ["sword", "fireball"],
     effect: () => {
       console.log("Combo secreto activado: Sword + Fireball!");
-      weaponsState.sword.fireballLink = true; // ejemplo: cada ataque cuerpo a cuerpo genera una mini bola de fuego
+      weaponsState.sword.fireballLink = true;
     },
     activated: false
   },
@@ -558,7 +558,7 @@ const hiddenCombos = [
     required: ["bible", "solar"],
     effect: () => {
       console.log("Combo secreto activado: Bible + Solar!");
-      weaponsState.bible.solarLink = true; // ejemplo: orbiters hacen daño extra dentro del área solar
+      weaponsState.bible.solarLink = true;
     },
     activated: false
   }
@@ -580,7 +580,7 @@ function spawnOrbAt(x,y){
   orbs.push({ x,y, value });
 }
 
-/* ---------- Level menu (include magnet in candidates) ---------- */
+/* ---------- Level menu ---------- */
 function openLevelMenu(){
   gamePaused = true;
   const menu = document.getElementById('levelMenu');
@@ -662,9 +662,17 @@ const leftHUD = document.getElementById('leftHUD');
 const timerEl = document.getElementById('timer');
 const chestPopup = document.getElementById('chestPopup');
 
-  applyWeaponLevelEffects(pick);
-checkHiddenCombos();
-
+function checkHiddenCombos(){
+  hiddenCombos.forEach(combo => {
+    if(combo.activated) return;
+    const hasAll = combo.required.every(id => (weaponsState[id].level||0) > 0);
+    if(hasAll){
+      combo.effect();
+      combo.activated = true;
+      showChestPopup(`¡Combo secreto desbloqueado: ${combo.name}!`);
+    }
+  });
+}
 
 function updateHUD(){
   const pct = Math.max(0, Math.min(1, player.hp / player.maxHp));
@@ -678,7 +686,6 @@ function updateHUD(){
 }
 function renderLeftHUD(){
   leftHUD.innerHTML = '';
-  // order: pistol, sword, staff, fireball, bible, potion, magnet, solar
   const order = ['pistol','sword','staff','fireball','bible','potion','magnet','solar'];
   for(const id of order){
     const lvl = weaponsState[id].level || 0;
@@ -706,97 +713,75 @@ function renderLeftHUD(){
 
 /* ---------- GAME LOOP ---------- */
 function gameLoop(timestamp) {
-  if (gamePaused) return;
+  // compute time since start
+  time = timestamp - gameStartTimestamp;
 
-  const dt = 16; // tiempo base (para animaciones)
-
-  // Borrar pantalla
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Movimiento jugador
-  let dx = 0, dy = 0;
-  if (keys['w'] || keys['arrowup']) dy -= 1;
-  if (keys['s'] || keys['arrowdown']) dy += 1;
-  if (keys['a'] || keys['arrowleft']) dx -= 1;
-  if (keys['d'] || keys['arrowright']) dx += 1;
-  if (dx || dy) {
-    const len = Math.hypot(dx, dy);
-    dx /= len; dy /= len;
-    player.x += dx * player.speed;
-    player.y += dy * player.speed;
+  // If paused and not dead, still request next frame but do nothing
+  if (gamePaused && !dead) {
+    requestAnimationFrame(gameLoop);
+    return;
   }
-  
+
+  const dt = 16; // fixed step (we can evolve to real dt later)
+
+  // Input & movement
+  updatePlayer(dt);
+
+  // automatic weapon actions (only if alive and not paused)
   if (!dead && !gamePaused) {
-  // Disparos y habilidades automáticas
-  weaponsLib.pistol.shoot(weaponsState.pistol);
-  weaponsLib.sword.attack(weaponsState.sword);
-  weaponsLib.staff.shoot(weaponsState.staff);
-  weaponsLib.fireball.shoot(weaponsState.fireball);
-  weaponsLib.bible.update(weaponsState.bible, 16);
-  weaponsLib.potion.tick(weaponsState.potion);
-  weaponsLib.magnet.update(weaponsState.magnet, 16);
-}
-
-
-  // Limitar dentro de pantalla
-  player.x = Math.max(player.size, Math.min(canvas.width - player.size, player.x));
-  player.y = Math.max(player.size, Math.min(canvas.height - player.size, player.y));
-
-  // Dibujar jugador
-  ctx.fillStyle = '#4af';
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Dibujar enemigos
-  ctx.fillStyle = '#c33';
-  for (const e of enemies) {
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
-    ctx.fill();
-
-    // Movimiento enemigo hacia el jugador
-    const ang = Math.atan2(player.y - e.y, player.x - e.x);
-    e.x += Math.cos(ang) * e.speed;
-    e.y += Math.sin(ang) * e.speed;
-  /* ---------- Player recibe daño si lo tocan ---------- */
-for (let i = enemies.length - 1; i >= 0; i--) {
-  const e = enemies[i];
-  const d = Math.hypot(player.x - e.x, player.y - e.y);
-  if (d < player.size + e.size) {
-    player.hp -= 8 * (1 / 60); // daño por frame (ajustable)
-    if (player.hp <= 0) {
-      player.hp = 0;
-      dead = true;
-      showDeathPanel();
-    }
+    weaponsLib.pistol.shoot(weaponsState.pistol);
+    weaponsLib.sword.attack(weaponsState.sword);
+    weaponsLib.staff.shoot(weaponsState.staff);
+    weaponsLib.fireball.shoot(weaponsState.fireball);
+    weaponsLib.bible.update(weaponsState.bible, dt);
+    weaponsLib.potion.tick(weaponsState.potion);
+    weaponsLib.magnet.update(weaponsState.magnet, dt);
   }
-}
 
-/* Daño del jefe */
-if (boss && Math.hypot(player.x - boss.x, player.y - boss.y) < player.size + boss.size) {
-  player.hp -= 15 * (1 / 60);
-  if (player.hp <= 0) {
-    player.hp = 0;
-    dead = true;
-    showDeathPanel();
-    }
-  }
-}
- 
-
-  // Spawn básico de enemigos cada 1.5s
+  // spawn enemies
   const now = performance.now();
   if (now - lastSpawnTime > spawnInterval) {
     spawnEnemy();
     lastSpawnTime = now;
   }
 
-  // Actualizar HUD y cronómetro
+  // spawn boss by schedule
+  if (!boss && now - lastBossSpawn > BOSS_INTERVAL) {
+    spawnBoss();
+    lastBossSpawn = now;
+  }
+
+  // update entities
+  updateEnemies(dt);
+  updateBullets(dt);
+  updateMelee(dt);
+  updateOrbs();
+  updateChests();
+  updateBoss(dt);
+  updateSolar(now);
+
+  // combos check (cheap)
+  checkHiddenCombos();
+
+  // HUD + timer
   updateHUD();
   timerEl.textContent = formatTime(now - gameStartTimestamp);
 
-  // Siguiente frame
+  // render
+  render();
+
+  // if dead, show overlay + don't progress game state (onDeath already handled)
+  if(dead){
+    // draw death overlay so user sees it immediately
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    // do NOT continue game updates
+    // but still request frames to keep UI responsive (optional)
+    requestAnimationFrame(gameLoop);
+    return;
+  }
+
+  // loop
   requestAnimationFrame(gameLoop);
 }
 
@@ -807,8 +792,8 @@ function updatePlayer(dt){
   if(keys['s'] || keys['arrowdown']) player.y += player.speed;
   if(keys['a'] || keys['arrowleft']) player.x -= player.speed;
   if(keys['d'] || keys['arrowright']) player.x += player.speed;
-  player.x = clamp(player.x, 0, canvas.width);
-  player.y = clamp(player.y, 0, canvas.height);
+  player.x = clamp(player.x, player.size, canvas.width - player.size);
+  player.y = clamp(player.y, player.size, canvas.height - player.size);
   if(weaponsState.solar.level){
     weaponsState.solar.areas.forEach(a => { a.x = player.x; a.y = player.y; });
   }
@@ -820,10 +805,16 @@ function updateBullets(dt){
     if(b.homing){
       if(enemies.length || boss){
         const pool = boss ? enemies.concat([boss]) : enemies;
-        const target = pool.reduce((a,b2)=> dist(a,b) < dist(b2,b) ? a : b2);
+        // choose nearest to the bullet
+        let target = pool[0];
+        for(const p of pool) if(dist(p,b) < dist(target,b)) target = p;
         const angTo = Math.atan2(target.y - b.y, target.x - b.x);
         const curAng = Math.atan2(b.dy, b.dx);
-        let newAng = curAng + ( (angTo - curAng) * (b.homingStrength || 0.12) );
+        // angle lerp (account wrap)
+        let diff = angTo - curAng;
+        while(diff > Math.PI) diff -= Math.PI*2;
+        while(diff < -Math.PI) diff += Math.PI*2;
+        let newAng = curAng + diff * (b.homingStrength || 0.12);
         b.dx = Math.cos(newAng) * b.speed;
         b.dy = Math.sin(newAng) * b.speed;
       }
@@ -831,7 +822,9 @@ function updateBullets(dt){
     b.x += b.dx * (dt/16);
     b.y += b.dy * (dt/16);
     b.life -= dt;
-    if(b.life <= 0 || b.x < -60 || b.x > canvas.width+60 || b.y < -60 || b.y > canvas.height+60){ bullets.splice(i,1); continue; }
+    if(b.life <= 0 || b.x < -60 || b.x > canvas.width+60 || b.y < -60 || b.y > canvas.height+60){
+      bullets.splice(i,1); continue;
+    }
     // collide with enemies
     for(let j = enemies.length-1; j>=0; j--){
       const e = enemies[j];
@@ -854,18 +847,6 @@ function updateBullets(dt){
       continue;
     }
   }
-}
-function checkHiddenCombos(){
-  hiddenCombos.forEach(combo => {
-    if(combo.activated) return; // ya activado
-    const hasAll = combo.required.every(id => weaponsState[id].level > 0);
-    if(hasAll){
-      combo.effect();
-      combo.activated = true;
-      // opcional: mostrar mensaje al jugador
-      showChestPopup(`¡Combo secreto desbloqueado: ${combo.name}!`);
-    }
-  });
 }
 
 function updateMelee(dt){
@@ -906,11 +887,12 @@ function updateEnemies(dt){
     const a = Math.atan2(player.y - e.y, player.x - e.x);
     e.x += Math.cos(a) * e.speed * (dt/16);
     e.y += Math.sin(a) * e.speed * (dt/16);
-    if(dist(e,player) < player.size + e.size){
+    if(Math.hypot(e.x - player.x, e.y - player.y) < player.size + e.size){
+      // give a single hit and remove enemy (same behavior as before)
       player.hp -= 8 * (dt/16);
-      if(player.hp <= 0) onDeath();
       spawnOrbAt(e.x, e.y);
       enemies.splice(i,1);
+      if(player.hp <= 0) onDeath();
     }
   }
 }
@@ -944,11 +926,8 @@ function updateSolar(now){
 
 /* ---------- Orbs & Chests ---------- */
 function updateOrbs(){
-  // orbs may be attracted by magnet (weaponsLib.magnet.update was already called before)
   for(let i = orbs.length-1; i>=0; i--){
     const o = orbs[i];
-    // small idle movement toward ground? keep static unless magnet
-    // pickup check
     if(dist(o, player) < player.size + 10){
       let gain = o.value;
       if(weaponsState.__xpBoost && weaponsState.__xpBoost > 0){ gain += 1; weaponsState.__xpBoost--; }
@@ -956,7 +935,6 @@ function updateOrbs(){
       orbs.splice(i,1);
       if(xp >= xpToNext) levelUp();
     } else {
-      // subtle slow drift towards player if no magnet but close to player (makes pickup smoother)
       const d = Math.hypot(o.x - player.x, o.y - player.y);
       if(d < 32){
         o.x += (player.x - o.x) * 0.06;
@@ -979,17 +957,15 @@ function updateChests(){
   }
 }
 
-/* ---------- Boss logic (Tipo A: bruto, re-balanceado) ---------- */
+/* ---------- Boss logic ---------- */
 function spawnBoss(){
   const side = Math.random() < 0.5 ? -1 : 1;
   const x = side === -1 ? -120 : canvas.width + 120;
   const y = Math.random()*canvas.height;
   const minutes = Math.floor((performance.now()-gameStartTimestamp)/60000);
-  // ORIGINAL: baseHp 200 + minutes*60 -> reduce ~40%: multiply by 0.6
-  const baseHp = Math.round((200 + minutes*60) * 0.6); // ~120 + minutes*36
+  const baseHp = Math.round((200 + minutes*60) * 0.6);
   const baseSize = 48 + minutes*6;
   const speed = 0.35 + Math.random()*0.35;
-  // reduced damage on contact: original 28 -> ~9
   boss = { x, y, hp: baseHp, maxHp: baseHp, size: baseSize, speed, color:'#8e44ad', spawned: performance.now(), contactDamage: 9 };
 }
 function updateBoss(dt){
@@ -997,8 +973,7 @@ function updateBoss(dt){
   const ang = Math.atan2(player.y - boss.y, player.x - boss.x);
   boss.x += Math.cos(ang) * boss.speed * (dt/16);
   boss.y += Math.sin(ang) * boss.speed * (dt/16);
-  if(dist(boss, player) < player.size + boss.size){
-    // reduced damage, scaled with dt
+  if(Math.hypot(boss.x - player.x, boss.y - player.y) < player.size + boss.size){
     player.hp -= boss.contactDamage * (dt/16);
     if(player.hp <= 0) onDeath();
   }
@@ -1047,6 +1022,7 @@ function levelUp(){
 
 /* ---------- Death ---------- */
 function onDeath(){
+  if(dead) return;
   dead = true;
   gamePaused = true;
   const dp = document.getElementById('deathPanel');
@@ -1144,52 +1120,8 @@ lastBossSpawn = performance.now() + 10000; // 10s grace before first boss
 updateHUD();
 
 window.__VS = { weaponsLib, weaponsState, player, enemies, orbs, bullets, chests, spawnEnemy, spawnBoss: () => { lastBossSpawn = 0; }, killBoss, levelUp };
-  /* --- Dibujo --- */
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Jugador
-  ctx.fillStyle = '#4af';
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Enemigos
-  ctx.fillStyle = '#e33';
-  for (const e of enemies) {
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Balas
-  ctx.fillStyle = '#fff';
-  for (const b of bullets) {
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.size, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  // Orbes (XP)
-  ctx.fillStyle = '#0f0';
-  for (const o of orbs) {
-    ctx.beginPath();
-    ctx.arc(o.x, o.y, 4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
-  if (dead) {
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-  }
-}
-/* ---------- Nota final ----------
- - El Imán es invisible; su radio y fuerza aumentan con su nivel.
- - Los cofres pueden mejorar también la habilidad Imán.
- - He reducido la vida y el daño de los bosses para que no te maten de un golpe.
- - Si quieres que el Imán también atraiga cofres u otros elementos, lo añado.
- - Si quieres un indicador visual (opcional), puedo activarlo después.
------------------------------------- */
+requestAnimationFrame(gameLoop);
 
 </script>
 </body>
