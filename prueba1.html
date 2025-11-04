@@ -129,6 +129,7 @@
 <div id="debug"></div>
 
 <script>
+/* ---------- Canvas ---------- */
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 function resize(){ canvas.width=innerWidth; canvas.height=innerHeight; }
@@ -136,287 +137,237 @@ addEventListener('resize', resize);
 resize();
 
 /* ---------- Estado global ---------- */
+let gameState = "menu"; // "menu", "playing", "gameOver"
 let time = 0;
 let score = 0;
 let xp = 0;
 let level = 1;
 let xpToNext = 15;
-let gamePaused = false;
 let dead = false;
+let gamePaused = false;
 
 /* ---------- Player ---------- */
 const player = {
   x: canvas.width/2,
   y: canvas.height/2,
-  size: 18,
-  speed: 2.2,
+  size: 15,
+  speed: 200,
   hp: 100,
   maxHp: 100
 };
 
-/* ---------- Input ---------- */
-const keys = {};
-addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true);
-addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
+/* ---------- Armas ---------- */
+const weaponsState = {
+  pistol: {level:1, cooldown:0.5, lastUse:0, active:true},
+  solar: {level:0, cooldown:2, lastUse:0, active:false, orbs:[], areas:[]},
+  bible: {level:0, cooldown:1.5, lastUse:0, active:false}
+};
 
-/* ---------- Entities ---------- */
 let bullets = [];
 let enemies = [];
-let meleeAttacks = [];
-let orbs = [];
-let chests = [];
 let boss = null;
-let lastSpawnTime = performance.now();
-let lastBossSpawn = performance.now();
 
-/* ---------- Weapons Library (Actualizada) ---------- */
-const weaponsLib = {};
+/* ---------- Controles ---------- */
+let keys = {};
+let mouse = {x:0, y:0};
+addEventListener('keydown', e=>keys[e.key]=true);
+addEventListener('keyup', e=>keys[e.key]=false);
+canvas.addEventListener('mousemove', e=>{
+  mouse.x = e.clientX;
+  mouse.y = e.clientY;
+});
 
-/* LÁTIGO */
-weaponsLib.whip = {
-  id:'whip', name:'Látigo',
-  maxLevel:10,
-  statsForLevel(level){
-    const damage = 4 + level*1;
-    const cooldown = Math.max(220, 500 - level*30);
-    return { damage, cooldown };
-  },
-  attack(state){
-    if(!state.level || dead) return;
-    const now = performance.now();
-    if(now - (state.lastUse||0) < weaponsLib.whip.statsForLevel(state.level).cooldown) return;
-    state.lastUse = now;
-    // golpea horizontal
-    const s = weaponsLib.whip.statsForLevel(state.level);
-    enemies.forEach(e => {
-      if(Math.abs(e.y - player.y) < 14) e.hp -= s.damage;
-    });
-    if(boss && Math.abs(boss.y - player.y) < 14) boss.hp -= s.damage;
-  }
-};
+/* ---------- Funciones ---------- */
+function startGame(){
+  gameState = "playing";
+  dead = false;
+  score = 0;
+  time = 0;
+  player.x = canvas.width/2;
+  player.y = canvas.height/2;
+  player.hp = player.maxHp;
 
-/* CUCHILLO */
-weaponsLib.knife = {
-  id:'knife', name:'Cuchillo',
-  maxLevel:10,
-  statsForLevel(level){
-    return { bullets: 1 + Math.floor(level/2), damage: 2 + level };
-  },
-  shoot(state){
-    if(!state.level || dead) return;
-    const now = performance.now();
-    if(now - (state.lastShot||0) < 250) return;
-    state.lastShot = now;
-    const s = weaponsLib.knife.statsForLevel(state.level);
-    for(let i=0;i<s.bullets;i++){
-      bullets.push({ x:player.x, y:player.y, dx:Math.cos(0)*5, dy:Math.sin(0)*5, damage:s.damage, size:3, life:1500, friendly:true });
-    }
-  }
-};
+  bullets = [];
+  enemies = [];
+  boss = null;
 
-/* HACHA */
-weaponsLib.axe = {
-  id:'axe', name:'Hacha',
-  maxLevel:10,
-  statsForLevel(level){
-    return { damage: 6+level*2, arc: Math.PI/3 + level*0.05 };
-  },
-  attack(state){
-    if(!state.level || dead) return;
-    const s = weaponsLib.axe.statsForLevel(state.level);
-    meleeAttacks.push({ x:player.x, y:player.y, arc:s.arc, range:35, damage:s.damage, angle:0, life:120 });
-  }
-};
-
-/* CRUZ */
-weaponsLib.cross = {
-  id:'cross', name:'Cruz',
-  maxLevel:10,
-  statsForLevel(level){ return { damage: 8+level*2, chanceCrit:0.05+level*0.02 }; },
-  attack(state){
-    if(!state.level || dead) return;
-    const s = weaponsLib.cross.statsForLevel(state.level);
-    bullets.push({ x:player.x, y:player.y, dx:0, dy:-4, damage:s.damage, critChance:s.chanceCrit, size:4, life:2500, friendly:true });
-  }
-};
-
-/* AGUA BENDITA */
-weaponsLib.holyWater = {
-  id:'holyWater', name:'Agua Bendita',
-  maxLevel:10,
-  statsForLevel(level){ return { damage: 4+level, radius:12+level*2, duration:1800+level*100 }; },
-  throw(state){
-    if(!state.level || dead) return;
-    bullets.push({ x:player.x, y:player.y, dx:0, dy:0, radius:weaponsLib.holyWater.statsForLevel(state.level).radius, damage:weaponsLib.holyWater.statsForLevel(state.level).damage, life:weaponsLib.holyWater.statsForLevel(state.level).duration, friendly:true });
-  }
-};
-
-/* BIBLIA */
-weaponsLib.bible = {
-  id:'bible', name:'Biblia del Rey',
-  maxLevel:10,
-  statsForLevel(level){ return { orbCount:1+Math.floor(level/2), radius:55+level*6, damage:1+level*0.5, duration:4000+level*300, cooldown:8000-level*250, speed:0.005+level*0.0004 }; },
-  activate(state){
-    const s = weaponsLib.bible.statsForLevel(state.level);
-    state.active = true;
-    state.spawnTime = performance.now();
-    state.orbs = [];
-    for(let i=0;i<s.orbCount;i++){
-      state.orbs.push({ angle:(i/s.orbCount)*Math.PI*2 });
-    }
-  },
-  update(state, dt){
-    if(!state.level) return;
-    const now = performance.now();
-    const s = weaponsLib.bible.statsForLevel(state.level);
-    if(!state.active && (!state.lastUse || now - state.lastUse > s.cooldown)){
-      state.lastUse = now;
-      this.activate(state);
-    }
-    if(state.active){
-      const elapsed = now - state.spawnTime;
-      ctx.save();
-      ctx.fillStyle="rgba(255,255,100,0.85)";
-      ctx.shadowColor="rgba(255,255,150,0.9)";
-      ctx.shadowBlur=10;
-      state.orbs.forEach(orb=>{
-        orb.angle += s.speed*dt;
-        const x=player.x+Math.cos(orb.angle)*s.radius;
-        const y=player.y+Math.sin(orb.angle)*s.radius;
-        ctx.beginPath(); ctx.arc(x,y,10,0,Math.PI*2); ctx.fill();
-        enemies.forEach(e=>{ if(Math.hypot(x-e.x,y-e.y)<e.size+10) e.hp -= s.damage*(dt/16); });
-        if(boss && Math.hypot(x-boss.x,y-boss.y)<boss.size+10) boss.hp -= s.damage*(dt/16);
-      });
-      ctx.restore();
-      if(elapsed>s.duration){ state.active=false; state.orbs=[]; }
-    }
-  }
-};
-
-/* VARA MAGICA */
-weaponsLib.magicWand = {
-  id:'magicWand', name:'Vara Mágica',
-  maxLevel:10,
-  statsForLevel(level){ return { damage:3+level, speed:4+level*0.2, interval:Math.max(150,500-level*20) }; },
-  shoot(state){
-    if(!state.level || dead) return;
-    const now = performance.now();
-    const s = weaponsLib.magicWand.statsForLevel(state.level);
-    if(now - (state.lastShot||0) < s.interval) return;
-    state.lastShot = now;
-    if(!enemies.length) return;
-    const pool = boss ? enemies.concat([boss]) : enemies;
-    let target = pool[0]; for(const e of pool) if(dist(e,player)<dist(target,player)) target=e;
-    const ang = Math.atan2(target.y-player.y, target.x-player.x);
-    bullets.push({ x:player.x, y:player.y, dx:Math.cos(ang)*s.speed, dy:Math.sin(ang)*s.speed, damage:s.damage, size:3, life:3000, friendly:true });
-  }
-};
-
-/* FIRE WAND */
-weaponsLib.fireWand = {
-  id:'fireWand', name:'Pájaro de Fuego',
-  maxLevel:10,
-  statsForLevel(level){ return { damage:4+level, speed:3.5+level*0.2, interval:1500 }; },
-  shoot(state){
-    if(!state.level || dead) return;
-    const now = performance.now();
-    if(now - (state.lastShot||0) < weaponsLib.fireWand.statsForLevel(state.level).interval) return;
-    state.lastShot = now;
-    bullets.push({ x:player.x, y:player.y, dx:Math.random()*6-3, dy:-4, damage:weaponsLib.fireWand.statsForLevel(state.level).damage, size:4, life:2000, friendly:true });
-  }
-};
-
-/* RAYO */
-weaponsLib.lightning = {
-  id:'lightning', name:'Rayo',
-  maxLevel:10,
-  statsForLevel(level){ return { damage:5+level, duration:400+level*20, cooldown:3000-level*150 }; },
-  activate(state){
-    const s=weaponsLib.lightning.statsForLevel(state.level);
-    state.active=true; state.spawnTime=performance.now();
-  },
-  update(state,dt){
-    if(!state.level) return;
-    const s = weaponsLib.lightning.statsForLevel(state.level);
-    const now = performance.now();
-    if(!state.active && (!state.lastUse || now - state.lastUse > s.cooldown)){ state.lastUse=now; this.activate(state); }
-    if(state.active){
-      enemies.forEach(e=>{ if(Math.abs(e.x-player.x)<20) e.hp -= s.damage*(dt/16); });
-      if(boss && Math.abs(boss.x-player.x)<20) boss.hp -= s.damage*(dt/16);
-      if(now - state.spawnTime > s.duration) state.active=false;
-    }
-  }
-};
-
-/* ---------- Weapons State ---------- */
-const weaponsState = {
-  whip:{ level:1 },
-  knife:{ level:1 },
-  axe:{ level:0 },
-  cross:{ level:0 },
-  holyWater:{ level:0 },
-  bible:{ level:0 },
-  magicWand:{ level:0 },
-  fireWand:{ level:0 },
-  lightning:{ level:0 }
-};
-
-/* ---------- Game Loop ---------- */
-function update(dt){
-  if(gamePaused || dead) return;
-  
-  // movimiento player
-  if(keys['w']) player.y -= player.speed;
-  if(keys['s']) player.y += player.speed;
-  if(keys['a']) player.x -= player.speed;
-  if(keys['d']) player.x += player.speed;
-
-  // actualizar armas
   Object.keys(weaponsState).forEach(k=>{
-    const w = weaponsLib[k]; const s = weaponsState[k];
-    if(w.update) w.update(s, dt);
-    if(keys[' ']){ if(w.shoot) w.shoot(s); if(w.attack) w.attack(s); if(w.throw) w.throw(s); }
+    weaponsState[k].lastUse = 0;
+    weaponsState[k].active = (k==="pistol");
+    if(weaponsState[k].orbs) weaponsState[k].orbs = [];
+    if(weaponsState[k].areas) weaponsState[k].areas = [];
   });
 
-  // actualizar bullets
-  bullets.forEach(b=>{
-    b.x+=b.dx; b.y+=b.dy; b.life-=dt;
-  });
-  bullets = bullets.filter(b=>b.life>0);
+  for(let i=0;i<3;i++) spawnEnemy();
+}
 
-  // actualizar enemigos
+function spawnEnemy(){
+  const e = {
+    x: Math.random()*canvas.width,
+    y: Math.random()*canvas.height,
+    size: 20,
+    hp: 10 + level*2,
+    speed: 50 + level*5
+  };
+  enemies.push(e);
+}
+
+function shootWeapon(weapon){
+  const now = performance.now()/1000;
+  if(now - weapon.lastUse < weapon.cooldown) return;
+  weapon.lastUse = now;
+
+  if(weapon === weaponsState.pistol){
+    bullets.push({x:player.x, y:player.y, dx:(mouse.x-player.x)/50, dy:(mouse.y-player.y)/50, size:5});
+  } else if(weapon === weaponsState.bible){
+    // Dispara hacia el enemigo más cercano
+    if(enemies.length===0) return;
+    let nearest = enemies[0];
+    let dist = Math.hypot(nearest.x-player.x, nearest.y-player.y);
+    for(let e of enemies){
+      const d = Math.hypot(e.x-player.x, e.y-player.y);
+      if(d<dist){ dist=d; nearest=e; }
+    }
+    const dx = (nearest.x-player.x)/50;
+    const dy = (nearest.y-player.y)/50;
+    bullets.push({x:player.x, y:player.y, dx, dy, size:8});
+  }
+  // Solar y otras armas se pueden agregar aquí
+}
+
+function update(dt){
+  if(gamePaused || dead || gameState!=="playing") return;
+
+  // Mover player
+  if(keys['w']||keys['ArrowUp']) player.y -= player.speed*dt;
+  if(keys['s']||keys['ArrowDown']) player.y += player.speed*dt;
+  if(keys['a']||keys['ArrowLeft']) player.x -= player.speed*dt;
+  if(keys['d']||keys['ArrowRight']) player.x += player.speed*dt;
+
+  // Mantener dentro del canvas
+  player.x = Math.max(player.size, Math.min(canvas.width-player.size, player.x));
+  player.y = Math.max(player.size, Math.min(canvas.height-player.size, player.y));
+
+  // Disparos automáticos para armas activas
+  Object.values(weaponsState).forEach(w=>{
+    if(w.active) shootWeapon(w);
+  });
+
+  // Actualizar bullets
+  bullets.forEach((b,i)=>{
+    b.x += b.dx*dt*100;
+    b.y += b.dy*dt*100;
+    // colisión con enemigos
+    enemies.forEach((e,j)=>{
+      if(Math.hypot(e.x-b.x,e.y-b.y)<e.size+b.size){
+        e.hp -= 10;
+        bullets.splice(i,1);
+        if(e.hp<=0) enemies.splice(j,1);
+      }
+    });
+    if(b.x<0||b.x>canvas.width||b.y<0||b.y>canvas.height) bullets.splice(i,1);
+  });
+
+  // Mover enemigos hacia player
   enemies.forEach(e=>{
-    const dx=player.x-e.x, dy=player.y-e.y;
-    const distSq=dx*dx+dy*dy;
-    if(distSq<=(player.size+e.size)*(player.size+e.size)) player.hp-=0.2*dt;
-    e.x+=dx*0.01*dt; e.y+=dy*0.01*dt;
-  });
-  enemies = enemies.filter(e=>e.hp>0);
+    const dx = player.x - e.x;
+    const dy = player.y - e.y;
+    const dist = Math.hypot(dx,dy);
+    e.x += (dx/dist)*e.speed*dt;
+    e.y += (dy/dist)*e.speed*dt;
 
-  time+=dt;
+    // Colisión con player
+    if(dist < e.size + player.size){
+      player.hp -= 20*dt;
+      if(player.hp <=0){
+        dead = true;
+        gameState = "gameOver";
+      }
+    }
+  });
+
+  time += dt;
 }
 
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  // player
-  ctx.fillStyle="white"; ctx.beginPath();
-  ctx.arc(player.x,player.y,player.size,0,Math.PI*2); ctx.fill();
-  // bullets
-  bullets.forEach(b=>{ ctx.fillStyle="red"; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); });
-  // enemies
-  enemies.forEach(e=>{ ctx.fillStyle="green"; ctx.beginPath(); ctx.arc(e.x,e.y,e.size,0,Math.PI*2); ctx.fill(); });
+
+  if(gameState==="menu"){
+    ctx.fillStyle="white";
+    ctx.font="48px Arial";
+    ctx.fillText("Vampire Survival", canvas.width/2-200, canvas.height/2-50);
+    ctx.font="32px Arial";
+    ctx.fillText("Pulsa Jugar", canvas.width/2-80, canvas.height/2+20);
+    return;
+  }
+
+  if(gameState==="gameOver"){
+    ctx.fillStyle="red";
+    ctx.font="48px Arial";
+    ctx.fillText("Has Muerto", canvas.width/2-150, canvas.height/2);
+    ctx.font="24px Arial";
+    ctx.fillText("Pulsa Jugar para reiniciar", canvas.width/2-130, canvas.height/2+50);
+    return;
+  }
+
+  // Dibujar player
+  ctx.fillStyle="white";
+  ctx.beginPath();
+  ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
+  ctx.fill();
+
+  // Dibujar bullets
+  bullets.forEach(b=>{
+    ctx.fillStyle="red";
+    ctx.beginPath();
+    ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  // Dibujar enemigos
+  enemies.forEach(e=>{
+    ctx.fillStyle="green";
+    ctx.beginPath();
+    ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
+    ctx.fill();
+  });
+
+  // HUD
+  ctx.fillStyle="white";
+  ctx.font="20px Arial";
+  ctx.fillText("HP: "+Math.round(player.hp), 20, 30);
+  ctx.fillText("Score: "+score, 20, 60);
 }
 
-let lastTime = performance.now();
-function loop(now){
-  const dt = now - lastTime; lastTime=now;
-  update(dt); draw();
+/* ---------- Loop ---------- */
+let last = performance.now();
+function loop(){
+  const now = performance.now();
+  const dt = (now - last)/1000;
+  last = now;
+
+  update(dt);
+  draw();
+
   requestAnimationFrame(loop);
 }
-requestAnimationFrame(loop);
+loop();
 
-/* ---------- Helper ---------- */
-function dist(a,b){ return Math.hypot(a.x-b.x,a.y-b.y); }
+/* ---------- Botón de juego ---------- */
+const startButton = document.createElement('button');
+startButton.id = "startButton";
+startButton.textContent = "Jugar";
+startButton.style.position = "absolute";
+startButton.style.left = "50%";
+startButton.style.top = "60%";
+startButton.style.transform = "translate(-50%,-50%)";
+startButton.style.padding = "10px 20px";
+startButton.style.fontSize = "24px";
+document.body.appendChild(startButton);
+
+startButton.addEventListener('click', ()=>{
+  startGame();
+});
 </script>
 </body>
 </html>
