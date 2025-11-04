@@ -276,7 +276,7 @@ const player = {
   x: canvas.width/2,
   y: canvas.height/2,
   size: 18,
-  speed: 3.2,
+  speed: 2.2,
   hp: 100,
   maxHp: 100
 };
@@ -438,75 +438,82 @@ weaponsLib.fireball = {
     });
   }
 };
-/* ---------- ARMA: BIBLIA (funcional y visible) ---------- */
+  
+/* ---------- ARMA: BIBLIA (rehecha desde cero, estable) ---------- */
 weaponsLib.bible = {
+  id: "bible",
   name: "Biblia",
   maxLevel: 10,
-  cooldown: 8000, // cada 8s se activa
-  duration: 4000, // dura 4s
-  lastUse: 0,
-  active: false,
-  orbs: [],
+
+  statsForLevel(level) {
+    const orbCount = 1 + Math.floor(level / 2);    // más biblias con nivel
+    const radius = 55 + level * 6;                 // más alejadas
+    const damage = 0.8 + level * 0.4;              // daño base
+    const duration = 4000 + level * 300;           // más duración
+    const cooldown = 8000 - level * 250;           // menor cooldown
+    const speed = 0.005 + level * 0.0004;          // más velocidad angular
+    return { orbCount, radius, damage, duration, cooldown, speed };
+  },
+
+  activate(state) {
+    const s = weaponsLib.bible.statsForLevel(state.level);
+    state.active = true;
+    state.spawnTime = performance.now();
+    state.orbs = [];
+
+    for (let i = 0; i < s.orbCount; i++) {
+      state.orbs.push({
+        angle: (i / s.orbCount) * Math.PI * 2,
+      });
+    }
+  },
 
   update(state, dt) {
-    if (state.level <= 0) return;
-
+    if (!state.level) return;
     const now = performance.now();
+    const s = weaponsLib.bible.statsForLevel(state.level);
 
-    // Activar Biblia cada cooldown
-    if (!state.active && now - state.lastUse > state.cooldown) {
-      state.active = true;
+    // activar si no está activa y ya pasó el cooldown
+    if (!state.active && (!state.lastUse || now - state.lastUse > s.cooldown)) {
       state.lastUse = now;
-      state.spawnTime = now;
-
-      const orbCount = 2 + Math.floor(state.level / 3);
-      const radius = 50 + state.level * 5;
-      state.orbs = [];
-
-      for (let i = 0; i < orbCount; i++) {
-        state.orbs.push({
-          angle: (i / orbCount) * Math.PI * 2,
-          radius,
-        });
-      }
-      console.log("Biblia activada con", state.orbs.length, "orbes");
+      this.activate(state);
     }
 
-    // Si está activa, actualiza y dibuja orbes
+    // si activa, rotar orbes y dañar enemigos
     if (state.active) {
       const elapsed = now - state.spawnTime;
-      const orbitSpeed = 0.006 + state.level * 0.0004;
-
       ctx.save();
-      ctx.fillStyle = "rgba(255,255,0,0.9)"; // amarillo fuerte visible
-      ctx.shadowColor = "rgba(255,255,120,0.8)";
-      ctx.shadowBlur = 12;
+      ctx.fillStyle = "rgba(255,255,100,0.85)";
+      ctx.shadowColor = "rgba(255,255,150,0.9)";
+      ctx.shadowBlur = 10;
 
       for (const orb of state.orbs) {
-        orb.angle += dt * orbitSpeed;
-        const x = player.x + Math.cos(orb.angle) * orb.radius;
-        const y = player.y + Math.sin(orb.angle) * orb.radius;
+        orb.angle += s.speed * dt;
+        const x = player.x + Math.cos(orb.angle) * s.radius;
+        const y = player.y + Math.sin(orb.angle) * s.radius;
 
+        // dibuja la "Biblia" (puedes cambiar el color si quieres)
         ctx.beginPath();
-        ctx.arc(x, y, 12, 0, Math.PI * 2);
+        ctx.arc(x, y, 10, 0, Math.PI * 2);
         ctx.fill();
 
-        // Daño a enemigos
-        for (let e of enemies) {
+        // daño por colisión
+        for (const e of enemies) {
           const d = Math.hypot(x - e.x, y - e.y);
-          if (d < e.size + 12) e.hp -= 0.4 + state.level * 0.3;
+          if (d < e.size + 10) e.hp -= s.damage * (dt / 16);
         }
       }
 
       ctx.restore();
 
-      if (elapsed > state.duration) {
+      if (elapsed > s.duration) {
         state.active = false;
         state.orbs = [];
       }
     }
   },
 };
+  
 /* POTION */
 weaponsLib.potion = {
   id:'potion', name:'Pociones', maxLevel:10,
