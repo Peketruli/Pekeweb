@@ -1,425 +1,360 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
+<meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Encuestas en Vivo — Navidad Premium</title>
+<title>Encuestas en Vivo — Navidad (Fantasía realista)</title>
 <script src="https://unpkg.com/@supabase/supabase-js"></script>
 <style>
+  /* -------------------- Palette -------------------- */
   :root{
-    --bg-sky-1: #7fb8e6;
-    --bg-sky-2: #eaf6ff;
-    --accent-red: #c0392b;
-    --accent-green: #27ae60;
-    --accent-gold: #d4af37;
-    --card-bg: rgba(255,255,255,0.95);
-    --muted: #444;
-    --glass: rgba(255,255,255,0.06);
+    --sky-top: #e6f6ff;
+    --sky-mid: #cfeeff;
+    --sky-bottom: #f7fbff;
+    --pine: #0b3a2e;
+    --snow: #ffffff;
+    --card-bg: rgba(255,255,255,0.94);
+    --accent: #c43a2d; /* warm red */
+    --accent-2: #2f8b5a; /* deep green */
+    --muted: #56606b;
   }
 
-  /* Reset / layout */
+  /* Reset */
   *{box-sizing:border-box}
   html,body{height:100%;margin:0;font-family:Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;}
   body{
-    background: linear-gradient(180deg, var(--bg-sky-1) 0%, var(--bg-sky-2) 50%, #ffffff 100%);
-    color: #111;
-    overflow-x: hidden;
+    background: linear-gradient(180deg,var(--sky-top) 0%, var(--sky-mid) 50%, var(--sky-bottom) 100%);
+    color:#0a1320;
+    overflow-x:hidden;
     -webkit-font-smoothing:antialiased;
     -moz-osx-font-smoothing:grayscale;
   }
 
-  /* ---------- Container / header ---------- */
-  .page {
+  /* Page layout */
+  .wrap {
     min-height:100vh;
     display:flex;
     flex-direction:column;
     align-items:center;
-    padding:28px 20px 80px;
+    padding:28px 18px 90px;
     position:relative;
   }
 
   h1{
-    margin:10px 0 18px;
-    font-size:32px;
-    color:var(--accent-green);
-    text-shadow:0 2px 8px rgba(0,0,0,0.08);
-    letter-spacing:0.4px;
+    margin:8px 0 18px;
+    font-size:30px;
+    color:var(--accent-2);
+    letter-spacing:0.2px;
+    text-shadow:0 6px 18px rgba(47,139,90,0.08);
   }
 
-  /* ---------- Parallax layers (SVG trees/mountains) ---------- */
-  .parallax {
-    position:fixed;
-    left:0;right:0;
-    bottom:0;
-    height:48vh;
-    pointer-events:none;
-    z-index:0;
-    overflow:hidden;
+  /* -------------------- Painted parallax background -------------------- */
+  .bg-wrap {
+    position:fixed; left:0; right:0; bottom:0; top:0; z-index:0; pointer-events:none; overflow:hidden;
   }
-  .parallax .layer{ position:absolute; left:0; right:0; bottom:0; width:100%; }
-  .layer.bg { transform:translateZ(0) scale(1); opacity:1; z-index:0; }
-  .layer.mid { transform:translateZ(0); z-index:1; opacity:0.95; }
-  .layer.front { transform:translateZ(0); z-index:2; opacity:1; }
-
-  /* ---------- Canvas nieve (top) ---------- */
-  #snowCanvas{
-    position:fixed;
-    inset:0;
-    z-index:5;
-    pointer-events:none;
+  .layer {
+    position:absolute; left:0; right:0; bottom:0; width:100%; transform-origin:50% 50%;
+    will-change:transform,opacity;
   }
 
-  /* ---------- Lights (string) ---------- */
-  .lights {
-    position:fixed;
-    top:8px;
-    left:0;
-    right:0;
-    height:56px;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    gap:12px;
-    pointer-events:none;
-    z-index:6;
-  }
-  .light-bulb {
-    width:14px;height:22px;border-radius:50%;
-    box-shadow:0 0 12px rgba(255,255,255,0.12);
-    filter:drop-shadow(0 4px 14px rgba(0,0,0,0.2));
-    animation:bulbTwinkle 1.6s ease-in-out infinite;
-  }
-  .light-bulb:nth-child(odd){ animation-duration:1.2s; }
-  .light-bulb.red{ background:var(--accent-red); box-shadow:0 0 18px rgba(192,57,43,0.45); }
-  .light-bulb.green{ background:var(--accent-green); box-shadow:0 0 18px rgba(39,174,96,0.45); }
-  .light-bulb.gold{ background:var(--accent-gold); box-shadow:0 0 18px rgba(212,175,55,0.45); }
+  /* distant sky brush */
+  .layer.sky svg{ height:100vh; width:100%; display:block; opacity:1; }
+  /* far mountains painted */
+  .layer.mountains svg{ height:55vh; display:block; width:100%; bottom:0; }
+  /* mid trees */
+  .layer.trees-mid{ height:44vh; bottom:6vh; }
+  .layer.trees-mid svg{ height:44vh; width:100%; display:block; }
+  /* front snow and trees */
+  .layer.trees-front{ height:28vh; bottom:0; }
+  .layer.trees-front svg{ height:28vh; width:100%; display:block; }
 
-  @keyframes bulbTwinkle {
-    0%{ transform:scale(.95); opacity:.7 }
-    50%{ transform:scale(1.15); opacity:1 }
-    100%{ transform:scale(.95); opacity:.8 }
+  /* subtle fog glow */
+  .fog {
+    position:absolute; inset:0; z-index:1; pointer-events:none; mix-blend-mode:screen;
+    background: radial-gradient(50% 40% at 50% 20%, rgba(255,255,255,0.18), transparent 30%);
+    opacity:0.9;
+    filter: blur(28px);
   }
 
-  /* ---------- Card UI ---------- */
+  /* -------------------- Canvas snow (paint-like) -------------------- */
+  #snowCanvas{ position:fixed; inset:0; z-index:4; pointer-events:none; }
+
+  /* -------------------- Foreground UI -------------------- */
+  main {
+    position:relative; z-index:8; width:100%; max-width:820px;
+  }
   .panel {
-    position:relative;
-    z-index:10;
-    max-width:720px;
-    width:100%;
-    background:var(--card-bg);
+    background: var(--card-bg);
     border-radius:14px;
-    box-shadow:0 8px 40px rgba(0,0,0,0.12);
-    padding:22px;
-    margin-top:28px;
-    border:1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 12px 40px rgba(8,22,32,0.08);
+    padding:20px;
+    margin: 10px;
+    border: 1px solid rgba(10,18,32,0.04);
   }
 
-  .muted{ color:var(--muted); font-size:0.95rem; }
-
-  .row { display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; }
-
-  /* inputs / buttons */
+  /* Inputs & buttons */
   input[type="text"], input[type="number"], textarea {
-    width: 100%;
+    width:100%;
     padding:10px 12px;
     border-radius:8px;
-    border:1px solid #ddd;
-    background: #fff;
-    resize:vertical;
-    font-size:1rem;
+    border:1px solid #e6eef4;
+    background:white;
+    font-size:15px;
+    color:#0a1320;
   }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
 
   button {
-    background: linear-gradient(180deg,var(--accent-red), #8f2a2a);
-    color:#fff;
+    cursor:pointer;
     border: none;
     padding:10px 14px;
     border-radius:10px;
-    cursor:pointer;
-    font-weight:600;
-    box-shadow:0 8px 18px rgba(0,0,0,0.12);
+    color:white;
+    font-weight:700;
+    box-shadow:0 8px 20px rgba(10,18,32,0.08);
   }
-  button.secondary {
-    background: linear-gradient(180deg, var(--accent-green), #1f8b4f);
-  }
-  button.ghost {
-    background:transparent;
-    color:var(--muted);
-    border:1px dashed #ccc;
-  }
+  .btn-primary { background: linear-gradient(180deg,var(--accent), #a02b23); }
+  .btn-green { background: linear-gradient(180deg,var(--accent-2), #246a48); }
+  .btn-ghost { background:transparent; border:1px solid rgba(10,18,32,0.06); color:var(--muted); box-shadow:none; }
 
-  .small { padding:8px 10px; border-radius:8px; font-size:0.95rem; }
-
-  /* poll option button */
+  /* Poll option buttons — painted card look */
   .poll-option {
     display:block;
     width:100%;
-    text-align:left;
     padding:12px 14px;
-    margin:8px 0;
-    border-radius:10px;
-    background:linear-gradient(180deg,#fff,#f7f7f7);
-    border:1px solid #e6e6e6;
-    cursor:pointer;
-    transition: all .12s ease;
-    font-weight:600;
-  }
-  .poll-option:hover { transform:translateY(-3px); box-shadow:0 6px 18px rgba(0,0,0,0.06); }
-  .poll-option:disabled { opacity:0.7; cursor:default; transform:none; box-shadow:none; }
-
-  /* timer / results */
-  #timer { margin-top:12px; font-weight:600; color:var(--muted); }
-  #results { margin-top:12px; color:var(--accent-gold); font-weight:700; }
-
-  /* Floating music controller */
-  .music-control {
-    position:fixed;
-    bottom:20px;
-    right:20px;
-    z-index:12;
-    background: rgba(255,255,255,0.92);
+    margin:10px 0;
     border-radius:12px;
-    box-shadow:0 10px 30px rgba(0,0,0,0.12);
-    padding:8px 12px;
-    display:flex;
-    gap:10px;
-    align-items:center;
-    border:1px solid rgba(0,0,0,0.06);
+    text-align:left;
+    background: linear-gradient(180deg, #fff, #f6fbff);
+    border: 1px solid rgba(10,18,32,0.04);
+    box-shadow: 0 6px 18px rgba(8,22,32,0.04);
+    font-weight:700;
+    transition: transform .12s ease, box-shadow .12s ease;
   }
-  .music-control button { background:transparent; color:#111; padding:6px; border-radius:8px; box-shadow:none; border:1px solid rgba(0,0,0,0.06); }
-  .music-control .label { font-weight:600; color:#111; }
+  .poll-option:hover { transform: translateY(-4px); box-shadow: 0 12px 30px rgba(8,22,32,0.06); }
+  .poll-option:disabled { opacity:0.7; transform:none; box-shadow:none; cursor:default; }
+
+  #timer { color:var(--muted); font-weight:700; margin-top:8px; }
+
+  /* results */
+  #results { margin-top:12px; color:#8b5e2b; font-weight:700; }
 
   /* back button */
-  .back { position:fixed; top:18px; left:18px; z-index:12; background:rgba(255,255,255,0.95); padding:8px 12px; border-radius:10px; border:1px solid rgba(0,0,0,0.06); cursor:pointer; }
-
-  /* responsive */
-  @media (max-width:720px){
-    .panel { padding:16px; margin-top:18px; border-radius:12px; }
-    h1 { font-size:22px; }
+  .back {
+    position:fixed; left:18px; top:18px; z-index:12;
+    background: rgba(255,255,255,0.95);
+    border-radius:10px; padding:8px 12px; border:1px solid rgba(10,18,32,0.04); cursor:pointer;
   }
 
+  /* small responsive */
+  @media(max-width:720px){
+    h1{ font-size:20px; text-align:center; }
+    .panel{ padding:14px; border-radius:12px; margin:12px; }
+  }
 </style>
 </head>
 <body>
-  <div class="parallax" aria-hidden="true">
-    <!-- Back mountains (far) — SVG stylized -->
-    <div class="layer bg" style="transform:translateY(6%);">
-      <svg viewBox="0 0 1440 320" preserveAspectRatio="none" style="width:100%;height:48vh;display:block;">
-        <defs><linearGradient id="g1" x1="0" x2="0" y1="0" y2="1"><stop offset="0" stop-color="#e3f5ff"/><stop offset="1" stop-color="#b8e6ff"/></linearGradient></defs>
-        <path d="M0,200 C140,140 280,160 420,200 C560,240 700,200 840,220 C980,240 1120,200 1280,210 C1360,215 1440,190 1440,190 L1440,320 L0,320 Z" fill="url(#g1)"></path>
-      </svg>
-    </div>
-
-    <!-- mid trees -->
-    <div class="layer mid" style="transform:translateY(2%);">
-      <svg viewBox="0 0 1440 220" preserveAspectRatio="none" style="width:100%;height:36vh;display:block;">
-        <g fill="#0b3b20">
-          <!-- repeated tree shapes -->
-          <polygon points="40,220 80,140 120,220" />
-          <polygon points="160,220 200,120 240,220" />
-          <polygon points="320,220 360,110 400,220" />
-          <polygon points="560,220 600,110 640,220" />
-          <polygon points="800,220 840,130 880,220" />
-          <polygon points="1040,220 1080,120 1120,220" />
-          <polygon points="1280,220 1320,140 1360,220" />
+  <!-- Painted parallax layers -->
+  <div class="bg-wrap" aria-hidden="true">
+    <div class="layer sky" id="layer-sky">
+      <!-- painted sky gradient — subtle animated clouds -->
+      <svg viewBox="0 0 1440 800" preserveAspectRatio="none" style="display:block;width:100%;height:100%;">
+        <defs>
+          <linearGradient id="skyGrad" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stop-color="#e9f9ff"/>
+            <stop offset="0.5" stop-color="#dff3ff"/>
+            <stop offset="1" stop-color="#f8fbff"/>
+          </linearGradient>
+          <filter id="softBlur"><feGaussianBlur stdDeviation="18" /></filter>
+        </defs>
+        <rect x="0" y="0" width="1440" height="800" fill="url(#skyGrad)"/>
+        <!-- soft cloud brush strokes -->
+        <g fill="#ffffff" opacity="0.9" filter="url(#softBlur)">
+          <ellipse cx="200" cy="120" rx="260" ry="60"/>
+          <ellipse cx="720" cy="90" rx="320" ry="70"/>
+          <ellipse cx="1180" cy="140" rx="240" ry="55"/>
         </g>
       </svg>
     </div>
 
-    <!-- front snow/trees -->
-    <div class="layer front" style="transform:translateY(0%);">
-      <svg viewBox="0 0 1440 160" preserveAspectRatio="none" style="width:100%;height:24vh;display:block;">
-        <rect x="0" y="60" width="1440" height="100" fill="#ffffff"/>
-        <g fill="#0b2f17">
-          <polygon points="60,160 100,100 140,160" />
-          <polygon points="240,160 280,90 320,160" />
-          <polygon points="420,160 460,95 500,160" />
-          <polygon points="720,160 760,85 800,160" />
-          <polygon points="1020,160 1060,95 1100,160" />
+    <div class="layer mountains" id="layer-mountains" style="transform:translateY(2%);">
+      <!-- soft painted mountains -->
+      <svg viewBox="0 0 1440 400" preserveAspectRatio="none" style="display:block;width:100%;">
+        <defs>
+          <linearGradient id="m1" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stop-color="#dff4ff"/><stop offset="1" stop-color="#bde8ff"/>
+          </linearGradient>
+          <linearGradient id="m2" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0" stop-color="#cfeef7"/><stop offset="1" stop-color="#9fd9f0"/>
+          </linearGradient>
+        </defs>
+        <path d="M0,300 C120,200 260,230 420,280 C560,320 720,260 880,300 C1020,330 1180,280 1440,300 L1440,400 L0,400 Z" fill="url(#m1)"/>
+        <path d="M0,340 C180,260 360,300 540,340 C720,380 900,320 1080,360 C1260,400 1440,340 1440,340 L1440,400 L0,400 Z" fill="url(#m2)" opacity="0.9"/>
+      </svg>
+    </div>
+
+    <div class="layer trees-mid" id="layer-trees-mid" style="transform:translateY(1%);">
+      <!-- painted tree silhouettes -->
+      <svg viewBox="0 0 1440 260" preserveAspectRatio="none" style="display:block;width:100%;height:100%;">
+        <g fill="#0f3b2b">
+          <!-- repeated painted tree shapes with slight variations -->
+          <g transform="translate(40,0)"><polygon points="40,200 80,120 120,200"/><polygon points="24,160 80,80 136,160" fill="#0b3e2e"/></g>
+          <g transform="translate(220,0)"><polygon points="40,200 80,100 120,200"/><polygon points="20,150 80,70 140,150" fill="#0b3e2e"/></g>
+          <g transform="translate(420,0)"><polygon points="60,200 100,90 140,200"/><polygon points="40,150 100,60 160,150" fill="#0b3e2e"/></g>
+          <g transform="translate(660,0)"><polygon points="40,200 80,110 120,200"/><polygon points="22,155 80,75 138,155" fill="#0b3e2e"/></g>
+          <g transform="translate(940,0)"><polygon points="40,200 80,105 120,200"/><polygon points="20,150 80,70 140,150" fill="#0b3e2e"/></g>
+          <g transform="translate(1180,0)"><polygon points="40,200 80,120 120,200"/><polygon points="24,160 80,80 136,160" fill="#0b3e2e"/></g>
         </g>
       </svg>
     </div>
+
+    <div class="layer trees-front" id="layer-trees-front">
+      <svg viewBox="0 0 1440 160" preserveAspectRatio="none" style="display:block;width:100%;height:100%;">
+        <rect x="0" y="40" width="1440" height="120" fill="#ffffff"/>
+        <g fill="#0b2f20">
+          <g transform="translate(80,0)"><polygon points="40,160 80,90 120,160"/><polygon points="30,120 80,60 130,120" fill="#0b432f"/></g>
+          <g transform="translate(300,0)"><polygon points="40,160 80,85 120,160"/><polygon points="28,115 80,50 132,115" fill="#0b432f"/></g>
+          <g transform="translate(520,0)"><polygon points="40,160 80,95 120,160"/><polygon points="26,118 80,55 134,118" fill="#0b432f"/></g>
+          <g transform="translate(760,0)"><polygon points="40,160 80,82 120,160"/><polygon points="30,120 80,46 130,120" fill="#0b432f"/></g>
+          <g transform="translate(1040,0)"><polygon points="40,160 80,90 120,160"/><polygon points="32,122 80,58 128,122" fill="#0b432f"/></g>
+        </g>
+      </svg>
+    </div>
+
+    <div class="fog"></div>
   </div>
 
-  <!-- canvas for snow -->
-  <canvas id="snowCanvas"></canvas>
+  <!-- Canvas for snow painted style -->
+  <canvas id="snowCanvas" width="800" height="600" aria-hidden="true"></canvas>
 
-  <!-- festive lights -->
-  <div class="lights" aria-hidden="true">
-    <div class="light-bulb red"></div>
-    <div class="light-bulb gold"></div>
-    <div class="light-bulb green"></div>
-    <div class="light-bulb red"></div>
-    <div class="light-bulb gold"></div>
-    <div class="light-bulb green"></div>
-  </div>
-
-  <!-- back button -->
+  <!-- UI -->
   <button class="back" onclick="goToMainPage()">← Volver</button>
 
-  <main class="page" id="page">
-    <h1>Encuestas en Vivo — Navidad</h1>
+  <main class="wrap" id="mainWrap">
+    <h1>Encuestas en Vivo — Navidad (Fantasía realista)</h1>
 
-    <!-- Create poll (admins) -->
+    <!-- create poll (admins) -->
     <section id="createPoll" class="panel" style="display:none;">
-      <h2 style="margin:0 0 12px;color:var(--accent-red)">Crear nueva encuesta</h2>
-
-      <div style="display:flex;gap:12px;flex-wrap:wrap;">
-        <input id="newQuestion" type="text" placeholder="Pregunta..." style="flex:1 1 100%;">
+      <h2 style="margin:0 0 12px;color:var(--accent)">Crear encuesta</h2>
+      <div style="margin-bottom:10px;"><input id="newQuestion" type="text" placeholder="Pregunta..." /></div>
+      <div id="optionsContainer">
+        <input class="option-input" type="text" placeholder="Opción 1" />
+        <input class="option-input" type="text" placeholder="Opción 2" style="margin-top:8px" />
       </div>
-
-      <div id="optionsContainer" style="margin-top:12px;">
-        <input class="option-input" type="text" placeholder="Opción 1">
-        <input class="option-input" type="text" placeholder="Opción 2" style="margin-top:8px">
+      <div class="row" style="margin-top:12px;justify-content:flex-start;">
+        <label style="font-weight:700;color:var(--muted);margin-right:6px">Duración</label>
+        <input id="hours" type="number" min="0" value="0" style="width:90px" />
+        <span style="align-self:center">h</span>
+        <input id="minutes" type="number" min="0" max="59" value="1" style="width:90px" />
+        <span style="align-self:center">m</span>
       </div>
-
-      <div style="display:flex;gap:12px;align-items:center;margin-top:12px;flex-wrap:wrap;">
-        <div style="display:flex;gap:8px;align-items:center;">
-          <label class="muted" style="margin-right:6px">Duración</label>
-          <input id="hours" type="number" min="0" value="0" style="width:80px">
-          <span class="muted">h</span>
-          <input id="minutes" type="number" min="0" max="59" value="1" style="width:80px">
-          <span class="muted">m</span>
-        </div>
-        <button class="small" onclick="addOption()">➕ Añadir opción</button>
-        <button class="small" onclick="createPoll()">🎁 Crear encuesta</button>
+      <div class="row" style="margin-top:14px">
+        <button class="btn-primary" onclick="addOption()">➕ Añadir opción</button>
+        <button class="btn-green" onclick="createPoll()">🎁 Crear</button>
       </div>
     </section>
 
-    <!-- Active poll -->
-    <section id="pollPanel" class="panel" style="display:none; margin-top:18px;">
-      <h2 id="question" style="margin:0 0 8px;color:var(--accent-green)"></h2>
-      <div id="pollOptions" style="margin-top:8px"></div>
-      <div id="timer" class="muted">Tiempo restante: --</div>
-      <div id="results" style="display:none;"></div>
-      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-        <button id="deleteButton" class="ghost" style="display:none" onclick="deletePoll()">Eliminar encuesta</button>
+    <!-- poll panel -->
+    <section id="pollPanel" class="panel" style="display:none;margin-top:18px;">
+      <h2 id="question" style="margin:0 0 6px;color:var(--accent-2)"></h2>
+      <div id="pollOptions" style="margin-top:6px"></div>
+      <div id="timer">Tiempo restante: --</div>
+      <div id="results" style="display:none"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;justify-content:center">
+        <button id="deleteButton" class="btn-ghost" style="display:none" onclick="deletePoll()">Eliminar</button>
       </div>
     </section>
-
   </main>
 
-  <!-- music control -->
-  <div class="music-control" aria-hidden="false">
-    <div class="label">Música</div>
-    <button id="musicToggle" title="Pausar / Reproducir">⏸️</button>
-  </div>
-
 <script>
-/* ------------------------ Supabase (igual que antes) ------------------------ */
+/* ---------------- Supabase ---------------- */
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-/* ------------------------ Estado ------------------------ */
-let currentPoll = null;
-let pollInterval = null;
-let pollEnded = false;
-
+/* ---------------- State ---------------- */
+let currentPoll = null, pollInterval = null, pollEnded = false;
 const user = JSON.parse(localStorage.getItem("currentUser") || "null");
 
-/* ------------------------ Actividades ------------------------ */
-async function registrarActividad(usuario, accion, detalle = "") {
-  try {
-    const { error } = await db.from("actividad").insert([{ usuario, accion, detalle }]);
-    if (error) console.error("Error registrando actividad:", error.message);
-  } catch (err) {
-    console.error("Error inesperado al registrar actividad:", err);
-  }
+/* ---------------- Utilities ---------------- */
+function escapeHtml(s){ if(!s) return ""; return String(s).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
+function goToMainPage(){ window.location.href = 'h.html'; }
+
+/* ---------------- Activity log ---------------- */
+async function registrarActividad(usuario, accion, detalle=""){
+  try{ const { error } = await db.from("actividad").insert([{ usuario, accion, detalle }]); if(error) console.error(error); }catch(e){console.error(e);}
 }
 
-/* ------------------------ DOMContentLoaded inicial ------------------------ */
-document.addEventListener("DOMContentLoaded", async () => {
-  // mostrar panel de creación para admins listados (mismos nombres que tu lista original)
+/* ---------------- Init ---------------- */
+document.addEventListener("DOMContentLoaded", async ()=>{
   const admins = ["Peketruli","SabinoArana","Jesus de Nazaret","General Suker","(JUSTICIA POR PEKEPO11AENORME)_69"];
-  if (user && admins.includes(user.username)) {
+  if(user && admins.includes(user.username)){
     document.getElementById("createPoll").style.display = "block";
     document.getElementById("deleteButton").style.display = "inline-block";
   }
-
-  // cargar encuesta activa
   await loadActivePoll();
-  if (user && currentPoll) await registrarActividad(user.username, "visualizó la encuesta", currentPoll.question);
+  if(user && currentPoll) await registrarActividad(user.username, "visualizó la encuesta", currentPoll.question);
 
-  // iniciar nieve animada canvas
-  startSnow();
-
-  // reproducir música automáticamente (si el navegador lo permite)
-  try { await bgMusic.play().catch(()=>{}); } catch(e){ /* autoplay blocked */ }
-
+  // small parallax subtle motion
+  startParallax();
 });
 
-/* ------------------------ Crear encuesta ------------------------ */
+/* ---------------- Create poll ---------------- */
 function addOption(){
-  const container = document.getElementById("optionsContainer");
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "option-input";
-  input.placeholder = `Opción ${container.querySelectorAll('.option-input').length + 1}`;
-  input.style.marginTop = "8px";
-  container.appendChild(input);
+  const c = document.getElementById("optionsContainer");
+  const n = document.createElement("input");
+  n.className = "option-input";
+  n.type = "text";
+  n.placeholder = `Opción ${c.querySelectorAll('.option-input').length + 1}`;
+  n.style.marginTop = "8px";
+  c.appendChild(n);
 }
 
 async function createPoll(){
-  if(!user){ alert("Debes iniciar sesión para crear encuestas."); return; }
-  const question = document.getElementById("newQuestion").value.trim();
-  const options = Array.from(document.querySelectorAll(".option-input")).map(i=>i.value.trim()).filter(Boolean);
+  if(!user){ alert("Debes iniciar sesión para crear encuestas"); return; }
+  const q = document.getElementById("newQuestion").value.trim();
+  const opts = Array.from(document.querySelectorAll(".option-input")).map(i=>i.value.trim()).filter(Boolean);
   const hours = parseInt(document.getElementById("hours").value) || 0;
   const minutes = parseInt(document.getElementById("minutes").value) || 0;
-  const duration = (hours*3600) + (minutes*60);
-  if(!question || options.length < 2 || duration <= 0){ alert("Completa pregunta, al menos 2 opciones y duración>0."); return; }
+  const dur = (hours*3600)+(minutes*60);
+  if(!q || opts.length < 2 || dur <= 0){ alert("Completa la pregunta, al menos 2 opciones y duración > 0"); return; }
 
-  const payload = {
-    question,
-    options: options.map(o=>({ text: o })),
-    votes: new Array(options.length).fill(0),
-    duration,
-    creator: user.username,
-    start_time: new Date()
-  };
-
+  const payload = { question: q, options: opts.map(t=>({text:t})), votes: new Array(opts.length).fill(0), duration: dur, creator: user.username, start_time: new Date() };
   const { data, error } = await db.from("polls").insert([payload]).select().single();
   if(error){ alert("Error al crear encuesta: "+error.message); return; }
-
-  await registrarActividad(user.username, "creó una encuesta", question);
-  alert("✅ Encuesta creada");
+  await registrarActividad(user.username, "creó una encuesta", q);
+  alert("Encuesta creada ✅");
   loadPoll(data.id);
 }
 
-/* ------------------------ Votar ------------------------ */
+/* ---------------- Vote ---------------- */
 async function vote(optionIndex){
   if(!currentPoll) return;
-  if(pollEnded){ alert("La encuesta ha terminado."); return; }
-  if(localStorage.getItem("votedPollId") === String(currentPoll.id)){ alert("Ya has votado en esta encuesta."); return; }
+  if(pollEnded){ alert("La encuesta ha terminado"); return; }
+  if(localStorage.getItem("votedPollId") === String(currentPoll.id)){ alert("Ya votaste en esta encuesta"); return; }
 
   localStorage.setItem("votedPollId", String(currentPoll.id));
   currentPoll.votes[optionIndex] = (currentPoll.votes[optionIndex]||0) + 1;
-
   const { error } = await db.from("polls").update({ votes: currentPoll.votes }).eq("id", currentPoll.id);
   if(error){ alert("Error registrando voto: "+error.message); return; }
-
-  // sound + activity
-  bell.currentTime = 0; bell.play().catch(()=>{});
-  if(user) await registrarActividad(user.username, "votó en encuesta", `${currentPoll.options[optionIndex]?.text || optionIndex}`);
-
+  if(user) await registrarActividad(user.username, "votó en encuesta", currentPoll.options[optionIndex]?.text || "");
   renderPollOptions();
   showResults();
 }
 
-/* ------------------------ Cargar encuesta activa ------------------------ */
+/* ---------------- Load active poll ---------------- */
 async function loadActivePoll(){
   try{
     const { data: polls } = await db.from("polls").select("*").order("created_at",{ascending:false}).limit(1);
     if(polls && polls.length>0) loadPoll(polls[0].id);
-  }catch(e){ console.error("loadActivePoll", e); }
+  }catch(e){ console.error(e); }
 }
 
 async function loadPoll(id){
   try{
     const { data: poll } = await db.from("polls").select("*").eq("id", id).single();
     if(!poll) return;
-    // validar votes length
     if(!Array.isArray(poll.votes) || poll.votes.length !== poll.options.length){
       poll.votes = new Array(poll.options.length).fill(0);
       await db.from("polls").update({ votes: poll.votes }).eq("id", poll.id);
@@ -431,16 +366,13 @@ async function loadPoll(id){
     pollEnded = false;
     if(pollInterval) clearInterval(pollInterval);
     startTimer(new Date(poll.start_time).getTime(), poll.duration);
-  }catch(e){ console.error("loadPoll", e); }
+  }catch(e){ console.error(e); }
 }
 
-/* ------------------------ Render opciones ------------------------ */
+/* ---------------- Render options ---------------- */
 function renderPollOptions(){
-  const container = document.getElementById("pollOptions");
-  container.innerHTML = "";
+  const c = document.getElementById("pollOptions"); c.innerHTML = "";
   if(!currentPoll) return;
-
-  // determine winner for highlighting when ended
   const maxVotes = currentPoll.votes?.length ? Math.max(...currentPoll.votes) : 0;
   const winnerIndex = currentPoll.votes?.length ? currentPoll.votes.indexOf(maxVotes) : -1;
 
@@ -448,27 +380,27 @@ function renderPollOptions(){
     const btn = document.createElement("button");
     btn.className = "poll-option";
     const votes = currentPoll.votes[i] || 0;
-    btn.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;"><span>${escapeHtml(opt.text)}</span><strong style="color:${votes? (i===winnerIndex && pollEnded ? 'var(--accent-green)' : '#222') : '#777'}">${votes}</strong></div>`;
+    btn.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;"><span>${escapeHtml(opt.text)}</span><strong style="color:${votes? (i===winnerIndex && pollEnded ? 'var(--accent-2)' : '#222') : '#777'}">${votes}</strong></div>`;
     btn.disabled = pollEnded;
     btn.onclick = ()=> vote(i);
     if(pollEnded && i===winnerIndex){
-      btn.style.border = `2px solid var(--accent-green)`;
-      btn.style.boxShadow = `0 8px 24px rgba(39,174,96,0.12)`;
+      btn.style.border = `2px solid var(--accent-2)`;
+      btn.style.boxShadow = `0 12px 30px rgba(47,139,90,0.08)`;
     }
-    container.appendChild(btn);
+    c.appendChild(btn);
   });
 }
 
-/* ------------------------ Timer + results ------------------------ */
+/* ---------------- Timer & results ---------------- */
 function startTimer(startTime, duration){
-  let timeLeft = duration - Math.floor((Date.now() - startTime)/1000);
-  const timerEl = document.getElementById("timer");
+  let timeLeft = duration - Math.floor((Date.now()-startTime)/1000);
+  const tEl = document.getElementById("timer");
   if(pollInterval) clearInterval(pollInterval);
-  timerEl.textContent = `Tiempo restante: ${timeLeft}s`;
+  tEl.textContent = `Tiempo restante: ${timeLeft}s`;
   pollInterval = setInterval(()=>{
     timeLeft--;
     if(timeLeft < 0) timeLeft = 0;
-    timerEl.textContent = `Tiempo restante: ${timeLeft}s`;
+    tEl.textContent = `Tiempo restante: ${timeLeft}s`;
     if(timeLeft <= 0){
       clearInterval(pollInterval);
       pollEnded = true;
@@ -485,15 +417,15 @@ function showResults(){
   const total = counts.reduce((a,b)=>a+b,0);
   if(total === 0){ el.innerHTML = "No hubo votos 🎄"; }
   else{
-    el.innerHTML = `<div style="margin-bottom:6px;font-weight:700;color:var(--accent-gold)">Resultados</div>`;
+    el.innerHTML = `<div style="font-weight:800;color:var(--accent)">Resultados</div>`;
     counts.forEach((c,i)=>{
-      el.innerHTML += `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-top:1px solid rgba(0,0,0,0.04)"><span>${escapeHtml(currentPoll.options[i].text)}</span><strong>${c} votos</strong></div>`;
+      el.innerHTML += `<div style="display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid rgba(10,18,32,0.04)"><span>${escapeHtml(currentPoll.options[i].text)}</span><strong>${c} votos</strong></div>`;
     });
   }
   el.style.display = "block";
 }
 
-/* ------------------------ Delete ------------------------ */
+/* ---------------- Delete ---------------- */
 async function deletePoll(){
   if(!currentPoll) return;
   if(!confirm("¿Eliminar esta encuesta?")) return;
@@ -503,114 +435,91 @@ async function deletePoll(){
   location.reload();
 }
 
-/* ------------------------ Utilidades ------------------------ */
-function escapeHtml(str){
-  if(!str) return "";
-  return String(str).replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;");
+/* ---------------- Parallax subtle animation ---------------- */
+function startParallax(){
+  const layers = [
+    {el: document.getElementById('layer-sky'), speed: 0.06},
+    {el: document.getElementById('layer-mountains'), speed: 0.12},
+    {el: document.getElementById('layer-trees-mid'), speed: 0.22},
+    {el: document.getElementById('layer-trees-front'), speed: 0.36}
+  ];
+  let t = 0;
+  function loop(){
+    t += 0.002; // slow
+    const sway = Math.sin(t) * 8; // subtle horizontal sway
+    layers.forEach((L, idx)=>{
+      const y = Math.sin(t * (1 + idx*0.3)) * (L.speed*8);
+      const x = sway * L.speed;
+      L.el.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    });
+    requestAnimationFrame(loop);
+  }
+  loop();
 }
 
-function goToMainPage(){ window.location.href = 'h.html'; }
+/* ---------------- Painted snow canvas ---------------- */
+(function initSnowCanvas(){
+  const canvas = document.getElementById('snowCanvas');
+  const ctx = canvas.getContext('2d');
 
-/* ------------------------ Audio (music + bell) ------------------------ */
-/* Bell sound when voting */
-const bell = new Audio("https://cdn.pixabay.com/download/audio/2022/02/23/audio_3b8f4e21c4.mp3?filename=christmas-bells-117356.mp3");
-bell.preload = "auto";
-
-/* Background music (instrumental). Volume gentle. Source: royalty-free sample. */
-const bgMusic = new Audio("https://cdn.pixabay.com/download/audio/2023/11/30/audio_dbb0c5d9f1.mp3?filename=jingle-bells-instrumental-149344.mp3");
-bgMusic.loop = true;
-bgMusic.volume = 0.35;
-bgMusic.preload = "auto";
-
-/* Music toggle button */
-document.getElementById("musicToggle").addEventListener("click", async function(){
-  if(bgMusic.paused){
-    await bgMusic.play().catch(()=>{});
-    this.textContent = "⏸️";
-  } else {
-    bgMusic.pause();
-    this.textContent = "▶️";
+  function resize(){
+    canvas.width = innerWidth;
+    canvas.height = innerHeight;
   }
-});
+  resize();
+  window.addEventListener('resize', resize);
 
-/* Attempt autoplay on load (may be blocked by browser) */
-window.addEventListener("load", async ()=>{
-  try{ await bgMusic.play().catch(()=>{}); document.getElementById("musicToggle").textContent="⏸️"; }catch(e){ document.getElementById("musicToggle").textContent="▶️"; }
-});
-
-/* ------------------------ Canvas snow (realistic, performant) ------------------------ */
-const canvas = document.getElementById("snowCanvas");
-const ctx = canvas.getContext("2d");
-let W = innerWidth, H = innerHeight;
-canvas.width = W; canvas.height = H;
-
-window.addEventListener("resize", ()=>{ W = innerWidth; H = innerHeight; canvas.width = W; canvas.height = H; });
-
-class Snowflake {
-  constructor(){
-    this.reset();
+  class Flake {
+    constructor(){
+      this.reset();
+    }
+    reset(){
+      this.x = Math.random() * canvas.width;
+      this.y = Math.random() * -canvas.height;
+      this.r = 1.5 + Math.random()*5; // radius
+      this.vy = 0.3 + Math.random()*1.1;
+      this.vx = (Math.random()-0.5) * 0.6;
+      this.o = 0.5 + Math.random()*0.6;
+      this.phase = Math.random()*Math.PI*2;
+    }
+    update(){
+      this.x += this.vx + Math.sin(this.phase)*0.1;
+      this.y += this.vy;
+      this.phase += 0.01 + Math.random()*0.01;
+      if(this.y - this.r > canvas.height) this.reset();
+    }
+    draw(){
+      // painted brush look — layered circles with soft alpha
+      const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.r*1.6);
+      g.addColorStop(0, `rgba(255,255,255,${this.o})`);
+      g.addColorStop(0.6, `rgba(255,255,255,${this.o*0.6})`);
+      g.addColorStop(1, `rgba(255,255,255,0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.r*1.6, 0, Math.PI*2);
+      ctx.fill();
+    }
   }
-  reset(){
-    this.x = Math.random()*W;
-    this.y = Math.random()*-H;
-    this.vy = 0.6 + Math.random()*1.2;
-    this.vx = Math.random()*0.8 - 0.4;
-    this.r = 1 + Math.random()*3.5;
-    this.o = 0.6 + Math.random()*0.4;
-    this.t = Math.random()*Math.PI*2;
-    this.spin = (Math.random()-0.5)*0.02;
-  }
-  update(){
-    this.x += this.vx + Math.sin(this.t)*0.2;
-    this.y += this.vy;
-    this.t += this.spin;
-    if(this.y - this.r > H) this.reset();
-  }
-  draw(ctx){
-    ctx.beginPath();
-    ctx.fillStyle = `rgba(255,255,255,${this.o})`;
-    ctx.arc(this.x, this.y, this.r, 0, Math.PI*2);
-    ctx.fill();
-  }
-}
 
-const NUM = Math.min(220, Math.floor((innerWidth*innerHeight)/4500)); // adaptive density
-const flakes = Array.from({length:NUM}, ()=> new Snowflake());
-
-function snowLoop(){
-  ctx.clearRect(0,0,W,H);
-  // subtle gradient overlay to blend with sky
-  const g = ctx.createLinearGradient(0,0,0,H);
-  g.addColorStop(0, 'rgba(255,255,255,0.02)');
-  g.addColorStop(1, 'rgba(255,255,255,0.08)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0,0,W,H);
-
-  for(const f of flakes){ f.update(); f.draw(ctx); }
-  requestAnimationFrame(snowLoop);
-}
-function startSnow(){ requestAnimationFrame(snowLoop); }
-
-/* Small floating sparkles for depth */
-(function createSparkles(){
-  for(let i=0;i<18;i++){
-    const s = document.createElement('div');
-    s.style.position='fixed';
-    s.style.width='6px'; s.style.height='6px';
-    s.style.borderRadius='50%';
-    s.style.background = 'rgba(212,175,55,0.95)';
-    s.style.left = (8 + Math.random()*84)+'%';
-    s.style.top = (12 + Math.random()*60)+'%';
-    s.style.zIndex = 4;
-    s.style.pointerEvents = 'none';
-    s.style.opacity = (0.3 + Math.random()*0.7)+'';
-    s.style.transform = 'translateY(0)';
-    s.style.transition = `${1+Math.random()*2}s ease-in-out`;
-    document.body.appendChild(s);
-    (function anim(el){
-      setInterval(()=>{ el.style.transform = `translateY(${(Math.random()*12-6)}px) scale(${0.9+Math.random()*0.3})`; el.style.opacity = (0.3+Math.random()*0.7); }, 1200 + Math.random()*1600);
-    })(s);
+  let flakes = [];
+  function init(){
+    const area = canvas.width * canvas.height;
+    const count = Math.min(280, Math.floor(area / 3000)); // adaptive
+    flakes = Array.from({length:count}, ()=> new Flake());
   }
+  init();
+  window.addEventListener('resize', init);
+
+  function loop(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    // subtle ambient overlay to blend snow
+    ctx.fillStyle = 'rgba(250,250,252,0.02)';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    for(const f of flakes){ f.update(); f.draw(); }
+    requestAnimationFrame(loop);
+  }
+  loop();
 })();
 
 </script>
