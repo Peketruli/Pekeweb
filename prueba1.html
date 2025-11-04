@@ -736,66 +736,53 @@ function renderLeftHUD(){
 }
 
 /* ---------- Game Loop ---------- */
-function gameLoop(timestamp) {
-  if (dead) {
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = "red";
-    ctx.font = "48px Arial";
-    ctx.fillText("¡Has muerto!", canvas.width / 2 - 120, canvas.height / 2);
-    ctx.font = "24px Arial";
-    ctx.fillText("Recarga para reiniciar", canvas.width / 2 - 100, canvas.height / 2 + 40);
-    return;
-  }
-
-  const dt = 16.67;
-  time += dt;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  /* ---- Movimiento ---- */
-  let dx = 0, dy = 0;
-  if (keys["w"]) dy -= 1;
-  if (keys["s"]) dy += 1;
-  if (keys["a"]) dx -= 1;
-  if (keys["d"]) dx += 1;
-  if (dx || dy) {
-    const len = Math.hypot(dx, dy);
-    player.x += (dx / len) * player.speed;
-    player.y += (dy / len) * player.speed;
-  }
-
-  /* ---- Dibujar jugador ---- */
-  ctx.beginPath();
-  ctx.arc(player.x, player.y, player.r, 0, Math.PI * 2);
-  ctx.fillStyle = "white";
-  ctx.fill();
-
-  /* ---- Actualizar enemigos ---- */
-  for (let e of enemies) {
-    const dx = player.x - e.x;
-    const dy = player.y - e.y;
-    const len = Math.hypot(dx, dy);
-    e.x += (dx / len) * e.speed;
-    e.y += (dy / len) * e.speed;
-
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, e.r, 0, Math.PI * 2);
-    ctx.fillStyle = "red";
-    ctx.fill();
-
-    const dist = Math.hypot(dx, dy);
-    if (dist < e.r + player.r) {
-      player.hp -= 0.1;
-      if (player.hp <= 0) dead = true;
+let lastFrame = performance.now();
+function gameLoop(now){
+  const dt = now - lastFrame;
+  lastFrame = now;
+  if(!gamePaused && !dead){
+    time += dt;
+    // update timer display
+    timerEl.textContent = formatTime(performance.now() - gameStartTimestamp);
+    // spawn control
+    spawnInterval = Math.max(400, BASE_SPAWN_INTERVAL - Math.floor(time/10000)*20);
+    if(now - lastSpawnTime > spawnInterval){
+      lastSpawnTime = now;
+      if(enemies.length < 30) spawnEnemy();
     }
+    // boss spawn logic
+    if(!boss && (now - lastBossSpawn > BOSS_INTERVAL)){
+      spawnBoss();
+      lastBossSpawn = now;
+    }
+    // movement
+    updatePlayer(dt);
+    // weapons auto actions
+    if(weaponsState.pistol.level) weaponsLib.pistol.shoot(weaponsState.pistol);
+    if(weaponsState.sword.level) weaponsLib.sword.attack(weaponsState.sword);
+    if(weaponsState.staff.level) weaponsLib.staff.shoot(weaponsState.staff);
+    if(weaponsState.fireball.level) weaponsLib.fireball.shoot(weaponsState.fireball);
+    if(weaponsState.bible.level) weaponsLib.bible.update(weaponsState.bible, dt);
+    if(weaponsState.potion.level) weaponsLib.potion.tick(weaponsState.potion);
+    if(weaponsState.magnet.level) weaponsLib.magnet.update(weaponsState.magnet, dt);
+    // bullets
+    updateBullets(dt);
+    // melee
+    updateMelee(dt);
+    // enemies
+    updateEnemies(dt);
+    // solar
+    updateSolar(now);
+    // orbs & chests pickup
+    updateOrbs();
+    updateChests();
+    // boss behavior
+    if(boss) updateBoss(dt);
   }
-
-  /* ---- Spawns ---- */
-  if (enemies.length < 10 && Math.random() < 0.02) spawnEnemy();
-
+  render();
+  updateHUD();
   requestAnimationFrame(gameLoop);
 }
-
 requestAnimationFrame(gameLoop);
   
 /* ---------- Updates (detailed) ---------- */
