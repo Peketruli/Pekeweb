@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Rebeldía IN.AR — Halloween (Noche en cementerio)</title>
+
+<!-- Fuentes -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=Mountains+of+Christmas&display=swap" rel="stylesheet">
+
+<!-- Dependencias -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/@supabase/supabase-js"></script>
+<style>
+:root{
+  --text: #f9f9ff;
+  --accent-red: #ff3b3b;
+  --accent-green: #1fc94c;
+}
+
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;overflow-x:hidden;font-family:"Inter",Arial,sans-serif;color:var(--text);}
+body{
+  position:relative;
+  padding:50px 20px 140px;
+  background:linear-gradient(180deg,#0b1c33 0%,#123a58 50%,#05131d 100%);
+  background-attachment:fixed;
+}
+
+/* ---------- NIEVE ---------- */
+@keyframes snow {
+  0% {transform: translateY(0);}
+  100% {transform: translateY(100vh);}
+}
+.snowflake {
+  position: fixed;
+  top: -10px;
+  color: white;
+  font-size: 1em;
+  animation: snow linear infinite;
+  z-index: 2;
+  opacity: 0.8;
+}
+@keyframes twinkle {
+  0%,100%{opacity:0.8;}
+  50%{opacity:0.2;}
+}
+
+/* ---------- LUCES ---------- */
+.lights {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 60px;
+  display: flex;
+  justify-content: space-around;
+  z-index: 3;
+  pointer-events: none;
+}
+.light {
+  width: 14px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-red);
+  box-shadow: 0 0 16px var(--accent-red);
+  animation: twinkle 2s infinite;
+}
+.light:nth-child(odd){background:var(--accent-green);box-shadow:0 0 16px var(--accent-green);animation-delay:1s;}
+
+/* ---------- MONTAÑA DE NIEVE ---------- */
+.scene-bg{
+  position:fixed;bottom:0;left:0;width:100%;height:50%;z-index:1;pointer-events:none;
+}
+.scene-bg svg{width:100%;height:100%;display:block;}
+
+/* ---------- BOTONES ---------- */
+.btn{
+  font-weight:600;
+  padding:12px 22px;
+  border-radius:12px;
+  border:none;
+  cursor:pointer;
+  transition:all .25s ease;
+  box-shadow:0 6px 18px rgba(0,0,0,0.45);
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  color:white;
+  background:linear-gradient(180deg,#e63946,#d62828);
+  z-index:5;
+}
+.btn[disabled]{opacity:0.6;cursor:default;}
+.btn:hover{
+  transform:scale(1.1) translateY(-3px);
+  box-shadow:0 0 50px 18px rgba(255,80,80,0.8),0 18px 60px rgba(0,0,0,0.7);
+}
+
+/* ---------- NAV INFERIOR ---------- */
+.nav-container{
+  position:fixed;bottom:20px;left:0;width:100%;
+  background-color:rgba(0,0,0,0.7);
+  padding:15px 0;
+  display:flex;justify-content:space-around;
+  z-index:6;
+}
+.nav-button{
+  padding:10px 16px;margin:0 6px;border-radius:10px;border:none;
+  background:linear-gradient(180deg,#e63946,#d62828);
+  color:white;font-weight:600;cursor:pointer;
+  transition:all .25s ease;
+  box-shadow:0 4px 18px rgba(0,0,0,0.45);
+}
+.nav-button:hover{
+  transform:translateY(-6px) scale(1.08);
+  box-shadow:0 0 48px 16px rgba(255,80,80,0.9),0 20px 60px rgba(0,0,0,0.7);
+}
+
+/* ---------- CONTENIDO ---------- */
+.container{text-align:center;max-width:1100px;margin:0 auto;display:flex;flex-direction:column;gap:26px;align-items:center;position:relative;z-index:5;}
+.card{
+  width:100%;
+  background:rgba(255,255,255,0.05);
+  border-radius:14px;
+  padding:18px;
+  box-shadow:0 6px 30px rgba(0,0,0,0.6);
+  backdrop-filter:blur(6px);
+  border:1px solid rgba(255,255,255,0.05);
+  color:#f1f1f1;
+}
+.header h1{
+  text-align:center;
+  font-family:"Mountains of Christmas",cursive;
+  font-size:48px;
+  color:var(--accent-red);
+  text-shadow:0 4px 26px rgba(0,0,0,0.6),0 0 18px rgba(255,255,255,0.4);
+}
+.lead{font-size:16px;line-height:1.5;color:#eae8e8;}
+
+/* ---------- PERFIL ---------- */
+.auth-container,.user-info{position:fixed;top:16px;right:16px;display:flex;align-items:center;gap:10px;z-index:10;}
+.auth-button{padding:10px 18px;font-size:1em;color:white;background-color:#333;border:none;cursor:pointer;border-radius:6px;transition:all .2s;}
+.auth-button:hover{transform:scale(1.08);box-shadow:0 0 30px rgba(255,255,255,0.4);}
+.user-info{display:none;cursor:pointer;}
+#userLogo{width:40px;height:40px;border-radius:50%;}
+#userName{font-weight:600;font-size:1em;color:white;}
+
+/* ---------- DROPDOWN ---------- */
+.dropdown-menu{display:none;position:absolute;top:56px;right:0;background-color:#000;border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,0.4);width:160px;text-align:left;z-index:10;}
+.dropdown-menu td{padding:10px;cursor:pointer;color:white;}
+.dropdown-menu td:hover{background-color:#333;}
+
+/* ---------- PANEL ADMIN ---------- */
+#adminPanel{display:none;text-align:left;}
+#adminPanel table{width:100%;border-collapse:collapse;margin-top:8px;color:white;}
+#adminPanel th,#adminPanel td{border:1px solid rgba(255,255,255,0.2);padding:6px 10px;font-size:14px;}
+#adminPanel th{background:rgba(255,255,255,0.08);}
+
+/* ---------- RESPONSIVE ---------- */
+@media(max-width:720px){
+  .header h1{font-size:36px;}
+  .nav-button{font-size:14px;padding:8px 12px;}
+}
+</style>
+</head>
+<body>
+
+  <div class="lights">
+  <div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div>
+  <div class="light"></div><div class="light"></div><div class="light"></div><div class="light"></div>
+</div>
+
+  <div class="scene-bg">
+  <svg viewBox="0 0 1440 400" preserveAspectRatio="none">
+    <polygon points="0,400 0,260 200,300 400,220 600,280 800,240 1000,290 1200,260 1440,300 1440,400" fill="#fff"/>
+  </svg>
+</div>
+
+<div class="container">
+  <div class="header card">
+    <h1>Rebeldía IN.AR</h1>
+  </div>
+
+  <div class="card">
+    <h2 style="color:var(--accent-orange);margin-bottom:8px;">Bienvenidos</h2>
+    <p class="lead">Aquí podéis escribir, organizar grupos, votar y divertiros. Este espacio es para la comunidad del instituto.</p>
+    <div class="actions" style="margin-top:12px;">
+      <button class="btn" onclick="location.href='c.html'">🎰 Casino</button>
+      <button class="btn" onclick="location.href='golf.html'">🎮 Zona Arcade</button>
+      <button class="btn" onclick="location.href='po.html'">📜 Política</button>
+      <button class="btn" onclick="location.href='periodico.html'">📰 Noticias</button>
+      <button class="btn" onclick="location.href='posts.html'">📝 Posts de Peketruli</button>
+      <button class="auth-button" onclick="location.href='admin.html'">Admin</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="color:var(--accent-orange)">Enviar Petición</h2>
+    <textarea id="peticionInput" placeholder="Escribe tu petición aquí..." rows="3" style="width:100%;border-radius:6px;padding:8px;margin-bottom:8px;"></textarea>
+    <button class="btn" id="enviarPeticionBtn">Enviar Petición</button>
+  </div>
+
+  <div class="card">
+    <h2 style="color:var(--accent-orange)">Enviar Reporte</h2>
+    <select id="tipoReporte" style="width:100%;padding:8px;border-radius:6px;margin-bottom:8px;">
+      <option value="inapropiado">Contenido inapropiado</option>
+      <option value="error">Error / fallo</option>
+      <option value="otro">Otro</option>
+    </select>
+    <textarea id="reporteInput" placeholder="Describe el reporte..." rows="3" style="width:100%;border-radius:6px;padding:8px;margin-bottom:8px;"></textarea>
+    <button class="btn" id="enviarReporteBtn">Enviar Reporte</button>
+  </div>
+
+  <div class="card" id="adminPanel">
+    <h2 style="color:var(--accent-purple)">Panel Admin</h2>
+    <h3>Peticiones</h3>
+    <table id="peticionesTable"><thead><tr><th>ID</th><th>Usuario</th><th>Contenido</th><th>Fecha</th></tr></thead><tbody></tbody></table>
+    <h3 style="margin-top:12px;">Reportes</h3>
+    <table id="reportesTable"><thead><tr><th>ID</th><th>Usuario</th><th>Tipo</th><th>Descripción</th><th>Fecha</th></tr></thead><tbody></tbody></table>
+  </div>
+</div>
+
+<div class="auth-container" id="authContainer">
+  <button class="auth-button" onclick="location.href='l.html'">Iniciar sesión / Registrarse</button>
+</div>
+
+<div class="user-info" id="userInfo" title="Abrir menú de usuario">
+  <img id="userLogo" src="logoDefault.png" alt="Logo usuario">
+  <div style="text-align:left">
+    <div id="userName" style="font-weight:600">Usuario</div>
+    <div style="font-size:12px;color:#cfcacd">Ver perfil</div>
+  </div>
+</div>
+
+<div class="dropdown-menu" id="dropdownMenu">
+  <table><tr><td onclick="logout()">🚪 Cerrar sesión</td></tr></table>
+</div>
+
+<div class="nav-container">
+  <button class="nav-button" onclick="location.href='b.html'">Blog</button>
+  <button class="nav-button" onclick="location.href='ch.html'">Chat</button>
+  <button class="nav-button" onclick="location.href='https://sites.google.com/arrigorriagabhi.net/ikasle'">Juegos</button>
+  <button class="nav-button" onclick="location.href='e.html'">Encuesta</button>
+</div>
+
+<script>
+
+for(let i=0;i<40;i++){
+  const snow=document.createElement("div");
+  snow.className="snowflake";
+  snow.textContent="❄️";
+  snow.style.left=Math.random()*100+"%";
+  snow.style.fontSize=(Math.random()*10+10)+"px";
+  snow.style.animationDuration=(Math.random()*6+6)+"s";
+  snow.style.animationDelay=(Math.random()*6)+"s";
+  document.body.appendChild(snow);
+}
+
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const { createClient } = window.supabase;
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+document.addEventListener("DOMContentLoaded", async () => {
+  const authContainer = document.getElementById("authContainer");
+  const userInfo = document.getElementById("userInfo");
+  const dropdownMenu = document.getElementById("dropdownMenu");
+  const adminPanel = document.getElementById("adminPanel");
+
+  let sendingPetition = false;
+  let sendingReport = false;
+
+  // Carga y pinta peticiones/reportes en el panel admin
+  async function loadAdminData() {
+    if (!adminPanel) return;
+    const tbodyP = document.querySelector("#peticionesTable tbody");
+    const tbodyR = document.querySelector("#reportesTable tbody");
+    tbodyP && (tbodyP.innerHTML = "");
+    tbodyR && (tbodyR.innerHTML = "");
+
+    try {
+      const { data: peticiones, error: errP } = await supabase
+        .from("peticiones")
+        .select("*")
+        .order("id", { ascending: false });
+
+      if (errP) {
+        console.error("Error cargando peticiones:", errP);
+        tbodyP.innerHTML = `<tr><td colspan="4" style="color:red;">Error cargando peticiones</td></tr>`;
+      } else if (!peticiones || peticiones.length === 0) {
+        tbodyP.innerHTML = `<tr><td colspan="4">No hay peticiones</td></tr>`;
+      } else {
+        peticiones.forEach(p => {
+          const fecha = p.created_at ? new Date(p.created_at).toLocaleString() : "Sin fecha";
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${p.id}</td><td>${escapeHtml(p.usuario)}</td><td>${escapeHtml(p.contenido)}</td><td>${fecha}</td>`;
+          tbodyP.appendChild(tr);
+        });
+      }
+    } catch (e) {
+      console.error("Excepción al cargar peticiones:", e);
+      if (tbodyP) tbodyP.innerHTML = `<tr><td colspan="4" style="color:red;">Error interno</td></tr>`;
+    }
+
+    try {
+      const { data: reportes, error: errR } = await supabase
+        .from("reportes")
+        .select("*")
+        .order("id", { ascending: false });
+
+      if (errR) {
+        console.error("Error cargando reportes:", errR);
+        tbodyR.innerHTML = `<tr><td colspan="5" style="color:red;">Error cargando reportes</td></tr>`;
+      } else if (!reportes || reportes.length === 0) {
+        tbodyR.innerHTML = `<tr><td colspan="5">No hay reportes</td></tr>`;
+      } else {
+        reportes.forEach(r => {
+          const fecha = r.created_at ? new Date(r.created_at).toLocaleString() : "Sin fecha";
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${r.id}</td><td>${escapeHtml(r.usuario)}</td><td>${escapeHtml(r.tipo)}</td><td>${escapeHtml(r.descripcion)}</td><td>${fecha}</td>`;
+          tbodyR.appendChild(tr);
+        });
+      }
+    } catch (e) {
+      console.error("Excepción al cargar reportes:", e);
+      if (tbodyR) tbodyR.innerHTML = `<tr><td colspan="5" style="color:red;">Error interno</td></tr>`;
+    }
+  }
+
+  // Carga info de usuario y muestra panel admin si es Peketruli
+  async function loadUserInfo() {
+    let user = null;
+    try {
+      const { data: { session } = {} } = await supabase.auth.getSession();
+      if (session?.user) {
+        user = {
+          username: session.user.user_metadata?.username || session.user.email,
+          email: session.user.email,
+          logo: session.user.user_metadata?.logo || "logoDefault.png"
+        };
+        localStorage.setItem("currentUser", JSON.stringify(user));
+      } else {
+        try { user = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch {}
+      }
+    } catch (e) {
+      console.warn("No se pudo obtener session de supabase:", e);
+      try { user = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch {}
+    }
+
+    if (user) {
+      if (userInfo) userInfo.style.display = "flex";
+      if (authContainer) authContainer.style.display = "none";
+      const nameEl = document.getElementById("userName");
+      const logoEl = document.getElementById("userLogo");
+      if (nameEl) nameEl.textContent = user.username;
+      if (logoEl) logoEl.src = user.logo || "logoDefault.png";
+
+      if (user.username === "Peketruli") {
+        if (adminPanel) {
+          adminPanel.style.display = "block";
+          await loadAdminData();
+        }
+      } else {
+        if (adminPanel) adminPanel.style.display = "none";
+      }
+    } else {
+      if (userInfo) userInfo.style.display = "none";
+      if (authContainer) authContainer.style.display = "flex";
+      if (adminPanel) adminPanel.style.display = "none";
+    }
+  }
+
+  await loadUserInfo();
+
+  // Dropdown menú usuario
+  if (userInfo && dropdownMenu) {
+    userInfo.addEventListener("click", (e) => {
+      e.stopPropagation();
+      dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target)) {
+        dropdownMenu.style.display = "none";
+      }
+    });
+  }
+
+  // Logout
+  window.logout = async function() {
+    try { await supabase.auth.signOut(); } catch (e) { console.warn("signOut error", e); }
+    localStorage.removeItem("currentUser");
+    window.location.href = "l.html";
+  };
+
+  // Enviar petición
+  const petBtn = document.getElementById("enviarPeticionBtn");
+  if (petBtn) {
+    petBtn.addEventListener("click", async function () {
+      if (sendingPetition) return;
+      const contenido = (document.getElementById("peticionInput")?.value || "").trim();
+      if (!contenido) return alert("Escribe algo antes de enviar.");
+
+      sendingPetition = true;
+      petBtn.disabled = true;
+
+      try {
+        const user = JSON.parse(localStorage.getItem("currentUser") || "null") || { username: "Anónimo" };
+        const created_at = new Date().toISOString();
+
+        const { error } = await supabase
+          .from("peticiones")
+          .insert([{ usuario: user.username, contenido, created_at }]);
+
+        if (error) {
+          console.error("Error insert peticion:", error);
+          alert("Error al enviar: " + (error.message || JSON.stringify(error)));
+        } else {
+          const input = document.getElementById("peticionInput");
+          if (input) input.value = "";
+          alert("✅ ¡Petición enviada!");
+          await loadAdminData();
+        }
+      } catch (e) {
+        console.error("Excepción al enviar peticion:", e);
+        alert("Error al enviar la petición.");
+      } finally {
+        sendingPetition = false;
+        petBtn.disabled = false;
+      }
+    });
+  }
+
+  // Enviar reporte
+  const repBtn = document.getElementById("enviarReporteBtn");
+  if (repBtn) {
+    repBtn.addEventListener("click", async function () {
+      if (sendingReport) return;
+      const descripcion = (document.getElementById("reporteInput")?.value || "").trim();
+      if (!descripcion) return alert("Describe el reporte antes de enviar.");
+
+      sendingReport = true;
+      repBtn.disabled = true;
+
+      try {
+        const tipo = document.getElementById("tipoReporte")?.value || "otro";
+        const user = JSON.parse(localStorage.getItem("currentUser") || "null") || { username: "Anónimo" };
+        const created_at = new Date().toISOString();
+
+        const { error } = await supabase
+          .from("reportes")
+          .insert([{ usuario: user.username, tipo, descripcion, created_at }]);
+
+        if (error) {
+          console.error("Error insert reporte:", error);
+          alert("Error al enviar: " + (error.message || JSON.stringify(error)));
+        } else {
+          const input = document.getElementById("reporteInput");
+          if (input) input.value = "";
+          alert("✅ ¡Reporte enviado!");
+          await loadAdminData();
+        }
+      } catch (e) {
+        console.error("Excepción al enviar reporte:", e);
+        alert("Error al enviar el reporte.");
+      } finally {
+        sendingReport = false;
+        repBtn.disabled = false;
+      }
+    });
+  }
+
+  // Utilidad: escape simple para mostrar texto de usuarios en tablas
+  function escapeHtml(text) {
+    if (text === null || text === undefined) return "";
+    return String(text)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+});
+</script>
+</body>
+</html>
