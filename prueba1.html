@@ -536,6 +536,71 @@ document.addEventListener('DOMContentLoaded', () => {
   // Small helper: spawn orb
   function spawnOrbAt(x,y){ const value = 1 + Math.floor(Math.random()*2); orbs.push({ x, y, value }); }
 
+  // ---------- XP Pickup + Level Up ----------
+function updateXPSystem() {
+  // recoger orbes cercanos
+  for (let i = orbs.length - 1; i >= 0; i--) {
+    const o = orbs[i];
+    const d = Math.hypot(o.x - player.x, o.y - player.y);
+    if (d < 24) { // distancia de recogida
+      xp += o.value;
+      orbs.splice(i, 1);
+      if (xp >= xpToNext) levelUp();
+    } else if (d < 180) {
+      // atracción suave si el jugador está cerca
+      o.x += (player.x - o.x) * 0.02;
+      o.y += (player.y - o.y) * 0.02;
+    }
+  }
+  // actualizar HUD XP
+  const xpFill = document.getElementById('xpFill');
+  const xpText = document.getElementById('xpText');
+  xpFill.style.width = `${(xp / xpToNext) * 100}%`;
+  xpText.textContent = `${xp}/${xpToNext}`;
+}
+
+function levelUp() {
+  xp -= xpToNext;
+  level++;
+  xpToNext = Math.floor(xpToNext * 1.35 + 5);
+  document.getElementById('levelText').textContent = level;
+  document.getElementById('xpFill').style.width = '0%';
+  document.getElementById('xpText').textContent = `${xp}/${xpToNext}`;
+  showLevelUpMenu();
+}
+
+function showLevelUpMenu() {
+  gamePaused = true;
+  const menu = document.getElementById('levelMenu');
+  const choices = document.getElementById('levelChoices');
+  choices.innerHTML = '';
+
+  // Ejemplo simple: mostrar 3 mejoras al azar de las armas disponibles
+  const allWeapons = Object.keys(weaponsState).filter(id => weaponsLib[id]);
+  const options = [];
+  while (options.length < 3 && allWeapons.length > 0) {
+    const w = allWeapons.splice(Math.floor(Math.random() * allWeapons.length), 1)[0];
+    options.push(w);
+  }
+
+  options.forEach(id => {
+    const w = weaponsLib[id];
+    const current = weaponsState[id].level || 0;
+    const next = Math.min(current + 1, w.maxLevel);
+    const btn = document.createElement('button');
+    btn.className = 'choice';
+    btn.textContent = `${w.name} → Nivel ${next}`;
+    btn.onclick = () => {
+      weaponsState[id].level = next;
+      menu.style.display = 'none';
+      gamePaused = false;
+    };
+    choices.appendChild(btn);
+  });
+
+  menu.style.display = 'block';
+}
+  
   /* ---------- Weapons state (per-weapon levels + timers) ---------- */
   const weaponsState = {
     whip: { level:0, lastAttack:0 },
