@@ -129,184 +129,631 @@
 <div id="debug"></div>
 
 <script>
-const canvas = document.getElementById("c");
-const ctx = canvas.getContext("2d");
-function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
-addEventListener("resize", resize);
-resize();
+// Sustituye TODO el contenido <script> por este JS
+document.addEventListener('DOMContentLoaded', () => {
+  /* -------------------------
+     Game JS (reemplazo corregido)
+     ------------------------- */
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
 
-/* ---------- Estados ---------- */
-let gameState = "menu"; // menu, playing, gameOver
-let last = performance.now();
-let bullets = [], enemies = [];
-let dead = false;
+  // Force canvas resize & ensure UI above canvas
+  function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+  addEventListener('resize', resize);
+  resize();
+  // make sure canvas doesn't accidentally overlay UI
+  canvas.style.position = 'fixed';
+  canvas.style.left = '0';
+  canvas.style.top = '0';
+  canvas.style.zIndex = '0';
+  canvas.style.pointerEvents = 'auto';
 
-/* ---------- Player ---------- */
-const player = {
-  x: canvas.width/2,
-  y: canvas.height/2,
-  size: 15,
-  speed: 200,
-  hp: 100,
-  maxHp: 100
-};
+  // UI elements
+  const mainMenuEl = document.getElementById('mainMenu');
+  const charSelectEl = document.getElementById('charSelect');
+  const infoPanelEl = document.getElementById('infoPanel');
+  const levelMenuEl = document.getElementById('levelMenu');
+  const deathPanelEl = document.getElementById('deathPanel');
+  const chestPopup = document.getElementById('chestPopup');
+  const leftHUD = document.getElementById('leftHUD');
+  const timerEl = document.getElementById('timer');
+  const debugEl = document.getElementById('debug');
 
-/* ---------- Controles ---------- */
-let keys = {};
-let mouse = {x:0, y:0};
-addEventListener("keydown", e=>keys[e.key]=true);
-addEventListener("keyup", e=>keys[e.key]=false);
-canvas.addEventListener("mousemove", e=>{
-  mouse.x = e.clientX;
-  mouse.y = e.clientY;
-});
+  const btnPlay = document.getElementById('btnPlay');
+  const btnInfo = document.getElementById('btnInfo');
+  const btnQuit = document.getElementById('btnQuit');
+  const btnCharBack = document.getElementById('btnCharBack');
+  const btnInfoBack = document.getElementById('btnInfoBack');
+  const btnRestart = document.getElementById('btnRestart');
 
-/* ---------- Enemigos ---------- */
-function spawnEnemy(){
-  enemies.push({
-    x: Math.random()*canvas.width,
-    y: Math.random()*canvas.height,
-    size: 20,
-    hp: 20,
-    speed: 50
-  });
-}
-
-/* ---------- Juego ---------- */
-function startGame(){
-  console.log("Iniciando juego...");
-  gameState = "playing";
-  dead = false;
-  bullets = [];
-  enemies = [];
-  player.x = canvas.width/2;
-  player.y = canvas.height/2;
-  player.hp = player.maxHp;
-
-  for(let i=0;i<3;i++) spawnEnemy();
-  startButton.style.display = "none";
-}
-
-function update(dt){
-  if(gameState !== "playing" || dead) return;
-
-  // Movimiento del jugador
-  if(keys["w"]) player.y -= player.speed * dt;
-  if(keys["s"]) player.y += player.speed * dt;
-  if(keys["a"]) player.x -= player.speed * dt;
-  if(keys["d"]) player.x += player.speed * dt;
-
-  // Disparo simple
-  if(keys[" "]) bullets.push({
-    x: player.x, y: player.y,
-    dx: (mouse.x - player.x) / 20,
-    dy: (mouse.y - player.y) / 20,
-    size: 5
+  // Ensure UI panels are above canvas
+  [mainMenuEl, charSelectEl, infoPanelEl, levelMenuEl, deathPanelEl].forEach(el=>{
+    if(el) { el.style.zIndex = 10; el.style.pointerEvents = 'auto'; el.style.position = 'fixed'; }
   });
 
-  // Actualizar balas
-  bullets.forEach((b, i)=>{
-    b.x += b.dx * dt * 60;
-    b.y += b.dy * dt * 60;
-    enemies.forEach((e, j)=>{
-      if(Math.hypot(e.x-b.x,e.y-b.y)<e.size+b.size){
-        e.hp -= 10;
-        bullets.splice(i,1);
-        if(e.hp<=0) enemies.splice(j,1);
+  /* ---------- Estado global ---------- */
+  let time = 0;
+  let score = 0;
+  let xp = 0;
+  let level = 1;
+  let xpToNext = 15;
+  let gamePaused = false;
+  let dead = false;
+  let gameStartTimestamp = performance.now();
+  function formatTime(ms){
+    const total = Math.floor(ms/1000);
+    const mins = Math.floor(total/60);
+    const secs = total % 60;
+    return String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
+  }
+
+  /* ---------- Player ---------- */
+  const player = { x: canvas.width/2, y: canvas.height/2, size: 18, speed: 2.2, hp: 100, maxHp: 100 };
+
+  /* ---------- Input ---------- */
+  const keys = {};
+  addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true);
+  addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
+
+  /* ---------- Entities ---------- */
+  let bullets = [], enemies = [], orbs = [], meleeAttacks = [], boss = null, chests = [];
+  let lastSpawnTime = performance.now(), lastBossSpawn = performance.now();
+
+  /* ---------- Constants ---------- */
+  const BOSS_INTERVAL = 150000;
+  const BASE_SPAWN_INTERVAL = 1200;
+  let spawnInterval = BASE_SPAWN_INTERVAL;
+
+  /* ---------- Utils ---------- */
+  function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
+  function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+  function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+  /* ---------- Weapons library (default placeholders, modif.) ---------- */
+  const weaponsLib = {};
+  // We'll keep names but actual behaviour will be implemented per new weapons if the user asks.
+  // For now add simple functional placeholders so the rest of the game works.
+  weaponsLib.pistol = {
+    id:'pistol', name:'Pistola', maxLevel:10,
+    statsForLevel(l){ return { interval: Math.max(120,500-(l-1)*40), bulletsCount:1 + Math.floor((l-1)/3), damage:2 + Math.floor((l-1)/4), speed:5 + (l-1)*0.3, size:3 + Math.floor((l-1)/6) }; },
+    shoot(state){ if(gamePaused || !state.level || dead) return; const now = performance.now(); const s = weaponsLib.pistol.statsForLevel(state.level); if(now - (state.lastShot||0) < s.interval) return; state.lastShot = now; if(!enemies.length && !boss) return; const pool = boss ? enemies.concat([boss]) : enemies; let target = pool[0]; for(const p of pool) if(dist(p,player) < dist(target,player)) target = p; const ang = Math.atan2(target.y-player.y, target.x-player.x); const total = s.bulletsCount; const spread = (total>1)?0.18:0; const step = total>1?spread/(total-1):0; const start = ang - spread/2; for(let i=0;i<total;i++){ const a = start + step*i; bullets.push({ x:player.x,y:player.y,dx:Math.cos(a)*s.speed,dy:Math.sin(a)*s.speed,damage:s.damage,size:s.size,life:3000,friendly:true,type:'pistol' }); } }
+  };
+  weaponsLib.solar = { id:'solar', name:'Área Solar', maxLevel:10, statsForLevel(level){ const radius = Math.round(40 + (level-1)*12); const damage = 3 + Math.floor((level-1)*1.2); const tick = Math.max(180, Math.round(420 - (level-1)*24)); return { radius, damage, tick }; } };
+  weaponsLib.sword = { id:'sword', name:'Espada', maxLevel:10, statsForLevel(level){ const arc = Math.PI/3 - (level-1)*0.02; const range = 36 + Math.floor((level-1)*3); const damage = 6 + Math.floor((level-1)*1.2); const interval = Math.max(250, 450 - (level-1)*20); return { arc, range, damage, interval }; }, attack(state){ if(gamePaused || !state.level || dead) return; const now = performance.now(); const s = weaponsLib.sword.statsForLevel(state.level); if(now - (state.lastAttack||0) < s.interval) return; state.lastAttack = now; if(enemies.length === 0 && !boss){ meleeAttacks.push({ x:player.x, y:player.y, angle:0, arc:s.arc, range:s.range, damage:s.damage, life:120 }); return; } const pool = boss ? enemies.concat([boss]) : enemies; let target = pool[0]; for(const p of pool) if(dist(p,player) < dist(target,player)) target = p; const ang = Math.atan2(target.y - player.y, target.x - player.x); meleeAttacks.push({ x:player.x, y:player.y, angle:ang, arc:s.arc, range:s.range, damage:s.damage, life:120 }); } };
+  weaponsLib.staff = { id:'staff', name:'Bastón', maxLevel:10, statsForLevel(level){ const interval = Math.max(600, 1400 - (level-1)*90); const damage = 12 + Math.floor((level-1)*2.2); const speed = 2.2 + (level-1)*0.15; const size = 6 + Math.floor((level-1)/3); return { interval, damage, speed, size }; }, shoot(state){ if(gamePaused || !state.level || dead) return; const now = performance.now(); const s = weaponsLib.staff.statsForLevel(state.level); if(now - (state.lastShot||0) < s.interval) return; state.lastShot = now; if(!enemies.length && !boss) return; const pool = boss ? enemies.concat([boss]) : enemies; let target = pool[0]; for(const p of pool) if(dist(p,player) < dist(target,player)) target = p; const ang = Math.atan2(target.y - player.y, target.x - player.x); bullets.push({ x: player.x, y: player.y, dx: Math.cos(ang)*s.speed, dy: Math.sin(ang)*s.speed, damage: s.damage, size: s.size, life: 4000, friendly:true, type:'staff' }); } };
+  weaponsLib.fireball = { id:'fireball', name:'Bolas de Fuego', maxLevel:10, statsForLevel(level){ const interval = Math.max(1100, 2500 - (level-1)*140); const damage = 8 + Math.floor((level-1)*1.6); const speed = 3.2 + (level-1)*0.18; const size = 5 + Math.floor((level-1)/4); const homingStrength = 0.12 + (level-1)*0.01; return { interval, damage, speed, size, homingStrength }; }, shoot(state){ if(gamePaused || !state.level || dead) return; const now = performance.now(); const s = weaponsLib.fireball.statsForLevel(state.level); if(now - (state.lastShot||0) < s.interval) return; state.lastShot = now; bullets.push({ x: player.x, y: player.y, dx: 0, dy: -s.speed, damage: s.damage, size: s.size, life: 5000, friendly:true, homing: true, homingStrength: s.homingStrength, speed: s.speed, type:'fireball' }); } };
+
+  // Bible kept as a placeholder (you wanted to replace it later)
+  weaponsLib.bible = {
+    id: "bible", name: "Biblia", maxLevel: 10,
+    statsForLevel(level){ const orbCount = 1 + Math.floor(level / 2); const radius = 55 + level * 6; const damage = 0.8 + level * 0.4; const duration = 4000 + level * 300; const cooldown = Math.max(400,8000 - level * 250); const speed = 0.005 + level * 0.0004; return { orbCount, radius, damage, duration, cooldown, speed }; },
+    activate(state){ const s = weaponsLib.bible.statsForLevel(state.level); state.active = true; state.spawnTime = performance.now(); state.orbs = []; for (let i=0;i<s.orbCount;i++) state.orbs.push({ angle: (i/s.orbCount)*Math.PI*2 }); },
+    update(state, dt){ if(!state.level) return; const now = performance.now(); const s = weaponsLib.bible.statsForLevel(state.level); if(!state.active && (!state.lastUse || now - state.lastUse > s.cooldown)){ state.lastUse = now; this.activate(state); } if(state.active){ const elapsed = now - state.spawnTime; ctx.save(); ctx.fillStyle = "rgba(255,255,100,0.85)"; ctx.shadowColor = "rgba(255,255,150,0.9)"; ctx.shadowBlur = 10; for(const orb of state.orbs){ orb.angle += s.speed * dt; const x = player.x + Math.cos(orb.angle) * s.radius; const y = player.y + Math.sin(orb.angle) * s.radius; ctx.beginPath(); ctx.arc(x,y,10,0,Math.PI*2); ctx.fill(); for(const e of enemies){ const d = Math.hypot(x - e.x, y - e.y); if(d < e.size + 10) e.hp -= s.damage * (dt / 16); } } ctx.restore(); if(elapsed > s.duration){ state.active = false; state.orbs = []; } } }
+  };
+
+  weaponsLib.potion = {
+    id:'potion', name:'Pociones', maxLevel:10,
+    statsForLevel(level){ const healAmount = 6 + Math.floor((level-1)*1.6); const interval = Math.max(3500, 9000 - (level-1)*500); return { healAmount, interval }; },
+    tick(state){ if(!state.level || dead) return; const now = performance.now(); const s = weaponsLib.potion.statsForLevel(state.level); if(now - (state.lastHeal||0) < s.interval) return; state.lastHeal = now; player.hp = Math.min(player.maxHp, player.hp + s.healAmount); }
+  };
+
+  weaponsLib.magnet = {
+    id:'magnet', name:'Imán', maxLevel:10,
+    statsForLevel(level){ const radius = 90 + (level-1)*26; const pullStrength = 0.025 + (level-1)*0.01; return { radius, pullStrength }; },
+    update(state, dt){ if(!state.level) return; const s = weaponsLib.magnet.statsForLevel(state.level); for(const o of orbs){ const d = Math.hypot(o.x - player.x, o.y - player.y); if(d <= s.radius){ const k = s.pullStrength * (dt/16); o.x += (player.x - o.x) * k * 1.2; o.y += (player.y - o.y) * k * 1.2; } } }
+  };
+
+  /* ---------- Weapons state ---------- */
+  const weaponsState = {
+    pistol: { level: 1, lastShot: 0 },
+    solar: { level: 0, lastTick: 0, areas: [] },
+    sword: { level: 0, lastAttack: 0 },
+    staff: { level: 0, lastShot: 0 },
+    fireball: { level: 0, lastShot: 0 },
+    bible: { level: 0, orbs: [], active:false, lastUse:0 },
+    potion: { level: 0, lastHeal: 0 },
+    magnet: { level: 0 }
+  };
+
+  const hiddenCombos = [
+    { name: "Pistol + Magnet", required: ["pistol","magnet"], effect: ()=>{ console.log("Combo secreto activado: Pistol + Magnet!"); weaponsState.pistol.speedBoost = true; }, activated:false },
+    { name: "Sword + Fireball", required: ["sword","fireball"], effect: ()=>{ console.log("Combo secreto activado: Sword + Fireball!"); weaponsState.sword.fireballLink = true; }, activated:false },
+    { name: "Bible + Solar", required: ["bible","solar"], effect: ()=>{ console.log("Combo secreto activado: Bible + Solar!"); weaponsState.bible.solarLink = true; }, activated:false }
+  ];
+
+  /* ---------- Spawners ---------- */
+  function spawnEnemy(){
+    const edge = Math.floor(Math.random()*4);
+    let x = edge===0 ? -20 : edge===1 ? canvas.width+20 : Math.random()*canvas.width;
+    let y = edge===2 ? -20 : edge===3 ? canvas.height+20 : Math.random()*canvas.height;
+    const easyWindow = 120000;
+    let hp = time < easyWindow ? 3 : 3 + Math.floor(time/90000);
+    const speed = 0.6 + Math.random()*1.0 + Math.min(1.2, time/120000);
+    const size = 10 + Math.random()*10;
+    enemies.push({ x,y,hp,speed,size,color:'#c0392b' });
+  }
+  function spawnOrbAt(x,y){ const value = 1 + Math.floor(Math.random()*2); orbs.push({ x,y,value }); }
+
+  /* ---------- UI helpers ---------- */
+  function showChestPopup(text){
+    chestPopup.textContent = text;
+    chestPopup.style.display = 'block';
+    chestPopup.classList.add('chestAnim');
+    clearTimeout(showChestPopup._t);
+    showChestPopup._t = setTimeout(()=>{ chestPopup.style.display = 'none'; chestPopup.classList.remove('chestAnim'); }, 2200);
+  }
+
+  function updateHUD(){
+    const hpFill = document.getElementById('hpFill');
+    const xpFill = document.getElementById('xpFill');
+    const xpText = document.getElementById('xpText');
+    const hpText = document.getElementById('hpText');
+    const levelText = document.getElementById('levelText');
+    const scoreText = document.getElementById('scoreText');
+
+    if(hpFill) hpFill.style.width = (Math.max(0,Math.min(1, player.hp / player.maxHp))*100) + '%';
+    if(hpText) hpText.textContent = Math.round(player.hp) + ' / ' + player.maxHp;
+    if(xpFill) xpFill.style.width = Math.min(100, (xp/xpToNext)*100) + '%';
+    if(xpText) xpText.textContent = Math.floor(xp) + ' / ' + xpToNext;
+    if(levelText) levelText.textContent = level;
+    if(scoreText) scoreText.textContent = 'Puntos: ' + score;
+
+    renderLeftHUD();
+  }
+
+  function renderLeftHUD(){
+    leftHUD.innerHTML = '';
+    // show custom order (use keys present in weaponsLib)
+    const order = Object.keys(weaponsLib);
+    for(const id of order){
+      const lvl = (weaponsState[id] && weaponsState[id].level) || 0;
+      const slot = document.createElement('div');
+      slot.className = 'weaponSlot';
+      slot.style.opacity = lvl?1:0.4;
+      const icon = document.createElement('div'); icon.className = 'weaponIcon'; icon.textContent = id.charAt(0).toUpperCase();
+      const info = document.createElement('div'); info.className = 'weaponInfo';
+      const name = document.createElement('div'); name.className = 'weaponName'; name.textContent = weaponsLib[id].name;
+      const lvldiv = document.createElement('div'); lvldiv.className = 'weaponLvl'; lvldiv.textContent = lvl ? `Lv ${lvl}` : 'No equipado';
+      info.appendChild(name); info.appendChild(lvldiv);
+      slot.appendChild(icon); slot.appendChild(info);
+      leftHUD.appendChild(slot);
+    }
+  }
+
+  /* ---------- Gameplay functions ---------- */
+  function applyWeaponLevelEffects(id){
+    if(id === 'solar'){
+      if(weaponsState.solar.level === 1) weaponsState.solar.areas.push({ x:player.x, y:player.y, since:performance.now() });
+    }
+    if(id === 'bible'){
+      weaponsState.bible.lastUse = 0;
+      weaponsState.bible.active = false;
+    }
+  }
+  function applyGenericBonus(id){
+    if(id === 'hpUp'){ player.maxHp += 10; player.hp = player.maxHp; }
+    if(id === 'speed'){ player.speed += 0.3; }
+    if(id === 'xpBoost'){ weaponsState.__xpBoost = (weaponsState.__xpBoost||0) + 5; }
+  }
+
+  function openLevelMenu(){
+    gamePaused = true;
+    levelMenuEl.style.display = 'block';
+    const choicesDiv = document.getElementById('levelChoices');
+    choicesDiv.innerHTML = '';
+    const candidates = [];
+    for(const id in weaponsLib){
+      const curLevel = weaponsState[id].level || 0;
+      if(curLevel < weaponsLib[id].maxLevel) candidates.push({ type:'weapon', id });
+    }
+    const genericBonuses = [
+      { type:'bonus', id:'hpUp', name:'Más vida (+10)' },
+      { type:'bonus', id:'speed', name:'Velocidad +0.3' },
+      { type:'bonus', id:'xpBoost', name:'Más XP (orb +1)' }
+    ];
+    const pool = [...candidates];
+    while(pool.length < 6) pool.push(randChoice(genericBonuses));
+    const picks = [];
+    while(picks.length < 3){
+      const p = randChoice(pool);
+      if(!picks.find(x=>x.type===p.type && x.id===p.id)) picks.push(p);
+    }
+    picks.forEach(p=>{
+      const btn = document.createElement('button');
+      btn.className = 'choice';
+      if(p.type === 'weapon'){
+        const lvl = weaponsState[p.id].level || 0;
+        btn.textContent = `${weaponsLib[p.id].name} ${lvl?('(Lv '+lvl+')'):''}`;
+        btn.onclick = ()=>{
+          weaponsState[p.id].level = Math.min(weaponsLib[p.id].maxLevel, (weaponsState[p.id].level||0) + 1);
+          applyWeaponLevelEffects(p.id);
+          closeLevelMenu();
+        };
+      } else {
+        btn.textContent = p.name;
+        btn.onclick = ()=>{ applyGenericBonus(p.id); closeLevelMenu(); };
       }
+      choicesDiv.appendChild(btn);
     });
-  });
+  }
+  function closeLevelMenu(){ levelMenuEl.style.display = 'none'; gamePaused = false; updateHUD(); }
 
-  // Enemigos se mueven hacia el jugador
-  enemies.forEach(e=>{
-    const dx = player.x - e.x;
-    const dy = player.y - e.y;
-    const dist = Math.hypot(dx,dy);
-    e.x += (dx/dist)*e.speed*dt;
-    e.y += (dy/dist)*e.speed*dt;
+  /* ---------- Collision and updates ---------- */
+  function updatePlayer(dt){
+    if(keys['w'] || keys['arrowup']) player.y -= player.speed;
+    if(keys['s'] || keys['arrowdown']) player.y += player.speed;
+    if(keys['a'] || keys['arrowleft']) player.x -= player.speed;
+    if(keys['d'] || keys['arrowright']) player.x += player.speed;
+    player.x = clamp(player.x, player.size, canvas.width - player.size);
+    player.y = clamp(player.y, player.size, canvas.height - player.size);
+    if(weaponsState.solar.level){
+      weaponsState.solar.areas.forEach(a => { a.x = player.x; a.y = player.y; });
+    }
+  }
 
-    // Colisión
-    if(dist < e.size + player.size){
-      player.hp -= 30*dt;
-      if(player.hp <= 0){
-        dead = true;
-        gameState = "gameOver";
-        startButton.style.display = "block";
-        startButton.textContent = "Reiniciar";
+  function updateBullets(dt){
+    for(let i=bullets.length-1;i>=0;i--){
+      const b = bullets[i];
+      if(b.homing){
+        if(enemies.length || boss){
+          const pool = boss ? enemies.concat([boss]) : enemies;
+          let target = pool[0];
+          for(const p of pool) if(dist(p,b) < dist(target,b)) target = p;
+          const angTo = Math.atan2(target.y - b.y, target.x - b.x);
+          const curAng = Math.atan2(b.dy, b.dx);
+          let diff = angTo - curAng;
+          while(diff > Math.PI) diff -= Math.PI*2;
+          while(diff < -Math.PI) diff += Math.PI*2;
+          let newAng = curAng + diff * (b.homingStrength || 0.12);
+          b.dx = Math.cos(newAng) * b.speed;
+          b.dy = Math.sin(newAng) * b.speed;
+        }
+      }
+      b.x += b.dx * (dt/16);
+      b.y += b.dy * (dt/16);
+      b.life -= dt;
+      if(b.life <= 0 || b.x < -60 || b.x > canvas.width+60 || b.y < -60 || b.y > canvas.height+60){ bullets.splice(i,1); continue; }
+      for(let j=enemies.length-1;j>=0;j--){
+        const e = enemies[j];
+        if(Math.hypot(b.x - e.x, b.y - e.y) < e.size + (b.size||4)){
+          e.hp -= b.damage;
+          bullets.splice(i,1);
+          if(e.hp <= 0){ spawnOrbAt(e.x,e.y); enemies.splice(j,1); score += 1; }
+          break;
+        }
+      }
+      if(boss && Math.hypot(b.x - boss.x, b.y - boss.y) < boss.size + (b.size||4)){
+        boss.hp -= b.damage;
+        bullets.splice(i,1);
+        if(boss.hp <= 0) killBoss();
+        continue;
       }
     }
-  });
-}
-
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-
-  if(gameState === "menu"){
-    ctx.fillStyle="white";
-    ctx.font="48px Arial";
-    ctx.fillText("Vampire Survival", canvas.width/2-200, canvas.height/2-50);
-    return;
   }
 
-  if(gameState === "gameOver"){
-    ctx.fillStyle="red";
-    ctx.font="48px Arial";
-    ctx.fillText("Has muerto", canvas.width/2-150, canvas.height/2);
-    return;
+  function updateMelee(dt){
+    for(let i = meleeAttacks.length-1; i>=0; i--){
+      const m = meleeAttacks[i];
+      m.life -= dt;
+      for(let j = enemies.length-1; j>=0; j--){
+        const e = enemies[j];
+        const angToE = Math.atan2(e.y - m.y, e.x - m.x);
+        let diff = Math.abs(((angToE - m.angle + Math.PI) % (2*Math.PI)) - Math.PI);
+        if(diff <= m.arc/2 && dist(e,m) <= m.range + e.size){
+          e.hp -= m.damage;
+          e.x += Math.cos(angToE)*6;
+          e.y += Math.sin(angToE)*6;
+          if(e.hp <= 0){ spawnOrbAt(e.x, e.y); enemies.splice(j,1); score += 1; }
+        }
+      }
+      if(boss){
+        const angToB = Math.atan2(boss.y - m.y, boss.x - m.x);
+        let diffB = Math.abs(((angToB - m.angle + Math.PI) % (2*Math.PI)) - Math.PI);
+        if(diffB <= m.arc/2 && dist(boss,m) <= m.range + boss.size){
+          boss.hp -= m.damage;
+          if(boss.hp <= 0) killBoss();
+        }
+      }
+      if(m.life <= 0) meleeAttacks.splice(i,1);
+    }
   }
 
-  // Player
-  ctx.fillStyle="white";
-  ctx.beginPath();
-  ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
-  ctx.fill();
+  function updateEnemies(dt){
+    for(let i=enemies.length-1;i>=0;i--){
+      const e = enemies[i];
+      const a = Math.atan2(player.y - e.y, player.x - e.x);
+      e.x += Math.cos(a) * e.speed * (dt/16);
+      e.y += Math.sin(a) * e.speed * (dt/16);
+      if(Math.hypot(e.x - player.x, e.y - player.y) < player.size + e.size){
+        player.hp -= 8 * (dt/16);
+        spawnOrbAt(e.x, e.y);
+        enemies.splice(i,1);
+        if(player.hp <= 0) onDeath();
+      }
+    }
+  }
 
-  // Balas
-  ctx.fillStyle="yellow";
-  bullets.forEach(b=>{
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
-    ctx.fill();
+  function updateSolar(now){
+    if(!weaponsState.solar.level) return;
+    const lvl = weaponsState.solar.level;
+    const s = weaponsLib.solar.statsForLevel(lvl);
+    if(!weaponsState.solar.lastTick) weaponsState.solar.lastTick = 0;
+    if(now - weaponsState.solar.lastTick < s.tick) return;
+    weaponsState.solar.lastTick = now;
+    weaponsState.solar.areas.forEach(area=>{
+      for(let i = enemies.length-1; i>=0; i--){
+        const e = enemies[i];
+        if(dist(e, area) < s.radius){
+          e.hp -= s.damage;
+          if(e.hp <= 0){ spawnOrbAt(e.x, e.y); enemies.splice(i,1); score += 1; }
+        }
+      }
+      if(boss && dist(boss, area) < s.radius){
+        boss.hp -= s.damage;
+        if(boss.hp <= 0) killBoss();
+      }
+    });
+  }
+
+  function updateOrbs(){
+    for(let i = orbs.length-1; i>=0; i--){
+      const o = orbs[i];
+      if(dist(o, player) < player.size + 10){
+        let gain = o.value;
+        if(weaponsState.__xpBoost && weaponsState.__xpBoost > 0){ gain += 1; weaponsState.__xpBoost--; }
+        xp += gain;
+        orbs.splice(i,1);
+        if(xp >= xpToNext) levelUp();
+      } else {
+        const d = Math.hypot(o.x - player.x, o.y - player.y);
+        if(d < 32){ o.x += (player.x - o.x) * 0.06; o.y += (player.y - o.y) * 0.06; }
+      }
+    }
+  }
+
+  function updateChests(){
+    for(let i = chests.length-1; i>=0; i--){
+      const c = chests[i];
+      c.y -= Math.sin((performance.now()+c.offset)/300)*0.04;
+      if(dist(c, player) < player.size + 18){
+        applyChestReward(c);
+        showChestPopup(`¡Cofre abierto! ${c.rewardText || ''}`);
+        chests.splice(i,1);
+        continue;
+      }
+      if(performance.now() - c.spawned > 30000) chests.splice(i,1);
+    }
+  }
+
+  /* ---------- Boss ---------- */
+  function spawnBoss(){
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const x = side === -1 ? -120 : canvas.width + 120;
+    const y = Math.random()*canvas.height;
+    const minutes = Math.floor((performance.now()-gameStartTimestamp)/60000);
+    const baseHp = Math.round((200 + minutes*60) * 0.6);
+    const baseSize = 48 + minutes*6;
+    const speed = 0.35 + Math.random()*0.35;
+    boss = { x, y, hp: baseHp, maxHp: baseHp, size: baseSize, speed, color:'#8e44ad', spawned: performance.now(), contactDamage: 9 };
+  }
+  function updateBoss(dt){
+    if(!boss) return;
+    const ang = Math.atan2(player.y - boss.y, player.x - boss.x);
+    boss.x += Math.cos(ang) * boss.speed * (dt/16);
+    boss.y += Math.sin(ang) * boss.speed * (dt/16);
+    if(Math.hypot(boss.x - player.x, boss.y - player.y) < player.size + boss.size){
+      player.hp -= boss.contactDamage * (dt/16);
+      if(player.hp <= 0) onDeath();
+    }
+  }
+  function killBoss(){ if(!boss) return; chests.push({ x: boss.x, y: boss.y, spawned: performance.now(), offset: Math.random()*9999 }); boss = null; }
+
+  function applyChestReward(chest){
+    const owned = Object.keys(weaponsState).filter(k => (weaponsState[k].level||0) > 0 && weaponsState[k].level < (weaponsLib[k].maxLevel||10));
+    if(owned.length){
+      const pick = randChoice(owned);
+      weaponsState[pick].level = Math.min(weaponsLib[pick].maxLevel, weaponsState[pick].level + 1);
+      applyWeaponLevelEffects(pick);
+      chest.rewardText = `${weaponsLib[pick].name} +1 nivel`;
+    } else {
+      player.hp = Math.min(player.maxHp, player.hp + 25);
+      chest.rewardText = `Vida +25 (fallback)`;
+    }
+  }
+
+  /* ---------- Level / Death ---------- */
+  function levelUp(){ level++; xp = xp - xpToNext; xpToNext = Math.max(5, Math.floor(xpToNext * 1.22)); player.hp = Math.min(player.maxHp, player.hp + 10); openLevelMenu(); }
+  function onDeath(){ if(dead) return; dead = true; gamePaused = true; deathPanelEl.style.display = 'block'; document.getElementById('deathScore').textContent = 'Puntos: '+score+' | Nivel alcanzado: '+level; }
+
+  /* ---------- Rendering ---------- */
+  function render(){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    if(weaponsState.solar.level){
+      const s = weaponsLib.solar.statsForLevel(weaponsState.solar.level);
+      ctx.fillStyle = 'rgba(255,200,50,0.06)';
+      weaponsState.solar.areas.forEach(a=>{
+        ctx.beginPath();
+        ctx.arc(a.x, a.y, s.radius, 0, Math.PI*2);
+        ctx.fill();
+      });
+    }
+
+    for(const o of orbs){ ctx.fillStyle = '#f1c40f'; ctx.beginPath(); ctx.arc(o.x,o.y,6,0,Math.PI*2); ctx.fill(); }
+    for(const c of chests){ ctx.fillStyle = '#9b59b6'; ctx.beginPath(); ctx.arc(c.x,c.y,12,0,Math.PI*2); ctx.fill(); }
+    ctx.fillStyle = '#3498db'; ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
+    for(const e of enemies){ ctx.fillStyle = e.color || '#e74c3c'; ctx.beginPath(); ctx.arc(e.x,e.y,e.size,0,Math.PI*2); ctx.fill(); }
+    if(boss){ ctx.fillStyle = boss.color || '#8e44ad'; ctx.beginPath(); ctx.arc(boss.x,boss.y,boss.size,0,Math.PI*2); ctx.fill(); }
+    for(const b of bullets){ ctx.fillStyle = b.type==='fireball'?'#e67e22':'#fff'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size||4,0,Math.PI*2); ctx.fill(); }
+    for(const m of meleeAttacks){ ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(m.x,m.y,m.range,m.angle - m.arc/2, m.angle + m.arc/2); ctx.stroke(); }
+  }
+
+  /* ---------- Main game loop ---------- */
+  let lastFrame = performance.now();
+  function gameLoop(now){
+    const dt = now - lastFrame;
+    lastFrame = now;
+    if(!gamePaused && !dead){
+      time += dt;
+      timerEl.textContent = formatTime(performance.now() - gameStartTimestamp);
+      spawnInterval = Math.max(400, BASE_SPAWN_INTERVAL - Math.floor(time/10000)*20);
+      if(now - lastSpawnTime > spawnInterval){ lastSpawnTime = now; if(enemies.length < 30) spawnEnemy(); }
+      // boss
+      if(!boss && (now - lastBossSpawn > BOSS_INTERVAL)){ spawnBoss(); lastBossSpawn = now; }
+      updatePlayer(dt);
+      // weapons auto actions
+      if(weaponsState.pistol.level) weaponsLib.pistol.shoot(weaponsState.pistol);
+      if(weaponsState.sword.level) weaponsLib.sword.attack(weaponsState.sword);
+      if(weaponsState.staff.level) weaponsLib.staff.shoot(weaponsState.staff);
+      if(weaponsState.fireball.level) weaponsLib.fireball.shoot(weaponsState.fireball);
+      if(weaponsState.bible.level) weaponsLib.bible.update(weaponsState.bible, dt);
+      if(weaponsState.potion.level) weaponsLib.potion.tick(weaponsState.potion);
+      if(weaponsState.magnet.level) weaponsLib.magnet.update(weaponsState.magnet, dt);
+      updateBullets(dt);
+      updateMelee(dt);
+      updateEnemies(dt);
+      updateSolar(now);
+      updateOrbs();
+      updateChests();
+      if(boss) updateBoss(dt);
+    }
+    render();
+    updateHUD();
+    requestAnimationFrame(gameLoop);
+  }
+  requestAnimationFrame(gameLoop);
+
+  /* ---------- Init state ---------- */
+  weaponsState.pistol.level = 1;
+  weaponsState.solar.level = 0;
+  weaponsState.solar.areas = [];
+  for(let i=0;i<4;i++) spawnEnemy();
+  gameStartTimestamp = performance.now();
+  lastBossSpawn = performance.now() + 10000;
+  weaponsState.bible.level = 0;
+  weaponsState.bible.active = false;
+  weaponsState.bible.orbs = [];
+  weaponsState.bible.lastUse = 0;
+  updateHUD();
+
+  // Expose debug object
+  window.__VS = { weaponsLib, weaponsState, player, enemies, orbs, bullets, chests, spawnEnemy, spawnBoss: () => { lastBossSpawn = 0; }, killBoss, levelUp };
+
+  /* ---------- UI event wiring (robust) ---------- */
+  // remove any old handlers to avoid doubles
+  function safeAdd(el, ev, fn){
+    if(!el) return;
+    el.replaceWith(el.cloneNode(true));
+    const fresh = document.getElementById(el.id);
+    fresh.addEventListener(ev, fn);
+    return fresh;
+  }
+
+  // Btn Play -> show char select
+  btnPlay && btnPlay.addEventListener('click', ()=>{
+    mainMenuEl.style.display = 'none';
+    charSelectEl.style.display = 'flex';
   });
 
-  // Enemigos
-  ctx.fillStyle="green";
-  enemies.forEach(e=>{
-    ctx.beginPath();
-    ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
-    ctx.fill();
+  // Btn Info
+  btnInfo && btnInfo.addEventListener('click', ()=>{
+    mainMenuEl.style.display = 'none';
+    infoPanelEl.style.display = 'flex';
   });
 
-  // HUD
-  ctx.fillStyle="white";
-  ctx.font="20px Arial";
-  ctx.fillText("HP: " + Math.round(player.hp), 20, 30);
-}
+  // Btn Quit (just logs)
+  btnQuit && btnQuit.addEventListener('click', ()=>{ console.log('Volver pulsado'); });
 
-/* ---------- Bucle ---------- */
-function loop(now){
-  const dt = (now - last) / 1000;
-  last = now;
-  update(dt);
-  draw();
-  requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop);
+  // Char back
+  btnCharBack && btnCharBack.addEventListener('click', ()=>{
+    charSelectEl.style.display = 'none';
+    mainMenuEl.style.display = 'flex';
+  });
 
-/* ---------- Botón de menú ---------- */
-const startButton = document.createElement("button");
-startButton.textContent = "Jugar";
-startButton.style.position = "absolute";
-startButton.style.left = "50%";
-startButton.style.top = "60%";
-startButton.style.transform = "translate(-50%,-50%)";
-startButton.style.padding = "12px 24px";
-startButton.style.fontSize = "24px";
-startButton.style.cursor = "pointer";
-startButton.style.zIndex = "10"; // 🔥 IMPORTANTE para que esté encima del canvas
-document.body.appendChild(startButton);
+  // Info back
+  btnInfoBack && btnInfoBack.addEventListener('click', ()=>{
+    infoPanelEl.style.display = 'none';
+    mainMenuEl.style.display = 'flex';
+  });
 
-startButton.addEventListener("click", startGame);
+  // Restart from death panel
+  btnRestart && btnRestart.addEventListener('click', ()=>{
+    // restart game without full reload
+    deathPanelEl.style.display = 'none';
+    dead = false; gamePaused = false;
+    score = 0; xp = 0; level = 1; xpToNext = 15; time = 0;
+    player.x = canvas.width/2; player.y = canvas.height/2; player.hp = player.maxHp;
+    enemies = []; bullets = []; orbs = []; meleeAttacks = []; boss = null; chests = [];
+    for(let i=0;i<4;i++) spawnEnemy();
+    gameStartTimestamp = performance.now();
+    lastBossSpawn = performance.now() + 10000;
+  });
+
+  // Character selection buttons (dynamic)
+  function showCharacterSelect(){
+    const choices = charSelectEl.querySelector('#charChoices');
+    choices.innerHTML = '';
+    const characters = [
+      { name: 'Pistolero', unlocked: true },
+      { name: 'Espadachín', unlocked: false },
+      { name: 'Mago', unlocked: false },
+    ];
+    characters.forEach(c => {
+      const btn = document.createElement('button');
+      btn.textContent = c.name + (c.unlocked ? '' : ' (Bloqueado)');
+      btn.className = 'choice';
+      if(!c.unlocked) btn.disabled = true;
+      btn.addEventListener('click', ()=>{
+        if(!c.unlocked) return;
+        charSelectEl.style.display = 'none';
+        mainMenuEl.style.display = 'none';
+        // start actual game
+        gamePaused = false; dead = false; score = 0; xp = 0; level = 1; xpToNext = 15; time = 0;
+        player.x = canvas.width/2; player.y = canvas.height/2; player.hp = player.maxHp;
+        enemies = []; bullets = []; orbs = []; meleeAttacks = []; boss = null; chests = [];
+        for(let i=0;i<4;i++) spawnEnemy();
+        gameStartTimestamp = performance.now();
+        lastBossSpawn = performance.now() + 10000;
+      });
+      choices.appendChild(btn);
+    });
+  }
+
+  // Expose showCharacterSelect to earlier btnPlay handler
+  window.showCharacterSelect = showCharacterSelect;
+
+  // Info panel content population (on open)
+  function populateInfoPanel(){
+    const content = infoPanelEl.querySelector('#infoContent');
+    content.innerHTML = '';
+    for(const id in weaponsLib){
+      const w = weaponsLib[id];
+      const lvl = weaponsState[id]?.level || 0;
+      const div = document.createElement('div');
+      div.textContent = `${w.name} — Nivel: ${lvl}`;
+      content.appendChild(div);
+    }
+  }
+  // attach info panel opener to repopulate
+  btnInfo && btnInfo.addEventListener('click', populateInfoPanel);
+
+  // show main menu initially and ensure buttons are clickable
+  function showMainMenu(){
+    mainMenuEl.style.display = 'flex';
+    charSelectEl.style.display = 'none';
+    infoPanelEl.style.display = 'none';
+    levelMenuEl.style.display = 'none';
+    deathPanelEl.style.display = 'none';
+    gamePaused = true;
+  }
+  showMainMenu();
+
+  // small debug ticker
+  setInterval(()=> {
+    debugEl.textContent = `Enemies:${enemies.length} Chests:${chests.length} Orbs:${orbs.length} Time:${Math.floor(time/1000)}s`;
+  }, 700);
+
+}); // DOMContentLoaded end
 </script>
 </body>
 </html>
