@@ -14,8 +14,9 @@
   #postForm button:hover { background:#0cc; }
   #postsContainer { display:grid; grid-template-columns:repeat(auto-fit, minmax(320px,1fr)); gap:20px; padding:20px; }
   .post { background:#111; border:1px solid #333; border-radius:8px; overflow:hidden; }
-  .post img { width:25%; height:auto; display:block; }
   .post .content { padding:15px; }
+  .gallery { display:flex; flex-wrap:wrap; gap:8px; padding:10px; justify-content:center; }
+  .gallery img { width:45%; border-radius:6px; object-fit:cover; }
   #loginStatus { text-align:center; padding:10px; font-size:0.9em; background:#111; }
 </style>
 </head>
@@ -23,7 +24,7 @@
 
 <header>📝 Posts de Peketruli</header>
 
-  <button onclick="window.location.href='h.html'">Volver a la Página Principal</button>
+<button onclick="window.location.href='h.html'">Volver a la Página Principal</button>
 
 <div id="loginStatus"></div>
 
@@ -31,8 +32,8 @@
   <h3>Nuevo Post</h3>
   <input type="text" id="titulo" placeholder="Título del post" />
   <textarea id="contenido" rows="4" placeholder="Contenido..."></textarea>
-  <input type="file" id="imagen" accept="image/*" />
-  <button id="publicarBtn">Publicar</button>
+  <input type="file" id="imagenes" accept="image/*" multiple />
+  <button id="publicarBtn">📝 Publicar</button>
 </div>
 
 <div id="postsContainer"></div>
@@ -47,6 +48,7 @@
   const postsContainer = document.getElementById("postsContainer");
   const loginStatus = document.getElementById("loginStatus");
 
+  // Mostrar formulario solo a Peketruli
   if (usuario === "Peketruli") {
     postForm.style.display = "block";
     loginStatus.textContent = "Modo edición activo: Peketruli ✅";
@@ -71,14 +73,24 @@
     for (const post of data) {
       const div = document.createElement("div");
       div.className = "post";
-     div.innerHTML = `
-  <div class="content">
-    <h3>${post.titulo}</h3>
-    <p>${post.contenido}</p>
-    <small>Publicado el ${new Date(post.fecha_creacion).toLocaleString()}</small>
-  </div>
-  ${post.imagen_url ? `<img src="${post.imagen_url}" alt="imagen">` : ""}
-`;
+
+      let galeriaHTML = "";
+      if (post.imagenes_urls && post.imagenes_urls.length > 0) {
+        galeriaHTML = `
+          <div class="gallery">
+            ${post.imagenes_urls.map(url => `<img src="${url}" alt="imagen">`).join("")}
+          </div>
+        `;
+      }
+
+      div.innerHTML = `
+        <div class="content">
+          <h3>${post.titulo}</h3>
+          <p>${post.contenido}</p>
+          <small>Publicado el ${new Date(post.fecha_creacion).toLocaleString()}</small>
+        </div>
+        ${galeriaHTML}
+      `;
       postsContainer.appendChild(div);
     }
   }
@@ -88,20 +100,21 @@
   document.getElementById("publicarBtn").onclick = async () => {
     const titulo = document.getElementById("titulo").value.trim();
     const contenido = document.getElementById("contenido").value.trim();
-    const imagenFile = document.getElementById("imagen").files[0];
+    const imagenes = document.getElementById("imagenes").files;
 
     if (!titulo || !contenido) {
       alert("Completa todos los campos.");
       return;
     }
 
-    let imagen_url = null;
+    let imagenes_urls = [];
 
-    if (imagenFile) {
-      const nombreArchivo = `${Date.now()}_${imagenFile.name}`;
-      const { data: imgData, error: imgError } = await supabase.storage
+    // Subir todas las imágenes
+    for (let file of imagenes) {
+      const nombreArchivo = `${Date.now()}_${file.name}`;
+      const { error: imgError } = await supabase.storage
         .from("blog-media")
-        .upload(nombreArchivo, imagenFile);
+        .upload(nombreArchivo, file);
 
       if (imgError) {
         alert("❌ Error al subir imagen:\n" + imgError.message);
@@ -111,12 +124,13 @@
       const { data: publicURL } = supabase.storage
         .from("blog-media")
         .getPublicUrl(nombreArchivo);
-      imagen_url = publicURL.publicUrl;
+
+      imagenes_urls.push(publicURL.publicUrl);
     }
 
     const { error: postError } = await supabase
       .from("posts")
-      .insert([{ titulo, contenido, imagen_url, autor: "Peketruli" }]);
+      .insert([{ titulo, contenido, imagenes_urls, autor: "Peketruli" }]);
 
     if (postError) {
       alert("❌ Error al publicar:\n" + postError.message);
