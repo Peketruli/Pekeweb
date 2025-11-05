@@ -3,1148 +3,536 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Vampire Survival — Imán + Boss rebalanceado</title>
+<title>Vampire Survival — Atributos + HUD</title>
 <style>
-  :root{--hud-bg:rgba(0,0,0,0.55);--accent:#f1c40f;--muted:#999}
-  html,body{height:100%;margin:0;background:#080808;color:#eee;font-family:Inter,Arial,Helvetica,sans-serif;overflow:hidden}
-  canvas{display:block;background:linear-gradient(#111,#040404);width:100vw;height:100vh}
-  /* TOP HUD (center) */
-  #topHUD{position:fixed;top:10px;left:50%;transform:translateX(-50%);width:760px;max-width:85vw;z-index:30}
-  .row{display:flex;gap:10px;align-items:center}
-  .box{background:var(--hud-bg);padding:8px 12px;border-radius:8px;border:1px solid rgba(255,255,255,0.06)}
-  #bars{flex:1}
-  .bar{height:18px;background:#222;border-radius:8px;overflow:hidden;position:relative;border:1px solid rgba(255,255,255,0.05)}
-  .fill{height:100%;transition:width .18s linear}
-  .hpFill{background:linear-gradient(90deg,#2ecc71,#27ae60)}
-  .xpFill{background:linear-gradient(90deg,#f39c12,#e67e22)}
-  /* Left HUD (weapons column) */
-  #leftHUD{position:fixed;left:10px;top:50%;transform:translateY(-50%);z-index:35;display:flex;flex-direction:column;gap:8px}
-  .weaponSlot{width:160px;background:rgba(255,255,255,0.03);padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);font-size:13px;display:flex;align-items:center;gap:8px}
-  .weaponIcon{width:36px;height:36px;border-radius:6px;background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;font-weight:700;color:var(--muted)}
-  .weaponInfo{flex:1}
-  .weaponName{font-size:13px}
-  .weaponLvl{font-size:12px;color:var(--muted)}
-  /* Timer top-right */
-  #timer{position:fixed;top:12px;right:12px;background:var(--hud-bg);padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.06);z-index:40;font-size:14px}
-  /* Level menu & death panel */
-  #levelMenu,#deathPanel{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:#111;padding:18px;border:2px solid #fff;border-radius:10px;z-index:50;display:none;min-width:320px}
-  #levelMenu h2,#deathPanel h2{margin:0 0 8px}
-  #levelMenu .choices{display:flex;flex-direction:column;gap:8px;margin-top:8px}
-  button.choice{padding:10px;border-radius:8px;border:none;background:#222;color:#fff;cursor:pointer}
-  button.choice:hover{background:#333}
-  #deathPanel button{margin-top:10px;padding:8px 12px;border-radius:8px;border:none;background:#c0392b;color:white;cursor:pointer}
-  /* chest popup */
-  #chestPopup{position:fixed;left:50%;top:20%;transform:translateX(-50%);z-index:60;background:linear-gradient(90deg,#222,#111);padding:12px 16px;border-radius:10px;border:1px solid rgba(255,255,255,0.06);display:none}
-  /* debug */
-  #debug{position:fixed;right:10px;bottom:10px;color:#999;font-size:12px;z-index:40}
-  @keyframes chestGlow {0%{box-shadow:0 0 0 rgba(255,215,0,0)}50%{box-shadow:0 0 20px rgba(255,215,0,0.7)}100%{box-shadow:0 0 0 rgba(255,215,0,0)}}
-  .chestAnim{animation: chestGlow 1s ease-in-out;}
-  #mainMenu, #charSelect, #infoPanel {
-  position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
-  background:#111; padding:20px; border:2px solid #fff; border-radius:10px;
-  z-index:60; min-width:280px; text-align:center;
-}
-#mainMenu h2, #charSelect h2, #infoPanel h2 { margin-bottom:15px; }
-#mainMenu .menuButtons { display:flex; flex-direction:column; gap:10px; }
-#mainMenu button, #charSelect button, #infoPanel button {
-  padding:10px 14px; border:none; border-radius:8px; background:#222; color:#fff; cursor:pointer;
-}
-#mainMenu button:hover, #charSelect button:hover, #infoPanel button:hover { background:#333; }
+  :root{ --hud-bg: rgba(0,0,0,0.55); --hud-fg: #fff; --accent: #f6c941;}
+  html,body{height:100%; margin:0; font-family:Inter,system-ui,Arial; background:#111;}
+  canvas{display:block; background:linear-gradient(#0b0b0f,#101014); }
+  #ui {
+    position: absolute; top: 8px; left: 8px; right: 8px; pointer-events:none;
+    display:flex; justify-content:space-between; gap:12px;
+  }
+  .hud {
+    pointer-events:auto;
+    background:var(--hud-bg); color:var(--hud-fg); padding:10px; border-radius:10px;
+    min-width:200px; max-width:360px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.6);
+    font-size:13px;
+  }
+  .hud h3{margin:0 0 6px 0; font-size:14px;}
+  .left-hud .weapons-list{display:flex; flex-direction:column; gap:6px;}
+  .weapon{background:rgba(255,255,255,0.03); padding:6px; border-radius:6px;}
+  .right-hud .attr{display:flex; justify-content:space-between; margin:4px 0;}
+  #levelUp {
+    position: absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    background:rgba(0,0,0,0.85); padding:18px; border-radius:12px; color:white;
+    display:none; z-index:30; width:560px; pointer-events:auto;
+  }
+  .choices{display:flex; gap:10px; margin-top:12px;}
+  .choice{flex:1; background:#111; border:1px solid rgba(255,255,255,0.06); padding:12px; border-radius:8px; cursor:pointer;}
+  .choice:hover{border-color:var(--accent); transform:translateY(-4px); transition:all .15s ease;}
+  #charSelect{position:absolute; right:8px; bottom:8px; background:var(--hud-bg); padding:8px;border-radius:8px;}
+  .small{font-size:12px; color:#ddd}
+  #debug{position:absolute; left:50%; bottom:8px; transform:translateX(-50%); background:rgba(0,0,0,0.6); padding:6px 10px; border-radius:6px; color:#ccc; font-size:12px;}
 </style>
 </head>
 <body>
-
 <canvas id="c"></canvas>
 
-<!-- Left HUD: weapon column -->
-<div id="leftHUD" aria-hidden="true"></div>
+<div id="ui">
+  <div class="hud left-hud">
+    <h3>Armas</h3>
+    <div class="weapons-list" id="weaponsList">
+      <div class="weapon"><strong>Pistola</strong><div class="small">Daño: 5 | Cadencia: 300ms</div></div>
+      <div class="weapon"><strong>Solar</strong><div class="small">Daño: 8 | Área: pequeña</div></div>
+    </div>
+    <div style="margin-top:8px" class="small">WASD mover • Click disparar • Subir nivel = ventanas</div>
+  </div>
 
-<!-- Top HUD center -->
-<div id="topHUD">
-  <div class="row">
-    <div class="box" style="min-width:220px">
-      <div style="font-size:14px"><strong id="scoreText">Puntos: 0</strong></div>
-      <div style="font-size:13px">Nivel <span id="levelText">1</span></div>
-    </div>
-    <div id="bars" class="box" style="display:flex;flex-direction:column;gap:6px">
-      <div style="display:flex;gap:8px;align-items:center">
-        <div style="width:80px">Vida</div>
-        <div class="bar" style="flex:1"><div id="hpFill" class="fill hpFill" style="width:100%"></div></div>
-        <div style="width:70px;text-align:right" id="hpText">100/100</div>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center">
-        <div style="width:80px">XP</div>
-        <div class="bar" style="flex:1"><div id="xpFill" class="fill xpFill" style="width:0%"></div></div>
-        <div style="width:70px;text-align:right" id="xpText">0/15</div>
-      </div>
-    </div>
-    <div id="inv" class="box" style="display:none"></div>
+  <div class="hud right-hud" id="attrHUD">
+    <h3>Atributos</h3>
+    <!-- atributos se llenan dinámicamente -->
+    <div id="attrs"></div>
+    <div style="height:6px"></div>
+    <div class="small" id="hpbar">HP: — / —</div>
+    <div class="small" id="xpbar">XP: — / —</div>
   </div>
 </div>
 
-<!-- Timer -->
-<div id="timer">00:00</div>
-
-<!-- Level up menu -->
-<div id="levelMenu">
+<div id="levelUp" >
   <h2>¡Subiste de nivel!</h2>
-  <div style="font-size:13px;color:#ccc">Elige una opción (sube arma/habilidad si ya la tienes)</div>
-  <div class="choices" id="levelChoices"></div>
+  <div class="small">Elige una mejora</div>
+  <div class="choices" id="choices"></div>
+  <div style="margin-top:10px" class="small">Si no te gusta puedes usar Reroll (si lo tienes)</div>
 </div>
 
-<!-- Death panel -->
-<div id="deathPanel">
-  <h2>Has muerto</h2>
-  <div id="deathScore"></div>
-  <button id="btnRestart">Reiniciar</button>
-</div>
-  
-<!-- Main Menu -->
-<div id="mainMenu">
-  <h2>Vampire Survival</h2>
-  <div class="menuButtons">
-    <button id="btnPlay">Jugar</button>
-    <button id="btnInfo">Información</button>
-    <button id="btnQuit">Volver</button>
-  </div>
+<div id="charSelect" class="small">
+  Personaje:
+  <select id="charSel">
+    <option value="warrior">Guerrero</option>
+    <option value="hunter">Cazador</option>
+    <option value="mystic">Místico</option>
+  </select>
+  <button id="applyChar">Aplicar</button>
 </div>
 
-<!-- Character Selection Menu -->
-<div id="charSelect" style="display:none">
-  <h2>Selecciona tu personaje</h2>
-  <div class="choices" id="charChoices"></div>
-  <button id="btnCharBack">Volver</button>
-</div>
-
-<!-- Info Panel -->
-<div id="infoPanel" style="display:none">
-  <h2>Información de armas</h2>
-  <div id="infoContent" style="font-size:13px; max-height:300px; overflow-y:auto"></div>
-  <button id="btnInfoBack">Volver</button>
-</div>
-
-<!-- Chest popup -->
-<div id="chestPopup"></div>
-
-<div id="debug"></div>
+<div id="debug">Nivel: <span id="dbgLv">1</span> • Monedas: <span id="dbgGold">0</span></div>
 
 <script>
-/* -------------------------
-   JS completo: selección de personaje + armas nuevas
-   Sustituir todo el <script> por esto
-   ------------------------- */
-document.addEventListener('DOMContentLoaded', () => {
-  const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
+// ---------- Canvas y utilidades ----------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+addEventListener('resize', resize);
+resize();
 
-  function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
-  addEventListener('resize', resize);
-  resize();
-  // ensure UI above canvas
-  canvas.style.zIndex = '0';
-  canvas.style.position = 'fixed';
-  canvas.style.left = '0';
-  canvas.style.top = '0';
+function rand(min,max){ return Math.random()*(max-min)+min; }
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+function dist(a,b){ const dx=a.x-b.x, dy=a.y-b.y; return Math.hypot(dx,dy); }
 
-  // UI elements (IDs come from your HTML)
-  const mainMenuEl = document.getElementById('mainMenu');
-  const charSelectEl = document.getElementById('charSelect');
-  const infoPanelEl = document.getElementById('infoPanel');
-  const levelMenuEl = document.getElementById('levelMenu');
-  const deathPanelEl = document.getElementById('deathPanel');
-  const chestPopup = document.getElementById('chestPopup');
-  const leftHUD = document.getElementById('leftHUD');
-  const timerEl = document.getElementById('timer');
-  const debugEl = document.getElementById('debug');
+// ---------- Atributos base y personajes ----------
+const ATTRIBUTE_KEYS = [
+  'maxHealth','recovery','armor','moveSpeed','might','projSpeed','duration','area','cooldown','amount',
+  'revival','magnet','luck','growth','greed','curse','reroll','skip','banish'
+];
 
-  const btnPlay = document.getElementById('btnPlay');
-  const btnInfo = document.getElementById('btnInfo');
-  const btnQuit = document.getElementById('btnQuit');
-  const btnCharBack = document.getElementById('btnCharBack');
-  const btnInfoBack = document.getElementById('btnInfoBack');
-  const btnRestart = document.getElementById('btnRestart');
-
-  // Game state
-  let time = 0, score = 0, xp = 0, level = 1, xpToNext = 15;
-  let gamePaused = true, dead = false;
-  let gameStartTimestamp = performance.now();
-
-  function formatTime(ms){
-    const total = Math.floor(ms/1000);
-    const mins = Math.floor(total/60);
-    const secs = total % 60;
-    return String(mins).padStart(2,'0') + ':' + String(secs).padStart(2,'0');
+const CHARACTERS = {
+  warrior: {
+    name:'Guerrero', maxHealth:140, recovery:0.05, armor:2, moveSpeed:1.0, might:1.1, magnet:1.0, growth:1.0, greed:1.0,
+    luck:1.0, cooldown:1.0, amount:1, projSpeed:1.0
+  },
+  hunter: {
+    name:'Cazador', maxHealth:100, recovery:0.03, armor:0, moveSpeed:1.25, might:1.0, magnet:1.2, growth:1.1, greed:1.0,
+    luck:1.1, cooldown:0.9, amount:1, projSpeed:1.2
+  },
+  mystic: {
+    name:'Místico', maxHealth:90, recovery:0.08, armor:0, moveSpeed:1.05, might:1.25, magnet:1.0, growth:1.2, greed:1.0,
+    luck:1.05, cooldown:1.2, amount:1, projSpeed:0.9
   }
-
-  // player (white)
-  const player = { x: canvas.width/2, y: canvas.height/2, size: 18, speed: 2.4, hp: 100, maxHp: 100, color:'#ffffff' };
-
-  // input
-  const keys = {};
-  addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
-  addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
-
-  // Entities
-  let enemies = [], bullets = [], orbs = [], meleeAttacks = [], chests = [], boss = null;
-  let lastSpawnTime = performance.now(), lastBossSpawn = performance.now();
-  const BOSS_INTERVAL = 150000;
-  const BASE_SPAWN_INTERVAL = 1200;
-  let spawnInterval = BASE_SPAWN_INTERVAL;
-
-  // Utils
-  function dist(a,b){ return Math.hypot(a.x - b.x, a.y - b.y); }
-  function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
-  function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
-
-  /* -----------------------
-     Weapons definitions (new ones from table)
-     Implemented with simple but functional behaviors
-     ----------------------- */
-  const weaponsLib = {};
-
-  // WHIP (Látigo) - melee horizontal both directions, pierces, applies freeze (slow)
-  weaponsLib.whip = {
-    id:'whip', name:'Látigo', maxLevel:10,
-    statsForLevel(level){
-      return {
-        range: 90 + (level-1)*8,       // reach horizontal
-        damage: 6 + Math.floor((level-1)*1.2),
-        interval: Math.max(180, 420 - (level-1)*15),
-        freezeChance: 0.25 + Math.min(0.35, (level-1)*0.02), // chance to freeze (slow)
-        pierce: true
-      };
-    },
- attack(state){
-  if(gamePaused || !state.level || dead) return;
-  const now = performance.now();
-  const s = weaponsLib.whip.statsForLevel(state.level);
-  if(now - (state.lastAttack||0) < s.interval) return;
-  state.lastAttack = now;
-
-  const coneCount = 6; // número de segmentos para suavizar el área del látigo
-  const rangeHalf = s.range / 2;
-
-  // Generar conos de daño desde el jugador hacia izquierda y derecha
-  for (let side of [-1, 1]) {
-    for (let i = 1; i <= coneCount; i++) {
-      const progress = i / coneCount;
-      meleeAttacks.push({
-        x: player.x + side * rangeHalf * progress,
-        y: player.y,
-        angle: side === -1 ? Math.PI : 0,
-        arc: 0.4,
-        range: s.range * 0.2,
-        damage: s.damage * (1 - 0.1 * (i - 1)), // un poco menos de daño cuanto más lejos
-        life: 120,
-        type: 'whip',
-        freezeChance: s.freezeChance,
-        visual: true // marcar como visible
-      });
-    }
-  }
-}
 };
-  // KNIFE - rapid stream of knives in facing direction
-  weaponsLib.knife = {
-    id:'knife', name:'Cuchillo', maxLevel:10,
-    statsForLevel(level){
-      return {
-        interval: Math.max(80, 320 - (level-1)*18),
-        burstCount: 1 + Math.floor((level-1)/3),
-        damage: 2 + Math.floor((level-1)*0.8),
-        speed: 6 + (level-1)*0.5
-      };
-    },
-    shoot(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.knife.statsForLevel(state.level);
-      if(now - (state.lastShot||0) < s.interval) return;
-      state.lastShot = now;
-      // direction: nearest enemy or upward if none
-      let ang = -Math.PI/2;
-      if(enemies.length || boss){
-        const pool = boss ? enemies.concat([boss]) : enemies;
-        let target = pool[0];
-        for(const p of pool) if(dist(p,player) < dist(target,player)) target = p;
-        ang = Math.atan2(target.y - player.y, target.x - player.x);
-      }
-      const spread = 0.06 * (s.burstCount-1);
-      for(let i=0;i<s.burstCount;i++){
-        const a = ang + (i - (s.burstCount-1)/2)*spread;
-        bullets.push({ x: player.x, y: player.y, dx: Math.cos(a)*s.speed, dy: Math.sin(a)*s.speed, damage: s.damage, size: 3, life: 1800, friendly:true, type:'knife' });
-      }
-    }
-  };
 
-  // AXE - arc attack, higher crit chance (we'll simulate crit as bonus damage sometimes)
-  weaponsLib.axe = {
-    id:'axe', name:'Hacha', maxLevel:10,
-    statsForLevel(level){
-      return { arc: Math.PI/2 + (level-1)*0.03, range: 50 + (level-1)*4, damage: 10 + Math.floor((level-1)*1.6), interval: Math.max(280, 520 - (level-1)*22), critChance: 0.08 + (level-1)*0.01 };
-    },
-    attack(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.axe.statsForLevel(state.level);
-      if(now - (state.lastAttack||0) < s.interval) return;
-      state.lastAttack = now;
-      // arc towards nearest enemy
-      let ang = 0;
-      if(enemies.length || boss){
-        const pool = boss ? enemies.concat([boss]) : enemies;
-        let target = pool[0];
-        for(const p of pool) if(dist(p,player) < dist(target,player)) target = p;
-        ang = Math.atan2(target.y-player.y, target.x-player.x);
-      }
-      meleeAttacks.push({ x: player.x, y: player.y, angle: ang, arc: s.arc, range: s.range, damage: s.damage, critChance: s.critChance, life: 140, type:'axe' });
-    }
-  };
+// ---------- Estado global ----------
+let state = {
+  player: null,
+  bullets: [],
+  enemies: [],
+  orbs: [],
+  coins: 0,
+  time: 0,
+  lastEnemySpawn: 0,
+  enemySpawnInterval: 2000,
+};
 
-  // CROSS - becomes a falling sword randomly, higher crit
-  weaponsLib.cross = {
-    id:'cross', name:'Cruz', maxLevel:10,
-    statsForLevel(level){
-      return { dropInterval: Math.max(900, 2200 - (level-1)*120), damage: 18 + Math.floor((level-1)*2.2), critChance: 0.12 + (level-1)*0.01, fallSpeed: 4 + (level-1)*0.2 };
-    },
-    tick(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.cross.statsForLevel(state.level);
-      if(now - (state.lastDrop||0) < s.dropInterval) return;
-      state.lastDrop = now;
-      // spawn a falling sword at random X that falls to the ground and deals area damage on impact
-      const x = Math.random()*canvas.width;
-      bullets.push({ x, y: -20, dx: 0, dy: s.fallSpeed, damage: s.damage, life: 8000, friendly:true, type:'cross_fall', aoe: true, critChance: s.critChance });
-    }
-  };
-
-  // HOLY WATER - creates puddles that grow and stay longer
-  weaponsLib.holywater = {
-    id:'holywater', name:'Agua Bendita', maxLevel:10,
-    statsForLevel(level){
-      return { throwInterval: Math.max(800, 2500 - (level-1)*140), baseDamage: 6 + Math.floor((level-1)*1.3), puddleLife: 3800 + (level-1)*350, growSpeed: 0.12 + (level-1)*0.02 };
-    },
-    throw(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.holywater.statsForLevel(state.level);
-      if(now - (state.lastThrow||0) < s.throwInterval) return;
-      state.lastThrow = now;
-      // throw a puddle at nearest enemy or forward
-      let tx = player.x, ty = player.y - 120;
-      if(enemies.length || boss){
-        const pool = boss ? enemies.concat([boss]) : enemies;
-        let target = pool[0];
-        for(const p of pool) if(dist(p,player) < dist(target,player)) target = p;
-        tx = target.x; ty = target.y;
-      }
-      // puddle entity: x,y,radius,growUntil,damage,spawned
-      const puddle = { x: tx, y: ty, r: 6, maxR: 30 + state.level*6, spawned: performance.now(), life: s.puddleLife, damage: s.baseDamage, growSpeed: s.growSpeed };
-      chests.push(puddle); // reuse chests array for ground effects to avoid adding new arrays (safe)
-      // mark type so updateChests ignores normal chest behavior
-      puddle._puddle = true;
-    }
-  };
-
-  // KING BIBLE - orbiting orbs protection (like classic)
-  weaponsLib.kingbible = {
-    id:'kingbible', name:'Biblia del Rey', maxLevel:10,
-    statsForLevel(level){
-      return { orbCount: 1 + Math.floor(level/2), radius: 48 + level*6, damage: 0.9 + level*0.5, duration: 3800 + level*300, cooldown: Math.max(400, 7000 - level*280), speed: 0.005 + level*0.0008 };
-    },
-    activate(state){
-      const s = weaponsLib.kingbible.statsForLevel(state.level);
-      state.active = true; state.spawnTime = performance.now(); state.orbs = [];
-      for(let i=0;i<s.orbCount;i++) state.orbs.push({ angle: (i/s.orbCount)*Math.PI*2 });
-    },
-    update(state, dt){
-      if(!state.level) return;
-      const now = performance.now();
-      const s = weaponsLib.kingbible.statsForLevel(state.level);
-      if(!state.active && (!state.lastUse || now - state.lastUse > s.cooldown)){ state.lastUse = now; this.activate(state); }
-      if(state.active){
-        const elapsed = now - state.spawnTime;
-        for(const orb of state.orbs){
-          orb.angle += s.speed * dt;
-          const x = player.x + Math.cos(orb.angle) * s.radius;
-          const y = player.y + Math.sin(orb.angle) * s.radius;
-          // damage enemies near orbs
-          for(let i=enemies.length-1;i>=0;i--){
-            const e = enemies[i];
-            if(Math.hypot(x-e.x,y-e.y) < e.size + 8){ e.hp -= s.damage * (dt/16); if(e.hp<=0){ spawnOrbAt(e.x,e.y); enemies.splice(i,1); score++; } }
-          }
-        }
-        if(elapsed > s.duration){ state.active = false; state.orbs = []; }
-      }
-    }
-  };
-
-  // MAGIC WAND - faster projectiles, no cooldown, seeks nearest
-  weaponsLib.magicwand = {
-    id:'magicwand', name:'Vara Mágica', maxLevel:10,
-    statsForLevel(level){ return { interval: Math.max(40, 220 - (level-1)*18), damage: 6 + Math.floor((level-1)*1.8), speed: 6 + (level-1)*0.4, size: 4 }; },
-    shoot(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.magicwand.statsForLevel(state.level);
-      if(now - (state.lastShot||0) < s.interval) return;
-      state.lastShot = now;
-      // target nearest
-      if(!enemies.length && !boss) return;
-      const pool = boss ? enemies.concat([boss]) : enemies;
-      let target = pool[0];
-      for(const p of pool) if(dist(p,player) < dist(target,player)) target = p;
-      const ang = Math.atan2(target.y-player.y, target.x-player.x);
-      bullets.push({ x:player.x, y:player.y, dx:Math.cos(ang)*s.speed, dy:Math.sin(ang)*s.speed, damage:s.damage, size:s.size, life:3000, friendly:true, type:'magic' });
-    }
-  };
-
-  // FIRE WAND - big fireballs that pierce
-  weaponsLib.firewand = {
-    id:'firewand', name:'Pájaro de Fuego', maxLevel:10,
-    statsForLevel(level){ return { interval: Math.max(900, 2200 - (level-1)*140), damage: 12 + Math.floor((level-1)*2), speed: 3.5 + (level-1)*0.18, size: 8 + Math.floor((level-1)/4), pierce: true }; },
-    shoot(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.firewand.statsForLevel(state.level);
-      if(now - (state.lastShot||0) < s.interval) return;
-      state.lastShot = now;
-      // forward or at nearest target
-      let ang = -Math.PI/2;
-      if(enemies.length || boss){
-        const pool = boss ? enemies.concat([boss]) : enemies;
-        let target = pool[0];
-        for(const p of pool) if(dist(p,player) < dist(target,player)) target = p;
-        ang = Math.atan2(target.y-player.y, target.x-player.x);
-      }
-      bullets.push({ x:player.x, y:player.y, dx:Math.cos(ang)*s.speed, dy:Math.sin(ang)*s.speed, damage:s.damage, size:s.size, life:5000, friendly:true, type:'firewand', pierce:true });
-    }
-  };
-
-  // GARLIC - area around player, heals on enemy hit
-  weaponsLib.garlic = {
-    id:'garlic', name:'Ajo', maxLevel:10,
-    statsForLevel(level){ return { radius: 36 + level*6, damage: 1 + Math.floor(level*0.6), healFraction: 0.25 + (level-1)*0.02, tick: 600 }; },
-    tick(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.garlic.statsForLevel(state.level);
-      if(now - (state.lastTick||0) < s.tick) return;
-      state.lastTick = now;
-      for(let i=enemies.length-1;i>=0;i--){
-        const e = enemies[i];
-        if(Math.hypot(e.x-player.x,e.y-player.y) < s.radius){ e.hp -= s.damage; if(e.hp<=0){ spawnOrbAt(e.x,e.y); enemies.splice(i,1); score++; player.hp = Math.min(player.maxHp, player.hp + Math.round(s.damage * s.healFraction)); } }
-      }
-    }
-  };
-
-  // LIGHTNING RING - area that hits twice
-  weaponsLib.lightning = {
-    id:'lightning', name:'Rayo', maxLevel:10,
-    statsForLevel(level){ return { radius: 36 + level*8, damage: 6 + Math.floor(level*1.4), tick: Math.max(140, 340 - level*16), hits: 2 }; },
-    tick(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.lightning.statsForLevel(state.level);
-      if(now - (state.lastTick||0) < s.tick) return;
-      state.lastTick = now;
-      for(let h=0; h<s.hits; h++){
-        for(let i=enemies.length-1;i>=0;i--){
-          const e = enemies[i];
-          if(Math.hypot(e.x-player.x,e.y-player.y) < s.radius){ e.hp -= s.damage; if(e.hp<=0){ spawnOrbAt(e.x,e.y); enemies.splice(i,1); score++; } }
-        }
-        if(boss && Math.hypot(boss.x-player.x,boss.y-player.y) < s.radius){ boss.hp -= s.damage; if(boss.hp<=0) killBoss(); }
-      }
-    }
-  };
-
-  // PENTAGRAM - screen wipe area effect that clears enemies; evolved attracts XP (we'll implement base)
-  weaponsLib.pentagram = {
-    id:'pentagram', name:'Pentagrama', maxLevel:10,
-    statsForLevel(level){ return { cooldown: Math.max(4000, 18000 - level*800), effectPower: 1 + Math.floor(level/3), attractsXp: level >= 8 }; },
-    activate(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.pentagram.statsForLevel(state.level);
-      if(state.lastUse && now - state.lastUse < s.cooldown) return;
-      state.lastUse = now;
-      // clear most enemies and projectiles (bullets)
-      if(enemies.length){
-        enemies = [];
-        score += 5 * s.effectPower;
-      }
-      bullets = bullets.filter(b => b.friendly); // remove enemy bullets if any (we only have friendly now)
-      if(s.attractsXp){
-        // pull orbs to player
-        orbs.forEach(o => { o.x = player.x; o.y = player.y; });
-      }
-    }
-  };
-
-  // SONG OF MANA - area damage + slow
-  weaponsLib.song = {
-    id:'song', name:'Gema de Canto', maxLevel:10,
-    statsForLevel(level){ return { radius: 48 + level*6, damage: 2 + Math.floor(level*0.9), tick: Math.max(220, 620 - level*26), slow: 0.45 + (level-1)*0.02 }; },
-    tick(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.song.statsForLevel(state.level);
-      if(now - (state.lastTick||0) < s.tick) return;
-      state.lastTick = now;
-      for(let i = enemies.length-1; i>=0; i--){
-        const e = enemies[i];
-        if(Math.hypot(e.x-player.x,e.y-player.y) < s.radius){
-          e.hp -= s.damage;
-          e.speed *= (1 - s.slow); // apply slow (will be temporary)
-          if(e.hp <= 0){ spawnOrbAt(e.x,e.y); enemies.splice(i,1); score++; }
-        }
-      }
-    }
-  };
-
-  // EBONY WINGS - powerful flying weapon (we'll treat as homing projectile)
-  weaponsLib.ebony = {
-    id:'ebony', name:'Daga de Ébano', maxLevel:10,
-    statsForLevel(level){ return { interval: Math.max(300, 900 - (level-1)*60), damage: 14 + Math.floor(level*1.8), speed: 4 + level*0.2 }; },
-    shoot(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.ebony.statsForLevel(state.level);
-      if(now - (state.lastShot||0) < s.interval) return;
-      state.lastShot = now;
-      // spawn a homing dagger that seeks nearest enemy
-      bullets.push({ x: player.x, y: player.y, dx:0, dy:-s.speed, damage:s.damage, size:6, life:4000, friendly:true, homing:true, homingStrength:0.16, speed:s.speed, type:'ebony' });
-    }
-  };
-
-  // BLOOD WHIP - whip that leaves fire trail
-  weaponsLib.bloodwhip = {
-    id:'bloodwhip', name:'Látigo de Sangre', maxLevel:10,
-    statsForLevel(level){ return { range: 80 + level*6, damage: 7 + Math.floor(level*1.4), interval: Math.max(200, 420 - (level-1)*14), trailDamage: 2 + Math.floor(level*0.5) }; },
-    attack(state){
-      if(gamePaused || !state.level || dead) return;
-      const now = performance.now();
-      const s = weaponsLib.bloodwhip.statsForLevel(state.level);
-      if(now - (state.lastAttack||0) < s.interval) return;
-      state.lastAttack = now;
-      // single horizontal sweep (to right of player)
-      meleeAttacks.push({ x: player.x, y: player.y, angle: 0, arc: 0.7, range: s.range, damage: s.damage, life: 160, type:'bloodwhip', trail:true, trailDmg: s.trailDamage });
-    }
-  };
-
-  // Small helper: spawn orb
-  function spawnOrbAt(x,y){ const value = 1 + Math.floor(Math.random()*2); orbs.push({ x, y, value }); }
-
-  // ---------- XP Pickup + Level Up ----------
-function updateXPSystem() {
-  // recoger orbes cercanos
-  for (let i = orbs.length - 1; i >= 0; i--) {
-    const o = orbs[i];
-    const d = Math.hypot(o.x - player.x, o.y - player.y);
-    if (d < 24) { // distancia de recogida
-      xp += o.value;
-      orbs.splice(i, 1);
-      if (xp >= xpToNext) levelUp();
-    } else if (d < 180) {
-      // atracción suave si el jugador está cerca
-      o.x += (player.x - o.x) * 0.02;
-      o.y += (player.y - o.y) * 0.02;
-    }
-  }
-  // actualizar HUD XP
-  const xpFill = document.getElementById('xpFill');
-  const xpText = document.getElementById('xpText');
-  xpFill.style.width = `${(xp / xpToNext) * 100}%`;
-  xpText.textContent = `${xp}/${xpToNext}`;
-}
-
-function levelUp() {
-  xp -= xpToNext;
-  level++;
-  xpToNext = Math.floor(xpToNext * 1.35 + 5);
-  document.getElementById('levelText').textContent = level;
-  document.getElementById('xpFill').style.width = '0%';
-  document.getElementById('xpText').textContent = `${xp}/${xpToNext}`;
-  showLevelUpMenu();
-}
-
-function showLevelUpMenu() {
-  gamePaused = true;
-  const menu = document.getElementById('levelMenu');
-  const choices = document.getElementById('levelChoices');
-  choices.innerHTML = '';
-
-  // Ejemplo simple: mostrar 3 mejoras al azar de las armas disponibles
-  const allWeapons = Object.keys(weaponsState).filter(id => weaponsLib[id]);
-  const options = [];
-  while (options.length < 3 && allWeapons.length > 0) {
-    const w = allWeapons.splice(Math.floor(Math.random() * allWeapons.length), 1)[0];
-    options.push(w);
-  }
-
-  options.forEach(id => {
-    const w = weaponsLib[id];
-    const current = weaponsState[id].level || 0;
-    const next = Math.min(current + 1, w.maxLevel);
-    const btn = document.createElement('button');
-    btn.className = 'choice';
-    btn.textContent = `${w.name} → Nivel ${next}`;
-    btn.onclick = () => {
-      weaponsState[id].level = next;
-      menu.style.display = 'none';
-      gamePaused = false;
-    };
-    choices.appendChild(btn);
+// ---------- Player creación ----------
+function createPlayer(characterKey){
+  const base = CHARACTERS[characterKey];
+  const stats = {};
+  // initialize all attributes (default 1 or 0 depending)
+  ATTRIBUTE_KEYS.forEach(k=>{
+    stats[k] = (base[k] !== undefined) ? base[k] : (['maxHealth','recovery','armor','moveSpeed','might','projSpeed','duration','area','cooldown','amount','magnet','luck','growth','greed','curse'].includes(k) ? (k==='maxHealth'?100:1.0) : 0);
   });
-
-  menu.style.display = 'block';
+  // extra tracking
+  stats.currentHealth = stats.maxHealth;
+  stats.xp = 0;
+  stats.level = 1;
+  stats.xpToNext = 15;
+  stats.lastRegen = 0;
+  stats.lastShot = 0;
+  stats.position = {x:canvas.width/2, y:canvas.height/2};
+  stats.velocity = {x:0,y:0};
+  stats.direction = 0;
+  stats.revivalUses = stats.revival || 0;
+  return stats;
 }
-  
-  /* ---------- Weapons state (per-weapon levels + timers) ---------- */
-  const weaponsState = {
-    whip: { level:0, lastAttack:0 },
-    knife: { level:0, lastShot:0 },
-    axe: { level:0, lastAttack:0 },
-    cross: { level:0, lastDrop:0 },
-    holywater: { level:0, lastThrow:0 },
-    kingbible: { level:0, active:false, orbs:[], lastUse:0, spawnTime:0 },
-    magicwand: { level:0, lastShot:0 },
-    firewand: { level:0, lastShot:0 },
-    garlic: { level:0, lastTick:0 },
-    lightning: { level:0, lastTick:0 },
-    pentagram: { level:0, lastUse:0 },
-    song: { level:0, lastTick:0 },
-    ebony: { level:0, lastShot:0 },
-    bloodwhip: { level:0, lastAttack:0 }
-  };
 
-  // Map characters -> starting weapon id
-  const characters = [
-    { name:'Antonio', weapon:'whip' },
-    { name:'Imelda', weapon:'magicwand' },
-    { name:'Gennaro', weapon:'knife' },
-    { name:'Arca', weapon:'firewand' },
-    { name:'Porta', weapon:'lightning' },
-    { name:'Dommario', weapon:'kingbible' },
-    { name:'Krochi', weapon:'cross' },
-    { name:'Pasqualina', weapon:'axe' },
-    { name:'Lama', weapon:'garlic' },
-    { name:'Christine', weapon:'pentagram' },
-    { name:'Mortaccio', weapon:'holywater' },
-    { name:'Concetta', weapon:'song' },
-    { name:'Exdash', weapon:'ebony' },
-    { name:'Miang Moonspell', weapon:'bloodwhip' }
-  ];
+// start default
+state.player = createPlayer('warrior');
+document.getElementById('charSel').value = 'warrior';
 
-  // Hidden combos array simplified (not used heavily)
-  const hiddenCombos = [];
+// ---------- Input ----------
+const keys = {};
+addEventListener('keydown', e=> keys[e.key.toLowerCase()] = true);
+addEventListener('keyup', e=> keys[e.key.toLowerCase()] = false);
+let mouse = {x:0,y:0,down:false};
+canvas.addEventListener('mousemove', e=>{
+  mouse.x = e.clientX; mouse.y = e.clientY;
+});
+canvas.addEventListener('mousedown', e=> mouse.down = true);
+canvas.addEventListener('mouseup', e=> mouse.down = false);
 
-  /* ---------- Spawning enemies ---------- */
-  function spawnEnemy(){
-    const edge = Math.floor(Math.random()*4);
-    let x = edge===0 ? -20 : edge===1 ? canvas.width+20 : Math.random()*canvas.width;
-    let y = edge===2 ? -20 : edge===3 ? canvas.height+20 : Math.random()*canvas.height;
-    const easyWindow = 120000;
-    let hp = time < easyWindow ? 3 : 3 + Math.floor(time/90000);
-    const speed = 0.6 + Math.random()*1.0 + Math.min(1.2, time/120000);
-    const size = 10 + Math.random()*8;
-    enemies.push({ x,y,hp,speed,size,color:'#c0392b' });
+// ---------- Gameplay: bullets, enemies, orbs ----------
+function spawnEnemy(){
+  const side = Math.floor(rand(0,4));
+  let ex = rand(0,canvas.width), ey = rand(0,canvas.height);
+  if(side===0){ ex = -30; ey = rand(0,canvas.height); }
+  if(side===1){ ex = canvas.width+30; ey = rand(0,canvas.height); }
+  if(side===2){ ex = rand(0,canvas.width); ey = -30; }
+  if(side===3){ ex = rand(0,canvas.width); ey = canvas.height+30; }
+  state.enemies.push({
+    x: ex, y: ey, r: 14 + Math.random()*10, speed: rand(0.4,1.2)*(1 + (state.player.curse||0)*0.2),
+    hp: 8 + Math.floor(rand(0,6)) * (1 + (state.player.curse||0))
+  });
+}
+
+function spawnOrb(x,y, amount=5){
+  state.orbs.push({x,y, vx: rand(-0.5,0.5), vy: rand(-0.5,0.5), val: amount});
+}
+
+// ---------- Update loop ----------
+function update(dt){
+  const p = state.player;
+  state.time += dt;
+
+  // movement WASD
+  let mvx=0,mvy=0;
+  if(keys['w']) mvy -= 1; if(keys['s']) mvy +=1;
+  if(keys['a']) mvx -=1; if(keys['d']) mvx +=1;
+  const mag = Math.hypot(mvx,mvy) || 1;
+  const speed = 160 * (p.moveSpeed || 1);
+  p.velocity.x = (mvx/mag)*speed;
+  p.velocity.y = (mvy/mag)*speed;
+  p.position.x += p.velocity.x * (dt/1000);
+  p.position.y += p.velocity.y * (dt/1000);
+  p.position.x = clamp(p.position.x, 20, canvas.width-20);
+  p.position.y = clamp(p.position.y, 20, canvas.height-20);
+
+  // regen health
+  p.lastRegen += dt;
+  if(p.lastRegen > 500){ // tick every 0.5s
+    p.currentHealth = Math.min(p.maxHealth, p.currentHealth + (p.recovery || 0) * (p.maxHealth) * 0.5);
+    p.lastRegen = 0;
   }
 
-  /* ---------- UI helpers ---------- */
-  function showChestPopup(text){
-    chestPopup.textContent = text;
-    chestPopup.style.display = 'block';
-    chestPopup.classList.add('chestAnim');
-    if(showChestPopup._t) clearTimeout(showChestPopup._t);
-    showChestPopup._t = setTimeout(()=>{ chestPopup.style.display = 'none'; chestPopup.classList.remove('chestAnim'); }, 2200);
-  }
-
-  function updateHUD(){
-    const hpFill = document.getElementById('hpFill');
-    const xpFill = document.getElementById('xpFill');
-    const xpText = document.getElementById('xpText');
-    const hpText = document.getElementById('hpText');
-    const levelText = document.getElementById('levelText');
-    const scoreText = document.getElementById('scoreText');
-
-    if(hpFill) hpFill.style.width = (Math.max(0,Math.min(1, player.hp / player.maxHp))*100) + '%';
-    if(hpText) hpText.textContent = Math.round(player.hp) + ' / ' + player.maxHp;
-    if(xpFill) xpFill.style.width = Math.min(100, (xp/xpToNext)*100) + '%';
-    if(xpText) xpText.textContent = Math.floor(xp) + ' / ' + xpToNext;
-    if(levelText) levelText.textContent = level;
-    if(scoreText) scoreText.textContent = 'Puntos: ' + score;
-    renderLeftHUD();
-  }
-
-  function renderLeftHUD(){
-    leftHUD.innerHTML = '';
-    // Order characters/weapons for display: use characters mapping order
-    for(const ch of characters){
-      const id = ch.weapon;
-      const lvl = weaponsState[id]?.level || 0;
-      const slot = document.createElement('div');
-      slot.className = 'weaponSlot';
-      slot.style.opacity = lvl?1:0.4;
-      const icon = document.createElement('div'); icon.className = 'weaponIcon'; icon.textContent = id.charAt(0).toUpperCase();
-      const info = document.createElement('div'); info.className = 'weaponInfo';
-      const name = document.createElement('div'); name.className = 'weaponName'; name.textContent = weaponsLib[id].name || id;
-      const lvldiv = document.createElement('div'); lvldiv.className = 'weaponLvl'; lvldiv.textContent = lvl ? `Lv ${lvl}` : 'No equipado';
-      info.appendChild(name); info.appendChild(lvldiv);
-      slot.appendChild(icon); slot.appendChild(info);
-      leftHUD.appendChild(slot);
+  // shooting (simple auto cooldown)
+  if(mouse.down){
+    const cd = (p.cooldown || 1.0) * 300; // base 300ms
+    if(state.time - p.lastShot > cd){
+      shootBullet(p.position.x, p.position.y, mouse.x, mouse.y, p.might || 1, p.projSpeed || 1);
+      p.lastShot = state.time;
     }
   }
 
-  /* ---------- Apply weapon/generic effects ---------- */
-  function applyWeaponLevelEffects(id){
-    if(id === 'kingbible'){
-      weaponsState.kingbible.lastUse = 0;
-      weaponsState.kingbible.active = false;
-    }
-    if(id === 'solar'){ /* not used in our new set but left intentionally */ }
-  }
-  function applyGenericBonus(id){
-    if(id === 'hpUp'){ player.maxHp += 10; player.hp = player.maxHp; }
-    if(id === 'speed'){ player.speed += 0.3; }
-    if(id === 'xpBoost'){ weaponsState.__xpBoost = (weaponsState.__xpBoost||0) + 5; }
-  }
-
-  function openLevelMenu(){
-    gamePaused = true;
-    levelMenuEl.style.display = 'block';
-    const choicesDiv = document.getElementById('levelChoices');
-    choicesDiv.innerHTML = '';
-    const candidates = [];
-    for(const id in weaponsLib){
-      const curLevel = weaponsState[id].level || 0;
-      if(curLevel < weaponsLib[id].maxLevel) candidates.push({ type:'weapon', id });
-    }
-    const genericBonuses = [
-      { type:'bonus', id:'hpUp', name:'Más vida (+10)' },
-      { type:'bonus', id:'speed', name:'Velocidad +0.3' },
-      { type:'bonus', id:'xpBoost', name:'Más XP (orb +1)' }
-    ];
-    const pool = [...candidates];
-    while(pool.length < 6) pool.push(randChoice(genericBonuses));
-    const picks = [];
-    while(picks.length < 3){
-      const p = randChoice(pool);
-      if(!picks.find(x=>x.type===p.type && x.id===p.id)) picks.push(p);
-    }
-    picks.forEach(p=>{
-      const btn = document.createElement('button');
-      btn.className = 'choice';
-      if(p.type === 'weapon'){
-        const lvl = weaponsState[p.id].level || 0;
-        btn.textContent = `${weaponsLib[p.id].name} ${lvl?('(Lv '+lvl+')'):''}`;
-        btn.onclick = ()=>{
-          weaponsState[p.id].level = Math.min(weaponsLib[p.id].maxLevel, (weaponsState[p.id].level||0) + 1);
-          applyWeaponLevelEffects(p.id);
-          closeLevelMenu();
-        };
-      } else {
-        btn.textContent = p.name;
-        btn.onclick = ()=>{ applyGenericBonus(p.id); closeLevelMenu(); };
-      }
-      choicesDiv.appendChild(btn);
-    });
-  }
-  function closeLevelMenu(){ levelMenuEl.style.display = 'none'; gamePaused = false; updateHUD(); }
-
-  /* ---------- Updates (movement, bullets, melee, enemies) ---------- */
-  function updatePlayer(dt){
-    if(keys['w'] || keys['arrowup']) player.y -= player.speed;
-    if(keys['s'] || keys['arrowdown']) player.y += player.speed;
-    if(keys['a'] || keys['arrowleft']) player.x -= player.speed;
-    if(keys['d'] || keys['arrowright']) player.x += player.speed;
-    player.x = clamp(player.x, player.size, canvas.width - player.size);
-    player.y = clamp(player.y, player.size, canvas.height - player.size);
-    // garlic / other player-following areas could update here
-  }
-
-  function updateBullets(dt){
-    for(let i = bullets.length-1; i>=0; i--){
-      const b = bullets[i];
-      // homing behavior
-      if(b.homing){
-        if(enemies.length || boss){
-          const pool = boss ? enemies.concat([boss]) : enemies;
-          let target = pool[0];
-          for(const p of pool) if(dist(p,b) < dist(target,b)) target = p;
-          const angTo = Math.atan2(target.y - b.y, target.x - b.x);
-          const curAng = Math.atan2(b.dy, b.dx);
-          let diff = angTo - curAng;
-          while(diff > Math.PI) diff -= Math.PI*2;
-          while(diff < -Math.PI) diff += Math.PI*2;
-          let newAng = curAng + (b.homingStrength || 0.12);
-          b.dx = Math.cos(newAng) * b.speed;
-          b.dy = Math.sin(newAng) * b.speed;
-        }
-      }
-      b.x += (b.dx || 0) * (dt/16);
-      b.y += (b.dy || 0) * (dt/16);
-      b.life -= dt;
-      if(b.life <= 0 || b.x < -80 || b.x > canvas.width+80 || b.y < -80 || b.y > canvas.height+80){ bullets.splice(i,1); continue; }
-
-      // collide with enemies
-      for(let j = enemies.length-1; j>=0; j--){
-        const e = enemies[j];
-        if(Math.hypot(b.x - e.x, b.y - e.y) < e.size + (b.size||4)){
-          e.hp -= b.damage;
-          // piercing?
-          if(!b.pierce) bullets.splice(i,1);
-          if(e.hp <= 0){ spawnOrbAt(e.x,e.y); enemies.splice(j,1); score += 1; }
-          break;
-        }
-      }
-      // collide with boss
-      if(boss && Math.hypot(b.x - boss.x, b.y - boss.y) < boss.size + (b.size||4)){
-        boss.hp -= b.damage;
-        if(!b.pierce) bullets.splice(i,1);
-        if(boss.hp <= 0) killBoss();
-        continue;
-      }
-    }
-  }
-
-  function updateMelee(dt){
-    for(let i = meleeAttacks.length-1; i>=0; i--){
-      const m = meleeAttacks[i];
-      m.life -= dt;
-      // hit enemies in arc/range (approx using distance + angle)
-      for(let j = enemies.length-1; j>=0; j--){
-        const e = enemies[j];
-        const angToE = Math.atan2(e.y - m.y, e.x - m.x);
-        // compute angular difference in simpler way
-        let diff = Math.abs(((angToE - m.angle + Math.PI) % (2*Math.PI)) - Math.PI);
-        if(diff <= (m.arc||Math.PI) / 2 && dist(e, m) <= (m.range + e.size)){
-          // damage (with crit possibility)
-          let dmg = m.damage || 4;
-          if(m.critChance && Math.random() < m.critChance) dmg = Math.round(dmg * 1.6);
-          e.hp -= dmg;
-          // special: freeze chance for whip
-          if(m.type === 'whip' && Math.random() < (m.freezeChance || 0)) { e.speed *= 0.45; }
-          // trail fire for bloodwhip
-          if(m.trail){
-            // leave small damaging orbs along path
-            orbs.push({ x: e.x, y: e.y, value: 0, _fire: true, dmg: m.trailDmg });
+  // bullets movement & hit detection
+  for(let i = state.bullets.length-1; i>=0; i--){
+    const b = state.bullets[i];
+    b.x += b.vx * (dt/16);
+    b.y += b.vy * (dt/16);
+    // remove out of bounds
+    if(b.x < -50 || b.x > canvas.width+50 || b.y < -50 || b.y > canvas.height+50){ state.bullets.splice(i,1); continue; }
+    // collision with enemies
+    for(let j = state.enemies.length-1; j>=0; j--){
+      const e = state.enemies[j];
+      if(Math.hypot(b.x-e.x, b.y-e.y) < e.r){
+        e.hp -= b.damage;
+        state.bullets.splice(i,1);
+        if(e.hp <= 0){
+          // spawn orbs and occasional coin
+          const orbCount = Math.ceil(rand(2,6) * (p.growth || 1));
+          spawnOrb(e.x, e.y, orbCount);
+          if(Math.random() < 0.25 * (p.luck || 1)){
+            state.coins += Math.ceil(rand(1,4) * (p.greed || 1));
           }
-          // apply knockback
-          e.x += Math.cos(angToE)*6; e.y += Math.sin(angToE)*6;
-          if(e.hp <= 0){ spawnOrbAt(e.x, e.y); enemies.splice(j,1); score += 1; }
+          state.enemies.splice(j,1);
         }
-      }
-      // melee vs boss
-      if(boss){
-        const angToB = Math.atan2(boss.y - m.y, boss.x - m.x);
-        let diffB = Math.abs(((angToB - m.angle + Math.PI) % (2*Math.PI)) - Math.PI);
-        if(diffB <= (m.arc||Math.PI)/2 && dist(boss,m) <= (m.range + boss.size)){
-          boss.hp -= m.damage || 6;
-          if(boss.hp <= 0) killBoss();
-        }
-      }
-      if(m.life <= 0) meleeAttacks.splice(i,1);
-    }
-  }
-
-  function updateEnemies(dt){
-    for(let i = enemies.length-1; i>=0; i--){
-      const e = enemies[i];
-      const a = Math.atan2(player.y - e.y, player.x - e.x);
-      e.x += Math.cos(a) * e.speed * (dt/16);
-      e.y += Math.sin(a) * e.speed * (dt/16);
-      if(Math.hypot(e.x - player.x, e.y - player.y) < player.size + e.size){
-        // give hit and remove enemy
-        player.hp -= 8 * (dt/16);
-        spawnOrbAt(e.x, e.y);
-        enemies.splice(i,1);
-        if(player.hp <= 0) onDeath();
+        break;
       }
     }
   }
 
-  /* Puddles and chests reused handling: chests array can contain real chests or puddles (_puddle true) */
-  function updateChestsAndPuddles(){
-    for(let i = chests.length-1; i>=0; i--){
-      const c = chests[i];
-      if(c._puddle){
-        // puddle behavior: grows and damages enemies nearby
-        const elapsed = performance.now() - c.spawned;
-        c.r = Math.min(c.maxR, c.r + (c.growSpeed || 0.1));
-        for(let j = enemies.length-1; j>=0; j--){
-          const e = enemies[j];
-          if(Math.hypot(e.x - c.x, e.y - c.y) < c.r + e.size){
-            e.hp -= c.damage * (1/6);
-            if(e.hp <= 0){ spawnOrbAt(e.x,e.y); enemies.splice(j,1); score++; }
+  // enemies movement & contact damage
+  for(let i = state.enemies.length-1; i>=0; i--){
+    const e = state.enemies[i];
+    const dx = p.position.x - e.x;
+    const dy = p.position.y - e.y;
+    const d = Math.hypot(dx,dy);
+    e.x += (dx/d) * e.speed * (dt/16);
+    e.y += (dy/d) * e.speed * (dt/16);
+    // touch damage
+    if(d < e.r + 10){
+      // damage application with armor reduction
+      const baseDamage = 8;
+      const effective = Math.max(0, baseDamage - (p.armor || 0));
+      // small cooldown on damage invuln (simple)
+      if(!p._hitCooldown || state.time - p._hitCooldown > 500){
+        p.currentHealth -= effective;
+        p._hitCooldown = state.time;
+        if(p.currentHealth <= 0){
+          // revival check
+          if(p.revival > 0){
+            p.revival--;
+            p.currentHealth = p.maxHealth * 0.5;
+          } else {
+            // die => respawn with partial health and lose some coins/xp
+            p.currentHealth = Math.max(10, Math.floor(p.maxHealth*0.4));
+            state.coins = Math.max(0, Math.floor(state.coins * 0.6));
           }
         }
-        if(performance.now() - c.spawned > c.life) chests.splice(i,1);
-      } else {
-        // regular chest: float, pickup
-        c.y -= Math.sin((performance.now()+ (c.offset || 0))/300)*0.04;
-        if(dist(c, player) < player.size + 18){
-          applyChestReward(c);
-          showChestPopup(`¡Cofre abierto! ${c.rewardText || ''}`);
-          chests.splice(i,1);
-          continue;
-        }
-        if(performance.now() - (c.spawned || performance.now()) > 30000) chests.splice(i,1);
       }
     }
   }
 
-  /* ---------- Solar / song / other periodic ticks ---------- */
-  function periodicWeaponTicks(dt, now){
-    // magic: iterate over weaponsState and call their ticks/updates
-    // Whip & melee weapons are called in auto actions below
-    if(weaponsState.kingbible.level) weaponsLib.kingbible.update(weaponsState.kingbible, dt);
-    if(weaponsState.garlic.level) weaponsLib.garlic.tick(weaponsState.garlic);
-    if(weaponsState.lightning.level) weaponsLib.lightning.tick(weaponsState.lightning);
-    if(weaponsState.song.level) weaponsLib.song.tick(weaponsState.song);
-    if(weaponsState.cross.level) weaponsLib.cross.tick && weaponsLib.cross.tick(weaponsState.cross);
-    // holy water puddle handler: create puddles via holywater.throw stored in chests array earlier
-    updateChestsAndPuddles();
-  }
-
-  /* ---------- Boss ---------- */
-  function spawnBoss(){
-    const side = Math.random() < 0.5 ? -1 : 1;
-    const x = side === -1 ? -120 : canvas.width + 120;
-    const y = Math.random()*canvas.height;
-    const minutes = Math.floor((performance.now()-gameStartTimestamp)/60000);
-    const baseHp = Math.round((200 + minutes*60) * 0.6);
-    const baseSize = 48 + minutes*6;
-    const speed = 0.35 + Math.random()*0.35;
-    boss = { x, y, hp: baseHp, maxHp: baseHp, size: baseSize, speed, color:'#8e44ad', spawned: performance.now(), contactDamage: 9 };
-  }
-  function updateBoss(dt){
-    if(!boss) return;
-    const ang = Math.atan2(player.y - boss.y, player.x - boss.x);
-    boss.x += Math.cos(ang) * boss.speed * (dt/16);
-    boss.y += Math.sin(ang) * boss.speed * (dt/16);
-    if(Math.hypot(boss.x - player.x, boss.y - player.y) < player.size + boss.size){
-      player.hp -= boss.contactDamage * (dt/16);
-      if(player.hp <= 0) onDeath();
+  // orbs movement (attracted by magnet)
+  for(let i = state.orbs.length-1; i>=0; i--){
+    const o = state.orbs[i];
+    // drift
+    o.x += o.vx * (dt/16);
+    o.y += o.vy * (dt/16);
+    // apply magnet if within magnet radius
+    const magnetRadius = 40 + (p.magnet || 1) * 30;
+    const d = Math.hypot(p.position.x - o.x, p.position.y - o.y);
+    if(d < magnetRadius){
+      // accelerate towards player
+      const dirx = (p.position.x - o.x)/d || 0;
+      const diry = (p.position.y - o.y)/d || 0;
+      o.x += dirx * (120 * (p.magnet || 1)) * (dt/1000);
+      o.y += diry * (120 * (p.magnet || 1)) * (dt/1000);
     }
-  }
-  function killBoss(){
-    if(!boss) return;
-    chests.push({ x: boss.x, y: boss.y, spawned: performance.now(), offset: Math.random()*9999 });
-    boss = null;
-  }
-
-  function applyChestReward(chest){
-    const owned = Object.keys(weaponsState).filter(k => (weaponsState[k].level||0) > 0 && weaponsState[k].level < (weaponsLib[k].maxLevel||10));
-    if(owned.length){
-      const pick = randChoice(owned);
-      weaponsState[pick].level = Math.min(weaponsLib[pick].maxLevel, weaponsState[pick].level + 1);
-      applyWeaponLevelEffects(pick);
-      chest.rewardText = `${weaponsLib[pick].name} +1 nivel`;
-    } else {
-      player.hp = Math.min(player.maxHp, player.hp + 25);
-      chest.rewardText = `Vida +25 (fallback)`;
+    // pickup if very close
+    if(Math.hypot(o.x - p.position.x, o.y - p.position.y) < 14){
+      // XP gained scaled by growth
+      const xpGain = Math.ceil(o.val * (p.growth || 1));
+      gainXP(xpGain);
+      state.orbs.splice(i,1);
     }
   }
 
-  /* ---------- Level up & death ---------- */
-  function levelUp(){ level++; xp = xp - xpToNext; xpToNext = Math.max(5, Math.floor(xpToNext * 1.22)); player.hp = Math.min(player.maxHp, player.hp + 10); openLevelMenu(); }
-  function onDeath(){ if(dead) return; dead = true; gamePaused = true; deathPanelEl.style.display = 'block'; document.getElementById('deathScore').textContent = 'Puntos: '+score+' | Nivel alcanzado: '+level; }
-
-  /* ---------- Rendering ---------- */
-  function render(){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-    // solar-like areas: (none here)
-    // puddles
-    for(const c of chests){
-      if(c._puddle){
-        ctx.fillStyle = 'rgba(50,150,250,0.08)';
-        ctx.beginPath(); ctx.arc(c.x, c.y, c.r||6, 0, Math.PI*2); ctx.fill();
-      } else {
-        ctx.fillStyle = '#9b59b6'; ctx.beginPath(); ctx.arc(c.x,c.y,12,0,Math.PI*2); ctx.fill();
-      }
-    }
-    // orbs
-    for(const o of orbs){
-      if(o._fire){
-        // small flame
-        ctx.fillStyle = '#e74c3c';
-        ctx.beginPath(); ctx.arc(o.x,o.y,4,0,Math.PI*2); ctx.fill();
-      } else {
-        ctx.fillStyle = '#f1c40f';
-        ctx.beginPath(); ctx.arc(o.x,o.y,6,0,Math.PI*2); ctx.fill();
-      }
-    }
-    // player (white)
-    ctx.fillStyle = player.color;
-    ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
-
-    // enemies
-    for(const e of enemies){
-      ctx.fillStyle = e.color || '#e74c3c';
-      ctx.beginPath(); ctx.arc(e.x,e.y,e.size,0,Math.PI*2); ctx.fill();
-    }
-    // boss
-    if(boss){ ctx.fillStyle = boss.color || '#8e44ad'; ctx.beginPath(); ctx.arc(boss.x,boss.y,boss.size,0,Math.PI*2); ctx.fill(); }
-
-    // bullets
-    for(const b of bullets){
-      ctx.fillStyle = b.type === 'firewand' ? '#e67e22' : '#fff';
-      ctx.beginPath(); ctx.arc(b.x,b.y,b.size || 4, 0, Math.PI*2); ctx.fill();
-    }
-
-    // melee attacks (arcs)
-    for(const m of meleeAttacks){
-      ctx.strokeStyle = 'rgba(255,255,255,0.28)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(m.x, m.y, m.range, m.angle - (m.arc||Math.PI)/2, m.angle + (m.arc||Math.PI)/2);
-      ctx.stroke();
-    }
+  // spawn enemies over time (curse increases spawn)
+  if(state.time - state.lastEnemySpawn > state.enemySpawnInterval / (1 + (p.curse||0)*0.15)){
+    spawnEnemy();
+    state.lastEnemySpawn = state.time;
   }
 
-  /* ---------- Main loop ---------- */
-  let lastFrame = performance.now();
-  function gameLoop(now){
-    const dt = now - lastFrame;
-    lastFrame = now;
-    if(!gamePaused && !dead){
-      time += dt;
-      timerEl.textContent = formatTime(performance.now() - gameStartTimestamp);
-      spawnInterval = Math.max(400, BASE_SPAWN_INTERVAL - Math.floor(time/10000)*20);
-      if(now - lastSpawnTime > spawnInterval){ lastSpawnTime = now; if(enemies.length < 28) spawnEnemy(); }
-      if(!boss && (now - lastBossSpawn > BOSS_INTERVAL)){ spawnBoss(); lastBossSpawn = now; }
-
-      updatePlayer(dt);
-
-      // auto-weapon usage: call for each owned weapon state
-      // whip (melee)
-      if(weaponsState.whip.level) weaponsLib.whip.attack(weaponsState.whip);
-      if(weaponsState.knife.level) weaponsLib.knife.shoot(weaponsState.knife);
-      if(weaponsState.axe.level) weaponsLib.axe.attack(weaponsState.axe);
-      if(weaponsState.cross.level) weaponsLib.cross.tick && weaponsLib.cross.tick(weaponsState.cross);
-      if(weaponsState.holywater.level) weaponsLib.holywater.throw && weaponsLib.holywater.throw(weaponsState.holywater);
-      if(weaponsState.kingbible.level) weaponsLib.kingbible.update(weaponsState.kingbible, dt);
-      if(weaponsState.magicwand.level) weaponsLib.magicwand.shoot(weaponsState.magicwand);
-      if(weaponsState.firewand.level) weaponsLib.firewand.shoot(weaponsState.firewand);
-      if(weaponsState.garlic.level) weaponsLib.garlic.tick(weaponsState.garlic);
-      if(weaponsState.lightning.level) weaponsLib.lightning.tick(weaponsState.lightning);
-      if(weaponsState.pentagram.level) {/* player must activate manually; not automatic */ }
-      if(weaponsState.song.level) weaponsLib.song.tick(weaponsState.song);
-      if(weaponsState.ebony.level) weaponsLib.ebony.shoot(weaponsState.ebony);
-      if(weaponsState.bloodwhip.level) weaponsLib.bloodwhip.attack(weaponsState.bloodwhip);
-
-      updateBullets(dt);
-      updateMelee(dt);
-      updateEnemies(dt);
-      periodicWeaponTicks(dt, now);
-      updateBoss(dt);
-      updateXPSystem();
-    }
-    render();
-    updateHUD();
-    requestAnimationFrame(gameLoop);
-  }
-  requestAnimationFrame(gameLoop);
-
-  /* ---------- Init ---------- */
-  // default: whip as primary (but weapon levels 0 until player picks a character)
-  weaponsState.whip.level = 0;
-  for(let k in weaponsState) if(!weaponsState[k].level) weaponsState[k].level = 0;
-
-  for(let i=0;i<4;i++) spawnEnemy();
-  gameStartTimestamp = performance.now();
-  lastBossSpawn = performance.now() + 10000;
+  // level cap & UI updates
   updateHUD();
+}
 
-  // expose debug
-  window.__VS = { weaponsLib, weaponsState, player, enemies, orbs, bullets, chests, spawnEnemy, spawnBoss: ()=>{ lastBossSpawn = 0; }, killBoss, levelUp };
+// ---------- Shooting ----------
+function shootBullet(sx,sy,tx,ty, power=1, projSpeed=1){
+  const ang = Math.atan2(ty-sy, tx-sx);
+  const speed = 8 * (projSpeed||1);
+  state.bullets.push({x:sx, y:sy, vx:Math.cos(ang)*speed, vy:Math.sin(ang)*speed, damage: Math.round(5 * (power||1))});
+}
 
-  /* ---------- UI wiring + Character selection ---------- */
-  // fill character selection buttons
-  function showCharacterSelectPanel(){
-    charSelectEl.style.display = 'flex';
-    const choices = charSelectEl.querySelector('#charChoices');
-    choices.innerHTML = '';
-    characters.forEach(ch => {
-      const btn = document.createElement('button');
-      btn.className = 'choice';
-      btn.textContent = ch.name + ' — ' + (weaponsLib[ch.weapon]?.name || ch.weapon);
-      btn.addEventListener('click', ()=>{
-        // set starting weapon
-        for(const k in weaponsState) weaponsState[k].level = 0; // clear others
-        weaponsState[ch.weapon].level = 1;
-        // ensure some default stats exist
-        applyWeaponLevelEffects(ch.weapon);
-        // hide menus and start game automatically
-        charSelectEl.style.display = 'none';
-        mainMenuEl.style.display = 'none';
-        gamePaused = false; dead = false;
-        score = 0; xp = 0; level = 1; xpToNext = 15; time = 0;
-        player.x = canvas.width/2; player.y = canvas.height/2; player.hp = player.maxHp;
-        enemies = []; bullets = []; orbs = []; meleeAttacks = []; chests = [];
-        for(let i=0;i<4;i++) spawnEnemy();
-        gameStartTimestamp = performance.now();
-        lastBossSpawn = performance.now() + 10000;
-      });
-      choices.appendChild(btn);
-    });
+// ---------- XP / Leveling ----------
+function gainXP(amount){
+  const p = state.player;
+  p.xp += amount;
+  // check level
+  while(p.xp >= p.xpToNext){
+    p.xp -= p.xpToNext;
+    p.level++;
+    p.xpToNext = Math.floor(p.xpToNext * 1.3 + 5);
+    showLevelUpChoices();
+  }
+}
+
+// ---------- Level up choices ----------
+const ALL_ATTRS = [
+  {key:'might', label:'Poder', type:'mul', amount:0.12},
+  {key:'moveSpeed', label:'Velocidad movimiento', type:'mul', amount:0.08},
+  {key:'maxHealth', label:'Salud Máx', type:'add', amount:20},
+  {key:'recovery', label:'Recuperación', type:'add', amount:0.02},
+  {key:'armor', label:'Armadura', type:'add', amount:1},
+  {key:'magnet', label:'Imán', type:'mul', amount:0.15},
+  {key:'growth', label:'Crecimiento (XP)', type:'mul', amount:0.15},
+  {key:'greed', label:'Avaricia (monedas)', type:'mul', amount:0.15},
+  {key:'luck', label:'Suerte', type:'mul', amount:0.12},
+  {key:'cooldown', label:'Recarga (reducir)', type:'mul', amount:0.9} // multiply cd by 0.9 => faster
+];
+
+function randomChoices(count=3){
+  const out = [];
+  const copy = [...ALL_ATTRS];
+  while(out.length < count && copy.length){
+    const idx = Math.floor(rand(0,copy.length));
+    out.push(copy.splice(idx,1)[0]);
+  }
+  return out;
+}
+
+function showLevelUpChoices(){
+  const lvlDiv = document.getElementById('levelUp');
+  const choicesDiv = document.getElementById('choices');
+  choicesDiv.innerHTML = '';
+  const choices = randomChoices(3);
+  choices.forEach((c, i)=>{
+    const btn = document.createElement('div');
+    btn.className = 'choice';
+    const sign = (c.type === 'mul' ? (c.amount>1?'+':'x') : '+');
+    const text = `${c.label} ${c.type==='mul' ? (c.amount>1 ? `+${Math.round((c.amount-1)*100)}%` : `x${c.amount}`) : `+${c.amount}`}`;
+    btn.innerHTML = `<strong>${text}</strong><div class="small">Aplicar</div>`;
+    btn.onclick = ()=>{
+      applyUpgrade(c);
+      lvlDiv.style.display = 'none';
+    };
+    choicesDiv.appendChild(btn);
+  });
+  lvlDiv.style.display = 'block';
+}
+
+function applyUpgrade(up){
+  const p = state.player;
+  if(up.type === 'add'){
+    p[up.key] = (p[up.key] || 0) + up.amount;
+    if(up.key === 'maxHealth') p.currentHealth += up.amount;
+  } else if(up.type === 'mul'){
+    if(up.key === 'cooldown'){
+      // special: multiply cooldown factor
+      p.cooldown = (p.cooldown || 1) * up.amount;
+    } else {
+      p[up.key] = (p[up.key] || 1) + up.amount;
+    }
+  }
+  // update debug
+  document.getElementById('dbgLv').innerText = p.level;
+  // immediate visual feedback: spawn some orbs as reward
+  spawnOrb(p.position.x + rand(-20,20), p.position.y + rand(-20,20), 3);
+}
+
+// ---------- HUD rendering ----------
+function updateHUD(){
+  const p = state.player;
+  // attrs list
+  const attrsDiv = document.getElementById('attrs');
+  attrsDiv.innerHTML = '';
+  // show some selected attributes neatly
+  const displayOrder = ['maxHealth','recovery','armor','moveSpeed','might','magnet','growth','greed','luck','cooldown'];
+  displayOrder.forEach(key=>{
+    const val = p[key];
+    if(val === undefined) return;
+    let txt = '';
+    if(key === 'maxHealth') txt = `${Math.round(val)} HP`;
+    else if(key === 'recovery') txt = `${(val*100).toFixed(1)}% /tick`;
+    else if(key === 'armor') txt = `${Math.round(val)}`;
+    else if(key === 'moveSpeed') txt = `${(val*100).toFixed(0)}%`;
+    else if(key === 'might') txt = `${(val*100).toFixed(0)}%`;
+    else if(key === 'magnet') txt = `r=${Math.round(40 + val*30)}px`;
+    else if(key === 'growth') txt = `${(val*100).toFixed(0)}%`;
+    else if(key === 'greed') txt = `${(val*100).toFixed(0)}%`;
+    else if(key === 'luck') txt = `${(val*100).toFixed(0)}%`;
+    else if(key === 'cooldown') txt = `${(val).toFixed(2)}x`;
+    const el = document.createElement('div');
+    el.className = 'attr';
+    el.innerHTML = `<div style="color:#ddd">${translateAttr(key)}</div><div style="color:var(--accent)">${txt}</div>`;
+    attrsDiv.appendChild(el);
+  });
+  document.getElementById('hpbar').innerText = `HP: ${Math.round(p.currentHealth)} / ${Math.round(p.maxHealth)}`;
+  document.getElementById('xpbar').innerText = `XP: ${p.xp} / ${p.xpToNext} (Lv ${p.level})`;
+  document.getElementById('dbgGold').innerText = state.coins;
+}
+
+function translateAttr(k){
+  const map = {
+    maxHealth:'Salud Máx', recovery:'Recuperación', armor:'Armadura', moveSpeed:'Velocidad',
+    might:'Poder', magnet:'Imán', growth:'Crecimiento', greed:'Avaricia', luck:'Suerte', cooldown:'Recarga'
+  };
+  return map[k] || k;
+}
+
+// ---------- Draw ----------
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // draw orbs
+  for(const o of state.orbs){
+    ctx.beginPath();
+    ctx.fillStyle = '#7ee6ff'; ctx.globalAlpha = 0.95;
+    ctx.arc(o.x, o.y, 6, 0, Math.PI*2); ctx.fill(); ctx.globalAlpha = 1;
   }
 
-  // wire main menu buttons
-  btnPlay && btnPlay.addEventListener('click', ()=>{
-    mainMenuEl.style.display = 'none';
-    // show character select
-    showCharacterSelectPanel();
-  });
-  btnInfo && btnInfo.addEventListener('click', ()=>{
-    // populate info
-    const content = infoPanelEl.querySelector('#infoContent');
-    content.innerHTML = '';
-    for(const id in weaponsLib){
-      const w = weaponsLib[id];
-      const lvl = weaponsState[id]?.level || 0;
-      const line = document.createElement('div');
-      line.textContent = `${w.name} — Nivel: ${lvl}`;
-      content.appendChild(line);
-    }
-    mainMenuEl.style.display = 'none';
-    infoPanelEl.style.display = 'flex';
-  });
-  btnInfoBack && btnInfoBack.addEventListener('click', ()=>{
-    infoPanelEl.style.display = 'none';
-    mainMenuEl.style.display = 'flex';
-  });
-  btnQuit && btnQuit.addEventListener('click', ()=>{ console.log('Volver pulsado'); });
+  // draw enemies
+  for(const e of state.enemies){
+    ctx.beginPath();
+    ctx.fillStyle = '#ff6b6b';
+    ctx.arc(e.x, e.y, e.r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.font = '11px Arial';
+    ctx.fillText(e.hp, e.x-6, e.y+4);
+  }
 
-  btnCharBack && btnCharBack.addEventListener('click', ()=>{
-    charSelectEl.style.display = 'none';
-    mainMenuEl.style.display = 'flex';
-  });
+  // draw bullets
+  for(const b of state.bullets){
+    ctx.beginPath();
+    ctx.fillStyle = '#ffd7a6';
+    ctx.arc(b.x, b.y, 3, 0, Math.PI*2);
+    ctx.fill();
+  }
 
-  // Restart
-  btnRestart && btnRestart.addEventListener('click', ()=>{
-    deathPanelEl.style.display = 'none';
-    dead = false; gamePaused = false;
-    score = 0; xp = 0; level = 1; xpToNext = 15; time = 0;
-    player.x = canvas.width/2; player.y = canvas.height/2; player.hp = player.maxHp;
-    enemies = []; bullets = []; orbs = []; meleeAttacks = []; chests = [];
-    for(let i=0;i<4;i++) spawnEnemy();
-    gameStartTimestamp = performance.now();
-    lastBossSpawn = performance.now() + 10000;
-  });
+  // player
+  const p = state.player;
+  // magnet radius
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(126,230,255,0.12)';
+  ctx.lineWidth = 2;
+  ctx.arc(p.position.x, p.position.y, 40 + (p.magnet || 1)*30, 0, Math.PI*2);
+  ctx.stroke();
 
-  // Show main menu initially
-  function showMainMenu(){ mainMenuEl.style.display = 'flex'; charSelectEl.style.display = 'none'; infoPanelEl.style.display = 'none'; levelMenuEl.style.display = 'none'; deathPanelEl.style.display = 'none'; gamePaused = true; }
-  showMainMenu();
+  // player body
+  ctx.beginPath();
+  ctx.fillStyle = '#9ad76b';
+  ctx.arc(p.position.x, p.position.y, 12, 0, Math.PI*2);
+  ctx.fill();
 
-  // small debug
-  setInterval(()=> {
-    debugEl.textContent = `Enemies:${enemies.length} Chests:${chests.length} Orbs:${orbs.length} Time:${Math.floor(time/1000)}s`;
-  }, 700);
+  // draw HUD text overlay near player
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px Arial';
+  ctx.fillText(CHARACTERS[document.getElementById('charSel').value].name, p.position.x-24, p.position.y-18);
 
-}); // DOMContentLoaded end
+  // crosshair
+  ctx.beginPath();
+  ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.moveTo(mouse.x-8, mouse.y); ctx.lineTo(mouse.x+8, mouse.y);
+  ctx.moveTo(mouse.x, mouse.y-8); ctx.lineTo(mouse.x, mouse.y+8);
+  ctx.stroke();
+
+  // bottom-left mini info
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(8, canvas.height-72, 220, 64);
+  ctx.fillStyle = '#fff';
+  ctx.font = '12px Arial';
+  ctx.fillText(`Nivel ${p.level} • XP ${p.xp}/${p.xpToNext}`, 16, canvas.height-48);
+  ctx.fillText(`Monedas: ${state.coins}`, 16, canvas.height-30);
+}
+
+// ---------- Main loop ----------
+let last = performance.now();
+function frame(t){
+  const dt = t - last; last = t;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ---------- character switching ----------
+document.getElementById('applyChar').onclick = ()=>{
+  const key = document.getElementById('charSel').value;
+  // keep level/xp/coins but replace base attributes
+  const cur = state.player;
+  const newp = createPlayer(key);
+  // preserve level/xp/coins and current position
+  newp.level = cur.level;
+  newp.xp = cur.xp;
+  newp.xpToNext = cur.xpToNext;
+  newp.currentHealth = Math.min(newp.maxHealth, cur.currentHealth);
+  newp.position = cur.position;
+  newp.revival = cur.revival || newp.revival;
+  state.player = newp;
+  updateHUD();
+};
+
+// initial enemy spawns
+for(let i=0;i<3;i++) spawnEnemy();
+updateHUD();
+
+// Hide level up if clicking outside
+addEventListener('click', e=>{
+  // prevent accidental clicks closing the menu - keep only inside choices handled
+});
+
+// Prevent context menu
+addEventListener('contextmenu', e=> e.preventDefault());
 </script>
 </body>
 </html>
