@@ -129,22 +129,17 @@
 <div id="debug"></div>
 
 <script>
-/* ---------- Canvas ---------- */
-const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-function resize(){ canvas.width=innerWidth; canvas.height=innerHeight; }
-addEventListener('resize', resize);
+const canvas = document.getElementById("c");
+const ctx = canvas.getContext("2d");
+function resize(){ canvas.width = innerWidth; canvas.height = innerHeight; }
+addEventListener("resize", resize);
 resize();
 
-/* ---------- Estado global ---------- */
-let gameState = "menu"; // "menu", "playing", "gameOver"
-let time = 0;
-let score = 0;
-let xp = 0;
-let level = 1;
-let xpToNext = 15;
+/* ---------- Estados ---------- */
+let gameState = "menu"; // menu, playing, gameOver
+let last = performance.now();
+let bullets = [], enemies = [];
 let dead = false;
-let gamePaused = false;
 
 /* ---------- Player ---------- */
 const player = {
@@ -156,119 +151,73 @@ const player = {
   maxHp: 100
 };
 
-/* ---------- Armas ---------- */
-const weaponsState = {
-  pistol: {level:1, cooldown:0.5, lastUse:0, active:true},
-  solar: {level:0, cooldown:2, lastUse:0, active:false, orbs:[], areas:[]},
-  bible: {level:0, cooldown:1.5, lastUse:0, active:false}
-};
-
-let bullets = [];
-let enemies = [];
-let boss = null;
-
 /* ---------- Controles ---------- */
 let keys = {};
 let mouse = {x:0, y:0};
-addEventListener('keydown', e=>keys[e.key]=true);
-addEventListener('keyup', e=>keys[e.key]=false);
-canvas.addEventListener('mousemove', e=>{
+addEventListener("keydown", e=>keys[e.key]=true);
+addEventListener("keyup", e=>keys[e.key]=false);
+canvas.addEventListener("mousemove", e=>{
   mouse.x = e.clientX;
   mouse.y = e.clientY;
 });
 
-/* ---------- Funciones ---------- */
+/* ---------- Enemigos ---------- */
+function spawnEnemy(){
+  enemies.push({
+    x: Math.random()*canvas.width,
+    y: Math.random()*canvas.height,
+    size: 20,
+    hp: 20,
+    speed: 50
+  });
+}
+
+/* ---------- Juego ---------- */
 function startGame(){
+  console.log("Iniciando juego...");
   gameState = "playing";
   dead = false;
-  score = 0;
-  time = 0;
+  bullets = [];
+  enemies = [];
   player.x = canvas.width/2;
   player.y = canvas.height/2;
   player.hp = player.maxHp;
 
-  bullets = [];
-  enemies = [];
-  boss = null;
-
-  Object.keys(weaponsState).forEach(k=>{
-    weaponsState[k].lastUse = 0;
-    weaponsState[k].active = (k==="pistol");
-    if(weaponsState[k].orbs) weaponsState[k].orbs = [];
-    if(weaponsState[k].areas) weaponsState[k].areas = [];
-  });
-
   for(let i=0;i<3;i++) spawnEnemy();
-}
-
-function spawnEnemy(){
-  const e = {
-    x: Math.random()*canvas.width,
-    y: Math.random()*canvas.height,
-    size: 20,
-    hp: 10 + level*2,
-    speed: 50 + level*5
-  };
-  enemies.push(e);
-}
-
-function shootWeapon(weapon){
-  const now = performance.now()/1000;
-  if(now - weapon.lastUse < weapon.cooldown) return;
-  weapon.lastUse = now;
-
-  if(weapon === weaponsState.pistol){
-    bullets.push({x:player.x, y:player.y, dx:(mouse.x-player.x)/50, dy:(mouse.y-player.y)/50, size:5});
-  } else if(weapon === weaponsState.bible){
-    // Dispara hacia el enemigo más cercano
-    if(enemies.length===0) return;
-    let nearest = enemies[0];
-    let dist = Math.hypot(nearest.x-player.x, nearest.y-player.y);
-    for(let e of enemies){
-      const d = Math.hypot(e.x-player.x, e.y-player.y);
-      if(d<dist){ dist=d; nearest=e; }
-    }
-    const dx = (nearest.x-player.x)/50;
-    const dy = (nearest.y-player.y)/50;
-    bullets.push({x:player.x, y:player.y, dx, dy, size:8});
-  }
-  // Solar y otras armas se pueden agregar aquí
+  startButton.style.display = "none";
 }
 
 function update(dt){
-  if(gamePaused || dead || gameState!=="playing") return;
+  if(gameState !== "playing" || dead) return;
 
-  // Mover player
-  if(keys['w']||keys['ArrowUp']) player.y -= player.speed*dt;
-  if(keys['s']||keys['ArrowDown']) player.y += player.speed*dt;
-  if(keys['a']||keys['ArrowLeft']) player.x -= player.speed*dt;
-  if(keys['d']||keys['ArrowRight']) player.x += player.speed*dt;
+  // Movimiento del jugador
+  if(keys["w"]) player.y -= player.speed * dt;
+  if(keys["s"]) player.y += player.speed * dt;
+  if(keys["a"]) player.x -= player.speed * dt;
+  if(keys["d"]) player.x += player.speed * dt;
 
-  // Mantener dentro del canvas
-  player.x = Math.max(player.size, Math.min(canvas.width-player.size, player.x));
-  player.y = Math.max(player.size, Math.min(canvas.height-player.size, player.y));
-
-  // Disparos automáticos para armas activas
-  Object.values(weaponsState).forEach(w=>{
-    if(w.active) shootWeapon(w);
+  // Disparo simple
+  if(keys[" "]) bullets.push({
+    x: player.x, y: player.y,
+    dx: (mouse.x - player.x) / 20,
+    dy: (mouse.y - player.y) / 20,
+    size: 5
   });
 
-  // Actualizar bullets
-  bullets.forEach((b,i)=>{
-    b.x += b.dx*dt*100;
-    b.y += b.dy*dt*100;
-    // colisión con enemigos
-    enemies.forEach((e,j)=>{
+  // Actualizar balas
+  bullets.forEach((b, i)=>{
+    b.x += b.dx * dt * 60;
+    b.y += b.dy * dt * 60;
+    enemies.forEach((e, j)=>{
       if(Math.hypot(e.x-b.x,e.y-b.y)<e.size+b.size){
         e.hp -= 10;
         bullets.splice(i,1);
         if(e.hp<=0) enemies.splice(j,1);
       }
     });
-    if(b.x<0||b.x>canvas.width||b.y<0||b.y>canvas.height) bullets.splice(i,1);
   });
 
-  // Mover enemigos hacia player
+  // Enemigos se mueven hacia el jugador
   enemies.forEach(e=>{
     const dx = player.x - e.x;
     const dy = player.y - e.y;
@@ -276,57 +225,53 @@ function update(dt){
     e.x += (dx/dist)*e.speed*dt;
     e.y += (dy/dist)*e.speed*dt;
 
-    // Colisión con player
+    // Colisión
     if(dist < e.size + player.size){
-      player.hp -= 20*dt;
-      if(player.hp <=0){
+      player.hp -= 30*dt;
+      if(player.hp <= 0){
         dead = true;
         gameState = "gameOver";
+        startButton.style.display = "block";
+        startButton.textContent = "Reiniciar";
       }
     }
   });
-
-  time += dt;
 }
 
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  if(gameState==="menu"){
+  if(gameState === "menu"){
     ctx.fillStyle="white";
     ctx.font="48px Arial";
     ctx.fillText("Vampire Survival", canvas.width/2-200, canvas.height/2-50);
-    ctx.font="32px Arial";
-    ctx.fillText("Pulsa Jugar", canvas.width/2-80, canvas.height/2+20);
     return;
   }
 
-  if(gameState==="gameOver"){
+  if(gameState === "gameOver"){
     ctx.fillStyle="red";
     ctx.font="48px Arial";
-    ctx.fillText("Has Muerto", canvas.width/2-150, canvas.height/2);
-    ctx.font="24px Arial";
-    ctx.fillText("Pulsa Jugar para reiniciar", canvas.width/2-130, canvas.height/2+50);
+    ctx.fillText("Has muerto", canvas.width/2-150, canvas.height/2);
     return;
   }
 
-  // Dibujar player
+  // Player
   ctx.fillStyle="white";
   ctx.beginPath();
   ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
   ctx.fill();
 
-  // Dibujar bullets
+  // Balas
+  ctx.fillStyle="yellow";
   bullets.forEach(b=>{
-    ctx.fillStyle="red";
     ctx.beginPath();
     ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
     ctx.fill();
   });
 
-  // Dibujar enemigos
+  // Enemigos
+  ctx.fillStyle="green";
   enemies.forEach(e=>{
-    ctx.fillStyle="green";
     ctx.beginPath();
     ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
     ctx.fill();
@@ -335,39 +280,33 @@ function draw(){
   // HUD
   ctx.fillStyle="white";
   ctx.font="20px Arial";
-  ctx.fillText("HP: "+Math.round(player.hp), 20, 30);
-  ctx.fillText("Score: "+score, 20, 60);
+  ctx.fillText("HP: " + Math.round(player.hp), 20, 30);
 }
 
-/* ---------- Loop ---------- */
-let last = performance.now();
-function loop(){
-  const now = performance.now();
-  const dt = (now - last)/1000;
+/* ---------- Bucle ---------- */
+function loop(now){
+  const dt = (now - last) / 1000;
   last = now;
-
   update(dt);
   draw();
-
   requestAnimationFrame(loop);
 }
-loop();
+requestAnimationFrame(loop);
 
-/* ---------- Botón de juego ---------- */
-const startButton = document.createElement('button');
-startButton.id = "startButton";
+/* ---------- Botón de menú ---------- */
+const startButton = document.createElement("button");
 startButton.textContent = "Jugar";
 startButton.style.position = "absolute";
 startButton.style.left = "50%";
 startButton.style.top = "60%";
 startButton.style.transform = "translate(-50%,-50%)";
-startButton.style.padding = "10px 20px";
+startButton.style.padding = "12px 24px";
 startButton.style.fontSize = "24px";
+startButton.style.cursor = "pointer";
+startButton.style.zIndex = "10"; // 🔥 IMPORTANTE para que esté encima del canvas
 document.body.appendChild(startButton);
 
-startButton.addEventListener('click', ()=>{
-  startGame();
-});
+startButton.addEventListener("click", startGame);
 </script>
 </body>
 </html>
