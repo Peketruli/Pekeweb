@@ -1,300 +1,342 @@
 <!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Casino — Sala, Pasillo y Ruleta</title>
-<style>
-html,body{height:100%;margin:0;overflow:hidden;background:#111;font-family:Inter,Arial,Helvetica,sans-serif}
-canvas{display:block;width:100vw;height:100vh}
-#prompt {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -120%);
-  background: rgba(0,0,0,0.72);
-  color: #fff;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 18px;
-  pointer-events: none;
-  display: none;
-  z-index: 20;
-  box-shadow: 0 4px 18px rgba(0,0,0,0.6);
-}
-#hint {
-  position: fixed;
-  right: 12px;
-  top: 12px;
-  color: #fff;
-  z-index: 10;
-  background: rgba(0,0,0,0.45);
-  padding: 8px;
-  border-radius: 6px;
-  font-size: 13px;
-}
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Casino 3D — Mejorado</title>
+  <style>
+    html,body{height:100%;margin:0;font-family:Inter,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
+    #app{height:100%;display:flex;overflow:hidden}
+    #canvas-wrap{flex:1;position:relative;background:#0b0b0b}
+    canvas{display:block}
+    /* HUD */
+    .hud{position:absolute;right:12px;top:12px;z-index:20;color:#fff;max-width:320px}
+    .panel{background:rgba(0,0,0,0.55);backdrop-filter:blur(6px);padding:12px;border-radius:10px;margin-bottom:10px}
+    .panel h3{margin:0 0 8px 0;font-size:14px}
+    .btn{display:inline-block;padding:8px 10px;border-radius:8px;border:none;background:#1d7cf0;color:#fff;cursor:pointer;margin-right:6px}
+    .btn.secondary{background:#444}
+    .info-row{display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:13px}
+    .chips-row{display:flex;gap:8px}
+    .chip{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#eee;color:#111;font-weight:700;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.4)}
+    .log{max-height:140px;overflow:auto;font-size:12px;background:rgba(255,255,255,0.03);padding:8px;border-radius:6px}
+    footer{position:absolute;left:12px;bottom:12px;color:#ddd;font-size:13px}
+    /* small screens */
+    @media (max-width:600px){.hud{left:8px;right:8px;top:auto;bottom:8px;}}
+  </style>
 </head>
 <body>
-<div id="prompt">Presiona <b>E</b> para abrir</div>
-<div id="hint">W/S/A/D mover • Flechas cámara • Shift correr • Espacio saltar • Acércate a la puerta</div>
-<canvas id="c"></canvas>
+  <div id="app">
+    <div id="canvas-wrap">
+      <div class="hud">
+        <div class="panel">
+          <h3>Casino 3D — Ruleta</h3>
+          <div class="info-row"><span>Saldo</span><strong id="balance">1000</strong></div>
+          <div class="info-row"><span>Apuesta actual</span><strong id="current-bet">0</strong></div>
+          <div style="margin-top:8px" class="chips-row" id="chip-palette"></div>
+          <div style="margin-top:8px">
+            <button class="btn" id="spin-btn">Girar</button>
+            <button class="btn secondary" id="clear-btn">Limpiar</button>
+            <button class="btn secondary" id="reset-btn">Reset</button>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Historial</h3>
+          <div class="log" id="log"></div>
+        </div>
+      </div>
+      <footer>Usa el ratón para mover la cámara. Haz click en una casilla de la ruleta para poner fichas.</footer>
+    </div>
+  </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.159.0/build/three.min.js"></script>
-<script>
-// ------------------------
-// Setup
-// ------------------------
-const canvas=document.getElementById('c');
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
-renderer.setSize(window.innerWidth,window.innerHeight);
-const scene=new THREE.Scene();
-scene.background=new THREE.Color(0xebe6dc);
+  <script type="module">
+    // IMPORTS (desde CDN)
+    import * as THREE from 'https://unpkg.com/three@0.152.2/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+    
+    // --- Setup básico ---
+    const wrap = document.getElementById('canvas-wrap');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a0a);
 
-const camera=new THREE.PerspectiveCamera(75,window.innerWidth/window.innerHeight,0.1,50);
-camera.position.set(0,1.7,0.5);
-camera.lookAt(0,1.7,-4);
-scene.add(camera);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+    wrap.appendChild(renderer.domElement);
 
-// ------------------------
-// Materiales
-// ------------------------
-const wallMat=new THREE.MeshBasicMaterial({color:0xD3C6B2});
-const floorMat=new THREE.MeshBasicMaterial({color:0x7a7a7a});
-const ceilingMat=new THREE.MeshBasicMaterial({color:0x3b3b3b});
-const doorMat=new THREE.MeshBasicMaterial({color:0x3f2a18});
-const frameMat=new THREE.MeshBasicMaterial({color:0x2e1d12});
-const roomFloorMat=new THREE.MeshBasicMaterial({color:0x5a0b0b});
-const roomWallMat=new THREE.MeshBasicMaterial({color:0xCFC0B0});
-const rouletteMat=new THREE.MeshBasicMaterial({color:0xffcc00});
+    // Cámara
+    const camera = new THREE.PerspectiveCamera(45, wrap.clientWidth / wrap.clientHeight, 0.1, 2000);
+    camera.position.set(0, 60, 120);
 
-// ------------------------
-// Parámetros
-// ------------------------
-const pasillo={L:5,W:2,H:2.5,thick:0.12};
-const sala={L:10,W:12,H:3};
-const doorW=1,doorH=2,doorD=0.12;
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.08;
+    controls.maxPolarAngle = Math.PI/2.2; controls.minDistance = 20; controls.maxDistance = 250;
 
-// ------------------------
-// Pasillo
-// ------------------------
-const floorGeo=new THREE.PlaneGeometry(pasillo.W,pasillo.L);
-const floor=new THREE.Mesh(floorGeo,floorMat);
-floor.rotation.x=-Math.PI/2;
-floor.position.set(0,0,-pasillo.L/2);
-scene.add(floor);
+    // Luces
+    const amb = new THREE.AmbientLight(0xffffff, 0.35);
+    scene.add(amb);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+    dir.position.set(40,80,20);
+    scene.add(dir);
 
-const ceiling=new THREE.Mesh(new THREE.BoxGeometry(pasillo.W,pasillo.thick,pasillo.L),ceilingMat);
-ceiling.position.set(0,pasillo.H-pasillo.thick/2,-pasillo.L/2);
-scene.add(ceiling);
+    // Piso
+    const floorGeo = new THREE.PlaneGeometry(400,400);
+    const floorMat = new THREE.MeshStandardMaterial({color:0x09121a,metalness:0.1,roughness:0.8});
+    const floor = new THREE.Mesh(floorGeo,floorMat); floor.rotation.x = -Math.PI/2; floor.position.y = -1.5; scene.add(floor);
 
-const leftWall=new THREE.Mesh(new THREE.BoxGeometry(pasillo.thick,pasillo.H,pasillo.L),wallMat);
-leftWall.position.set(-pasillo.W/2-pasillo.thick/2,pasillo.H/2,-pasillo.L/2);
-scene.add(leftWall);
-const rightWall=leftWall.clone(); rightWall.position.set(pasillo.W/2+pasillo.thick/2,pasillo.H/2,-pasillo.L/2);
-scene.add(rightWall);
-const backWall=new THREE.Mesh(new THREE.BoxGeometry(pasillo.W,pasillo.H,pasillo.thick),wallMat);
-backWall.position.set(0,pasillo.H/2,0.1);
-scene.add(backWall);
+    // Mesa de casino (base)
+    const table = new THREE.Group();
+    const baseGeo = new THREE.CylinderGeometry(40,40,4,48);
+    const baseMat = new THREE.MeshStandardMaterial({color:0x1b5e20,metalness:0.2,roughness:0.4});
+    const base = new THREE.Mesh(baseGeo, baseMat);
+    base.position.y = 2; table.add(base);
 
-// ------------------------
-// Puerta principal ajustada
-// ------------------------
-const hingeX=-pasillo.W/2 + 0.4;
-const hingeY=doorH/2 + 0.1;
-const hingeZ=-pasillo.L-0.01;
-const doorPivot=new THREE.Object3D();
-doorPivot.position.set(hingeX,hingeY,hingeZ);
-scene.add(doorPivot);
+    // borde exterior (madera)
+    const rimGeo = new THREE.TorusGeometry(40.6,3.8,16,200);
+    const rimMat = new THREE.MeshStandardMaterial({color:0x6a3b1b,metalness:0.3,roughness:0.6});
+    const rim = new THREE.Mesh(rimGeo,rimMat); rim.rotation.x = Math.PI/2; rim.position.y = 5.4; table.add(rim);
 
-const doorMesh=new THREE.Mesh(new THREE.BoxGeometry(doorW,doorH,doorD),doorMat);
-doorMesh.position.set(doorW/2,0,0);
-doorPivot.add(doorMesh);
+    // Ruleta (wheel) - cilindro con segmentos de color y números marcados en un canvas texture
+    const wheelRadius = 18;
+    const wheel = new THREE.Group();
 
-// Marco puerta
-const frameLeft=new THREE.Mesh(new THREE.BoxGeometry(0.12,doorH+0.12,0.2),frameMat);
-frameLeft.position.set(hingeX-0.06,hingeY,hingeZ-0.06); scene.add(frameLeft);
-const frameRight=new THREE.Mesh(new THREE.BoxGeometry(0.12,doorH+0.12,0.2),frameMat);
-frameRight.position.set(hingeX+doorW+0.06,hingeY,hingeZ-0.06); scene.add(frameRight);
-const frameTop=new THREE.Mesh(new THREE.BoxGeometry(doorW+0.24,0.12,0.2),frameMat);
-frameTop.position.set(hingeX+doorW/2,doorH+0.06,hingeZ-0.06); scene.add(frameTop);
+    // crear textura para la ruleta (colors + numbers)
+    function createWheelTexture(size = 1024){
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#0b3b2e'; ctx.fillRect(0,0,size,size);
+      // center
+      const cx = size/2, cy = size/2, r = size*0.45;
+      const pockets = [ // simplificado a 18 pockets (par impares)
+        0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23
+      ];
+      const count = pockets.length;
+      for(let i=0;i<count;i++){
+        const a = (i/count) * Math.PI*2 - Math.PI/2;
+        ctx.beginPath(); ctx.moveTo(cx,cy);
+        ctx.arc(cx,cy,r,a,a + (Math.PI*2/count)); ctx.closePath();
+        ctx.fillStyle = (i%2===0)?'#ff0000':'#000';
+        ctx.fill();
+        // number label
+        const mid = a + (Math.PI/count);
+        ctx.save(); ctx.translate(cx + Math.cos(mid)*(r*0.68), cy + Math.sin(mid)*(r*0.68));
+        ctx.rotate(mid + Math.PI/2);
+        ctx.fillStyle = '#fff'; ctx.font = `${Math.floor(size*0.05)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(pockets[i],0,0);
+        ctx.restore();
+      }
+      // inner circle
+      ctx.beginPath(); ctx.fillStyle='#222'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
+      return new THREE.CanvasTexture(canvas);
+    }
 
-// ------------------------
-// Sala
-// ------------------------
-const roomFloor=new THREE.Mesh(new THREE.PlaneGeometry(sala.W,sala.L),roomFloorMat);
-roomFloor.rotation.x=-Math.PI/2;
-roomFloor.position.set(0,0,hingeZ-sala.L/2);
-scene.add(roomFloor);
+    const wheelTex = createWheelTexture(2048);
+    const wheelMat = new THREE.MeshStandardMaterial({map:wheelTex,side:THREE.DoubleSide});
+    const wheelGeo = new THREE.CylinderGeometry(wheelRadius,wheelRadius,4,64,1,false);
+    const wheelMesh = new THREE.Mesh(wheelGeo,wheelMat); wheelMesh.rotation.x = Math.PI/2; wheelMesh.position.y = 7; wheel.add(wheelMesh);
 
-const roomBack=new THREE.Mesh(new THREE.BoxGeometry(sala.W,sala.H,0.2),roomWallMat);
-roomBack.position.set(0,sala.H/2,hingeZ-sala.L); scene.add(roomBack);
-const roomLeft=new THREE.Mesh(new THREE.BoxGeometry(0.2,sala.H,sala.L),roomWallMat);
-roomLeft.position.set(-sala.W/2,sala.H/2,hingeZ-sala.L/2); scene.add(roomLeft);
-const roomRight=roomLeft.clone(); roomRight.position.set(sala.W/2,sala.H/2,hingeZ-sala.L/2); scene.add(roomRight);
+    // bola (small sphere that girará en la ranura)
+    const ballGeo = new THREE.SphereGeometry(0.8,16,12);
+    const ballMat = new THREE.MeshStandardMaterial({metalness:0.9,roughness:0.2});
+    const ball = new THREE.Mesh(ballGeo,ballMat); ball.position.set(wheelRadius - 2, 9.8, 0); wheel.add(ball);
 
-// Techo sala
-const roomCeiling=new THREE.Mesh(new THREE.BoxGeometry(sala.W,pasillo.thick,sala.L),ceilingMat);
-roomCeiling.position.set(0,sala.H-pasillo.thick/2,hingeZ-sala.L/2);
-scene.add(roomCeiling);
+    // tablero encima de la ruleta para colocar apuestas: plano con casillas
+    const boardGeo = new THREE.CircleGeometry(wheelRadius - 6, 36);
+    const boardMat = new THREE.MeshStandardMaterial({color:0x0b6b5a,metalness:0.1,roughness:0.8});
+    const board = new THREE.Mesh(boardGeo,boardMat); board.rotation.x = -Math.PI/2; board.position.y = 8; wheel.add(board);
 
-// Pared frontal dividida para no tapar la puerta
-const roomFrontLeft=new THREE.Mesh(new THREE.BoxGeometry((sala.W-doorW)/2,sala.H,0.2),roomWallMat);
-roomFrontLeft.position.set(-doorW/2-(sala.W-doorW)/4,sala.H/2,hingeZ); scene.add(roomFrontLeft);
-const roomFrontRight=new THREE.Mesh(new THREE.BoxGeometry((sala.W-doorW)/2,sala.H,0.2),roomWallMat);
-roomFrontRight.position.set(doorW/2+(sala.W-doorW)/4,sala.H/2,hingeZ); scene.add(roomFrontRight);
+    // añadir números como áreas detectables (usamos segmentos polar para raycasting)
+    const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23];
+    const pocketAreas = [];
+    const pocketCount = pockets.length;
+    for(let i=0;i<pocketCount;i++){
+      const a0 = (i/pocketCount)*Math.PI*2 - Math.PI/2;
+      const a1 = ((i+1)/pocketCount)*Math.PI*2 - Math.PI/2;
+      pocketAreas.push({i, number:pockets[i], a0,a1});
+    }
 
-// ------------------------
-// Puerta de salida trasera
-// ------------------------
-const exitDoorPivot=new THREE.Object3D();
-exitDoorPivot.position.set(0,doorH/2,0.05);
-scene.add(exitDoorPivot);
-const exitDoorMesh=new THREE.Mesh(new THREE.BoxGeometry(1,2,0.12),doorMat);
-exitDoorPivot.add(exitDoorMesh);
+    table.add(wheel);
+    wheel.position.y = 0; wheel.position.x = 0; wheel.position.z = 0; table.position.y = 0; scene.add(table);
 
-// ------------------------
-// Ruleta de pie
-// ------------------------
-const rouletteRadius=1.2;
-const rouletteGeometry=new THREE.CylinderGeometry(rouletteRadius,rouletteRadius,0.1,32);
-const roulette=new THREE.Mesh(rouletteGeometry,rouletteMat);
-roulette.position.set(0,rouletteRadius,hingeZ-sala.L/2);
-scene.add(roulette);
+    // Fichas almacenadas
+    const chipsGroup = new THREE.Group(); scene.add(chipsGroup);
 
-const baseGeometry=new THREE.CylinderGeometry(rouletteRadius*1.1,rouletteRadius*1.1,0.05,32);
-const base=new THREE.Mesh(baseGeometry,floorMat);
-base.position.set(0,0.025,hingeZ-sala.L/2);
-scene.add(base);
+    // Raycaster para interacción
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
 
-const topGeometry=new THREE.TorusGeometry(rouletteRadius,0.05,16,100);
-const top=new THREE.Mesh(topGeometry,frameMat);
-top.position.set(0,rouletteRadius+0.05,hingeZ-sala.L/2);
-top.rotation.x=Math.PI/2;
-scene.add(top);
+    // Estado del juego
+    let balance = 1000; let currentBet = 0; const bets = []; // {areaIndex, amount, mesh}
+    const balanceEl = document.getElementById('balance'); const currentBetEl = document.getElementById('current-bet'); const logEl = document.getElementById('log');
 
-// ------------------------
-// Sonido puerta
-// ------------------------
-const doorAudio=new Audio('https://cdn.jsdelivr.net/gh/Peketruli/sounds/door-light.mp3');
-function playDoorSound(opening=true){doorAudio.currentTime=0;doorAudio.play();}
+    function updateHUD(){ balanceEl.textContent = balance.toFixed(0); currentBetEl.textContent = currentBet.toFixed(0); }
 
-// ------------------------
-// Estados puerta
-// ------------------------
-let doorState='closed',animT=0,autoCloseTimeout=null;
-const openAngle=-Math.PI*0.45,closedAngle=0,animDur=0.6;
+    // Crear paleta de fichas
+    const chipValues = [1,5,25,100];
+    const chipPalette = document.getElementById('chip-palette');
+    let selectedChipValue = chipValues[1];
+    chipValues.forEach(v=>{
+      const el = document.createElement('div'); el.className='chip'; el.textContent=v; el.title = `Fichas ${v}`;
+      el.addEventListener('click', ()=>{ selectedChipValue = v; document.querySelectorAll('.chip').forEach(n=>n.style.boxShadow=''); el.style.boxShadow='0 6px 18px rgba(20,120,220,0.45)'; });
+      chipPalette.appendChild(el);
+    });
+    // seleccionar por defecto segunda
+    chipPalette.children[1].style.boxShadow='0 6px 18px rgba(20,120,220,0.45)';
 
-// ------------------------
-// Movimiento jugador
-// ------------------------
-const keys={};
-window.addEventListener('keydown',e=>{keys[e.code]=true;if(e.code==='KeyE') triggerDoor();});
-window.addEventListener('keyup',e=>{keys[e.code]=false;});
+    // crear mesh de chip (factory)
+    function makeChipMesh(value){
+      const geo = new THREE.CylinderGeometry(1.6,1.6,0.6,32);
+      const col = (value>=25)?0xffcc00:(value>=5?0xff4444:0xffffff);
+      const mat = new THREE.MeshStandardMaterial({color:col,metalness:0.3,roughness:0.4});
+      const mesh = new THREE.Mesh(geo,mat);
+      // marcar text con canvas
+      const canvas = document.createElement('canvas'); canvas.width=128; canvas.height=128; const ctx = canvas.getContext('2d');
+      ctx.fillStyle='#000'; ctx.font='48px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(value,64,64);
+      const labelTex = new THREE.CanvasTexture(canvas);
+      const labelMat = new THREE.MeshBasicMaterial({map:labelTex});
+      const labelGeo = new THREE.CircleGeometry(1.4,24);
+      const label = new THREE.Mesh(labelGeo,labelMat); label.rotation.x = -Math.PI/2; label.position.y = 0.33; mesh.add(label);
+      return mesh;
+    }
 
-let velY=0, canJump=true, walkSpeed=0.1, runSpeed=0.24, rotSpeed=0.05;
-const minCamX=-Math.PI/3, maxCamX=Math.PI/3;
+    // colocar ficha (cuando el usuario clic en rueda/board)
+    function placeBet(areaIndex, amount){
+      if(balance < amount) return appendLog(`Saldo insuficiente para ${amount}`);
+      balance -= amount; currentBet += amount; updateHUD();
+      const angle = (areaIndex/pocketCount)*Math.PI*2 - Math.PI/2 + (Math.random()-0.5)*(Math.PI*2/pocketCount)*0.25;
+      const r = (wheelRadius-6) * (0.45 + Math.random()*0.35);
+      const x = Math.cos(angle)*r; const z = Math.sin(angle)*r;
+      const chipMesh = makeChipMesh(amount);
+      chipMesh.position.set(x,8.2 + (bets.filter(b=>b.areaIndex===areaIndex).length*0.7), z);
+      chipMesh.rotation.y = Math.random()*Math.PI*2;
+      chipsGroup.add(chipMesh);
+      bets.push({areaIndex, amount, mesh:chipMesh});
+      appendLog(`Apuesta ${amount} en número ${pockets[areaIndex]}`);
+    }
 
-function distToDoor(){
-  const doorWorld=new THREE.Vector3();
-  doorMesh.getWorldPosition(doorWorld);
-  const dx=camera.position.x-doorWorld.x;
-  const dz=camera.position.z-doorWorld.z;
-  const dy=camera.position.y-doorWorld.y;
-  return Math.sqrt(dx*dx+dy*dy+dz*dz);
-}
+    function appendLog(text){ const d = new Date(); const li = document.createElement('div'); li.textContent = `[${d.toLocaleTimeString()}] ${text}`; logEl.prepend(li); }
 
-const promptEl=document.getElementById('prompt');
-function updatePrompt(){ promptEl.style.display = distToDoor()<2 ? 'block' : 'none'; }
+    // Spin - animación simple
+    let spinning = false; let wheelRotation = 0; let wheelVelocity = 0; let ballAngle = 0; let ballVel = 0;
+    function startSpin(){ if(spinning) return; if(currentBet<=0){ appendLog('Coloca fichas antes de girar'); return; }
+      spinning = true; wheelVelocity = 0.4 + Math.random()*0.6; wheelRotation = 0; ballVel = 1.8 + Math.random()*1.2; ballAngle = Math.random()*Math.PI*2; appendLog('Ruleta girando...');
+    }
 
-function triggerDoor(){
-  if(distToDoor()<2){
-    if(doorState==='closed'||doorState==='closing'){
-      doorState='opening'; animT=0; playDoorSound(true);
-      if(autoCloseTimeout) clearTimeout(autoCloseTimeout);
-      setTimeout(()=>{if(doorState==='open') autoCloseTimeout=setTimeout(()=>{if(doorState==='open'){doorState='closing';animT=0;playDoorSound(false);}},3000);}, animDur*1000);
-    } else if(doorState==='open'){ doorState='closing'; animT=0; playDoorSound(false); if(autoCloseTimeout) clearTimeout(autoCloseTimeout);}
-  }
-}
+    // calcula resultado cuando frena
+    function finalizeSpin(){
+      // encontrar pocket bajo bola: convert ball angle relative to wheel rotation
+      const totalRot = wheel.rotation.z; // wheel.rotation.z gira
+      const localAngle = (ballAngle - totalRot) % (Math.PI*2);
+      // convertir a index
+      let norm = localAngle + Math.PI/2; while(norm<0) norm += Math.PI*2; while(norm>=Math.PI*2) norm -= Math.PI*2;
+      const idx = Math.floor(norm / (Math.PI*2 / pocketCount));
+      const resultNumber = pockets[idx];
+      appendLog(`Resultado: ${resultNumber}`);
+      // pagar apuestas simples: si apuestas exactas (número) pagan 35:1 en ruleta real, aquí simplificado
+      let payout = 0;
+      const winners = bets.filter(b=>b.areaIndex===idx);
+      winners.forEach(w=>{ payout += w.amount * 36; });
+      // limpia fichas
+      bets.forEach(b=>{ // animar caída
+        // simple tween: elevar y desaparecer
+        const m = b.mesh; new TWEEN.Tween(m.position).to({y: m.position.y+6, x: m.position.x, z: m.position.z}, 700).easing(TWEEN.Easing.Quadratic.Out).onComplete(()=>{ chipsGroup.remove(m); });
+      });
+      if(payout>0){ balance += payout; appendLog(`Has ganado ${payout}!`); }
+      else appendLog('No has ganado.');
+      bets.length = 0; currentBet = 0; updateHUD();
+      spinning = false;
+    }
 
-// ------------------------
-// Revisar puerta de salida
-// ------------------------
-function checkExitDoor(){
-  const dx=camera.position.x-exitDoorPivot.position.x;
-  const dz=camera.position.z-exitDoorPivot.position.z;
-  const dy=camera.position.y-exitDoorPivot.position.y;
-  const d=Math.sqrt(dx*dx+dy*dy+dz*dz);
-  if(d<2 && keys['KeyE']) window.location.href='h.html';
-}
+    // Light helper: pequeña luz puntal
+    const bulb = new THREE.PointLight(0xffffff, 1.2, 200); bulb.position.set(0,60,0); scene.add(bulb);
 
-// ------------------------
-// Animación y límites físicos
-// ------------------------
-const clock=new THREE.Clock();
-function animate(){
-  requestAnimationFrame(animate);
-  const dt=Math.min(0.05,clock.getDelta());
+    // Resize
+    window.addEventListener('resize', onResize);
+    function onResize(){ renderer.setSize(wrap.clientWidth, wrap.clientHeight); camera.aspect = wrap.clientWidth / wrap.clientHeight; camera.updateProjectionMatrix(); }
 
-  // --- cámara con flechas ---
-  if(keys['ArrowUp']) camera.rotation.x -= rotSpeed/2;
-  if(keys['ArrowDown']) camera.rotation.x += rotSpeed/2;
-  if(keys['ArrowLeft']) camera.rotation.y += rotSpeed/2;
-  if(keys['ArrowRight']) camera.rotation.y -= rotSpeed/2;
-  camera.rotation.x = Math.max(minCamX, Math.min(maxCamX, camera.rotation.x));
+    // Interacción de ratón - clics
+    renderer.domElement.addEventListener('pointerdown', onPointerDown);
 
-  // Movimiento WASD
-  const dir=new THREE.Vector3(); camera.getWorldDirection(dir); dir.y=0; dir.normalize();
-  const strafe=new THREE.Vector3(); strafe.crossVectors(camera.up,dir).normalize();
-  const speed=(keys['ShiftLeft']||keys['ShiftRight'])?runSpeed:walkSpeed;
-  if(keys['KeyW']) camera.position.addScaledVector(dir,speed);
-  if(keys['KeyS']) camera.position.addScaledVector(dir,-speed);
-  if(keys['KeyA']) camera.position.addScaledVector(strafe,speed);
-  if(keys['KeyD']) camera.position.addScaledVector(strafe,-speed);
+    function onPointerDown(e){
+      const rect = renderer.domElement.getBoundingClientRect();
+      mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = - ((e.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      // comprobar intersección con board (ruleta)
+      const intersects = raycaster.intersectObject(board, true);
+      if(intersects.length>0){
+        // calcular angulo del punto respecto al centro
+        const p = intersects[0].point.clone(); // mundo
+        // transformar punto al espacio local del wheel
+        const local = wheel.worldToLocal(p);
+        const angle = Math.atan2(local.z, local.x); // rad
+        let norm = angle + Math.PI/2; while(norm<0) norm += Math.PI*2; while(norm>=Math.PI*2) norm -= Math.PI*2;
+        const index = Math.floor(norm / (Math.PI*2 / pocketCount));
+        // colocar ficha en ese index
+        placeBet(index, selectedChipValue);
+      }
+    }
 
-  // Salto y gravedad
-  if(keys['Space'] && canJump){ velY=0.32; canJump=false; }
-  velY-=0.02; camera.position.y+=velY;
-  if(camera.position.y<1.7){camera.position.y=1.7; velY=0; canJump=true;}
+    // UI handlers
+    document.getElementById('spin-btn').addEventListener('click', ()=>startSpin());
+    document.getElementById('clear-btn').addEventListener('click', ()=>{ // devolver apuestas
+      const refund = bets.reduce((s,b)=>s+b.amount,0); balance += refund; currentBet = 0; bets.forEach(b=>chipsGroup.remove(b.mesh)); bets.length=0; updateHUD(); appendLog('Apuestas limpiadas');
+    });
+    document.getElementById('reset-btn').addEventListener('click', ()=>{ balance = 1000; currentBet = 0; bets.forEach(b=>chipsGroup.remove(b.mesh)); bets.length=0; updateHUD(); appendLog('Juego reiniciado'); });
 
-  // Límites pasillo
-  const halfW=pasillo.W/2-0.05;
-  if(camera.position.x<-halfW) camera.position.x=-halfW;
-  if(camera.position.x>halfW) camera.position.x=halfW;
-  if(camera.position.z>0) camera.position.z=0;
+    // Simple animation loop con física de rueda y bola
+    // agregar TWEEN mínimo (fabricado en línea) para las pequeñas animaciones sin librería externa
+    const TWEEN = {
+      _tweens: [], add(t){ this._tweens.push(t); },
+      update(time){ this._tweens = this._tweens.filter(t=>{ if(!t.running) return false; t._tick(time); return !t._finished; }); }
+    };
+    // fabricante de Tween simple
+    (function(){
+      function Tween(obj){ this.obj = obj; this._to = {}; this._duration = 500; this._start = null; this.running = true; this._finished=false; this._onComplete = null; this.easing = TWEEN.Easing.Linear; }
+      Tween.prototype.to = function(to, dur){ this._to = to; if(dur) this._duration = dur; return this; };
+      Tween.prototype.easing = function(f){ this._easing = f; return this; };
+      Tween.prototype.onComplete = function(fn){ this._onComplete = fn; return this; };
+      Tween.prototype._tick = function(time){ if(!this._start) this._start = time; const t = Math.min((time-this._start)/this._duration,1); for(const k in this._to){ const start = this.obj[k], end = this._to[k]; this.obj[k] = start + (end-start) * (this._easing?this._easing(t):t); } if(t>=1){ this._finished=true; this.running=false; if(this._onComplete) this._onComplete(); } };
+      TWEEN.Tween = function(o){ return new Tween(o); };
+    })();
+    // easing
+    TWEEN.Easing = { Quadratic: { Out: (t)=>1 - (1-t)*(1-t) }, Linear: (t)=>t };
 
-  // Límites sala
-  const doorOpen = (doorState==='open');
-  const roomHalfW=sala.W/2-0.05;
-  const roomFrontZ=hingeZ;
-  const roomBackZ=hingeZ-sala.L;
-  if(camera.position.x<-roomHalfW) camera.position.x=-roomHalfW;
-  if(camera.position.x>roomHalfW) camera.position.x=roomHalfW;
-  if(!doorOpen && camera.position.z>roomFrontZ-0.05) camera.position.z=roomFrontZ-0.05;
-  if(camera.position.z<roomBackZ) camera.position.z=roomBackZ;
+    // loop principal
+    const clock = new THREE.Clock();
+    function animate(){ requestAnimationFrame(animate); const dt = clock.getDelta(); controls.update();
+      // si está girando, reducimos velocidad con damping
+      if(spinning){
+        wheel.rotation.z += wheelVelocity * dt * 8; wheelVelocity *= Math.max(0.985, 1 - 0.1*dt);
+        // bola friccion inversa (la bola gira opuesta a la rueda)
+        ballAngle += ballVel * dt * 6; ballVel *= Math.max(0.99, 1 - 0.4*dt);
+        // colocar bola en ranura alrededor del borde (en coordenadas del wheel)
+        const r = wheelRadius - 1.8; const bx = Math.cos(ballAngle) * r; const bz = Math.sin(ballAngle) * r;
+        // la bola debe moverse en world; wheel está en table group, así que ajustar respecto a wheel
+        ball.position.set(bx, 9.8, bz);
+        // detener cuando la velocidad sea muy baja
+        if(Math.abs(wheelVelocity) < 0.002 && Math.abs(ballVel) < 0.02){ // finalizar
+          // animación final para que bola caiga al pocket exacto
+          // calcular pocket index actual y ejercer small animation
+          setTimeout(()=> finalizeSpin(), 700);
+        }
+      }
 
-  updatePrompt();
-  checkExitDoor();
+      // rotación visual de la rueda siempre (si no spinning, puede tener pequeña oscilación)
+      if(!spinning){ wheel.rotation.z += Math.sin(clock.elapsedTime*0.5)*0.0008; }
 
-  // Animar puerta principal
-  if(doorState==='opening'){animT+=dt; const t=Math.min(1,animT/animDur); const ease=t*(2-t); doorPivot.rotation.y=closedAngle+(openAngle-closedAngle)*ease; if(t>=1) doorState='open';}
-  else if(doorState==='closing'){animT+=dt; const t=Math.min(1,animT/animDur); const ease=t*(2-t); doorPivot.rotation.y=openAngle+(closedAngle-openAngle)*ease;if(t>=1) doorState='closed';}
+      // actualizar tweens
+      TWEEN.update(performance.now());
 
-  // Ruleta gira lentamente
-  roulette.rotation.y += 0.02;
+      renderer.render(scene, camera);
+    }
+    animate();
 
-  renderer.render(scene,camera);
-}
-animate();
+    // añadir algunos detalles visuales: fichas iniciales en stack de la banca (solo decorativo)
+    for(let i=0;i<6;i++){ const m = makeChipMesh(100); m.position.set(-30 + Math.random()*4, 2+i*0.6, -20+Math.random()*4); chipsGroup.add(m); }
 
-// ------------------------
-// Resize
-// ------------------------
-window.addEventListener('resize',()=>{
-  camera.aspect=window.innerWidth/window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth,window.innerHeight);
-});
-</script>
+    updateHUD(); appendLog('Casino 3D listo');
+
+    // Nota: la ruleta usa un sistema simplificado; puedes extender reglas, múltiples tipos de apuesta y animaciones.
+  </script>
 </body>
 </html>
