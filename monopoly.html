@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Monopoly — Esquinas reales 700x700 (con cartas en mano)</title>
+<style>
+  :root{--bg:#cfe7ef;--panel:#fff;}
+  body{margin:0; font-family:Arial,Helvetica,sans-serif; background:var(--bg); display:flex; justify-content:center; padding:18px;}
+  #container{display:flex; gap:18px; align-items:flex-start;}
+  canvas{background:#fafafa; border:4px solid #333; box-shadow:0 6px 20px rgba(0,0,0,0.12);}
+  #hud{width:360px; background:var(--panel); padding:14px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.08); max-height:820px; overflow:auto;}
+  h2{margin:6px 0 10px; font-size:18px; text-align:center;}
+  .btn{display:block; width:100%; padding:10px; margin:8px 0; border-radius:6px; border:none; font-weight:600; cursor:pointer;}
+  #rollBtn{background:#2b8aef;color:#fff;}
+  #payJailBtn{background:#e67e22;color:#fff; display:none;}
+  #useCardBtn{background:#27ae60;color:#fff; display:none;}
+  .info{background:#f3f6f8;padding:8px;border-radius:6px;margin-top:8px; font-size:14px; color:#111;}
+  .small{font-size:13px;color:#444;margin-top:6px;}
+  .playersList{margin-top:8px;}
+  .playerRow{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;color:#111;}
+  .center{display:flex;gap:8px;align-items:center;justify-content:center;}
+  .handSection{margin-top:12px;}
+  .handGrid{display:flex;flex-wrap:wrap;gap:8px;}
+  .propCard{width:160px;background:#fff;color:#111;padding:8px;border-radius:6px;box-shadow:0 6px 16px rgba(0,0,0,0.08);cursor:pointer;position:relative;}
+  .propColor{height:12px;border-radius:4px;margin-bottom:6px;}
+  .propName{font-weight:700;font-size:13px;}
+  .propPrice{font-size:12px;color:#444;margin-top:6px;}
+  /* modal for property details */
+  #propModal{position:fixed;left:0;top:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);z-index:9999}
+  #propBox{width:420px;background:#fff;padding:18px;border-radius:10px;color:#111;box-shadow:0 12px 40px rgba(0,0,0,0.35)}
+  #propBox h3{margin:0 0 8px}
+  #propBox .line{margin:6px 0;}
+  #propBox button{margin-left:6px}
+  /* card modal existing */
+  #cardModal { position: fixed; left: 0; top: 0; right: 0; bottom: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); z-index: 9998; }
+  #cardBox { width: 380px; min-height:120px; background: #fff; border-radius:10px; padding:18px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display:flex; flex-direction:column; gap:10px; color:#111; }
+  #cardText { font-size:16px; }
+  #closeCardBtn { margin-left:auto; padding:8px 12px; border-radius:6px; border:none; background:#2b8aef; color:#fff; cursor:pointer; }
+  .floatingCard { position: fixed; width: 160px; height: 100px; background: #fff; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.25); display:flex; align-items:center; justify-content:center; font-weight:600; z-index: 9997; }
+  /* small HUD info appearance */
+  .hudTitle{font-weight:700;margin-bottom:6px;color:#111;}
+  .muted{color:#666;font-size:13px}
+</style>
+</head>
+<body>
+<div id="container">
+  <canvas id="gameCanvas" width="700" height="700"></canvas>
+
+  <div id="hud">
+    <h2>Monopoly — Turno: <span id="turnName">Jugador</span></h2>
+    <div class="playersList" id="playersList"></div>
+
+    <div class="center">
+      <button id="rollBtn" class="btn">🎲 Tirar dados</button>
+    </div>
+
+    <div class="center small">
+      <button id="payJailBtn" class="btn" style="width:auto;padding:8px 10px;">💵 Pagar $50 y salir</button>
+      <button id="useCardBtn" class="btn" style="width:auto;padding:8px 10px;">🃏 Usar "Salir de la cárcel"</button>
+    </div>
+
+    <div class="info" id="infoBox">Bienvenido — pulsa "Tirar dados".</div>
+
+    <div class="small" style="margin-top:10px;">
+      <strong>Cartas en mesa:</strong>
+      <div>Suerte: <span id="suerteCount"></span> — Arca: <span id="arcaCount"></span></div>
+    </div>
+
+    <div class="handSection">
+      <div class="hudTitle">Tu mano (propiedades y cartas)</div>
+      <div id="handGrid" class="handGrid"></div>
+      <div class="muted" style="margin-top:8px">Haz clic en una propiedad para ver detalles y construir casas/hotel.</div>
+    </div>
+  </div>
+</div>
+
+<!-- Card reveal modal (Suerte/Arca) -->
+<div id="cardModal" role="dialog" aria-hidden="true">
+  <div id="cardBox">
+    <div id="cardText">Contenido de la carta</div>
+    <div style="display:flex; justify-content:flex-end;">
+      <button id="closeCardBtn">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Property detail modal -->
+<div id="propModal">
+  <div id="propBox">
+    <h3 id="pmName"></h3>
+    <div id="pmColor" style="height:12px;width:100%;border-radius:4px;margin:6px 0"></div>
+    <div class="line"><strong>Precio compra:</strong> $<span id="pmPrice"></span></div>
+    <div class="line"><strong>Costo por casa:</strong> $<span id="pmHouseCost"></span></div>
+    <div class="line"><strong>Costo hotel:</strong> $<span id="pmHotelCost"></span></div>
+    <div class="line"><strong>Rentas:</strong></div>
+    <div id="pmRents" class="line" style="margin-left:8px"></div>
+    <div class="line"><strong>Mejoras actuales:</strong> <span id="pmImprovements"></span></div>
+    <div style="display:flex;justify-content:flex-end;margin-top:10px">
+      <button id="buyHouseBtn" class="btn" style="width:auto;background:#2ecc71;color:#fff;padding:8px 10px">Comprar casa</button>
+      <button id="buyHotelBtn" class="btn" style="width:auto;background:#e67e22;color:#fff;padding:8px 10px;margin-left:6px">Comprar hotel</button>
+      <button id="closePropBtn" class="btn" style="width:auto;background:#95a5a6;color:#fff;padding:8px 10px;margin-left:6px">Cerrar</button>
+    </div>
+    <div id="propMsg" style="margin-top:8px;color:#b33;"></div>
+  </div>
+</div>
+
+<script>
+/* ---------- CONFIG / ESTADO ---------- */
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const SIZE = 700;
+const CORNER = 100;
+const SIDE_COUNT_BETWEEN_CORNERS = 9;
+const SIDE_CELL_SIZE = (SIZE - CORNER*2) / SIDE_COUNT_BETWEEN_CORNERS;
+
+const board = [
+  {name:"Salida", type:"especial"},
+  {name:"Ronda de Valencia", color:"#8B4513", price:60, type:"propiedad"},
+  {name:"Comunidad", type:"arca"},
+  {name:"Plaza Lavapiés", color:"#8B4513", price:60, type:"propiedad"},
+  {name:"Impuesto", type:"impuesto"},
+  {name:"Estación Mediodía", type:"estacion", price:200},
+  {name:"Glorieta Cuatro Caminos", color:"#ADD8E6", price:100, type:"propiedad"},
+  {name:"Suerte", type:"suerte"},
+  {name:"Avenida Reina Victoria", color:"#ADD8E6", price:100, type:"propiedad"},
+  {name:"Calle Bravo Murillo", color:"#ADD8E6", price:120, type:"propiedad"},
+
+  {name:"Cárcel", type:"especial"},
+  {name:"Glorieta Bilbao", color:"#FFC0CB", price:140, type:"propiedad"},
+  {name:"Compañía electricidad", type:"compañia", price:150},
+  {name:"Calle Alberto Aguilera", color:"#FFC0CB", price:140, type:"propiedad"},
+  {name:"Calle Fuencarral", color:"#FFC0CB", price:160, type:"propiedad"},
+  {name:"Estación Norte", type:"estacion", price:200},
+  {name:"Avenida Felipe II", color:"#FFA500", price:180, type:"propiedad"},
+  {name:"Comunidad", type:"arca"},
+  {name:"Calle Serrano", color:"#FFA500", price:180, type:"propiedad"},
+  {name:"Calle Velázquez", color:"#FFA500", price:200, type:"propiedad"},
+
+  {name:"Parking", type:"especial"},
+  {name:"Avenida de América", color:"#FF0000", price:220, type:"propiedad"},
+  {name:"Suerte", type:"suerte"},
+  {name:"Calle María de Molina", color:"#FF0000", price:220, type:"propiedad"},
+  {name:"Calle Cea Bermúdez", color:"#FF0000", price:240, type:"propiedad"},
+  {name:"Estación Delicias", type:"estacion", price:200},
+  {name:"Avenida de los Poblados", color:"#FFFF00", price:260, type:"propiedad"},
+  {name:"Calle O'Donnell", color:"#FFFF00", price:260, type:"propiedad"},
+  {name:"Compañía de agua", type:"compañia", price:150},
+  {name:"Calle Goya", color:"#FFFF00", price:280, type:"propiedad"},
+
+  {name:"Ve a la cárcel", type:"especial"},
+  {name:"Calle Alcalá", color:"#008000", price:300, type:"propiedad"},
+  {name:"Calle Gran Vía", color:"#008000", price:300, type:"propiedad"},
+  {name:"Comunidad", type:"arca"},
+  {name:"Paseo de la Castellana", color:"#008000", price:320, type:"propiedad"},
+  {name:"Estación Sur", type:"estacion", price:200},
+  {name:"Suerte", type:"suerte"},
+  {name:"Paseo del Prado", color:"#0000FF", price:350, type:"propiedad"},
+  {name:"Impuesto de lujo", type:"impuesto"},
+  {name:"Calle Serrano Mayor", color:"#0000FF", price:400, type:"propiedad"}
+];
+
+/* Add property data defaults (rents, houseCost, hotelCost, improvements) */
+for(let i=0;i<board.length;i++){
+  const c = board[i];
+  if(c.type === "propiedad" || c.type === "estacion" || c.type === "compañia"){
+    // if price exists, create propertyData template
+    if(c.price){
+      // rents based on price (simplified multipliers)
+      const base = Math.max(1, Math.floor(c.price * 0.1));
+      c.propertyData = {
+        price: c.price,
+        rent: [
+          base, // base
+          Math.floor(base * 3),   // 1 casa
+          Math.floor(base * 8),   // 2 casas
+          Math.floor(base * 18),  // 3 casas
+          Math.floor(base * 30),  // 4 casas
+          Math.floor(base * 50)   // hotel
+        ],
+        houseCost: Math.max(10, Math.floor(c.price * 0.5)),
+        hotelCost: Math.max(10, Math.floor(c.price * 0.5)), // same as houseCost for simplificado
+        houses: 0,
+        hotel: false
+      };
+    } else {
+      // for stations/companies we keep a simple propertyData
+      c.propertyData = {
+        price: c.price || 0,
+        houses:0,
+        hotel:false
+      };
+    }
+  }
+}
+
+/* Players */
+const players = [
+  {name:"Jugador", color:"#1f77b4", pos:0, money:1500, properties:[], inJail:false, jailTurns:0, hasGetOutCard:false},
+  {name:"IA", color:"#d62728", pos:0, money:1500, properties:[], inJail:false, jailTurns:0, hasGetOutCard:false}
+];
+
+let current = 0;
+let animating = false;
+let diceRolling = false;
+let diceResult = [1,1];
+let lastRollWasDouble = false;
+let suerteDeck = [];
+let arcaDeck = [];
+
+/* ---------- UI refs ---------- */
+const rollBtn = document.getElementById('rollBtn');
+const payJailBtn = document.getElementById('payJailBtn');
+const useCardBtn = document.getElementById('useCardBtn');
+const infoBox = document.getElementById('infoBox');
+const turnName = document.getElementById('turnName');
+const playersListDiv = document.getElementById('playersList');
+const suerteCount = document.getElementById('suerteCount');
+const arcaCount = document.getElementById('arcaCount');
+const cardModal = document.getElementById('cardModal');
+const cardTextEl = document.getElementById('cardText');
+const closeCardBtn = document.getElementById('closeCardBtn');
+const handGrid = document.getElementById('handGrid');
+const propModal = document.getElementById('propModal');
+const pmName = document.getElementById('pmName');
+const pmColor = document.getElementById('pmColor');
+const pmPrice = document.getElementById('pmPrice');
+const pmHouseCost = document.getElementById('pmHouseCost');
+const pmHotelCost = document.getElementById('pmHotelCost');
+const pmRents = document.getElementById('pmRents');
+const pmImprovements = document.getElementById('pmImprovements');
+const buyHouseBtn = document.getElementById('buyHouseBtn');
+const buyHotelBtn = document.getElementById('buyHotelBtn');
+const closePropBtn = document.getElementById('closePropBtn');
+const propMsg = document.getElementById('propMsg');
+
+/* ---------- helpers ---------- */
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; }
+
+function createDecks(){
+  suerteDeck = [
+    {text:"Avanza a Salida. Cobra $200.", action:(p)=>{ p.pos=0; p.money+=200; showMsg(`${p.name} avanza a Salida y cobra $200`); }},
+    {text:"Ve a la Cárcel (no cobras por pasar).", action:(p)=>{ p.pos=10; p.inJail=true; p.jailTurns=0; showMsg(`${p.name} va a la cárcel`); }},
+    {text:"Cobras $150.", action:(p)=>{ p.money+=150; showMsg(`${p.name} cobra $150`); }},
+    {text:"Paga $50.", action:(p)=>{ p.money-=50; showMsg(`${p.name} paga $50`); }},
+    {text:"Toma tarjeta 'Salir de la cárcel'.", action:(p)=>{ p.hasGetOutCard=true; showMsg(`${p.name} obtiene 'Salir de la cárcel'`); addPropertyCardToHand(p,{name:"Salir de la cárcel",type:"card",desc:"Usa para salir de la cárcel"}); }},
+    {text:"Avanza a Paseo del Prado.", action:(p)=>{ p.pos=38; showMsg(`${p.name} avanza a Paseo del Prado`); }},
+    {text:"Avanza a la próxima estación. Paga si no es tuya.", action:(p)=>{ advanceToNextStation(p); }}
+  ];
+
+  arcaDeck = [
+    {text:"Cobras $100.", action:(p)=>{ p.money+=100; showMsg(`${p.name} cobra $100`); }},
+    {text:"Paga $50.", action:(p)=>{ p.money-=50; showMsg(`${p.name} paga $50`); }},
+    {text:"Toma tarjeta 'Salir de la cárcel'.", action:(p)=>{ p.hasGetOutCard=true; showMsg(`${p.name} obtiene 'Salir de la cárcel'`); addPropertyCardToHand(p,{name:"Salir de la cárcel",type:"card",desc:"Usa para salir de la cárcel"}); }},
+    {text:"Recibe $40 de otros (simplificado).", action:(p)=>{ p.money+=40; showMsg(`${p.name} recibe $40 (simplificado)`); }},
+    {text:"Avanza a Salida. Cobra $200.", action:(p)=>{ p.pos=0; p.money+=200; showMsg(`${p.name} avanza a Salida y cobra $200`); }}
+  ];
+
+  shuffle(suerteDeck);
+  shuffle(arcaDeck);
+}
+
+/* ---------- geometry helpers (getCellRect) ---------- */
+function getCellRect(index){
+  if(index === 0) return { x: SIZE - CORNER, y: SIZE - CORNER, w: CORNER, h: CORNER };
+  if(index === 10) return { x: 0, y: SIZE - CORNER, w: CORNER, h: CORNER };
+  if(index === 20) return { x: 0, y: 0, w: CORNER, h: CORNER };
+  if(index === 30) return { x: SIZE - CORNER, y: 0, w: CORNER, h: CORNER };
+
+  if(index > 0 && index < 10){
+    const i = index;
+    const w = SIDE_CELL_SIZE;
+    const h = CORNER;
+    const x = SIZE - CORNER - w * i;
+    const y = SIZE - CORNER;
+    return { x, y, w, h };
+  }
+  if(index > 10 && index < 20){
+    const i = index - 10;
+    const w = CORNER;
+    const h = SIDE_CELL_SIZE;
+    const x = 0;
+    const y = SIZE - CORNER - h * i;
+    return { x, y, w, h };
+  }
+  if(index > 20 && index < 30){
+    const i = index - 20;
+    const w = SIDE_CELL_SIZE;
+    const h = CORNER;
+    const x = CORNER + w * (i - 1);
+    const y = 0;
+    return { x, y, w, h };
+  }
+  if(index > 30 && index < 40){
+    const i = index - 30;
+    const w = CORNER;
+    const h = SIDE_CELL_SIZE;
+    const x = SIZE - CORNER;
+    const y = CORNER + h * (i - 1);
+    return { x, y, w, h };
+  }
+  return { x:0,y:0,w:CORNER,h:CORNER };
+}
+
+/* ---------- draw board (with center decks + tokens) ---------- */
+function wrapText(ctx, text, maxWidth){
+  const words = text.split(' ');
+  const lines = [];
+  let line = "";
+  for(let w of words){
+    const test = line ? line + " " + w : w;
+    if(ctx.measureText(test).width > maxWidth){
+      lines.push(line);
+      line = w;
+    } else {
+      line = test;
+    }
+  }
+  if(line) lines.push(line);
+  return lines;
+}
+
+function drawBoard(){
+  ctx.clearRect(0,0,SIZE,SIZE);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = "#222";
+
+  for(let i=0;i<40;i++){
+    const r = getCellRect(i);
+    ctx.strokeRect(Math.round(r.x)+0.5, Math.round(r.y)+0.5, Math.round(r.w), Math.round(r.h));
+  }
+
+  ctx.textBaseline = "top";
+  for(let i=0;i<40;i++){
+    const cellInfo = board[i];
+    const r = getCellRect(i);
+
+    if(cellInfo.color && cellInfo.type && (cellInfo.type === "propiedad" || cellInfo.type === "estacion")){
+      ctx.fillStyle = cellInfo.color;
+      ctx.fillRect(r.x, r.y, r.w, Math.min(12, r.h));
+    }
+
+    ctx.fillStyle = "#111";
+    ctx.font = `${Math.max(10, Math.floor(r.h/8))}px Arial`;
+    const lines = wrapText(ctx, cellInfo.name, r.w - 8);
+    const textX = r.x + 6;
+    const textY = r.y + 16;
+    for(let li=0; li<Math.min(lines.length, 4); li++){
+      ctx.fillText(lines[li], textX, textY + li * (Math.max(10, Math.floor(r.h/10))));
+    }
+
+    ctx.font = "11px Arial";
+    if(cellInfo.price && cellInfo.type !== "especial"){
+      ctx.fillStyle = "#333";
+      ctx.fillText(`$${cellInfo.price}`, r.x + 6, r.y + r.h - 16);
+    } else if(cellInfo.type === "suerte" || cellInfo.type === "arca"){
+      ctx.fillStyle = "#222";
+      ctx.fillText(cellInfo.type.toUpperCase(), r.x + 6, r.y + r.h - 16);
+    } else if(cellInfo.type === "impuesto"){
+      ctx.fillStyle = "#b33";
+      ctx.fillText("IMPUESTO", r.x + 6, r.y + r.h - 16);
+    } else if(cellInfo.type === "especial"){
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 13px Arial";
+      const linesC = wrapText(ctx, cellInfo.name, r.w - 12);
+      const startY = r.y + (r.h/2) - (linesC.length * 10);
+      for(let li=0; li<linesC.length; li++){
+        ctx.fillText(linesC[li], r.x + 6, startY + li*14);
+      }
+      ctx.font = "11px Arial";
+    }
+
+    // owner marker small
+    if(cellInfo.owner){
+      ctx.fillStyle = "#000";
+      ctx.font = "11px Arial";
+      ctx.fillText(`Owner: ${cellInfo.owner}`, r.x + r.w - 80, r.y + r.h - 16);
+    }
+
+    // show houses/hotel as small boxes on the property (if owned)
+    if(cellInfo.propertyData && (cellInfo.propertyData.houses > 0 || cellInfo.propertyData.hotel)){
+      const n = cellInfo.propertyData.houses;
+      const boxW = 8, boxH = 8;
+      for(let k=0;k<n;k++){
+        ctx.fillStyle = "#2ecc71";
+        ctx.fillRect(r.x + 6 + k*(boxW+4), r.y + r.h - 30, boxW, boxH);
+      }
+      if(cellInfo.propertyData.hotel){
+        ctx.fillStyle = "#e74c3c";
+        ctx.fillRect(r.x + r.w - 18, r.y + r.h - 30, 12, 12);
+      }
+    }
+  }
+
+  // Draw center decks
+  const deckW = 60, deckH = 90;
+  const centerX = SIZE/2, centerY = SIZE/2;
+  ctx.fillStyle = "#fff"; ctx.fillRect(centerX - deckW - 12, centerY - deckH/2, deckW, deckH);
+  ctx.strokeStyle = "#333"; ctx.strokeRect(centerX - deckW - 12, centerY - deckH/2, deckW, deckH);
+  ctx.fillStyle = "#333"; ctx.font = "bold 12px Arial"; ctx.fillText("ARCA", centerX - deckW - 12 + 8, centerY - 6);
+  ctx.fillStyle = "#fff"; ctx.fillRect(centerX + 12, centerY - deckH/2, deckW, deckH);
+  ctx.strokeRect(centerX + 12, centerY - deckH/2, deckW, deckH);
+  ctx.fillStyle = "#333"; ctx.fillText("SUERTE", centerX + 12 + 6, centerY - 6);
+
+  ctx.font = "11px Arial";
+  ctx.fillText(`${arcaDeck.length}`, centerX - deckW - 12 + deckW - 14, centerY + deckH/2 - 8);
+  ctx.fillText(`${suerteDeck.length}`, centerX + 12 + deckW - 14, centerY + deckH/2 - 8);
+
+  // draw players tokens
+  players.forEach((pl, idx) => {
+    const r = getCellRect(pl.pos);
+    const tx = r.x + r.w/2 + (idx===0 ? -14 : 14);
+    const ty = r.y + r.h/2 + (idx===0 ? -10 : 10);
+    ctx.fillStyle = pl.color;
+    ctx.beginPath();
+    ctx.arc(tx, ty, 12, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
+  });
+}
+
+/* ---------- HUD / hand UI ---------- */
+function showMsg(t){ document.getElementById('infoBox').textContent = t; }
+function updateHUD(){
+  turnName.textContent = players[current].name;
+  playersListDiv.innerHTML = "";
+  players.forEach(p=>{
+    const row = document.createElement('div'); row.className = "playerRow";
+    const left = document.createElement('div'); left.innerHTML = `<strong style="color:${p.color}">${p.name}</strong><br><span class="small">Pos: ${p.pos}</span>`;
+    const right = document.createElement('div'); right.innerHTML = `<div>$${p.money}</div><div class="small">${p.properties.length} propiedades</div>`;
+    row.appendChild(left); row.appendChild(right);
+    playersListDiv.appendChild(row);
+  });
+  document.getElementById('suerteCount').textContent = suerteDeck.length;
+  document.getElementById('arcaCount').textContent = arcaDeck.length;
+
+  // show jail controls if needed
+  const pl = players[current];
+  if(pl.inJail){
+    payJailBtn.style.display = "inline-block";
+    useCardBtn.style.display = pl.hasGetOutCard ? "inline-block" : "none";
+    rollBtn.disabled = false;
+  } else {
+    payJailBtn.style.display = "none";
+    useCardBtn.style.display = "none";
+  }
+
+  // render player's hand (properties + cards) for current player only
+  renderHand(players[current]);
+}
+
+/* add property card to player's hand (visual) */
+function addPropertyCardToHand(player, propObj){
+  // propObj is a JS object representing property (with propertyData fields) or card
+  player.properties.push(propObj);
+  renderHand(player);
+}
+
+/* Render hand grid for a player (we render for current player only) */
+function renderHand(player){
+  handGrid.innerHTML = "";
+  // iterate player's properties array; each item either {name,type: 'property' ...} or card
+  player.properties.forEach((p, idx)=>{
+    const div = document.createElement('div');
+    div.className = "propCard";
+    // color stripe
+    const stripe = document.createElement('div');
+    stripe.className = "propColor";
+    stripe.style.background = p.color || "#ddd";
+    div.appendChild(stripe);
+    // content
+    const name = document.createElement('div'); name.className = "propName"; name.textContent = p.name;
+    div.appendChild(name);
+    const price = document.createElement('div'); price.className = "propPrice"; price.textContent = p.price ? `$${p.price}` : (p.type==="card"?p.desc:"");
+    div.appendChild(price);
+
+    // improvements summary
+    if(p.propertyData){
+      const imp = document.createElement('div'); imp.style.fontSize="12px"; imp.style.marginTop="6px";
+      const houses = p.propertyData.houses || 0;
+      const hotel = p.propertyData.hotel ? "Hotel" : "";
+      imp.textContent = `Casas: ${houses} ${hotel}`;
+      div.appendChild(imp);
+    }
+    // clickable - open modal to show details and allow buy house/hotel (only if owner)
+    div.addEventListener('click', ()=>{
+      openPropertyModal(player, p);
+    });
+
+    handGrid.appendChild(div);
+  });
+}
+
+/* ---------- movement / turns (same as before but we create property card on buy) ---------- */
+function nextTurn(){
+  current = (current + 1) % players.length;
+  lastRollWasDouble = false;
+  updateHUD();
+  drawBoard();
+  if(players[current].name === "IA"){
+    setTimeout(()=> aiTakeTurn(players[current]), 700);
+  }
+}
+
+function animateMove(player, steps){
+  if(animating) return;
+  animating = true;
+  let s = 0;
+  function step(){
+    if(s < steps){
+      player.pos++;
+      if(player.pos >= 40){ player.pos -= 40; player.money += 200; showMsg(`${player.name} pasa por Salida +$200`); }
+      s++;
+      drawBoard(); updateHUD();
+      setTimeout(step, 180);
+    } else {
+      animating = false;
+      handleLandingWithDoubles(player);
+    }
+  }
+  step();
+}
+
+/* ---------- landing handling (with property buy -> create property card) ---------- */
+function handleLandingWithDoubles(pl){
+  const cell = board[pl.pos];
+
+  if(cell.type === "propiedad" || cell.type === "estacion" || cell.type === "compañia"){
+    if(!cell.owner){
+      if(pl.name === "Jugador"){
+        const ok = confirm(`¿Comprar ${cell.name} por $${cell.price}?`);
+        if(ok){
+          if(pl.money >= cell.price){
+            pl.money -= cell.price;
+            // set owner
+            cell.owner = pl.name;
+            // attach property data clone to cell (already in board.propertyData) but keep pointer
+            // add to player's property list a reference object to this cell (so changes update both)
+            const propRef = { name: cell.name, color: cell.color, cellIndex: pl?pl:0 };
+            // instead push the board cell reference to player's properties so we can access propertyData
+            pl.properties.push(cell);
+            showMsg(`${pl.name} compra ${cell.name}`);
+          } else {
+            showMsg("No tienes dinero suficiente.");
+          }
+        } else showMsg(`${pl.name} no compra ${cell.name}`);
+      } else {
+        if(pl.money > cell.price + 200){
+          pl.money -= cell.price;
+          cell.owner = pl.name;
+          pl.properties.push(cell);
+          showMsg(`IA compra ${cell.name}`);
+        } else showMsg(`IA no compra ${cell.name}`);
+      }
+    } else if(cell.owner !== pl.name){
+      const owner = players.find(p => p.name === cell.owner);
+      // compute rent using property's propertyData
+      let rent = 0;
+      if(cell.propertyData){
+        if(cell.propertyData.hotel) rent = cell.propertyData.rent[5];
+        else rent = cell.propertyData.rent[cell.propertyData.houses || 0];
+      } else {
+        rent = Math.floor(cell.price/2);
+      }
+      pl.money -= rent; owner.money += rent;
+      showMsg(`${pl.name} paga $${rent} a ${owner.name}`);
+    } else showMsg(`${pl.name} cae en su propia propiedad`);
+    drawBoard(); updateHUD();
+
+    if(lastRollWasDouble && !pl.inJail){
+      lastRollWasDouble = false;
+      showMsg(`${pl.name} sacó dobles y obtiene un turno extra`);
+      setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
+      return;
+    }
+    setTimeout(()=> nextTurn(), 800);
+    return;
+  }
+
+  if(cell.type === "impuesto"){
+    pl.money -= 100;
+    showMsg(`${pl.name} paga impuesto $100`);
+    drawBoard(); updateHUD();
+    if(lastRollWasDouble && !pl.inJail){
+      lastRollWasDouble = false;
+      showMsg(`${pl.name} sacó dobles y obtiene un turno extra`);
+      setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
+      return;
+    }
+    setTimeout(()=> nextTurn(), 800);
+    return;
+  }
+
+  if(cell.type === "suerte" || cell.type === "arca"){
+    animateTakeCard(cell.type, pl);
+    return;
+  }
+
+  if(cell.name === "Ve a la cárcel"){
+    pl.pos = 10; pl.inJail = true; pl.jailTurns = 0;
+    showMsg(`${pl.name} va directo a la cárcel`);
+    drawBoard(); updateHUD();
+    setTimeout(()=> nextTurn(), 800);
+    return;
+  }
+
+  if(cell.name === "Cárcel"){
+    showMsg(`${pl.name} está en la casilla de Cárcel`);
+    setTimeout(()=> nextTurn(), 800);
+    return;
+  }
+
+  showMsg(`${pl.name} cae en ${cell.name}`);
+  if(lastRollWasDouble && !pl.inJail){
+    lastRollWasDouble = false;
+    showMsg(`${pl.name} sacó dobles y obtiene un turno extra`);
+    setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
+    return;
+  }
+  setTimeout(()=> nextTurn(), 800);
+}
+
+/* ---------- advance to next station ---------- */
+function advanceToNextStation(player){
+  const stations = [5,15,25,35];
+  for(let s of stations){
+    if(s > player.pos){ player.pos = s; break; }
+  }
+  const cell = board[player.pos];
+  if(cell.owner && cell.owner !== player.name){
+    const owner = players.find(p=>p.name === cell.owner);
+    player.money -= 100; owner.money += 100;
+    showMsg(`${player.name} paga $100 a ${owner.name} por estación`);
+  } else showMsg(`${player.name} avanza a estación`);
+  drawBoard(); updateHUD();
+  setTimeout(()=> nextTurn(), 900);
+}
+
+/* ---------- CARD animation & reveal ---------- */
+function animateTakeCard(deckName, player){
+  const canvasRect = canvas.getBoundingClientRect();
+  const deckCenterCanvas = { x: SIZE/2 + (deckName==="arca"? - (60/2 + 12) : (60/2 + 12)), y: SIZE/2 };
+  const deckScreen = { x: canvasRect.left + deckCenterCanvas.x, y: canvasRect.top + deckCenterCanvas.y };
+
+  const cardEl = document.createElement('div');
+  cardEl.className = 'floatingCard';
+  cardEl.textContent = deckName.toUpperCase();
+  document.body.appendChild(cardEl);
+
+  cardEl.style.left = `${deckScreen.x - 80}px`;
+  cardEl.style.top = `${deckScreen.y - 50}px`;
+
+  const targetX = window.innerWidth/2 - 190/2;
+  const targetY = window.innerHeight/2 - 80;
+
+  const frames = 18; let f = 0;
+  const start = { x: deckScreen.x - 80, y: deckScreen.y - 50 };
+  const dx = (targetX - start.x) / frames;
+  const dy = (targetY - start.y) / frames;
+
+  const anim = setInterval(()=>{
+    f++;
+    cardEl.style.left = `${start.x + dx * f}px`;
+    cardEl.style.top = `${start.y + dy * f}px`;
+    if(f >= frames){
+      clearInterval(anim);
+      setTimeout(()=>{ cardEl.remove(); revealCard(deckName, player); }, 120);
+    }
+  }, 22);
+}
+
+function revealCard(deckName, player){
+  let deck = deckName === "suerte" ? suerteDeck : arcaDeck;
+  if(deck.length === 0){ createDecks(); deck = deckName==="suerte"?suerteDeck:arcaDeck; }
+  const card = deck.shift();
+  cardTextEl.textContent = card.text;
+  cardModal.style.display = "flex";
+  function closeHandler(){
+    cardModal.style.display = "none";
+    closeCardBtn.removeEventListener('click', closeHandler);
+    card.action(player);
+    updateHUD(); drawBoard();
+    setTimeout(()=> nextTurn(), 700);
+  }
+  closeCardBtn.addEventListener('click', closeHandler);
+}
+
+/* ---------- dice animation ---------- */
+function randDice(){ return Math.floor(Math.random()*6)+1; }
+function drawPips(x,y,w,num){
+  ctx.fillStyle="#000";
+  const r=4; const cx = x + w/2, cy = y + w/2, offset= Math.max(10, w/4);
+  const left = cx - offset, right = cx + offset, top = cy - offset, bottom = cy + offset;
+  const draw = (px,py)=>{ ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill(); };
+  if(num===1) draw(cx,cy);
+  if(num===2){ draw(left,top); draw(right,bottom); }
+  if(num===3){ draw(left,top); draw(cx,cy); draw(right,bottom); }
+  if(num===4){ draw(left,top); draw(right,top); draw(left,bottom); draw(right,bottom); }
+  if(num===5){ draw(left,top); draw(right,top); draw(cx,cy); draw(left,bottom); draw(right,bottom); }
+  if(num===6){ draw(left,top); draw(right,top); draw(left,cy); draw(right,cy); draw(left,bottom); draw(right,bottom); }
+}
+function drawDicePreview(d1,d2){
+  const sizeDie = 44; const margin = 10;
+  const x1 = SIZE - sizeDie*2 - margin - 6; const y1 = SIZE - sizeDie - margin - 6;
+  ctx.fillStyle = "rgba(0,0,0,0.06)"; ctx.fillRect(x1-8,y1-8,sizeDie*2+18,sizeDie+16);
+  ctx.fillStyle="#fff"; ctx.fillRect(x1,y1,sizeDie,sizeDie); ctx.strokeStyle="#333"; ctx.strokeRect(x1,y1,sizeDie,sizeDie); drawPips(x1,y1,sizeDie,d1);
+  const x2 = x1 + sizeDie + 10; ctx.fillStyle="#fff"; ctx.fillRect(x2,y1,sizeDie,sizeDie); ctx.strokeRect(x2,y1,sizeDie,sizeDie); drawPips(x2,y1,sizeDie,d2);
+}
+function rollDiceAnimated(callback){
+  if(diceRolling) return;
+  diceRolling = true;
+  let frames = 12, f = 0;
+  const interval = 70;
+  const anim = setInterval(()=>{
+    diceResult = [randDice(), randDice()];
+    drawBoard(); drawDicePreview(diceResult[0], diceResult[1]);
+    f++;
+    if(f >= frames){
+      clearInterval(anim);
+      diceRolling = false;
+      drawBoard(); drawDicePreview(diceResult[0], diceResult[1]);
+      setTimeout(()=> callback(diceResult[0], diceResult[1]), 180);
+    }
+  }, interval);
+}
+
+/* ---------- jail mechanics ---------- */
+function rollForJail(pl){
+  rollDiceAnimated((d1,d2)=>{
+    showMsg(`${pl.name} intenta sacar dobles: ${d1}, ${d2}`);
+    if(d1===d2){
+      pl.inJail = false; pl.jailTurns = 0;
+      showMsg(`${pl.name} sacó dobles y sale`); animateMove(pl, d1 + d2);
+    } else {
+      pl.jailTurns++;
+      showMsg(`${pl.name} no saca dobles (${pl.jailTurns}/3)`);
+      if(pl.jailTurns >= 3){
+        pl.money -= 50; pl.inJail = false; pl.jailTurns = 0;
+        showMsg(`${pl.name} paga $50 tras 3 intentos y sale`);
+        animateMove(pl, d1 + d2);
+      } else {
+        setTimeout(()=> nextTurn(), 700);
+      }
+    }
+  });
+}
+
+payJailBtn.addEventListener('click', ()=>{
+  const pl = players[current];
+  if(pl.inJail){ pl.money -= 50; pl.inJail = false; pl.jailTurns = 0; showMsg(`${pl.name} paga $50 y sale`); drawBoard(); updateHUD(); }
+});
+useCardBtn.addEventListener('click', ()=>{
+  const pl = players[current];
+  if(pl.hasGetOutCard){
+    pl.hasGetOutCard = false; pl.inJail = false; pl.jailTurns = 0; showMsg(`${pl.name} usa 'Salir de la cárcel'`);
+    // remove a card "Salir de la cárcel" from player's properties/cards if stored
+    const idx = pl.properties.findIndex(x=>x.name === "Salir de la cárcel");
+    if(idx>=0) pl.properties.splice(idx,1);
+    drawBoard(); updateHUD();
+  }
+});
+
+/* ---------- roll button ---------- */
+rollBtn.addEventListener('click', ()=>{
+  const pl = players[current];
+  if(animating || diceRolling) return;
+  if(pl.inJail){ rollForJail(pl); return; }
+  rollDiceAnimated((d1,d2)=>{
+    const sum = d1 + d2;
+    showMsg(`${pl.name} tira ${d1} + ${d2} = ${sum}`);
+    lastRollWasDouble = (d1 === d2);
+    animateMove(pl, sum);
+  });
+});
+
+/* ---------- AI ---------- */
+function aiTakeTurn(ai){
+  if(ai.inJail){
+    if(ai.hasGetOutCard){ ai.hasGetOutCard = false; ai.inJail = false; ai.jailTurns = 0; showMsg("IA usa 'Salir de la cárcel'"); setTimeout(()=> animateMove(ai, randDice()+randDice()), 500); return; }
+    if(ai.money > 120){ ai.money -= 50; ai.inJail = false; ai.jailTurns = 0; showMsg("IA paga $50 y sale"); setTimeout(()=> animateMove(ai, randDice()+randDice()), 500); return; }
+    rollForJail(ai); return;
+  }
+  rollDiceAnimated((d1,d2)=>{
+    const sum = d1+d2;
+    showMsg(`IA tira ${d1} + ${d2} = ${sum}`);
+    lastRollWasDouble = (d1===d2);
+    setTimeout(()=> animateMove(ai, sum), 220);
+  });
+}
+
+/* ---------- Property modal behavior ---------- */
+let modalOpenFor = null; // reference to board cell or card object
+
+function openPropertyModal(player, p){
+  // p is either a board cell object (if we stored that), or a card-like object
+  modalOpenFor = p;
+  pmName.textContent = p.name;
+  pmColor.style.background = p.color || "#ddd";
+  pmPrice.textContent = p.propertyData ? p.propertyData.price : (p.price || "-");
+  pmHouseCost.textContent = p.propertyData ? p.propertyData.houseCost : "-";
+  pmHotelCost.textContent = p.propertyData ? p.propertyData.hotelCost : "-";
+  if(p.propertyData){
+    pmRents.innerHTML = `
+      Base: $${p.propertyData.rent[0]}<br>
+      1 Casa: $${p.propertyData.rent[1]}<br>
+      2 Casas: $${p.propertyData.rent[2]}<br>
+      3 Casas: $${p.propertyData.rent[3]}<br>
+      4 Casas: $${p.propertyData.rent[4]}<br>
+      Hotel: $${p.propertyData.rent[5]}
+    `;
+    pmImprovements.textContent = `${p.propertyData.houses || 0} casas ${p.propertyData.hotel ? "y hotel" : ""}`;
+  } else {
+    pmRents.innerHTML = `<i>No aplicable</i>`;
+    pmImprovements.textContent = "-";
+  }
+  propMsg.textContent = "";
+  // show/hide buttons depending on owner and state
+  const currentPlayerObj = players[current];
+  const ownerName = p.owner || null;
+  if(ownerName === currentPlayerObj.name && p.propertyData){
+    buyHouseBtn.style.display = "inline-block";
+    buyHotelBtn.style.display = "inline-block";
+    buyHouseBtn.disabled = false;
+    buyHotelBtn.disabled = false;
+  } else {
+    buyHouseBtn.style.display = "none";
+    buyHotelBtn.style.display = "none";
+  }
+  document.getElementById('propModal').style.display = "flex";
+}
+
+closePropBtn.addEventListener('click', ()=>{ document.getElementById('propModal').style.display = "none"; modalOpenFor = null; });
+
+buyHouseBtn.addEventListener('click', ()=>{
+  const p = modalOpenFor;
+  const pl = players[current];
+  if(!p || !p.propertyData){ propMsg.textContent = "Esta ficha no es una propiedad construible."; return; }
+  if(p.owner !== pl.name){ propMsg.textContent = "No eres el propietario."; return; }
+  if(p.propertyData.hotel){ propMsg.textContent = "Ya tienes hotel."; return; }
+  if(p.propertyData.houses >= 4){ propMsg.textContent = "Tienes 4 casas, compra hotel en su lugar."; return; }
+  const cost = p.propertyData.houseCost;
+  if(pl.money < cost){ propMsg.textContent = "No tienes dinero suficiente."; return; }
+  // buy house
+  pl.money -= cost;
+  p.propertyData.houses++;
+  propMsg.textContent = `Comprada 1 casa por $${cost}.`;
+  updateHUD(); drawBoard();
+  // refresh modal
+  openPropertyModal(pl,p);
+});
+
+buyHotelBtn.addEventListener('click', ()=>{
+  const p = modalOpenFor;
+  const pl = players[current];
+  if(!p || !p.propertyData){ propMsg.textContent = "Esta ficha no es una propiedad construible."; return; }
+  if(p.owner !== pl.name){ propMsg.textContent = "No eres el propietario."; return; }
+  if(p.propertyData.hotel){ propMsg.textContent = "Ya tienes hotel."; return; }
+  if(p.propertyData.houses < 4){ propMsg.textContent = "Necesitas 4 casas antes de comprar hotel."; return; }
+  const cost = p.propertyData.hotelCost;
+  if(pl.money < cost){ propMsg.textContent = "No tienes dinero suficiente."; return; }
+  // buy hotel: remove houses, set hotel true
+  pl.money -= cost;
+  p.propertyData.houses = 0;
+  p.propertyData.hotel = true;
+  propMsg.textContent = `Comprado hotel por $${cost}.`;
+  updateHUD(); drawBoard();
+  openPropertyModal(pl,p);
+});
+
+/* ---------- STARTUP ---------- */
+createDecks();
+drawBoard();
+updateHUD();
+showMsg("Tablero 700x700 listo. Compra una propiedad para que aparezca en tu mano.");
+
+setInterval(()=>{ if(!diceRolling) drawBoard(); }, 700);
+
+</script>
+</body>
+</html>
