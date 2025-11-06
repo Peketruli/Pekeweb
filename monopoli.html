@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Monopoly — Tablero 700x700 con cartas animadas</title>
+<title>Monopoly — Esquinas reales 700x700</title>
 <style>
   :root{--bg:#cfe7ef;--panel:#fff;}
   body{margin:0; font-family:Arial,Helvetica,sans-serif; background:var(--bg); display:flex; justify-content:center; padding:18px;}
@@ -20,28 +20,11 @@
   .playerRow{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;}
   .center{display:flex;gap:8px;align-items:center;justify-content:center;}
   /* overlay modal for card reveal */
-  #cardModal {
-    position: fixed;
-    left: 0; top: 0; right: 0; bottom: 0;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0,0,0,0.45);
-    z-index: 9999;
-  }
-  #cardBox {
-    width: 380px; min-height:120px; background: #fff; border-radius:10px; padding:18px; box-shadow: 0 8px 30px rgba(0,0,0,0.3);
-    display:flex; flex-direction:column; gap:10px;
-  }
+  #cardModal { position: fixed; left: 0; top: 0; right: 0; bottom: 0; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,0.45); z-index: 9999; }
+  #cardBox { width: 380px; min-height:120px; background: #fff; border-radius:10px; padding:18px; box-shadow: 0 8px 30px rgba(0,0,0,0.3); display:flex; flex-direction:column; gap:10px; }
   #cardText { font-size:16px; }
   #closeCardBtn { margin-left:auto; padding:8px 12px; border-radius:6px; border:none; background:#2b8aef; color:#fff; cursor:pointer; }
-  /* small card visual used during animation */
-  .floatingCard {
-    position: fixed;
-    width: 160px; height: 100px; background: #fff; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.25);
-    display:flex; align-items:center; justify-content:center; font-weight:600;
-    z-index: 9998;
-  }
+  .floatingCard { position: fixed; width: 160px; height: 100px; background: #fff; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.25); display:flex; align-items:center; justify-content:center; font-weight:600; z-index: 9998; }
 </style>
 </head>
 <body>
@@ -70,7 +53,6 @@
   </div>
 </div>
 
-<!-- Modal para mostrar carta -->
 <div id="cardModal" role="dialog" aria-hidden="true">
   <div id="cardBox">
     <div id="cardText">Contenido de la carta</div>
@@ -81,14 +63,18 @@
 </div>
 
 <script>
-/* ============== CONFIG / ESTADO ============== */
+/* ---------- CONFIG / ESTADO ---------- */
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const SIZE = 700;
-const CELLS = 10;
-const CELL = SIZE / CELLS; // 70
 
-/* TABLERO (esquinas tienen type:"especial" y no color) */
+// Layout: corners are large squares (CORNER), in-between cells are rectangles.
+// We'll allow variable cornerSize and compute side cell size accordingly.
+const CORNER = 100; // corner square size (px)
+const SIDE_COUNT_BETWEEN_CORNERS = 9; // number of cells between corners on each side
+const SIDE_CELL_SIZE = (SIZE - CORNER*2) / SIDE_COUNT_BETWEEN_CORNERS; // width of edge cells
+
+// Board definition (40 entries). Corners are indices 0,10,20,30 and marked type:"especial".
 const board = [
   {name:"Salida", type:"especial"},
   {name:"Ronda de Valencia", color:"#8B4513", price:60, type:"propiedad"},
@@ -146,11 +132,10 @@ let diceRolling = false;
 let diceResult = [1,1];
 let lastRollWasDouble = false;
 
-/* Decks */
 let suerteDeck = [];
 let arcaDeck = [];
 
-/* UI references */
+/* ---------- UI references ---------- */
 const rollBtn = document.getElementById('rollBtn');
 const payJailBtn = document.getElementById('payJailBtn');
 const useCardBtn = document.getElementById('useCardBtn');
@@ -163,8 +148,8 @@ const cardModal = document.getElementById('cardModal');
 const cardTextEl = document.getElementById('cardText');
 const closeCardBtn = document.getElementById('closeCardBtn');
 
-/* ================ UTIL / DECKS ================ */
-function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
+/* ---------- utility ---------- */
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; }
 
 function createDecks(){
   suerteDeck = [
@@ -189,13 +174,75 @@ function createDecks(){
   shuffle(arcaDeck);
 }
 
-/* ================= DRAW HELPERS ================= */
-function getCoords(pos){
-  if(pos < 10) return {x: SIZE - CELL*(pos+1), y: SIZE - CELL}; // bottom row (right->left)
-  if(pos < 20) return {x: 0, y: SIZE - CELL*(pos-9)}; // left column (bottom->top)
-  if(pos < 30) return {x: CELL*(pos-20), y: 0}; // top row (left->right)
-  return {x: SIZE - CELL, y: CELL*(pos-30)}; // right column (top->bottom)
+/* ---------- geometry helpers ---------- */
+/*
+ Index mapping (consistent with prior code):
+  - pos 0..9 -> bottom row, from right (0) to left (9)
+  - pos 10..19 -> left column, from bottom (10) to top (19)
+  - pos 20..29 -> top row, from left (20) to right (29)
+  - pos 30..39 -> right column, from top (30) to bottom (39)
+ Corners: 0,10,20,30 (these are CORNER squares).
+*/
+function getCellRect(index){
+  // corner indices
+  if(index === 0){
+    return { x: SIZE - CORNER, y: SIZE - CORNER, w: CORNER, h: CORNER };
+  }
+  if(index === 10){
+    return { x: 0, y: SIZE - CORNER, w: CORNER, h: CORNER };
+  }
+  if(index === 20){
+    return { x: 0, y: 0, w: CORNER, h: CORNER };
+  }
+  if(index === 30){
+    return { x: SIZE - CORNER, y: 0, w: CORNER, h: CORNER };
+  }
+
+  // bottom row (1..9) right->left
+  if(index > 0 && index < 10){
+    const i = index; // 1..9
+    const w = SIDE_CELL_SIZE;
+    const h = CORNER;
+    const x = SIZE - CORNER - w * i;
+    const y = SIZE - CORNER;
+    return { x, y, w, h };
+  }
+
+  // left column (11..19) bottom->top
+  if(index > 10 && index < 20){
+    const i = index - 10; // 1..9
+    const w = CORNER;
+    const h = SIDE_CELL_SIZE;
+    const x = 0;
+    const y = SIZE - CORNER - h * i;
+    return { x, y, w, h };
+  }
+
+  // top row (21..29) left->right
+  if(index > 20 && index < 30){
+    const i = index - 20; // 1..9
+    const w = SIDE_CELL_SIZE;
+    const h = CORNER;
+    const x = CORNER + w * (i - 1);
+    const y = 0;
+    return { x, y, w, h };
+  }
+
+  // right column (31..39) top->bottom
+  if(index > 30 && index < 40){
+    const i = index - 30; // 1..9
+    const w = CORNER;
+    const h = SIDE_CELL_SIZE;
+    const x = SIZE - CORNER;
+    const y = CORNER + h * (i - 1);
+    return { x, y, w, h };
+  }
+
+  // fallback (shouldn't happen)
+  return { x:0,y:0,w:CORNER,h:CORNER };
 }
+
+/* text wrapping */
 function wrapText(ctx, text, maxWidth){
   const words = text.split(' ');
   const lines = [];
@@ -213,114 +260,98 @@ function wrapText(ctx, text, maxWidth){
   return lines;
 }
 
-/* Draw the board with names and center decks */
+/* ---------- draw board ---------- */
 function drawBoard(){
   ctx.clearRect(0,0,SIZE,SIZE);
   ctx.lineWidth = 1;
   ctx.strokeStyle = "#222";
 
-  // outer squares grid
-  for(let i=0;i<CELLS;i++){
-    // top row
-    ctx.strokeRect(i*CELL, 0, CELL, CELL);
-    // bottom row
-    ctx.strokeRect(i*CELL, SIZE-CELL, CELL, CELL);
-    // left col
-    ctx.strokeRect(0, i*CELL, CELL, CELL);
-    // right col
-    ctx.strokeRect(SIZE-CELL, i*CELL, CELL, CELL);
+  // draw grid rectangles using getCellRect for accuracy
+  for(let i=0;i<40;i++){
+    const r = getCellRect(i);
+    ctx.strokeRect(Math.round(r.x)+0.5, Math.round(r.y)+0.5, Math.round(r.w), Math.round(r.h));
   }
 
-  // draw cells content
-  ctx.font = "12px Arial";
+  // draw each cell content (color stripe, name, price if applicable)
+  ctx.textBaseline = "top";
   for(let i=0;i<40;i++){
-    const c = board[i];
-    const p = getCoords(i);
+    const cellInfo = board[i];
+    const r = getCellRect(i);
 
-    // only draw color stripe for properties/stations/companies (not for specials)
-    if(c.color && c.type && (c.type === "propiedad" || c.type === "estacion")){
-      ctx.fillStyle = c.color;
-      ctx.fillRect(p.x, p.y, CELL, 10);
+    // color stripe only for property/station (not for specials)
+    if(cellInfo.color && cellInfo.type && (cellInfo.type === "propiedad" || cellInfo.type === "estacion")){
+      ctx.fillStyle = cellInfo.color;
+      ctx.fillRect(r.x, r.y, r.w, Math.min(12, r.h)); // small stripe at top
     }
 
-    // Name text inside cell (wrap)
+    // name text (wrap) - keep margin
     ctx.fillStyle = "#111";
-    const textX = p.x + 6;
-    const textYStart = p.y + 22;
-    const lines = wrapText(ctx, c.name, CELL - 10);
-    for(let li=0; li<Math.min(lines.length,4); li++){
-      ctx.fillText(lines[li], textX, textYStart + li*14);
+    ctx.font = `${Math.max(10, Math.floor(r.h/8))}px Arial`;
+    const lines = wrapText(ctx, cellInfo.name, r.w - 8);
+    const textX = r.x + 6;
+    const textY = r.y + 16;
+    for(let li=0; li<Math.min(lines.length, 4); li++){
+      ctx.fillText(lines[li], textX, textY + li * (Math.max(10, Math.floor(r.h/10))));
     }
 
-    // If property, show price at bottom-left
-    if(c.price && c.type !== "especial"){
-      ctx.font = "11px Arial";
+    // price or label at bottom-left
+    ctx.font = "11px Arial";
+    if(cellInfo.price && cellInfo.type !== "especial"){
       ctx.fillStyle = "#333";
-      ctx.fillText(`$${c.price}`, p.x + 6, p.y + CELL - 10);
-      ctx.font = "12px Arial";
-    }
-
-    // If special or tax/suerte mark bottom
-    if(c.type === "suerte" || c.type === "arca"){
+      ctx.fillText(`$${cellInfo.price}`, r.x + 6, r.y + r.h - 16);
+    } else if(cellInfo.type === "suerte" || cellInfo.type === "arca"){
       ctx.fillStyle = "#222";
-      ctx.fillText(c.type.toUpperCase(), p.x + 6, p.y + CELL - 10);
-    } else if(c.type === "impuesto"){
+      ctx.fillText(cellInfo.type.toUpperCase(), r.x + 6, r.y + r.h - 16);
+    } else if(cellInfo.type === "impuesto"){
       ctx.fillStyle = "#b33";
-      ctx.fillText("IMPUESTO", p.x + 6, p.y + CELL - 10);
-    } else if(c.type === "especial"){
-      // draw bold short label for corners
+      ctx.fillText("IMPUESTO", r.x + 6, r.y + r.h - 16);
+    } else if(cellInfo.type === "especial"){
+      // corners: show larger bold label centered
       ctx.fillStyle = "#000";
       ctx.font = "bold 13px Arial";
-      // center label
-      const label = c.name;
-      const labelLines = wrapText(ctx, label, CELL - 10);
-      for(let li=0; li<labelLines.length && li<2; li++){
-        ctx.fillText(labelLines[li], p.x + 6, p.y + CELL - (28 - li*14));
+      const linesC = wrapText(ctx, cellInfo.name, r.w - 12);
+      // center vertically
+      const startY = r.y + (r.h/2) - (linesC.length * 10);
+      for(let li=0; li<linesC.length; li++){
+        ctx.fillText(linesC[li], r.x + 6, startY + li*14);
       }
-      ctx.font = "12px Arial";
+      ctx.font = "11px Arial";
     }
   }
 
-  // Draw decks in center
-  const centerX = SIZE/2, centerY = SIZE/2;
+  // Draw center decks (ARCA left, SUERTE right)
   const deckW = 60, deckH = 90;
-  // Arca
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(centerX - deckW - 12, centerY - deckH/2, deckW, deckH);
-  ctx.strokeStyle = "#333";
-  ctx.strokeRect(centerX - deckW - 12, centerY - deckH/2, deckW, deckH);
-  ctx.fillStyle = "#333";
-  ctx.font = "bold 12px Arial";
-  ctx.fillText("ARCA", centerX - deckW - 12 + 10, centerY);
-  // Suerte
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(centerX + 12, centerY - deckH/2, deckW, deckH);
+  const centerX = SIZE/2, centerY = SIZE/2;
+  // Arca (left)
+  ctx.fillStyle = "#fff"; ctx.fillRect(centerX - deckW - 12, centerY - deckH/2, deckW, deckH);
+  ctx.strokeStyle = "#333"; ctx.strokeRect(centerX - deckW - 12, centerY - deckH/2, deckW, deckH);
+  ctx.fillStyle = "#333"; ctx.font = "bold 12px Arial"; ctx.fillText("ARCA", centerX - deckW - 12 + 8, centerY - 6);
+  // Suerte (right)
+  ctx.fillStyle = "#fff"; ctx.fillRect(centerX + 12, centerY - deckH/2, deckW, deckH);
   ctx.strokeRect(centerX + 12, centerY - deckH/2, deckW, deckH);
-  ctx.fillStyle = "#333";
-  ctx.fillText("SUERTE", centerX + 12 + 6, centerY);
+  ctx.fillStyle = "#333"; ctx.fillText("SUERTE", centerX + 12 + 6, centerY - 6);
 
-  // counts on decks
+  // deck counts
   ctx.font = "11px Arial";
   ctx.fillText(`${arcaDeck.length}`, centerX - deckW - 12 + deckW - 14, centerY + deckH/2 - 8);
   ctx.fillText(`${suerteDeck.length}`, centerX + 12 + deckW - 14, centerY + deckH/2 - 8);
 
-  // draw players tokens
+  // draw players tokens (with small offsets if share same cell)
   players.forEach((pl, idx) => {
-    const co = getCoords(pl.pos);
-    const fx = co.x + CELL/2 + (idx===0 ? -14 : 14);
-    const fy = co.y + CELL/2 + (idx===0 ? -10 : 10);
+    const r = getCellRect(pl.pos);
+    // compute token position inside r
+    const tx = r.x + r.w/2 + (idx===0 ? -14 : 14);
+    const ty = r.y + r.h/2 + (idx===0 ? -10 : 10);
     ctx.fillStyle = pl.color;
     ctx.beginPath();
-    ctx.arc(fx, fy, 12, 0, Math.PI*2);
+    ctx.arc(tx, ty, 12, 0, Math.PI*2);
     ctx.fill();
-    ctx.strokeStyle = "#fff";
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
   });
 }
 
-/* ============= GAME / TURN / MOVEMENT ============= */
-function showMsg(t){ infoBox.textContent = t; }
+/* ---------- HUD / messages ---------- */
+function showMsg(t){ document.getElementById('infoBox').textContent = t; }
 function updateHUD(){
   turnName.textContent = players[current].name;
   playersListDiv.innerHTML = "";
@@ -331,10 +362,10 @@ function updateHUD(){
     row.appendChild(left); row.appendChild(right);
     playersListDiv.appendChild(row);
   });
-  suerteCount.textContent = suerteDeck.length;
-  arcaCount.textContent = arcaDeck.length;
+  document.getElementById('suerteCount').textContent = suerteDeck.length;
+  document.getElementById('arcaCount').textContent = arcaDeck.length;
 
-  // jail controls visibility
+  // show jail controls if needed
   const pl = players[current];
   if(pl.inJail){
     payJailBtn.style.display = "inline-block";
@@ -346,42 +377,43 @@ function updateHUD(){
   }
 }
 
-/* next turn */
+/* ---------- movement / turns ---------- */
 function nextTurn(){
+  // if lastRollWasDouble is true and player not in jail, same player continues (we consume flag)
+  // but lastRollWasDouble is checked after landing, so nextTurn just moves to next player
   current = (current + 1) % players.length;
   lastRollWasDouble = false;
   updateHUD();
   drawBoard();
-  // If IA turn, trigger AI
   if(players[current].name === "IA"){
     setTimeout(()=> aiTakeTurn(players[current]), 700);
   }
 }
 
-/* animate movement step-by-step */
-function animateMove(pl, steps){
+function animateMove(player, steps){
   if(animating) return;
   animating = true;
   let s = 0;
   function step(){
-    if(s<steps){
-      pl.pos++;
-      if(pl.pos>=40){ pl.pos-=40; pl.money += 200; showMsg(`${pl.name} pasa por Salida +$200`); }
+    if(s < steps){
+      player.pos++;
+      if(player.pos >= 40){ player.pos -= 40; player.money += 200; showMsg(`${player.name} pasa por Salida +$200`); }
       s++;
-      drawBoard();
-      updateHUD();
+      drawBoard(); updateHUD();
       setTimeout(step, 180);
     } else {
       animating = false;
-      handleLanding(pl);
+      handleLandingWithDoubles(player);
     }
   }
   step();
 }
 
-/* landing handler -- if card, play animation */
-function handleLanding(pl){
+/* ---------- landing handling (with doubles handling) ---------- */
+function handleLandingWithDoubles(pl){
   const cell = board[pl.pos];
+
+  // properties/stations/companies
   if(cell.type === "propiedad" || cell.type === "estacion" || cell.type === "compañia"){
     if(!cell.owner){
       if(pl.name === "Jugador"){
@@ -393,36 +425,73 @@ function handleLanding(pl){
         else showMsg(`IA no compra ${cell.name}`);
       }
     } else if(cell.owner !== pl.name){
-      const owner = players.find(p=>p.name === cell.owner);
+      const owner = players.find(p => p.name === cell.owner);
       const rent = Math.floor(cell.price/2);
       pl.money -= rent; owner.money += rent;
       showMsg(`${pl.name} paga $${rent} a ${owner.name}`);
     } else showMsg(`${pl.name} cae en su propia propiedad`);
     drawBoard(); updateHUD();
+
+    // doubles handling
+    if(lastRollWasDouble && !pl.inJail){
+      lastRollWasDouble = false;
+      showMsg(`${pl.name} sacó dobles y obtiene un turno extra`);
+      setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
+      return;
+    }
     setTimeout(()=> nextTurn(), 800);
-  } else if(cell.type === "impuesto"){
-    pl.money -= 100; showMsg(`${pl.name} paga impuesto $100`);
+    return;
+  }
+
+  // impuesto
+  if(cell.type === "impuesto"){
+    pl.money -= 100;
+    showMsg(`${pl.name} paga impuesto $100`);
+    drawBoard(); updateHUD();
+    if(lastRollWasDouble && !pl.inJail){
+      lastRollWasDouble = false;
+      showMsg(`${pl.name} sacó dobles y obtiene un turno extra`);
+      setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
+      return;
+    }
+    setTimeout(()=> nextTurn(), 800);
+    return;
+  }
+
+  // suerte / arca -> animate taking card
+  if(cell.type === "suerte" || cell.type === "arca"){
+    animateTakeCard(cell.type, pl);
+    return; // the card reveal will call nextTurn when closed
+  }
+
+  // Ve a la cárcel
+  if(cell.name === "Ve a la cárcel"){
+    pl.pos = 10; pl.inJail = true; pl.jailTurns = 0;
+    showMsg(`${pl.name} va directo a la cárcel`);
     drawBoard(); updateHUD();
     setTimeout(()=> nextTurn(), 800);
-  } else if(cell.type === "suerte"){
-    // animate taking card from center to modal reveal
-    animateTakeCard("suerte", pl);
-  } else if(cell.type === "arca"){
-    animateTakeCard("arca", pl);
-  } else if(cell.name === "Ve a la cárcel"){
-    pl.pos = 10; pl.inJail = true; pl.jailTurns = 0; showMsg(`${pl.name} va directo a la cárcel`);
-    drawBoard(); updateHUD();
-    setTimeout(()=> nextTurn(), 800);
-  } else if(cell.name === "Cárcel"){
+    return;
+  }
+
+  // Cárcel (solo casilla)
+  if(cell.name === "Cárcel"){
     showMsg(`${pl.name} está en la casilla de Cárcel`);
     setTimeout(()=> nextTurn(), 800);
-  } else {
-    showMsg(`${pl.name} cae en ${cell.name}`);
-    setTimeout(()=> nextTurn(), 800);
+    return;
   }
+
+  // Parking or Salida or other specials
+  showMsg(`${pl.name} cae en ${cell.name}`);
+  if(lastRollWasDouble && !pl.inJail){
+    lastRollWasDouble = false;
+    showMsg(`${pl.name} sacó dobles y obtiene un turno extra`);
+    setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
+    return;
+  }
+  setTimeout(()=> nextTurn(), 800);
 }
 
-/* advance to next station simplified */
+/* ---------- advance to next station ---------- */
 function advanceToNextStation(player){
   const stations = [5,15,25,35];
   for(let s of stations){
@@ -438,31 +507,24 @@ function advanceToNextStation(player){
   setTimeout(()=> nextTurn(), 900);
 }
 
-/* ============ CARD ANIMATION & REVEAL ============ */
-
-/* draw a floating card element and animate from deck center to middle of screen, then show modal with content */
+/* ---------- CARD ANIMATION & REVEAL ---------- */
 function animateTakeCard(deckName, player){
-  // position of deck in canvas coordinates -> convert to screen coordinates
   const canvasRect = canvas.getBoundingClientRect();
   const deckCenterCanvas = { x: SIZE/2 + (deckName==="arca"? - (60/2 + 12) : (60/2 + 12)), y: SIZE/2 };
   const deckScreen = { x: canvasRect.left + deckCenterCanvas.x, y: canvasRect.top + deckCenterCanvas.y };
 
-  // create floating card DOM
   const cardEl = document.createElement('div');
   cardEl.className = 'floatingCard';
   cardEl.textContent = deckName.toUpperCase();
   document.body.appendChild(cardEl);
 
-  // start at deckScreen, animate to center of window
   cardEl.style.left = `${deckScreen.x - 80}px`;
   cardEl.style.top = `${deckScreen.y - 50}px`;
 
-  const targetX = window.innerWidth/2 - 190/2; // target left for modal alignment (approx)
+  const targetX = window.innerWidth/2 - 190/2;
   const targetY = window.innerHeight/2 - 80;
 
-  // simple tween
-  const frames = 18;
-  let f = 0;
+  const frames = 18; let f = 0;
   const start = { x: deckScreen.x - 80, y: deckScreen.y - 50 };
   const dx = (targetX - start.x) / frames;
   const dy = (targetY - start.y) / frames;
@@ -473,70 +535,34 @@ function animateTakeCard(deckName, player){
     cardEl.style.top = `${start.y + dy * f}px`;
     if(f >= frames){
       clearInterval(anim);
-      // reveal card content from deck
-      setTimeout(()=>{
-        // remove floating and show modal with actual card
-        cardEl.remove();
-        revealCard(deckName, player);
-      }, 120);
+      setTimeout(()=>{ cardEl.remove(); revealCard(deckName, player); }, 120);
     }
   }, 22);
 }
 
-/* reveal card: pop modal with card text and execute action when closed */
 function revealCard(deckName, player){
   let deck = deckName === "suerte" ? suerteDeck : arcaDeck;
   if(deck.length === 0){ createDecks(); deck = deckName==="suerte"?suerteDeck:arcaDeck; }
   const card = deck.shift();
   cardTextEl.textContent = card.text;
   cardModal.style.display = "flex";
-  // when closing, execute card action, redraw board and continue turn progression
   function closeHandler(){
     cardModal.style.display = "none";
     closeCardBtn.removeEventListener('click', closeHandler);
-    // execute action
     card.action(player);
     updateHUD(); drawBoard();
-    // continue (small pause)
     setTimeout(()=> nextTurn(), 700);
   }
   closeCardBtn.addEventListener('click', closeHandler);
 }
 
-/* ============== DICE ANIMATION ============== */
-function randDice(){ return Math.floor(Math.random()*6) + 1; }
-
-function drawDicePreview(d1,d2){
-  const sizeDie = 44;
-  const margin = 10;
-  const x1 = SIZE - sizeDie*2 - margin - 6;
-  const y1 = SIZE - sizeDie - margin - 6;
-
-  // background
-  ctx.fillStyle = "rgba(0,0,0,0.06)";
-  ctx.fillRect(x1-8,y1-8,sizeDie*2+18,sizeDie+16);
-
-  // die 1
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(x1,y1,sizeDie,sizeDie);
-  ctx.strokeStyle = "#333";
-  ctx.strokeRect(x1,y1,sizeDie,sizeDie);
-  drawPips(x1,y1,sizeDie,d1);
-
-  // die 2
-  const x2 = x1 + sizeDie + 10;
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(x2,y1,sizeDie,sizeDie);
-  ctx.strokeRect(x2,y1,sizeDie,sizeDie);
-  drawPips(x2,y1,sizeDie,d2);
-}
+/* ---------- DICE ANIMATION ---------- */
+function randDice(){ return Math.floor(Math.random()*6)+1; }
 function drawPips(x,y,w,num){
-  ctx.fillStyle = "#000";
-  const r = 4;
-  const cx = x + w/2, cy = y + w/2;
-  const offset = 12;
+  ctx.fillStyle="#000";
+  const r=4; const cx = x + w/2, cy = y + w/2, offset= Math.max(10, w/4);
   const left = cx - offset, right = cx + offset, top = cy - offset, bottom = cy + offset;
-  const draw = (px,py)=> { ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill(); };
+  const draw = (px,py)=>{ ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill(); };
   if(num===1) draw(cx,cy);
   if(num===2){ draw(left,top); draw(right,bottom); }
   if(num===3){ draw(left,top); draw(cx,cy); draw(right,bottom); }
@@ -544,11 +570,18 @@ function drawPips(x,y,w,num){
   if(num===5){ draw(left,top); draw(right,top); draw(cx,cy); draw(left,bottom); draw(right,bottom); }
   if(num===6){ draw(left,top); draw(right,top); draw(left,cy); draw(right,cy); draw(left,bottom); draw(right,bottom); }
 }
+function drawDicePreview(d1,d2){
+  const sizeDie = 44; const margin = 10;
+  const x1 = SIZE - sizeDie*2 - margin - 6; const y1 = SIZE - sizeDie - margin - 6;
+  ctx.fillStyle = "rgba(0,0,0,0.06)"; ctx.fillRect(x1-8,y1-8,sizeDie*2+18,sizeDie+16);
+  ctx.fillStyle="#fff"; ctx.fillRect(x1,y1,sizeDie,sizeDie); ctx.strokeStyle="#333"; ctx.strokeRect(x1,y1,sizeDie,sizeDie); drawPips(x1,y1,sizeDie,d1);
+  const x2 = x1 + sizeDie + 10; ctx.fillStyle="#fff"; ctx.fillRect(x2,y1,sizeDie,sizeDie); ctx.strokeRect(x2,y1,sizeDie,sizeDie); drawPips(x2,y1,sizeDie,d2);
+}
 
 function rollDiceAnimated(callback){
   if(diceRolling) return;
   diceRolling = true;
-  let frames = 12; let f = 0;
+  let frames = 12, f = 0;
   const interval = 70;
   const anim = setInterval(()=>{
     diceResult = [randDice(), randDice()];
@@ -563,14 +596,13 @@ function rollDiceAnimated(callback){
   }, interval);
 }
 
-/* ============== JAIL / TURN EVENTS ============== */
+/* ---------- Jail mechanics ---------- */
 function rollForJail(pl){
   rollDiceAnimated((d1,d2)=>{
     showMsg(`${pl.name} intenta sacar dobles: ${d1}, ${d2}`);
     if(d1===d2){
       pl.inJail = false; pl.jailTurns = 0;
-      showMsg(`${pl.name} sacó dobles y sale de la cárcel`);
-      animateMove(pl, d1 + d2);
+      showMsg(`${pl.name} sacó dobles y sale`); animateMove(pl, d1 + d2);
     } else {
       pl.jailTurns++;
       showMsg(`${pl.name} no saca dobles (${pl.jailTurns}/3)`);
@@ -585,7 +617,6 @@ function rollForJail(pl){
   });
 }
 
-/* pay or use card */
 payJailBtn.addEventListener('click', ()=>{
   const pl = players[current];
   if(pl.inJail){ pl.money -= 50; pl.inJail = false; pl.jailTurns = 0; showMsg(`${pl.name} paga $50 y sale`); drawBoard(); updateHUD(); }
@@ -595,39 +626,25 @@ useCardBtn.addEventListener('click', ()=>{
   if(pl.hasGetOutCard){ pl.hasGetOutCard = false; pl.inJail = false; pl.jailTurns = 0; showMsg(`${pl.name} usa 'Salir de la cárcel'`); drawBoard(); updateHUD(); }
 });
 
-/* roll button main logic */
+/* ---------- Dice button ---------- */
 rollBtn.addEventListener('click', ()=>{
   const pl = players[current];
   if(animating || diceRolling) return;
-  // if in jail -> attempt doubles
-  if(pl.inJail){
-    rollForJail(pl);
-    return;
-  }
+  if(pl.inJail){ rollForJail(pl); return; }
   rollDiceAnimated((d1,d2)=>{
     const sum = d1 + d2;
     showMsg(`${pl.name} tira ${d1} + ${d2} = ${sum}`);
-    // handle double turn
     lastRollWasDouble = (d1 === d2);
     animateMove(pl, sum);
   });
 });
 
-/* override handleLanding to manage doubles and extra turns: reuse existing function but check lastRollWasDouble */
-const originalHandleLandingFunc = handleLanding; // not defined yet in hoisting; ensure reference below
-
-/* We'll re-implement handleLanding with doubles logic (to avoid hoisting issues) */
-/* (function defined above as function handleLanding... but to be safe we define wrapper) */
-
-/* ============== AI Simple ============== */
+/* ---------- AI ---------- */
 function aiTakeTurn(ai){
   if(ai.inJail){
-    // prefer using card or paying if affordable
     if(ai.hasGetOutCard){ ai.hasGetOutCard = false; ai.inJail = false; ai.jailTurns = 0; showMsg("IA usa 'Salir de la cárcel'"); setTimeout(()=> animateMove(ai, randDice()+randDice()), 500); return; }
     if(ai.money > 120){ ai.money -= 50; ai.inJail = false; ai.jailTurns = 0; showMsg("IA paga $50 y sale"); setTimeout(()=> animateMove(ai, randDice()+randDice()), 500); return; }
-    // else attempt roll doubles
-    rollForJail(ai);
-    return;
+    rollForJail(ai); return;
   }
   rollDiceAnimated((d1,d2)=>{
     const sum = d1+d2;
@@ -637,72 +654,11 @@ function aiTakeTurn(ai){
   });
 }
 
-/* ============== STARTUP ============== */
-function handleLandingWithDoubles(pl){
-  // reuse existing landing logic (we implemented earlier as handleLanding)
-  // We call the previously defined handleLanding (the one above) but ensure extra-turn semantics governed by lastRollWasDouble
-  // The previously defined handleLanding already calls nextTurn(); so we need to intercept that behavior:
-  // We'll copy the same logic inline here to ensure double-handling.
-  const cell = board[pl.pos];
-  if(cell.type === "propiedad" || cell.type === "estacion" || cell.type === "compañia"){
-    if(!cell.owner){
-      if(pl.name === "Jugador"){
-        const ok = confirm(`¿Comprar ${cell.name} por $${cell.price}?`);
-        if(ok){ pl.money -= cell.price; cell.owner = pl.name; pl.properties.push(cell); showMsg(`${pl.name} compra ${cell.name}`); }
-        else showMsg(`${pl.name} no compra ${cell.name}`);
-      } else {
-        if(pl.money > cell.price + 200){ pl.money -= cell.price; cell.owner = pl.name; pl.properties.push(cell); showMsg(`IA compra ${cell.name}`); }
-        else showMsg(`IA no compra ${cell.name}`);
-      }
-    } else if(cell.owner !== pl.name){
-      const owner = players.find(p=>p.name === cell.owner);
-      const rent = Math.floor(cell.price/2);
-      pl.money -= rent; owner.money += rent;
-      showMsg(`${pl.name} paga $${rent} a ${owner.name}`);
-    } else showMsg(`${pl.name} cae en su propia propiedad`);
-    drawBoard(); updateHUD();
-    // check doubles
-    if(lastRollWasDouble && !pl.inJail){
-      lastRollWasDouble = false;
-      showMsg(`${pl.name} sacó dobles y obtiene turno extra`);
-      // same player goes again (do not call nextTurn)
-      setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
-      return;
-    }
-    setTimeout(()=> nextTurn(), 800);
-  } else if(cell.type === "impuesto"){
-    pl.money -= 100; showMsg(`${pl.name} paga impuesto $100`);
-    drawBoard(); updateHUD();
-    if(lastRollWasDouble && !pl.inJail){ lastRollWasDouble = false; showMsg(`${pl.name} sacó dobles y obtiene turno extra`); setTimeout(()=> { updateHUD(); drawBoard(); }, 700); return; }
-    setTimeout(()=> nextTurn(), 800);
-  } else if(cell.type === "suerte"){
-    animateTakeCard("suerte", pl);
-    // card animation will call nextTurn after reveal
-  } else if(cell.type === "arca"){
-    animateTakeCard("arca", pl);
-  } else if(cell.name === "Ve a la cárcel"){
-    pl.pos = 10; pl.inJail = true; pl.jailTurns = 0; showMsg(`${pl.name} va directo a la cárcel`);
-    drawBoard(); updateHUD();
-    setTimeout(()=> nextTurn(), 800);
-  } else if(cell.name === "Cárcel"){
-    showMsg(`${pl.name} está en la casilla de Cárcel`);
-    if(lastRollWasDouble && !pl.inJail){ lastRollWasDouble = false; showMsg(`${pl.name} sacó dobles y obtiene turno extra`); setTimeout(()=> { updateHUD(); drawBoard(); }, 700); return; }
-    setTimeout(()=> nextTurn(), 800);
-  } else {
-    showMsg(`${pl.name} cae en ${cell.name}`);
-    if(lastRollWasDouble && !pl.inJail){ lastRollWasDouble = false; showMsg(`${pl.name} sacó dobles y obtiene turno extra`); setTimeout(()=> { updateHUD(); drawBoard(); }, 700); return; }
-    setTimeout(()=> nextTurn(), 800);
-  }
-}
-
-/* replace previous handleLanding used by animateMove to use this doubles-aware function */
-function handleLanding(pl){ handleLandingWithDoubles(pl); }
-
-/* create decks and initialize */
+/* ---------- STARTUP ---------- */
 createDecks();
 drawBoard();
 updateHUD();
-showMsg("Juego listo en 700x700. Pulsa 'Tirar dados'.");
+showMsg("Tablero 700x700 listo. Las 4 esquinas son ahora casillas independientes. Pulsa 'Tirar dados'.");
 
 setInterval(()=>{ if(!diceRolling) drawBoard(); }, 700);
 
