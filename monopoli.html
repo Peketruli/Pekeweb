@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <title>Monopoly Canvas</title>
 <style>
-  body { margin:0; background:#eee; display:flex; justify-content:center; align-items:center; height:100vh; }
+  body { margin:0; background:#eee; display:flex; justify-content:center; align-items:center; height:100vh; flex-direction: column; }
   canvas { background:#fff; border:2px solid #000; }
-  #controls { position:absolute; top:10px; left:50%; transform:translateX(-50%); }
+  #controls { margin-top:10px; }
   button { font-size:16px; margin:5px; padding:10px; }
 </style>
 </head>
@@ -14,6 +14,7 @@
 <canvas id="gameCanvas" width="800" height="800"></canvas>
 <div id="controls">
   <button id="rollDiceBtn">Tirar dado</button>
+  <span id="info"></span>
 </div>
 
 <script>
@@ -24,25 +25,26 @@ const boardSize = 800;
 const numCellsPerSide = 10;
 const cellSize = boardSize / numCellsPerSide;
 
-// Definir casillas básicas (simplificado)
+// Crear casillas básicas (simplificado)
 const board = [];
-for(let i=0; i<40; i++){
+for(let i=0;i<40;i++){
   board.push({name:"Casilla "+i, owner:null, price:100});
 }
 
 // Jugadores
 const players = [
-  {name:"Jugador", color:"blue", pos:0, money:1500},
-  {name:"AI", color:"red", pos:0, money:1500}
+  {name:"Jugador", color:"blue", pos:0, money:1500, properties:[]},
+  {name:"IA", color:"red", pos:0, money:1500, properties:[]}
 ];
 let currentPlayer = 0;
+let animating = false;
 
 // Dibujar tablero
 function drawBoard(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   
-  // Bordes
-  for(let i=0; i<numCellsPerSide; i++){
+  // Dibujar casillas
+  for(let i=0;i<numCellsPerSide;i++){
     // Top
     ctx.strokeRect(i*cellSize, 0, cellSize, cellSize);
     // Bottom
@@ -54,37 +56,105 @@ function drawBoard(){
   }
   
   // Dibujar jugadores
-  players.forEach((p, idx) => {
-    let x=0, y=0;
-    const pos = p.pos;
-    if(pos<10){ x = boardSize - cellSize*(pos+1); y=boardSize-cellSize; } // Bottom
-    else if(pos<20){ x=0; y=boardSize - cellSize*(pos-9); } // Left
-    else if(pos<30){ x=cellSize*(pos-20); y=0; } // Top
-    else { x=boardSize-cellSize; y=cellSize*(pos-30); } // Right
-    
+  players.forEach(p => {
+    const {x,y} = getCoordinates(p.pos);
     ctx.fillStyle = p.color;
     ctx.beginPath();
     ctx.arc(x+cellSize/2, y+cellSize/2, 15, 0, Math.PI*2);
     ctx.fill();
   });
+  
+  updateInfo();
 }
 
-// Tirar dado y mover jugador
+// Convertir posición (0-39) a coordenadas
+function getCoordinates(pos){
+  if(pos<10) return {x:boardSize - cellSize*(pos+1), y:boardSize-cellSize}; // Bottom
+  if(pos<20) return {x:0, y:boardSize - cellSize*(pos-9)}; // Left
+  if(pos<30) return {x:cellSize*(pos-20), y:0}; // Top
+  return {x:boardSize-cellSize, y:cellSize*(pos-30)}; // Right
+}
+
+// Tirar dado
 document.getElementById('rollDiceBtn').addEventListener('click', () => {
+  if(animating) return;
   const dice = Math.floor(Math.random()*6)+1;
   console.log(players[currentPlayer].name+" tiró: "+dice);
   movePlayer(players[currentPlayer], dice);
 });
 
 function movePlayer(player, steps){
-  player.pos += steps;
-  if(player.pos >= 40) { player.pos -= 40; player.money += 200; console.log(player.name+" pasa por salida!"); }
-  drawBoard();
-  nextTurn();
+  animating = true;
+  let stepCount = 0;
+  
+  function moveStep(){
+    if(stepCount < steps){
+      player.pos++;
+      if(player.pos >= 40){
+        player.pos -= 40;
+        player.money += 200;
+        console.log(player.name+" pasa por salida! +$200");
+      }
+      stepCount++;
+      drawBoard();
+      setTimeout(moveStep, 300); // velocidad animación
+    } else {
+      // Al llegar a la casilla final
+      handleCell(player);
+      animating = false;
+      nextTurn();
+    }
+  }
+  
+  moveStep();
 }
 
+// Manejar casilla
+function handleCell(player){
+  const cell = board[player.pos];
+  
+  if(cell.owner === null && player.name !== "IA"){
+    // Propiedad disponible
+    if(player.money >= cell.price){
+      const buy = confirm(`¿Comprar ${cell.name} por $${cell.price}?`);
+      if(buy){
+        player.money -= cell.price;
+        cell.owner = player.name;
+        player.properties.push(cell);
+      }
+    }
+  } else if(cell.owner && cell.owner !== player.name){
+    // Pagar renta
+    const ownerPlayer = players.find(p=>p.name===cell.owner);
+    const rent = Math.floor(cell.price/2);
+    player.money -= rent;
+    ownerPlayer.money += rent;
+    console.log(`${player.name} paga $${rent} a ${ownerPlayer.name}`);
+  } else if(player.name==="IA" && cell.owner===null){
+    // IA compra si tiene dinero
+    if(player.money >= cell.price){
+      player.money -= cell.price;
+      cell.owner = player.name;
+      player.properties.push(cell);
+      console.log(`IA compra ${cell.name}`);
+    }
+  }
+}
+
+// Siguiente turno
 function nextTurn(){
   currentPlayer = (currentPlayer+1) % players.length;
+  if(players[currentPlayer].name==="IA"){
+    setTimeout(()=>document.getElementById('rollDiceBtn').click(), 1000);
+  }
+}
+
+// Actualizar info
+function updateInfo(){
+  const infoDiv = document.getElementById('info');
+  let text = players.map(p=>`${p.name}: $${p.money}`).join(' | ');
+  text += ` | Turno: ${players[currentPlayer].name}`;
+  infoDiv.textContent = text;
 }
 
 drawBoard();
