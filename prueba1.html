@@ -178,6 +178,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // player (white)
   const player = { x: canvas.width/2, y: canvas.height/2, size: 18, speed: 2.4, hp: 100, maxHp: 100, color:'#ffffff' };
+  // Player attributes
+player.attributes = {
+  maxHealth: 100,   // Salud Máxima
+  might: 1,         // Poder
+  area: 1,          // Área
+  duration: 1,      // Duración
+  projectileSpeed: 1, // Velocidad de proyectil
+  cooldown: 1,      // Tiempo de recarga
+  luck: 0,          // Suerte
+  magnet: 0,        // Imán
+  armor: 0,         // Armadura
+  recovery: 0,      // Recuperación
+  greed: 0,         // Avaricia
+  curse: 0,         // Maldición
+  revival: 0,       // Renacimiento
+  amount: 0,        // Cantidad
+  heal: 0           // Regeneración de Salud
+};
+
 
   // input
   const keys = {};
@@ -193,13 +212,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Utils
   function dist(a,b){ return Math.hypot(a.x - b.x, a.y - b.y); }
-  function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+ function randChoice(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
   function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+const attributeBonuses = [
+  { id: 'maxHealth', name: 'Salud Máxima +20', apply: ()=>{ player.attributes.maxHealth += 20; player.hp = player.attributes.maxHealth; } },
+  { id: 'might', name: 'Poder +1', apply: ()=>{ player.attributes.might += 1; } },
+  { id: 'area', name: 'Área +0.1', apply: ()=>{ player.attributes.area += 0.1; } },
+  { id: 'duration', name: 'Duración +0.2', apply: ()=>{ player.attributes.duration += 0.2; } },
+  { id: 'projectileSpeed', name: 'Velocidad de proyectil +0.2', apply: ()=>{ player.attributes.projectileSpeed += 0.2; } },
+  { id: 'cooldown', name: 'Tiempo de recarga -5%', apply: ()=>{ player.attributes.cooldown *= 0.95; } },
+  { id: 'luck', name: 'Suerte +1', apply: ()=>{ player.attributes.luck += 1; } },
+  { id: 'magnet', name: 'Imán +10', apply: ()=>{ player.attributes.magnet += 10; } },
+  { id: 'armor', name: 'Armadura +1', apply: ()=>{ player.attributes.armor += 1; } },
+  { id: 'recovery', name: 'Recuperación +1', apply: ()=>{ player.attributes.recovery += 1; } },
+  { id: 'greed', name: 'Avaricia +1', apply: ()=>{ player.attributes.greed += 1; } },
+  { id: 'curse', name: 'Maldición +1', apply: ()=>{ player.attributes.curse += 1; } },
+  { id: 'revival', name: 'Renacimiento +1', apply: ()=>{ player.attributes.revival += 1; } },
+  { id: 'amount', name: 'Cantidad +1', apply: ()=>{ player.attributes.amount += 1; } },
+  { id: 'heal', name: 'Regeneración de Salud +1', apply: ()=>{ player.attributes.heal += 1; } }
+];
 
-  /* -----------------------
-     Weapons definitions (new ones from table)
-     Implemented with simple but functional behaviors
-     ----------------------- */
   const weaponsLib = {};
 
   // WHIP (Látigo) - melee horizontal both directions, pierces, applies freeze (slow)
@@ -575,30 +607,38 @@ function showLevelUpMenu() {
   const choices = document.getElementById('levelChoices');
   choices.innerHTML = '';
 
-  // Ejemplo simple: mostrar 3 mejoras al azar de las armas disponibles
+  // Mezcla armas y atributos
   const allWeapons = Object.keys(weaponsState).filter(id => weaponsLib[id]);
   const options = [];
-  while (options.length < 3 && allWeapons.length > 0) {
-    const w = allWeapons.splice(Math.floor(Math.random() * allWeapons.length), 1)[0];
-    options.push(w);
+
+  while(options.length < 3) {
+    const choiceType = Math.random() < 0.5 ? 'weapon' : 'attribute';
+    if(choiceType === 'weapon' && allWeapons.length){
+      const w = allWeapons.splice(Math.floor(Math.random() * allWeapons.length),1)[0];
+      options.push({ type:'weapon', id: w });
+    } else {
+      const attr = randChoice(attributeBonuses);
+      if(!options.find(o=>o.id===attr.id)) options.push({ type:'attribute', ...attr });
+    }
   }
 
-  options.forEach(id => {
-    const w = weaponsLib[id];
-    const current = weaponsState[id].level || 0;
-    const next = Math.min(current + 1, w.maxLevel);
+  options.forEach(opt=>{
     const btn = document.createElement('button');
     btn.className = 'choice';
-    btn.textContent = `${w.name} → Nivel ${next}`;
-    btn.onclick = () => {
-      weaponsState[id].level = next;
-      menu.style.display = 'none';
-      gamePaused = false;
+    btn.textContent = opt.type==='weapon' ? `${weaponsLib[opt.id].name} → Nivel ${Math.min((weaponsState[opt.id].level||0)+1, weaponsLib[opt.id].maxLevel)}` : opt.name;
+    btn.onclick = ()=>{
+      if(opt.type==='weapon'){
+        weaponsState[opt.id].level = Math.min((weaponsState[opt.id].level||0)+1, weaponsLib[opt.id].maxLevel);
+      } else {
+        opt.apply();
+      }
+      menu.style.display='none';
+      gamePaused=false;
     };
     choices.appendChild(btn);
   });
 
-  menu.style.display = 'block';
+  menu.style.display='block';
 }
   
   /* ---------- Weapons state (per-weapon levels + timers) ---------- */
