@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Monopoly Mejorado — Cartas, Cárcel y Dados</title>
+<title>Monopoly — Tablero 700x700 con cartas animadas</title>
 <style>
   :root{--bg:#cfe7ef;--panel:#fff;}
   body{margin:0; font-family:Arial,Helvetica,sans-serif; background:var(--bg); display:flex; justify-content:center; padding:18px;}
@@ -12,24 +12,44 @@
   h2{margin:6px 0 10px; font-size:18px; text-align:center;}
   .btn{display:block; width:100%; padding:10px; margin:8px 0; border-radius:6px; border:none; font-weight:600; cursor:pointer;}
   #rollBtn{background:#2b8aef;color:#fff;}
-  #payJailBtn{background:#e67e22;color:#fff;}
-  #useCardBtn{background:#27ae60;color:#fff;}
-  #endTurnBtn{background:#8e44ad;color:#fff;}
+  #payJailBtn{background:#e67e22;color:#fff; display:none;}
+  #useCardBtn{background:#27ae60;color:#fff; display:none;}
   .info{background:#f3f6f8;padding:8px;border-radius:6px;margin-top:8px; font-size:14px;}
   .small{font-size:13px;color:#444;margin-top:6px;}
-  .cards{margin-top:8px;font-size:13px}
   .playersList{margin-top:8px;}
   .playerRow{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;}
   .center{display:flex;gap:8px;align-items:center;justify-content:center;}
+  /* overlay modal for card reveal */
+  #cardModal {
+    position: fixed;
+    left: 0; top: 0; right: 0; bottom: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.45);
+    z-index: 9999;
+  }
+  #cardBox {
+    width: 380px; min-height:120px; background: #fff; border-radius:10px; padding:18px; box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    display:flex; flex-direction:column; gap:10px;
+  }
+  #cardText { font-size:16px; }
+  #closeCardBtn { margin-left:auto; padding:8px 12px; border-radius:6px; border:none; background:#2b8aef; color:#fff; cursor:pointer; }
+  /* small card visual used during animation */
+  .floatingCard {
+    position: fixed;
+    width: 160px; height: 100px; background: #fff; border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,0.25);
+    display:flex; align-items:center; justify-content:center; font-weight:600;
+    z-index: 9998;
+  }
 </style>
 </head>
 <body>
 <div id="container">
-  <canvas id="gameCanvas" width="800" height="800"></canvas>
+  <canvas id="gameCanvas" width="700" height="700"></canvas>
 
   <div id="hud">
     <h2>Monopoly — Turno: <span id="turnName">Jugador</span></h2>
-
     <div class="playersList" id="playersList"></div>
 
     <div class="center">
@@ -37,169 +57,146 @@
     </div>
 
     <div class="center small">
-      <button id="payJailBtn" class="btn" style="width:auto;padding:8px 10px;display:none;">💵 Pagar $50 y salir</button>
-      <button id="useCardBtn" class="btn" style="width:auto;padding:8px 10px;display:none;">🃏 Usar "Salir de la cárcel"</button>
+      <button id="payJailBtn" class="btn" style="width:auto;padding:8px 10px;">💵 Pagar $50 y salir</button>
+      <button id="useCardBtn" class="btn" style="width:auto;padding:8px 10px;">🃏 Usar "Salir de la cárcel"</button>
     </div>
 
-    <button id="endTurnBtn" class="btn" style="display:none;">➡️ Terminar turno</button>
-
-    <div class="info" id="infoBox">Bienvenido — pulsa "Tirar dados" para empezar.</div>
-
-    <div class="cards">
-      <strong>Cartas Suerte y Arca:</strong>
-      <div>Suerte: <span id="suerteCount"></span></div>
-      <div>Arca Com.: <span id="arcaCount"></span></div>
-    </div>
+    <div class="info" id="infoBox">Bienvenido — pulsa "Tirar dados".</div>
 
     <div class="small" style="margin-top:10px;">
-      <strong>Nota:</strong> Puedes intentar sacar dobles para salir de la cárcel (se usan 2 dados). Después de 3 intentos fallidos, se paga automáticamente $50 y sales.
+      <strong>Cartas en mesa:</strong>
+      <div>Suerte: <span id="suerteCount"></span> — Arca: <span id="arcaCount"></span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal para mostrar carta -->
+<div id="cardModal" role="dialog" aria-hidden="true">
+  <div id="cardBox">
+    <div id="cardText">Contenido de la carta</div>
+    <div style="display:flex; justify-content:flex-end;">
+      <button id="closeCardBtn">Cerrar</button>
     </div>
   </div>
 </div>
 
 <script>
-/* ===================== CONFIG ===================== */
+/* ============== CONFIG / ESTADO ============== */
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
-const size = 800;
-const cellsPerSide = 10;
-const cell = size / cellsPerSide;
+const SIZE = 700;
+const CELLS = 10;
+const CELL = SIZE / CELLS; // 70
 
-/* === TABLERO CLÁSICO (España-like) con type y color === */
+/* TABLERO (esquinas tienen type:"especial" y no color) */
 const board = [
   {name:"Salida", type:"especial"},
   {name:"Ronda de Valencia", color:"#8B4513", price:60, type:"propiedad"},
   {name:"Comunidad", type:"arca"},
   {name:"Plaza Lavapiés", color:"#8B4513", price:60, type:"propiedad"},
-  {name:"Impuesto sobre el capital", type:"impuesto"},
-  {name:"Estación de Mediodía", type:"estacion", price:200},
+  {name:"Impuesto", type:"impuesto"},
+  {name:"Estación Mediodía", type:"estacion", price:200},
   {name:"Glorieta Cuatro Caminos", color:"#ADD8E6", price:100, type:"propiedad"},
   {name:"Suerte", type:"suerte"},
   {name:"Avenida Reina Victoria", color:"#ADD8E6", price:100, type:"propiedad"},
   {name:"Calle Bravo Murillo", color:"#ADD8E6", price:120, type:"propiedad"},
+
   {name:"Cárcel", type:"especial"},
   {name:"Glorieta Bilbao", color:"#FFC0CB", price:140, type:"propiedad"},
-  {name:"Compañía de electricidad", type:"compañia", price:150},
+  {name:"Compañía electricidad", type:"compañia", price:150},
   {name:"Calle Alberto Aguilera", color:"#FFC0CB", price:140, type:"propiedad"},
   {name:"Calle Fuencarral", color:"#FFC0CB", price:160, type:"propiedad"},
-  {name:"Estación del Norte", type:"estacion", price:200},
+  {name:"Estación Norte", type:"estacion", price:200},
   {name:"Avenida Felipe II", color:"#FFA500", price:180, type:"propiedad"},
   {name:"Comunidad", type:"arca"},
   {name:"Calle Serrano", color:"#FFA500", price:180, type:"propiedad"},
   {name:"Calle Velázquez", color:"#FFA500", price:200, type:"propiedad"},
+
   {name:"Parking", type:"especial"},
   {name:"Avenida de América", color:"#FF0000", price:220, type:"propiedad"},
   {name:"Suerte", type:"suerte"},
   {name:"Calle María de Molina", color:"#FF0000", price:220, type:"propiedad"},
   {name:"Calle Cea Bermúdez", color:"#FF0000", price:240, type:"propiedad"},
-  {name:"Estación de Delicias", type:"estacion", price:200},
+  {name:"Estación Delicias", type:"estacion", price:200},
   {name:"Avenida de los Poblados", color:"#FFFF00", price:260, type:"propiedad"},
   {name:"Calle O'Donnell", color:"#FFFF00", price:260, type:"propiedad"},
   {name:"Compañía de agua", type:"compañia", price:150},
   {name:"Calle Goya", color:"#FFFF00", price:280, type:"propiedad"},
+
   {name:"Ve a la cárcel", type:"especial"},
   {name:"Calle Alcalá", color:"#008000", price:300, type:"propiedad"},
   {name:"Calle Gran Vía", color:"#008000", price:300, type:"propiedad"},
   {name:"Comunidad", type:"arca"},
   {name:"Paseo de la Castellana", color:"#008000", price:320, type:"propiedad"},
-  {name:"Estación del Sur", type:"estacion", price:200},
+  {name:"Estación Sur", type:"estacion", price:200},
   {name:"Suerte", type:"suerte"},
   {name:"Paseo del Prado", color:"#0000FF", price:350, type:"propiedad"},
   {name:"Impuesto de lujo", type:"impuesto"},
   {name:"Calle Serrano Mayor", color:"#0000FF", price:400, type:"propiedad"}
 ];
 
-/* === JUGADORES === */
 const players = [
   {name:"Jugador", color:"#1f77b4", pos:0, money:1500, properties:[], inJail:false, jailTurns:0, hasGetOutCard:false},
   {name:"IA", color:"#d62728", pos:0, money:1500, properties:[], inJail:false, jailTurns:0, hasGetOutCard:false}
 ];
+
 let current = 0;
 let animating = false;
+let diceRolling = false;
+let diceResult = [1,1];
+let lastRollWasDouble = false;
 
-/* === BARAJAS === */
+/* Decks */
 let suerteDeck = [];
 let arcaDeck = [];
 
-/* === UI === */
+/* UI references */
 const rollBtn = document.getElementById('rollBtn');
 const payJailBtn = document.getElementById('payJailBtn');
 const useCardBtn = document.getElementById('useCardBtn');
-const endTurnBtn = document.getElementById('endTurnBtn');
 const infoBox = document.getElementById('infoBox');
 const turnName = document.getElementById('turnName');
 const playersListDiv = document.getElementById('playersList');
 const suerteCount = document.getElementById('suerteCount');
 const arcaCount = document.getElementById('arcaCount');
+const cardModal = document.getElementById('cardModal');
+const cardTextEl = document.getElementById('cardText');
+const closeCardBtn = document.getElementById('closeCardBtn');
 
-/* ===================== FUNCIONES ===================== */
+/* ================ UTIL / DECKS ================ */
+function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 
-function shuffle(a){
-  for(let i=a.length-1;i>0;i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-
-/* Crear cartas (simplificado, puedes añadir más) */
 function createDecks(){
   suerteDeck = [
-    {text:"Avanza a Salida. Cobra $200.", action:(p)=>{p.pos=0;p.money+=200; msg(`${p.name} avanza a Salida y cobra $200`)}},
-    {text:"Ve a la Cárcel. No cobras $200 por pasar.", action:(p)=>{p.pos=10;p.inJail=true;p.jailTurns=0; msg(`${p.name} va a la cárcel`)}},
-    {text:"Cobras $150.", action:(p)=>{p.money+=150; msg(`${p.name} cobra $150`)}},
-    {text:"Paga $50.", action:(p)=>{p.money-=50; msg(`${p.name} paga $50`)}},
-    {text:"Toma una tarjeta 'Salir de la cárcel'.", action:(p)=>{p.hasGetOutCard=true; msg(`${p.name} obtiene 'Salir de la cárcel'`)}},
-    {text:"Adelántate a Paseo del Prado si aplica.", action:(p)=>{p.pos = 38; msg(`${p.name} avanza a Paseo del Prado`)}},
-    {text:"Avanza a la próxima estación. Si no es tuya, paga $100.", action:(p)=>{advanceToNextStation(p)}}
+    {text:"Avanza a Salida. Cobra $200.", action:(p)=>{ p.pos=0; p.money+=200; showMsg(`${p.name} avanza a Salida y cobra $200`); }},
+    {text:"Ve a la Cárcel (no cobras por pasar).", action:(p)=>{ p.pos=10; p.inJail=true; p.jailTurns=0; showMsg(`${p.name} va a la cárcel`); }},
+    {text:"Cobras $150.", action:(p)=>{ p.money+=150; showMsg(`${p.name} cobra $150`); }},
+    {text:"Paga $50.", action:(p)=>{ p.money-=50; showMsg(`${p.name} paga $50`); }},
+    {text:"Toma tarjeta 'Salir de la cárcel'.", action:(p)=>{ p.hasGetOutCard=true; showMsg(`${p.name} obtiene 'Salir de la cárcel'`); }},
+    {text:"Avanza a Paseo del Prado.", action:(p)=>{ p.pos=38; showMsg(`${p.name} avanza a Paseo del Prado`); }},
+    {text:"Avanza a la próxima estación. Paga si no es tuya.", action:(p)=>{ advanceToNextStation(p); }}
   ];
 
   arcaDeck = [
-    {text:"Cobras $100.", action:(p)=>{p.money+=100; msg(`${p.name} cobra $100`)}},
-    {text:"Paga $50 por mala gestión.", action:(p)=>{p.money-=50; msg(`${p.name} paga $50`)}},
-    {text:"Obtén tarjeta 'Salir de la cárcel'.", action:(p)=>{p.hasGetOutCard=true; msg(`${p.name} obtiene 'Salir de la cárcel'`)}},
-    {text:"Recibe $20 de cada jugador (se simplifica: +$40).", action:(p)=>{p.money+=40; msg(`${p.name} recibe $40 de otros jugadores (simplificado)`)}},
-    {text:"Avanza a Salida.", action:(p)=>{p.pos=0; p.money+=200; msg(`${p.name} avanza a Salida y cobra $200`)}}
+    {text:"Cobras $100.", action:(p)=>{ p.money+=100; showMsg(`${p.name} cobra $100`); }},
+    {text:"Paga $50.", action:(p)=>{ p.money-=50; showMsg(`${p.name} paga $50`); }},
+    {text:"Toma tarjeta 'Salir de la cárcel'.", action:(p)=>{ p.hasGetOutCard=true; showMsg(`${p.name} obtiene 'Salir de la cárcel'`); }},
+    {text:"Recibe $40 de otros (simplificado).", action:(p)=>{ p.money+=40; showMsg(`${p.name} recibe $40 (simplificado)`); }},
+    {text:"Avanza a Salida. Cobra $200.", action:(p)=>{ p.pos=0; p.money+=200; showMsg(`${p.name} avanza a Salida y cobra $200`); }}
   ];
 
   shuffle(suerteDeck);
   shuffle(arcaDeck);
 }
 
-function drawCard(deckName, player){
-  let deck = deckName === "suerte" ? suerteDeck : arcaDeck;
-  if(deck.length===0) { msg("Baraja vacía — se rebaraja."); createDecks(); deck = deckName==="suerte"?suerteDeck:arcaDeck;}
-  const card = deck.shift();
-  msg(`${player.name} saca carta: ${card.text}`);
-  setTimeout(()=>{ card.action(player); drawBoard(); updateHUD(); }, 400);
-}
-
-/* Avanzar a próxima estación simple */
-function advanceToNextStation(player){
-  const stations = [5,15,25,35];
-  for(let s of stations){
-    if(s>player.pos){ player.pos = s; break; }
-  }
-  if(player.pos<=5) player.pos=5; // si estaba al final
-  // si no es del jugador, paga si tiene owner
-  const cell = board[player.pos];
-  if(cell.owner && cell.owner !== player.name){
-    const owner = players.find(p=>p.name === cell.owner);
-    player.money -= 100;
-    owner.money += 100;
-    msg(`${player.name} paga $100 a ${owner.name} por estación`);
-  }
-}
-
-/* DIBUJO TABLERO + NOMBRES/ICONOS DENTRO DE CASILLAS */
+/* ================= DRAW HELPERS ================= */
 function getCoords(pos){
-  if(pos < 10) return {x: size - cell*(pos+1), y: size - cell}; // bottom row (right->left)
-  if(pos < 20) return {x: 0, y: size - cell*(pos-9)}; // left column (bottom->top)
-  if(pos < 30) return {x: cell*(pos-20), y: 0}; // top row (left->right)
-  return {x: size - cell, y: cell*(pos-30)}; // right column (top->bottom)
+  if(pos < 10) return {x: SIZE - CELL*(pos+1), y: SIZE - CELL}; // bottom row (right->left)
+  if(pos < 20) return {x: 0, y: SIZE - CELL*(pos-9)}; // left column (bottom->top)
+  if(pos < 30) return {x: CELL*(pos-20), y: 0}; // top row (left->right)
+  return {x: SIZE - CELL, y: CELL*(pos-30)}; // right column (top->bottom)
 }
-
-function wrapText(text, maxWidth){
+function wrapText(ctx, text, maxWidth){
   const words = text.split(' ');
   const lines = [];
   let line = "";
@@ -216,131 +213,114 @@ function wrapText(text, maxWidth){
   return lines;
 }
 
+/* Draw the board with names and center decks */
 function drawBoard(){
-  ctx.clearRect(0,0,size,size);
+  ctx.clearRect(0,0,SIZE,SIZE);
   ctx.lineWidth = 1;
   ctx.strokeStyle = "#222";
 
-  // dibujar cuadrados exteriores
-  for(let i=0;i<cellsPerSide;i++){
-    // top
-    ctx.strokeRect(i*cell, 0, cell, cell);
-    // bottom
-    ctx.strokeRect(i*cell, size-cell, cell, cell);
-    // left
-    ctx.strokeRect(0, i*cell, cell, cell);
-    // right
-    ctx.strokeRect(size-cell, i*cell, cell, cell);
+  // outer squares grid
+  for(let i=0;i<CELLS;i++){
+    // top row
+    ctx.strokeRect(i*CELL, 0, CELL, CELL);
+    // bottom row
+    ctx.strokeRect(i*CELL, SIZE-CELL, CELL, CELL);
+    // left col
+    ctx.strokeRect(0, i*CELL, CELL, CELL);
+    // right col
+    ctx.strokeRect(SIZE-CELL, i*CELL, CELL, CELL);
   }
 
-  // dibujar color band y texto en cada casilla
+  // draw cells content
+  ctx.font = "12px Arial";
   for(let i=0;i<40;i++){
     const c = board[i];
     const p = getCoords(i);
 
-    // franja de color para propiedades
-    if(c.color){
+    // only draw color stripe for properties/stations/companies (not for specials)
+    if(c.color && c.type && (c.type === "propiedad" || c.type === "estacion")){
       ctx.fillStyle = c.color;
-      ctx.fillRect(p.x, p.y + (c.type==="propiedad" || c.type==="estacion" ? 0 : 0), cell, 12);
+      ctx.fillRect(p.x, p.y, CELL, 10);
     }
 
-    // icono/etiqueta en el interior (texto pequeño)
+    // Name text inside cell (wrap)
     ctx.fillStyle = "#111";
-    ctx.font = "12px Arial";
-    const name = c.name;
-    const lines = wrapText(name, cell - 8);
-    // calc pos text: dentro del square, pero no encima de the color stripe
     const textX = p.x + 6;
-    const textYStart = p.y + 24;
+    const textYStart = p.y + 22;
+    const lines = wrapText(ctx, c.name, CELL - 10);
     for(let li=0; li<Math.min(lines.length,4); li++){
       ctx.fillText(lines[li], textX, textYStart + li*14);
     }
 
-    // tipo labels (center small)
-    ctx.font = "bold 12px Arial";
+    // If property, show price at bottom-left
+    if(c.price && c.type !== "especial"){
+      ctx.font = "11px Arial";
+      ctx.fillStyle = "#333";
+      ctx.fillText(`$${c.price}`, p.x + 6, p.y + CELL - 10);
+      ctx.font = "12px Arial";
+    }
+
+    // If special or tax/suerte mark bottom
     if(c.type === "suerte" || c.type === "arca"){
       ctx.fillStyle = "#222";
-      ctx.fillText(c.type.toUpperCase(), p.x + 6, p.y + cell - 12);
-    } else if(c.type === "especial"){
-      ctx.fillStyle = "#222";
-      // show special name short
-      ctx.fillText(c.name, p.x + 6, p.y + cell - 12);
+      ctx.fillText(c.type.toUpperCase(), p.x + 6, p.y + CELL - 10);
     } else if(c.type === "impuesto"){
       ctx.fillStyle = "#b33";
-      ctx.fillText("IMPUESTO", p.x + 6, p.y + cell - 12);
+      ctx.fillText("IMPUESTO", p.x + 6, p.y + CELL - 10);
+    } else if(c.type === "especial"){
+      // draw bold short label for corners
+      ctx.fillStyle = "#000";
+      ctx.font = "bold 13px Arial";
+      // center label
+      const label = c.name;
+      const labelLines = wrapText(ctx, label, CELL - 10);
+      for(let li=0; li<labelLines.length && li<2; li++){
+        ctx.fillText(labelLines[li], p.x + 6, p.y + CELL - (28 - li*14));
+      }
+      ctx.font = "12px Arial";
     }
   }
 
-  // dibujar fichas (pequeñas y con offset si coinciden)
+  // Draw decks in center
+  const centerX = SIZE/2, centerY = SIZE/2;
+  const deckW = 60, deckH = 90;
+  // Arca
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(centerX - deckW - 12, centerY - deckH/2, deckW, deckH);
+  ctx.strokeStyle = "#333";
+  ctx.strokeRect(centerX - deckW - 12, centerY - deckH/2, deckW, deckH);
+  ctx.fillStyle = "#333";
+  ctx.font = "bold 12px Arial";
+  ctx.fillText("ARCA", centerX - deckW - 12 + 10, centerY);
+  // Suerte
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(centerX + 12, centerY - deckH/2, deckW, deckH);
+  ctx.strokeRect(centerX + 12, centerY - deckH/2, deckW, deckH);
+  ctx.fillStyle = "#333";
+  ctx.fillText("SUERTE", centerX + 12 + 6, centerY);
+
+  // counts on decks
+  ctx.font = "11px Arial";
+  ctx.fillText(`${arcaDeck.length}`, centerX - deckW - 12 + deckW - 14, centerY + deckH/2 - 8);
+  ctx.fillText(`${suerteDeck.length}`, centerX + 12 + deckW - 14, centerY + deckH/2 - 8);
+
+  // draw players tokens
   players.forEach((pl, idx) => {
     const co = getCoords(pl.pos);
-    const offset = idx * 30;
-    const fx = co.x + cell/2 + (idx===0?-16:16);
-    const fy = co.y + cell/2 + (idx===0? -10 : 10);
+    const fx = co.x + CELL/2 + (idx===0 ? -14 : 14);
+    const fy = co.y + CELL/2 + (idx===0 ? -10 : 10);
     ctx.fillStyle = pl.color;
     ctx.beginPath();
-    ctx.arc(fx, fy, 14, 0, Math.PI*2);
+    ctx.arc(fx, fy, 12, 0, Math.PI*2);
     ctx.fill();
-
-    // small border
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 2;
     ctx.stroke();
   });
 }
 
-/* ================= DADOS ANIMADOS (2 dados) ================ */
-
-let diceRolling = false;
-let diceResult = [1,1];
-
-function drawDicePreview(d1, d2){
-  // draw two small dice top-left corner of HUD area on canvas overlay
-  const sizeDie = 48;
-  const margin = 12;
-  // place them centered above canvas bottom-right area
-  const x1 = size - sizeDie*2 - margin*2;
-  const y1 = size - sizeDie - margin - 6;
-
-  // die background shadow
-  ctx.fillStyle = "rgba(0,0,0,0.08)";
-  ctx.fillRect(x1-8,y1-8,sizeDie*2+18,sizeDie+16);
-
-  // die 1
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(x1,y1,sizeDie,sizeDie);
-  ctx.strokeStyle = "#333";
-  ctx.strokeRect(x1,y1,sizeDie,sizeDie);
-  drawPips(x1,y1,sizeDie,d1);
-
-  // die 2
-  const x2 = x1 + sizeDie + 12;
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(x2,y1,sizeDie,sizeDie);
-  ctx.strokeStyle = "#333";
-  ctx.strokeRect(x2,y1,sizeDie,sizeDie);
-  drawPips(x2,y1,sizeDie,d2);
-}
-
-function drawPips(x,y,w,num){
-  ctx.fillStyle = "#000";
-  const r = 5;
-  const cx = x + w/2, cy = y + w/2;
-  const offset = 14;
-  const left = cx - offset, right = cx + offset, top = cy - offset, bottom = cy + offset;
-
-  const draw = (px,py)=> { ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill(); };
-  if(num===1) draw(cx,cy);
-  if(num===2){ draw(left,top); draw(right,bottom); }
-  if(num===3){ draw(left,top); draw(cx,cy); draw(right,bottom); }
-  if(num===4){ draw(left,top); draw(right,top); draw(left,bottom); draw(right,bottom); }
-  if(num===5){ draw(left,top); draw(right,top); draw(cx,cy); draw(left,bottom); draw(right,bottom); }
-  if(num===6){ draw(left,top); draw(right,top); draw(left,cy); draw(right,cy); draw(left,bottom); draw(right,bottom); }
-}
-
-/* ================== LÓGICA DE TURNO / MOVIMIENTO ================== */
-
-/* actualizar HUD players */
+/* ============= GAME / TURN / MOVEMENT ============= */
+function showMsg(t){ infoBox.textContent = t; }
 function updateHUD(){
   turnName.textContent = players[current].name;
   playersListDiv.innerHTML = "";
@@ -354,366 +334,377 @@ function updateHUD(){
   suerteCount.textContent = suerteDeck.length;
   arcaCount.textContent = arcaDeck.length;
 
-  // jail controls visibility for active player
+  // jail controls visibility
   const pl = players[current];
   if(pl.inJail){
     payJailBtn.style.display = "inline-block";
     useCardBtn.style.display = pl.hasGetOutCard ? "inline-block" : "none";
-    rollBtn.disabled = false; // allow roll attempt (doubles to get out)
+    rollBtn.disabled = false;
   } else {
     payJailBtn.style.display = "none";
     useCardBtn.style.display = "none";
   }
 }
 
-/* mostrar mensaje */
-function msg(t){
-  infoBox.textContent = t;
-}
-
-/* turno siguiente */
+/* next turn */
 function nextTurn(){
   current = (current + 1) % players.length;
+  lastRollWasDouble = false;
   updateHUD();
   drawBoard();
-  // if IA turn, delay a bit and act
+  // If IA turn, trigger AI
   if(players[current].name === "IA"){
-    setTimeout(()=>{ aiTakeTurn(players[current]); }, 900);
+    setTimeout(()=> aiTakeTurn(players[current]), 700);
   }
 }
 
-/* movimiento animado por pasos (1 paso por casilla) */
+/* animate movement step-by-step */
 function animateMove(pl, steps){
   if(animating) return;
   animating = true;
   let s = 0;
-
-  function stepMove(){
-    if(s < steps){
+  function step(){
+    if(s<steps){
       pl.pos++;
-      if(pl.pos >= 40){
-        pl.pos -= 40;
-        pl.money += 200;
-        msg(`${pl.name} pasa por Salida +$200`);
-      }
+      if(pl.pos>=40){ pl.pos-=40; pl.money += 200; showMsg(`${pl.name} pasa por Salida +$200`); }
       s++;
       drawBoard();
       updateHUD();
-      setTimeout(stepMove, 220);
+      setTimeout(step, 180);
     } else {
       animating = false;
       handleLanding(pl);
     }
   }
-  stepMove();
+  step();
 }
 
-/* manejar casilla al aterrizar */
+/* landing handler -- if card, play animation */
 function handleLanding(pl){
-  const cellInfo = board[pl.pos];
-  if(cellInfo.type === "propiedad" || cellInfo.type === "estacion" || cellInfo.type === "compañia"){
-    if(!cellInfo.owner){
-      // ofrecer compra a jugador humano
+  const cell = board[pl.pos];
+  if(cell.type === "propiedad" || cell.type === "estacion" || cell.type === "compañia"){
+    if(!cell.owner){
       if(pl.name === "Jugador"){
-        const ok = confirm(`${pl.name}, ¿comprar ${cellInfo.name} por $${cellInfo.price}?`);
-        if(ok){
-          pl.money -= cellInfo.price;
-          cellInfo.owner = pl.name;
-          pl.properties.push(cellInfo);
-          msg(`${pl.name} compra ${cellInfo.name}`);
-        } else {
-          msg(`${pl.name} no compra ${cellInfo.name}`);
-        }
+        const ok = confirm(`¿Comprar ${cell.name} por $${cell.price}?`);
+        if(ok){ pl.money -= cell.price; cell.owner = pl.name; pl.properties.push(cell); showMsg(`${pl.name} compra ${cell.name}`); }
+        else showMsg(`${pl.name} no compra ${cell.name}`);
       } else {
-        // IA decision simple
-        if(pl.money > cellInfo.price + 200){
-          pl.money -= cellInfo.price;
-          cellInfo.owner = pl.name;
-          pl.properties.push(cellInfo);
-          msg(`IA compra ${cellInfo.name}`);
-        } else {
-          msg(`IA no compra ${cellInfo.name}`);
-        }
+        if(pl.money > cell.price + 200){ pl.money -= cell.price; cell.owner = pl.name; pl.properties.push(cell); showMsg(`IA compra ${cell.name}`); }
+        else showMsg(`IA no compra ${cell.name}`);
       }
-    } else if(cellInfo.owner !== pl.name){
-      const owner = players.find(p => p.name === cellInfo.owner);
-      const rent = Math.floor(cellInfo.price/2);
-      pl.money -= rent;
-      owner.money += rent;
-      msg(`${pl.name} paga $${rent} a ${owner.name}`);
-    } else {
-      msg(`${pl.name} cae en su propia propiedad`);
-    }
-  } else if(cellInfo.type === "impuesto"){
-    pl.money -= 100;
-    msg(`${pl.name} paga impuesto $100`);
-  } else if(cellInfo.type === "suerte"){
-    drawCard("suerte", pl);
-  } else if(cellInfo.type === "arca"){
-    drawCard("arca", pl);
-  } else if(cellInfo.name === "Ve a la cárcel"){
-    pl.pos = 10; pl.inJail = true; pl.jailTurns = 0;
-    msg(`${pl.name} va directo a la cárcel`);
-  } else if(cellInfo.name === "Cárcel"){
-    msg(`${pl.name} está en la cárcel (casilla) si corresponde`);
+    } else if(cell.owner !== pl.name){
+      const owner = players.find(p=>p.name === cell.owner);
+      const rent = Math.floor(cell.price/2);
+      pl.money -= rent; owner.money += rent;
+      showMsg(`${pl.name} paga $${rent} a ${owner.name}`);
+    } else showMsg(`${pl.name} cae en su propia propiedad`);
+    drawBoard(); updateHUD();
+    setTimeout(()=> nextTurn(), 800);
+  } else if(cell.type === "impuesto"){
+    pl.money -= 100; showMsg(`${pl.name} paga impuesto $100`);
+    drawBoard(); updateHUD();
+    setTimeout(()=> nextTurn(), 800);
+  } else if(cell.type === "suerte"){
+    // animate taking card from center to modal reveal
+    animateTakeCard("suerte", pl);
+  } else if(cell.type === "arca"){
+    animateTakeCard("arca", pl);
+  } else if(cell.name === "Ve a la cárcel"){
+    pl.pos = 10; pl.inJail = true; pl.jailTurns = 0; showMsg(`${pl.name} va directo a la cárcel`);
+    drawBoard(); updateHUD();
+    setTimeout(()=> nextTurn(), 800);
+  } else if(cell.name === "Cárcel"){
+    showMsg(`${pl.name} está en la casilla de Cárcel`);
+    setTimeout(()=> nextTurn(), 800);
   } else {
-    msg(`${pl.name} cae en ${cellInfo.name}`);
-  }
-
-  drawBoard();
-  updateHUD();
-  // terminar turno tras breve pausa
-  setTimeout(()=> nextTurn(), 800);
-}
-
-/* =================== MECHANICA DE CÁRCEL =================== */
-
-/* intento sacar dobles: si está en la cárcel y saca iguales -> sale y mueve */
-function rollWhileInJail(pl){
-  // roll two dice
-  const d1 = randDice();
-  const d2 = randDice();
-  msg(`${pl.name} intentó sacar dobles: ${d1} y ${d2}`);
-  if(d1 === d2){
-    pl.inJail = false;
-    pl.jailTurns = 0;
-    msg(`${pl.name} sacó dobles y sale de la cárcel`);
-    animateMove(pl, d1 + d2);
-  } else {
-    pl.jailTurns++;
-    msg(`${pl.name} no sacó dobles (intentó ${pl.jailTurns}/3)`);
-    if(pl.jailTurns >= 3){
-      // paga $50 y sale automáticamente
-      pl.money -= 50;
-      pl.inJail = false;
-      pl.jailTurns = 0;
-      msg(`${pl.name} paga $50 tras 3 intentos y sale de la cárcel`);
-      // mover con último roll (we'll move sum)
-      animateMove(pl, d1 + d2);
-    } else {
-      // end turn
-      setTimeout(()=> nextTurn(), 700);
-    }
+    showMsg(`${pl.name} cae en ${cell.name}`);
+    setTimeout(()=> nextTurn(), 800);
   }
 }
 
-/* pagar $50 para salir */
-payJailBtn.addEventListener('click', ()=>{
-  const pl = players[current];
-  if(pl.inJail){
-    pl.money -= 50;
-    pl.inJail = false;
-    pl.jailTurns = 0;
-    msg(`${pl.name} paga $50 y sale de la cárcel`);
-    drawBoard(); updateHUD();
+/* advance to next station simplified */
+function advanceToNextStation(player){
+  const stations = [5,15,25,35];
+  for(let s of stations){
+    if(s > player.pos){ player.pos = s; break; }
   }
-});
+  const cell = board[player.pos];
+  if(cell.owner && cell.owner !== player.name){
+    const owner = players.find(p=>p.name === cell.owner);
+    player.money -= 100; owner.money += 100;
+    showMsg(`${player.name} paga $100 a ${owner.name} por estación`);
+  } else showMsg(`${player.name} avanza a estación`);
+  drawBoard(); updateHUD();
+  setTimeout(()=> nextTurn(), 900);
+}
 
-/* usar tarjeta "salir de la cárcel" */
-useCardBtn.addEventListener('click', ()=>{
-  const pl = players[current];
-  if(pl.hasGetOutCard){
-    pl.hasGetOutCard = false;
-    pl.inJail = false;
-    pl.jailTurns = 0;
-    msg(`${pl.name} usa 'Salir de la cárcel' y queda libre`);
-    drawBoard(); updateHUD();
+/* ============ CARD ANIMATION & REVEAL ============ */
+
+/* draw a floating card element and animate from deck center to middle of screen, then show modal with content */
+function animateTakeCard(deckName, player){
+  // position of deck in canvas coordinates -> convert to screen coordinates
+  const canvasRect = canvas.getBoundingClientRect();
+  const deckCenterCanvas = { x: SIZE/2 + (deckName==="arca"? - (60/2 + 12) : (60/2 + 12)), y: SIZE/2 };
+  const deckScreen = { x: canvasRect.left + deckCenterCanvas.x, y: canvasRect.top + deckCenterCanvas.y };
+
+  // create floating card DOM
+  const cardEl = document.createElement('div');
+  cardEl.className = 'floatingCard';
+  cardEl.textContent = deckName.toUpperCase();
+  document.body.appendChild(cardEl);
+
+  // start at deckScreen, animate to center of window
+  cardEl.style.left = `${deckScreen.x - 80}px`;
+  cardEl.style.top = `${deckScreen.y - 50}px`;
+
+  const targetX = window.innerWidth/2 - 190/2; // target left for modal alignment (approx)
+  const targetY = window.innerHeight/2 - 80;
+
+  // simple tween
+  const frames = 18;
+  let f = 0;
+  const start = { x: deckScreen.x - 80, y: deckScreen.y - 50 };
+  const dx = (targetX - start.x) / frames;
+  const dy = (targetY - start.y) / frames;
+
+  const anim = setInterval(()=>{
+    f++;
+    cardEl.style.left = `${start.x + dx * f}px`;
+    cardEl.style.top = `${start.y + dy * f}px`;
+    if(f >= frames){
+      clearInterval(anim);
+      // reveal card content from deck
+      setTimeout(()=>{
+        // remove floating and show modal with actual card
+        cardEl.remove();
+        revealCard(deckName, player);
+      }, 120);
+    }
+  }, 22);
+}
+
+/* reveal card: pop modal with card text and execute action when closed */
+function revealCard(deckName, player){
+  let deck = deckName === "suerte" ? suerteDeck : arcaDeck;
+  if(deck.length === 0){ createDecks(); deck = deckName==="suerte"?suerteDeck:arcaDeck; }
+  const card = deck.shift();
+  cardTextEl.textContent = card.text;
+  cardModal.style.display = "flex";
+  // when closing, execute card action, redraw board and continue turn progression
+  function closeHandler(){
+    cardModal.style.display = "none";
+    closeCardBtn.removeEventListener('click', closeHandler);
+    // execute action
+    card.action(player);
+    updateHUD(); drawBoard();
+    // continue (small pause)
+    setTimeout(()=> nextTurn(), 700);
   }
-});
+  closeCardBtn.addEventListener('click', closeHandler);
+}
 
-/* ===================== DADOS + EVENTOS ===================== */
-
+/* ============== DICE ANIMATION ============== */
 function randDice(){ return Math.floor(Math.random()*6) + 1; }
 
-/* animación de dados: mientras tanto bloquea tirada */
+function drawDicePreview(d1,d2){
+  const sizeDie = 44;
+  const margin = 10;
+  const x1 = SIZE - sizeDie*2 - margin - 6;
+  const y1 = SIZE - sizeDie - margin - 6;
+
+  // background
+  ctx.fillStyle = "rgba(0,0,0,0.06)";
+  ctx.fillRect(x1-8,y1-8,sizeDie*2+18,sizeDie+16);
+
+  // die 1
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(x1,y1,sizeDie,sizeDie);
+  ctx.strokeStyle = "#333";
+  ctx.strokeRect(x1,y1,sizeDie,sizeDie);
+  drawPips(x1,y1,sizeDie,d1);
+
+  // die 2
+  const x2 = x1 + sizeDie + 10;
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(x2,y1,sizeDie,sizeDie);
+  ctx.strokeRect(x2,y1,sizeDie,sizeDie);
+  drawPips(x2,y1,sizeDie,d2);
+}
+function drawPips(x,y,w,num){
+  ctx.fillStyle = "#000";
+  const r = 4;
+  const cx = x + w/2, cy = y + w/2;
+  const offset = 12;
+  const left = cx - offset, right = cx + offset, top = cy - offset, bottom = cy + offset;
+  const draw = (px,py)=> { ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill(); };
+  if(num===1) draw(cx,cy);
+  if(num===2){ draw(left,top); draw(right,bottom); }
+  if(num===3){ draw(left,top); draw(cx,cy); draw(right,bottom); }
+  if(num===4){ draw(left,top); draw(right,top); draw(left,bottom); draw(right,bottom); }
+  if(num===5){ draw(left,top); draw(right,top); draw(cx,cy); draw(left,bottom); draw(right,bottom); }
+  if(num===6){ draw(left,top); draw(right,top); draw(left,cy); draw(right,cy); draw(left,bottom); draw(right,bottom); }
+}
+
 function rollDiceAnimated(callback){
   if(diceRolling) return;
   diceRolling = true;
-  let frames = 12;
-  const interval = 80;
-  let f = 0;
+  let frames = 12; let f = 0;
+  const interval = 70;
   const anim = setInterval(()=>{
     diceResult = [randDice(), randDice()];
-    drawBoard();
-    drawDicePreview(diceResult[0], diceResult[1]);
+    drawBoard(); drawDicePreview(diceResult[0], diceResult[1]);
     f++;
     if(f >= frames){
       clearInterval(anim);
       diceRolling = false;
-      drawBoard();
-      drawDicePreview(diceResult[0], diceResult[1]);
-      setTimeout(()=>{ callback(diceResult[0], diceResult[1]); drawBoard(); }, 200);
+      drawBoard(); drawDicePreview(diceResult[0], diceResult[1]);
+      setTimeout(()=> callback(diceResult[0], diceResult[1]), 180);
     }
   }, interval);
 }
 
-/* evento click tirar dados */
+/* ============== JAIL / TURN EVENTS ============== */
+function rollForJail(pl){
+  rollDiceAnimated((d1,d2)=>{
+    showMsg(`${pl.name} intenta sacar dobles: ${d1}, ${d2}`);
+    if(d1===d2){
+      pl.inJail = false; pl.jailTurns = 0;
+      showMsg(`${pl.name} sacó dobles y sale de la cárcel`);
+      animateMove(pl, d1 + d2);
+    } else {
+      pl.jailTurns++;
+      showMsg(`${pl.name} no saca dobles (${pl.jailTurns}/3)`);
+      if(pl.jailTurns >= 3){
+        pl.money -= 50; pl.inJail = false; pl.jailTurns = 0;
+        showMsg(`${pl.name} paga $50 tras 3 intentos y sale`);
+        animateMove(pl, d1 + d2);
+      } else {
+        setTimeout(()=> nextTurn(), 700);
+      }
+    }
+  });
+}
+
+/* pay or use card */
+payJailBtn.addEventListener('click', ()=>{
+  const pl = players[current];
+  if(pl.inJail){ pl.money -= 50; pl.inJail = false; pl.jailTurns = 0; showMsg(`${pl.name} paga $50 y sale`); drawBoard(); updateHUD(); }
+});
+useCardBtn.addEventListener('click', ()=>{
+  const pl = players[current];
+  if(pl.hasGetOutCard){ pl.hasGetOutCard = false; pl.inJail = false; pl.jailTurns = 0; showMsg(`${pl.name} usa 'Salir de la cárcel'`); drawBoard(); updateHUD(); }
+});
+
+/* roll button main logic */
 rollBtn.addEventListener('click', ()=>{
   const pl = players[current];
   if(animating || diceRolling) return;
-  // si está en cárcel -> intento sacar dobles
+  // if in jail -> attempt doubles
   if(pl.inJail){
-    // show animated roll but handle jail logic on result
-    rollDiceAnimated((d1,d2)=>{
-      if(d1===d2){
-        pl.inJail = false; pl.jailTurns = 0;
-        msg(`${pl.name} saca dobles (${d1},${d2}) y sale de la cárcel`);
-        animateMove(pl, d1 + d2);
-      } else {
-        pl.jailTurns++;
-        msg(`${pl.name} no saca dobles (${d1},${d2}). Intento ${pl.jailTurns}/3`);
-        if(pl.jailTurns >= 3){
-          pl.money -= 50; pl.inJail = false; pl.jailTurns = 0;
-          msg(`${pl.name} paga $50 tras 3 intentos y sale de la cárcel`);
-          animateMove(pl, d1 + d2);
-        } else {
-          // end turn
-          setTimeout(()=> nextTurn(), 700);
-        }
-      }
-    });
+    rollForJail(pl);
     return;
   }
-
-  // normal turn: roll dice and move sum, doubles allow extra turn (basic rule)
   rollDiceAnimated((d1,d2)=>{
     const sum = d1 + d2;
-    msg(`${pl.name} tira ${d1} + ${d2} = ${sum}`);
+    showMsg(`${pl.name} tira ${d1} + ${d2} = ${sum}`);
+    // handle double turn
+    lastRollWasDouble = (d1 === d2);
     animateMove(pl, sum);
-    // doubles: grant another immediate turn (unless in movement logic we handle)
-    if(d1 === d2 && !pl.inJail){
-      // give extra turn after move; to keep simple, after animateMove completes we will avoid switching player in nextTurn when doubles true.
-      // Implementation approach: set a flag on player to grant extra turn; simpler: after handleLanding we check lastRollWasDouble flag.
-      lastRollWasDouble = true;
-    } else {
-      lastRollWasDouble = false;
-    }
   });
 });
 
-/* manage doubles: override nextTurn when last roll was double and same player not in jail */
-let lastRollWasDouble = false;
-const originalHandleLanding = handleLanding;
-function handleLanding(pl){
-  // reuse logic above by copying previous handleLanding definition body into local function to keep lastRollDetected handling
-  const cellInfo = board[pl.pos];
-  if(cellInfo.type === "propiedad" || cellInfo.type === "estacion" || cellInfo.type === "compañia"){
-    if(!cellInfo.owner){
-      if(pl.name === "Jugador"){
-        const ok = confirm(`${pl.name}, ¿comprar ${cellInfo.name} por $${cellInfo.price}?`);
-        if(ok){
-          pl.money -= cellInfo.price;
-          cellInfo.owner = pl.name;
-          pl.properties.push(cellInfo);
-          msg(`${pl.name} compra ${cellInfo.name}`);
-        } else {
-          msg(`${pl.name} no compra ${cellInfo.name}`);
-        }
-      } else {
-        if(pl.money > cellInfo.price + 200){
-          pl.money -= cellInfo.price;
-          cellInfo.owner = pl.name;
-          pl.properties.push(cellInfo);
-          msg(`IA compra ${cellInfo.name}`);
-        } else {
-          msg(`IA no compra ${cellInfo.name}`);
-        }
-      }
-    } else if(cellInfo.owner !== pl.name){
-      const owner = players.find(p => p.name === cellInfo.owner);
-      const rent = Math.floor(cellInfo.price/2);
-      pl.money -= rent;
-      owner.money += rent;
-      msg(`${pl.name} paga $${rent} a ${owner.name}`);
-    } else {
-      msg(`${pl.name} cae en su propia propiedad`);
-    }
-  } else if(cellInfo.type === "impuesto"){
-    pl.money -= 100;
-    msg(`${pl.name} paga impuesto $100`);
-  } else if(cellInfo.type === "suerte"){
-    drawCard("suerte", pl);
-  } else if(cellInfo.type === "arca"){
-    drawCard("arca", pl);
-  } else if(cellInfo.name === "Ve a la cárcel"){
-    pl.pos = 10; pl.inJail = true; pl.jailTurns = 0;
-    msg(`${pl.name} va directo a la cárcel`);
-  } else if(cellInfo.name === "Cárcel"){
-    msg(`${pl.name} está en la cárcel (casilla)`);
-  } else {
-    msg(`${pl.name} cae en ${cellInfo.name}`);
-  }
+/* override handleLanding to manage doubles and extra turns: reuse existing function but check lastRollWasDouble */
+const originalHandleLandingFunc = handleLanding; // not defined yet in hoisting; ensure reference below
 
-  drawBoard();
-  updateHUD();
+/* We'll re-implement handleLanding with doubles logic (to avoid hoisting issues) */
+/* (function defined above as function handleLanding... but to be safe we define wrapper) */
 
-  // Manage doubles: if lastRollWasDouble and player not in jail, same player goes again
-  if(lastRollWasDouble && !pl.inJail){
-    lastRollWasDouble = false; // consume extra turn
-    msg(`${pl.name} sacó dobles y obtiene un turno extra`);
-    // allow immediate turn for same player - do not call nextTurn
-    // small delay to let message be seen
-    setTimeout(()=>{ updateHUD(); drawBoard(); }, 600);
+/* ============== AI Simple ============== */
+function aiTakeTurn(ai){
+  if(ai.inJail){
+    // prefer using card or paying if affordable
+    if(ai.hasGetOutCard){ ai.hasGetOutCard = false; ai.inJail = false; ai.jailTurns = 0; showMsg("IA usa 'Salir de la cárcel'"); setTimeout(()=> animateMove(ai, randDice()+randDice()), 500); return; }
+    if(ai.money > 120){ ai.money -= 50; ai.inJail = false; ai.jailTurns = 0; showMsg("IA paga $50 y sale"); setTimeout(()=> animateMove(ai, randDice()+randDice()), 500); return; }
+    // else attempt roll doubles
+    rollForJail(ai);
     return;
   }
-
-  // terminar turno tras breve pausa
-  setTimeout(()=> nextTurn(), 800);
-}
-
-/* ==================== IA SIMPLE ==================== */
-function aiTakeTurn(ai){
-  // If in jail: try to use card if available else attempt roll (we let rollBtn logic simulate)
-  if(ai.inJail){
-    // prefer using card if available and money low, else attempt roll doubles
-    if(ai.hasGetOutCard){
-      ai.hasGetOutCard = false;
-      ai.inJail = false; ai.jailTurns = 0;
-      msg(`IA usa 'Salir de la cárcel'`);
-      setTimeout(()=> animateMove(ai, randDice()+randDice()), 600);
-      return;
-    } else if(ai.money > 100){
-      // pay sometimes
-      ai.money -= 50; ai.inJail = false; ai.jailTurns = 0;
-      msg(`IA paga $50 y sale de la cárcel`);
-      setTimeout(()=> animateMove(ai, randDice()+randDice()), 600);
-      return;
-    } else {
-      // attempt roll doubles: simulate by calling rollDiceAnimated then proceeding
-      rollDiceAnimated((d1,d2)=>{
-        if(d1===d2){
-          ai.inJail = false; ai.jailTurns = 0;
-          msg(`IA saca dobles y sale de la cárcel (${d1},${d2})`);
-          animateMove(ai, d1+d2);
-        } else {
-          ai.jailTurns++;
-          msg(`IA no saca dobles (${d1},${d2}).`);
-          setTimeout(()=> nextTurn(), 700);
-        }
-      });
-      return;
-    }
-  }
-
-  // normal behaviour: roll dice
-  rollDiceAnimated((d1,d2)=> {
+  rollDiceAnimated((d1,d2)=>{
     const sum = d1+d2;
-    msg(`IA tira ${d1}+${d2} = ${sum}`);
-    setTimeout(()=> animateMove(ai, sum), 200);
+    showMsg(`IA tira ${d1} + ${d2} = ${sum}`);
+    lastRollWasDouble = (d1===d2);
+    setTimeout(()=> animateMove(ai, sum), 220);
   });
 }
 
-/* ================== INICIO / SETUP ================== */
+/* ============== STARTUP ============== */
+function handleLandingWithDoubles(pl){
+  // reuse existing landing logic (we implemented earlier as handleLanding)
+  // We call the previously defined handleLanding (the one above) but ensure extra-turn semantics governed by lastRollWasDouble
+  // The previously defined handleLanding already calls nextTurn(); so we need to intercept that behavior:
+  // We'll copy the same logic inline here to ensure double-handling.
+  const cell = board[pl.pos];
+  if(cell.type === "propiedad" || cell.type === "estacion" || cell.type === "compañia"){
+    if(!cell.owner){
+      if(pl.name === "Jugador"){
+        const ok = confirm(`¿Comprar ${cell.name} por $${cell.price}?`);
+        if(ok){ pl.money -= cell.price; cell.owner = pl.name; pl.properties.push(cell); showMsg(`${pl.name} compra ${cell.name}`); }
+        else showMsg(`${pl.name} no compra ${cell.name}`);
+      } else {
+        if(pl.money > cell.price + 200){ pl.money -= cell.price; cell.owner = pl.name; pl.properties.push(cell); showMsg(`IA compra ${cell.name}`); }
+        else showMsg(`IA no compra ${cell.name}`);
+      }
+    } else if(cell.owner !== pl.name){
+      const owner = players.find(p=>p.name === cell.owner);
+      const rent = Math.floor(cell.price/2);
+      pl.money -= rent; owner.money += rent;
+      showMsg(`${pl.name} paga $${rent} a ${owner.name}`);
+    } else showMsg(`${pl.name} cae en su propia propiedad`);
+    drawBoard(); updateHUD();
+    // check doubles
+    if(lastRollWasDouble && !pl.inJail){
+      lastRollWasDouble = false;
+      showMsg(`${pl.name} sacó dobles y obtiene turno extra`);
+      // same player goes again (do not call nextTurn)
+      setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
+      return;
+    }
+    setTimeout(()=> nextTurn(), 800);
+  } else if(cell.type === "impuesto"){
+    pl.money -= 100; showMsg(`${pl.name} paga impuesto $100`);
+    drawBoard(); updateHUD();
+    if(lastRollWasDouble && !pl.inJail){ lastRollWasDouble = false; showMsg(`${pl.name} sacó dobles y obtiene turno extra`); setTimeout(()=> { updateHUD(); drawBoard(); }, 700); return; }
+    setTimeout(()=> nextTurn(), 800);
+  } else if(cell.type === "suerte"){
+    animateTakeCard("suerte", pl);
+    // card animation will call nextTurn after reveal
+  } else if(cell.type === "arca"){
+    animateTakeCard("arca", pl);
+  } else if(cell.name === "Ve a la cárcel"){
+    pl.pos = 10; pl.inJail = true; pl.jailTurns = 0; showMsg(`${pl.name} va directo a la cárcel`);
+    drawBoard(); updateHUD();
+    setTimeout(()=> nextTurn(), 800);
+  } else if(cell.name === "Cárcel"){
+    showMsg(`${pl.name} está en la casilla de Cárcel`);
+    if(lastRollWasDouble && !pl.inJail){ lastRollWasDouble = false; showMsg(`${pl.name} sacó dobles y obtiene turno extra`); setTimeout(()=> { updateHUD(); drawBoard(); }, 700); return; }
+    setTimeout(()=> nextTurn(), 800);
+  } else {
+    showMsg(`${pl.name} cae en ${cell.name}`);
+    if(lastRollWasDouble && !pl.inJail){ lastRollWasDouble = false; showMsg(`${pl.name} sacó dobles y obtiene turno extra`); setTimeout(()=> { updateHUD(); drawBoard(); }, 700); return; }
+    setTimeout(()=> nextTurn(), 800);
+  }
+}
 
+/* replace previous handleLanding used by animateMove to use this doubles-aware function */
+function handleLanding(pl){ handleLandingWithDoubles(pl); }
+
+/* create decks and initialize */
 createDecks();
 drawBoard();
 updateHUD();
-msg("Juego listo. Pulsa 'Tirar dados'.");
+showMsg("Juego listo en 700x700. Pulsa 'Tirar dados'.");
 
-document.getElementById('rollBtn').disabled = false;
-
-/* re-render loop for dice preview while rolling (dice animation uses drawBoard calls) */
-setInterval(()=>{ if(!diceRolling) drawBoard(); }, 500);
+setInterval(()=>{ if(!diceRolling) drawBoard(); }, 700);
 
 </script>
 </body>
