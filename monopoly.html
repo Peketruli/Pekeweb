@@ -3,24 +3,26 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Monopoly — Manos laterales y animación</title>
+<title>Monopoly — Clásico V3 (panel inferior)</title>
 <style>
   :root{
     --bg:#cfe7ef;
     --panel:#fff;
     --leftWidth:240px;
     --hand-gap:10px;
+    --hud-width:360px;
+    --board-size:700px;
   }
   html,body{height:100%; margin:0; padding:0; background:var(--bg); font-family:Arial,Helvetica,sans-serif; color:#111}
   /* Layout: left column (hands) | center (board) | right (hud) */
   #page {
     display:grid;
-    grid-template-columns: var(--leftWidth) 700px 360px;
+    grid-template-columns: var(--leftWidth) var(--board-size) var(--hud-width);
     gap:18px;
     justify-content:center;
     align-items:start;
     padding:18px;
-    min-height:100vh;
+    min-height:calc(100vh - 80px);
     box-sizing:border-box;
   }
 
@@ -62,14 +64,14 @@
 
   /* RIGHT: HUD */
   #hud {
-    width:360px; background:var(--panel); padding:14px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.08); max-height:82vh; overflow:auto;
+    width:var(--hud-width); background:var(--panel); padding:14px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,0.08); max-height:82vh; overflow:auto;
   }
   h2{margin:6px 0 10px;font-size:18px;text-align:center;}
   .btn{display:block; width:100%; padding:10px; margin:8px 0; border-radius:6px; border:none; font-weight:600; cursor:pointer;}
   #rollBtn{background:#2b8aef;color:#fff;}
   #payJailBtn{background:#e67e22;color:#fff; display:none;}
   #useCardBtn{background:#27ae60;color:#fff; display:none;}
-  .info{background:#f3f6f8;padding:8px;border-radius:6px;margin-top:8px; font-size:14px; color:#111;}
+  .info{background:#f3f6f8;padding:8px;border-radius:6px;margin-top:8px; font-size:14px; color:#111; min-height:42px;}
   .small{font-size:13px;color:#444;margin-top:6px;}
   .playersList{margin-top:8px;}
   .playerRow{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;color:#111;}
@@ -90,10 +92,26 @@
   /* floating card used in animation */
   .floatingCard { position:fixed; width:160px; height:100px; background:#fff; border-radius:8px; box-shadow:0 12px 30px rgba(0,0,0,0.25); display:flex;align-items:center;justify-content:center;font-weight:700; z-index:99997; pointer-events:none; }
 
+  /* bottom panel */
+  #bottomPanel {
+    position:fixed;
+    left:18px; right:18px; bottom:12px;
+    background: rgba(0,0,0,0.75);
+    color:#fff;
+    padding:10px 14px;
+    border-radius:10px;
+    box-shadow:0 8px 30px rgba(0,0,0,0.4);
+    display:flex; gap:12px; align-items:center; justify-content:space-between;
+    z-index:99999;
+    font-size:14px;
+  }
+  #log { flex:1; min-height:22px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #controls { display:flex; gap:8px; align-items:center; }
+
   /* small responsive */
   @media(max-width:1200px){
     #page { grid-template-columns: 200px 700px 320px; }
-    :root{--leftWidth:200px;}
+    :root{--leftWidth:200px; --hud-width:320px;}
   }
 </style>
 </head>
@@ -158,7 +176,7 @@
   </div>
 </div>
 
-<!-- Property detail modal -->
+<!-- Property detail / buy modal -->
 <div id="propModal">
   <div id="propBox">
     <h3 id="pmName"></h3>
@@ -170,16 +188,25 @@
     <div id="pmRents" class="line" style="margin-left:8px"></div>
     <div class="line"><strong>Mejoras actuales:</strong> <span id="pmImprovements"></span></div>
     <div style="display:flex;justify-content:flex-end;margin-top:10px">
-      <button id="buyHouseBtn" class="btn" style="width:auto;background:#2ecc71;color:#fff;padding:8px 10px">Comprar casa</button>
-      <button id="buyHotelBtn" class="btn" style="width:auto;background:#e67e22;color:#fff;padding:8px 10px;margin-left:6px">Comprar hotel</button>
+      <button id="buyPropBtn" class="btn" style="width:auto;background:#2ecc71;color:#fff;padding:8px 10px">Comprar</button>
+      <button id="buyHouseBtn" class="btn" style="width:auto;background:#2ecc71;color:#fff;padding:8px 10px;display:none;margin-left:6px">Comprar casa</button>
+      <button id="buyHotelBtn" class="btn" style="width:auto;background:#e67e22;color:#fff;padding:8px 10px;display:none;margin-left:6px">Comprar hotel</button>
       <button id="closePropBtn" class="btn" style="width:auto;background:#95a5a6;color:#fff;padding:8px 10px;margin-left:6px">Cerrar</button>
     </div>
     <div id="propMsg" style="margin-top:8px;color:#b33;"></div>
   </div>
 </div>
 
+<!-- bottom log panel -->
+<div id="bottomPanel">
+  <div id="log">Bienvenido — pulsa "Tirar dados".</div>
+  <div id="controls">
+    <button id="skipBtn" class="btn" style="background:#444;color:#fff;padding:6px 10px">Saltar texto</button>
+  </div>
+</div>
+
 <script>
-/* ---------- CORE GAME STATE (adapted from your prior code) ---------- */
+/* -------------- CONFIG + STATE -------------- */
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 const SIZE = 700;
@@ -233,35 +260,33 @@ const board = [
   {name:"Calle Serrano Mayor", color:"#0000FF", price:400, type:"propiedad"}
 ];
 
-/* give propertyData template */
-for(let c of board){
-  if(c.type === "propiedad" && c.price){
-    const base = Math.max(1, Math.floor(c.price * 0.1));
-    c.propertyData = {
-      price: c.price,
-      rent: [
-        base,
-        Math.floor(base * 3),
-        Math.floor(base * 8),
-        Math.floor(base * 18),
-        Math.floor(base * 30),
-        Math.floor(base * 50)
-      ],
-      houseCost: Math.max(10, Math.floor(c.price * 0.5)),
-      hotelCost: Math.max(10, Math.floor(c.price * 0.5)),
-      houses: 0,
-      hotel: false
-    };
-  }
-  if((c.type === "estacion" || c.type === "compañia") && c.price){
-    c.propertyData = { price: c.price, houses:0, hotel:false };
+for (let c of board) {
+  if ((c.type === "propiedad" || c.type === "estacion" || c.type === "compañia") && c.price) {
+    // propertyData standard
+    if (!c.propertyData) {
+      const base = Math.max(1, Math.floor(c.price * 0.1));
+      c.propertyData = {
+        price: c.price,
+        rent: c.type === "propiedad" ? [
+          base,
+          Math.floor(base * 3),
+          Math.floor(base * 8),
+          Math.floor(base * 18),
+          Math.floor(base * 30),
+          Math.floor(base * 50)
+        ] : [],
+        houseCost: Math.max(10, Math.floor(c.price * 0.5)),
+        hotelCost: Math.max(10, Math.floor(c.price * 0.5)),
+        houses: 0,
+        hotel: false
+      };
+    }
   }
 }
 
-/* players */
 const players = [
-  {name:"Jugador", color:"#1f77b4", pos:0, money:1500, properties:[], inJail:false, jailTurns:0, hasGetOutCard:false},
-  {name:"IA", color:"#d62728", pos:0, money:1500, properties:[], inJail:false, jailTurns:0, hasGetOutCard:false}
+  {name:"Jugador", id:0, color:"#1f77b4", pos:0, money:1500, properties:[], inJail:false, jailTurns:0, hasGetOutCard:false},
+  {name:"IA", id:1, color:"#d62728", pos:0, money:1500, properties:[], inJail:false, jailTurns:0, hasGetOutCard:false}
 ];
 
 let current = 0;
@@ -270,6 +295,7 @@ let diceRolling = false;
 let diceResult = [1,1];
 let lastRollWasDouble = false;
 let suerteDeck = [], arcaDeck = [];
+let logTimeout = null;
 
 /* UI refs */
 const playerHandDiv = document.getElementById('playerHand');
@@ -287,8 +313,6 @@ const arcaCount = document.getElementById('arcaCount');
 const cardModal = document.getElementById('cardModal');
 const cardTextEl = document.getElementById('cardText');
 const closeCardBtn = document.getElementById('closeCardBtn');
-
-/* prop modal refs */
 const propModal = document.getElementById('propModal');
 const pmName = document.getElementById('pmName');
 const pmColor = document.getElementById('pmColor');
@@ -297,38 +321,45 @@ const pmHouseCost = document.getElementById('pmHouseCost');
 const pmHotelCost = document.getElementById('pmHotelCost');
 const pmRents = document.getElementById('pmRents');
 const pmImprovements = document.getElementById('pmImprovements');
+const buyPropBtn = document.getElementById('buyPropBtn');
 const buyHouseBtn = document.getElementById('buyHouseBtn');
 const buyHotelBtn = document.getElementById('buyHotelBtn');
 const closePropBtn = document.getElementById('closePropBtn');
 const propMsg = document.getElementById('propMsg');
+const logDiv = document.getElementById('log');
+const skipBtn = document.getElementById('skipBtn');
 
-/* helpers */
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a; }
-function showMsg(t){ infoBox.textContent = t; }
+function log(msg, short=true){
+  infoBox.textContent = msg;
+  logDiv.textContent = msg;
+  if (logTimeout) clearTimeout(logTimeout);
+  if (short) logTimeout = setTimeout(()=>{ /* fade later if needed */ }, 3500);
+}
 
-/* decks */
+/* -------------- DECKS -------------- */
 function createDecks(){
   suerteDeck = [
-    {text:"Avanza a Salida. Cobra $200.", action:(p)=>{ p.pos=0; p.money+=200; showMsg(`${p.name} avanza a Salida y cobra $200`); }},
-    {text:"Ve a la Cárcel (no cobras por pasar).", action:(p)=>{ p.pos=10; p.inJail=true; p.jailTurns=0; showMsg(`${p.name} va a la cárcel`); }},
-    {text:"Cobras $150.", action:(p)=>{ p.money+=150; showMsg(`${p.name} cobra $150`); updateHUD(); }},
-    {text:"Paga $50.", action:(p)=>{ p.money-=50; showMsg(`${p.name} paga $50`); updateHUD(); }},
-    {text:"Toma tarjeta 'Salir de la cárcel'.", action:(p)=>{ p.hasGetOutCard=true; addCardToPlayerHand(p, {name:"Salir de la cárcel", type:"card", desc:"Usa para salir de la cárcel"}); showMsg(`${p.name} obtiene 'Salir de la cárcel'`); }},
-    {text:"Avanza a Paseo del Prado.", action:(p)=>{ p.pos=38; showMsg(`${p.name} avanza a Paseo del Prado`); }},
+    {text:"Avanza a Salida. Cobra $200.", action:(p)=>{ p.pos=0; p.money+=200; log(`${p.name} avanza a Salida y cobra $200`); }},
+    {text:"Ve a la Cárcel (no cobras por pasar).", action:(p)=>{ p.pos=10; p.inJail=true; p.jailTurns=0; log(`${p.name} va a la cárcel`); }},
+    {text:"Cobras $150.", action:(p)=>{ p.money+=150; log(`${p.name} cobra $150`); updateHUD(); }},
+    {text:"Paga $50.", action:(p)=>{ p.money-=50; log(`${p.name} paga $50`); updateHUD(); }},
+    {text:"Toma tarjeta 'Salir de la cárcel'.", action:(p)=>{ p.hasGetOutCard=true; addCardToPlayerHand(p, {name:"Salir de la cárcel", type:"card", desc:"Usa para salir de la cárcel"}); log(`${p.name} obtiene 'Salir de la cárcel'`); }},
+    {text:"Avanza a Paseo del Prado.", action:(p)=>{ p.pos=38; log(`${p.name} avanza a Paseo del Prado`); }},
     {text:"Avanza a la próxima estación. Paga si no es tuya.", action:(p)=>{ advanceToNextStation(p); }}
   ];
   arcaDeck = [
-    {text:"Cobras $100.", action:(p)=>{ p.money+=100; showMsg(`${p.name} cobra $100`); updateHUD(); }},
-    {text:"Paga $50.", action:(p)=>{ p.money-=50; showMsg(`${p.name} paga $50`); updateHUD(); }},
-    {text:"Toma tarjeta 'Salir de la cárcel'.", action:(p)=>{ p.hasGetOutCard=true; addCardToPlayerHand(p, {name:"Salir de la cárcel", type:"card", desc:"Usa para salir de la cárcel"}); showMsg(`${p.name} obtiene 'Salir de la cárcel'`); }},
-    {text:"Recibe $40 de otros (simplificado).", action:(p)=>{ p.money+=40; showMsg(`${p.name} recibe $40 (simplificado)`); updateHUD(); }},
-    {text:"Avanza a Salida. Cobra $200.", action:(p)=>{ p.pos=0; p.money+=200; showMsg(`${p.name} avanza a Salida y cobra $200`); updateHUD(); }}
+    {text:"Cobras $100.", action:(p)=>{ p.money+=100; log(`${p.name} cobra $100`); updateHUD(); }},
+    {text:"Paga $50.", action:(p)=>{ p.money-=50; log(`${p.name} paga $50`); updateHUD(); }},
+    {text:"Toma tarjeta 'Salir de la cárcel'.", action:(p)=>{ p.hasGetOutCard=true; addCardToPlayerHand(p, {name:"Salir de la cárcel", type:"card", desc:"Usa para salir de la cárcel"}); log(`${p.name} obtiene 'Salir de la cárcel'`); }},
+    {text:"Recibe $40 de otros (simplificado).", action:(p)=>{ p.money+=40; log(`${p.name} recibe $40 (simplificado)`); updateHUD(); }},
+    {text:"Avanza a Salida. Cobra $200.", action:(p)=>{ p.pos=0; p.money+=200; log(`${p.name} avanza a Salida y cobra $200`); updateHUD(); }}
   ];
   shuffle(suerteDeck);
   shuffle(arcaDeck);
 }
 
-/* geometry (getCellRect) - same as before */
+/* -------------- GEOMETRY & DRAW -------------- */
 function getCellRect(index){
   if(index === 0) return { x: SIZE - CORNER, y: SIZE - CORNER, w: CORNER, h: CORNER };
   if(index === 10) return { x: 0, y: SIZE - CORNER, w: CORNER, h: CORNER };
@@ -369,8 +400,6 @@ function getCellRect(index){
   }
   return { x:0,y:0,w:CORNER,h:CORNER };
 }
-
-/* drawing board */
 function wrapText(ctx, text, maxWidth){
   const words = text.split(' ');
   const lines = [];
@@ -393,19 +422,21 @@ function drawBoard(){
   ctx.lineWidth = 1;
   ctx.strokeStyle = "#222";
 
+  // grid
   for(let i=0;i<40;i++){
     const r = getCellRect(i);
     ctx.strokeRect(Math.round(r.x)+0.5, Math.round(r.y)+0.5, Math.round(r.w), Math.round(r.h));
   }
 
+  // text and colors
   ctx.textBaseline = "top";
   for(let i=0;i<40;i++){
     const cellInfo = board[i];
     const r = getCellRect(i);
 
-    if(cellInfo.color && cellInfo.type && (cellInfo.type === "propiedad" || cellInfo.type === "estacion")){
+    if(cellInfo.color && (cellInfo.type === "propiedad" || cellInfo.type === "estacion")){
       ctx.fillStyle = cellInfo.color;
-      ctx.fillRect(r.x, r.y, r.w, Math.min(12, r.h));
+      ctx.fillRect(r.x, r.y, r.w, Math.min(14, r.h));
     }
 
     ctx.fillStyle = "#111";
@@ -441,7 +472,7 @@ function drawBoard(){
     if(cellInfo.owner){
       ctx.fillStyle = "#000";
       ctx.font = "11px Arial";
-      ctx.fillText(`Owner: ${cellInfo.owner}`, r.x + r.w - 80, r.y + r.h - 16);
+      ctx.fillText(`${cellInfo.owner}`, r.x + r.w - 80, r.y + r.h - 16);
     }
 
     if(cellInfo.propertyData && (cellInfo.propertyData.houses > 0 || cellInfo.propertyData.hotel)){
@@ -480,10 +511,14 @@ function drawBoard(){
     ctx.fillStyle = pl.color; ctx.beginPath(); ctx.arc(tx, ty, 12, 0, Math.PI*2); ctx.fill();
     ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
   });
+
+  // draw dice preview
+  if (diceResult && diceResult.length === 2) {
+    drawDicePreview(diceResult[0], diceResult[1]);
+  }
 }
 
-/* ---------- HAND UI & ANIMATION ---------- */
-/* Create DOM card element for a property or card */
+/* -------------- HAND UI (DOM cards) -------------- */
 function createHandCardDOM(item){
   const el = document.createElement('div');
   el.className = 'handCard';
@@ -508,31 +543,19 @@ function createHandCardDOM(item){
   }
   return el;
 }
-
-/* Add card to player's hand with flying animation from center -> hand */
 function animateAddToHand(playerIndex, item){
-  // create floating card at deck center (canvas center)
   const canvasRect = canvas.getBoundingClientRect();
   const deckCenter = { x: canvasRect.left + SIZE/2, y: canvasRect.top + SIZE/2 - 20 };
-
   const floatEl = document.createElement('div');
   floatEl.className = 'floatingCard';
   floatEl.textContent = item.name;
   document.body.appendChild(floatEl);
   floatEl.style.left = (deckCenter.x - 80) + 'px';
   floatEl.style.top = (deckCenter.y - 50) + 'px';
-  floatEl.style.opacity = '1';
-  floatEl.style.transform = 'scale(1)';
-
-  // compute target - get bounding box for hand container
   const targetContainer = (playerIndex === 0) ? playerHandDiv : aiHandDiv;
-  // target position = inside targetContainer, near top-left
   const targetRect = targetContainer.getBoundingClientRect();
-  // find a free spot inside (we pick top-left offset)
   const targetX = targetRect.left + 12 + Math.random()*30;
   const targetY = targetRect.top + 36 + Math.random()*30;
-
-  // animate using simple JS tween
   const frames = 22;
   let f = 0;
   const start = { x: deckCenter.x - 80, y: deckCenter.y - 50 };
@@ -540,7 +563,6 @@ function animateAddToHand(playerIndex, item){
   const dy = (targetY - start.y) / frames;
   const scaleStart = 1, scaleEnd = 0.9;
   const dscale = (scaleEnd - scaleStart) / frames;
-
   const anim = setInterval(()=>{
     f++;
     floatEl.style.left = (start.x + dx*f) + 'px';
@@ -548,41 +570,25 @@ function animateAddToHand(playerIndex, item){
     floatEl.style.transform = `scale(${(scaleStart + dscale*f).toFixed(3)})`;
     if(f >= frames){
       clearInterval(anim);
-      // append actual card element to hand DOM and remove floating
       addCardToPlayerHandDOM(playerIndex, item);
       floatEl.remove();
     }
   }, 16);
 }
-
-/* Adds item to player's data and shows dom card */
 function addCardToPlayerHand(playerObj, item){
-  // push item reference (if property, push board cell object to player's properties array)
   playerObj.properties.push(item);
-  // animate from center to correct hand
-  const pIndex = players.indexOf(playerObj);
-  animateAddToHand(pIndex, item);
+  const idx = players.findIndex(p=>p===playerObj);
+  animateAddToHand(idx, item);
   updateHUD();
-}
-
-/* Helper to render and append card DOM to hand container (no animation) */
-function addCardToPlayerHandDOMByIndex(playerIndex, item){
-  addCardToPlayerHandDOM(playerIndex, item);
 }
 function addCardToPlayerHandDOM(playerIndex, item){
   const container = (playerIndex === 0) ? playerHandDiv : aiHandDiv;
-  // remove "empty" placeholder
   const empty = container.querySelector('.handEmpty');
   if(empty) empty.remove();
   const cardDOM = createHandCardDOM(item);
-  // click opens modal (for player-owned properties we allow building if current player is owner)
-  cardDOM.addEventListener('click', ()=>{
-    openPropertyModal(players[playerIndex], item);
-  });
+  cardDOM.addEventListener('click', ()=> openPropertyModal(players[playerIndex], item));
   container.appendChild(cardDOM);
 }
-
-/* Render full hand (used after loading from previous state) */
 function renderFullHands(){
   playerHandDiv.innerHTML = '';
   aiHandDiv.innerHTML = '';
@@ -592,180 +598,257 @@ function renderFullHands(){
   for(let it of players[1].properties) addCardToPlayerHandDOM(1, it);
 }
 
-/* Reverse-compatibility: wrapper called from decks and buying */
-function addCardToPlayerHandByIndex(idx, item){
-  addCardToPlayerHand(players[idx], item);
+/* -------------- DICE / ROLL -------------- */
+function randDice(){ return Math.floor(Math.random()*6)+1; }
+function drawPips(x,y,w,num){
+  ctx.fillStyle="#000";
+  const r=4; const cx = x + w/2, cy = y + w/2, offset= Math.max(10, w/4);
+  const left = cx - offset, right = cx + offset, top = cy - offset, bottom = cy + offset;
+  const draw = (px,py)=>{ ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill(); };
+  if(num===1) draw(cx,cy);
+  if(num===2){ draw(left,top); draw(right,bottom); }
+  if(num===3){ draw(left,top); draw(cx,cy); draw(right,bottom); }
+  if(num===4){ draw(left,top); draw(right,top); draw(left,bottom); draw(right,bottom); }
+  if(num===5){ draw(left,top); draw(right,top); draw(cx,cy); draw(left,bottom); draw(right,bottom); }
+  if(num===6){ draw(left,top); draw(right,top); draw(left,cy); draw(right,cy); draw(left,bottom); draw(right,bottom); }
+}
+function drawDicePreview(d1,d2){
+  const sizeDie = 44; const margin = 10;
+  const x1 = SIZE - sizeDie*2 - margin - 6; const y1 = SIZE - sizeDie - margin - 6;
+  ctx.fillStyle = "rgba(0,0,0,0.06)"; ctx.fillRect(x1-8,y1-8,sizeDie*2+18,sizeDie+16);
+  ctx.fillStyle="#fff"; ctx.fillRect(x1,y1,sizeDie,sizeDie); ctx.strokeStyle="#333"; ctx.strokeRect(x1,y1,sizeDie,sizeDie); drawPips(x1,y1,sizeDie,d1);
+  const x2 = x1 + sizeDie + 10; ctx.fillStyle="#fff"; ctx.fillRect(x2,y1,sizeDie,sizeDie); ctx.strokeRect(x2,y1,sizeDie,sizeDie); drawPips(x2,y1,sizeDie,d2);
+}
+function rollDiceAnimated(callback){
+  if(diceRolling) return;
+  diceRolling = true;
+  let frames = 12, f = 0;
+  const interval = 70;
+  const anim = setInterval(()=>{
+    diceResult = [randDice(), randDice()];
+    drawBoard();
+    f++;
+    if(f >= frames){
+      clearInterval(anim);
+      diceRolling = false;
+      drawBoard();
+      setTimeout(()=> callback(diceResult[0], diceResult[1]), 180);
+    }
+  }, interval);
 }
 
-/* ---------- TURNS / MOVEMENT / BUYING ---------- */
-function updateHUD(){
-  turnName.textContent = players[current].name;
-  playersListDiv.innerHTML = "";
-  players.forEach(p=>{
-    const row = document.createElement('div'); row.className = "playerRow";
-    const left = document.createElement('div'); left.innerHTML = `<strong style="color:${p.color}">${p.name}</strong><br><span class="small">Pos: ${p.pos}</span>`;
-    const right = document.createElement('div'); right.innerHTML = `<div>$${p.money}</div><div class="small">${p.properties.length} cartas</div>`;
-    row.appendChild(left); row.appendChild(right);
-    playersListDiv.appendChild(row);
-  });
-  suerteCount.textContent = suerteDeck.length;
-  arcaCount.textContent = arcaDeck.length;
-  playerMoneyEl.textContent = `$${players[0].money}`;
-  aiMoneyEl.textContent = `$${players[1].money}`;
-  // jail controls
-  const pl = players[current];
-  if(pl.inJail){
-    payJailBtn.style.display = "inline-block";
-    useCardBtn.style.display = pl.hasGetOutCard ? "inline-block" : "none";
-  } else {
-    payJailBtn.style.display = "none";
-    useCardBtn.style.display = "none";
-  }
-  renderFullHands();
-}
-
-function nextTurn(){
-  current = (current + 1) % players.length;
-  lastRollWasDouble = false;
-  updateHUD();
-  drawBoard();
-  if(players[current].name === "IA"){
-    setTimeout(()=> aiTakeTurn(players[current]), 700);
-  }
-}
-
-function animateMove(player, steps){
-  if(animating) return;
+/* -------------- MOVEMENT & LANDS -------------- */
+function animateMove(player, steps, callback){
+  if (animating) return;
   animating = true;
   let s = 0;
   function step(){
     if(s < steps){
       player.pos++;
-      if(player.pos >= 40){ player.pos -= 40; player.money += 200; showMsg(`${player.name} pasa por Salida +$200`); }
+      if(player.pos >= 40){ player.pos -= 40; player.money += 200; log(`${player.name} pasa por Salida +$200`); }
       s++;
       drawBoard(); updateHUD();
       setTimeout(step, 180);
     } else {
       animating = false;
-      handleLandingWithDoubles(player);
+      if (callback) callback();
     }
   }
   step();
 }
 
-/* landing logic with property buying: when bought -> add to player's hand with animation */
-function handleLandingWithDoubles(pl){
-  const cell = board[pl.pos];
-
-  if(cell.type === "propiedad" || cell.type === "estacion" || cell.type === "compañia"){
-    if(!cell.owner){
-      if(pl.name === "Jugador"){
-        const ok = confirm(`¿Comprar ${cell.name} por $${cell.price}?`);
-        if(ok){
-          if(pl.money >= cell.price){
-            pl.money -= cell.price;
-            cell.owner = pl.name;
-            // add board cell object to owner properties (so modal shows live data)
-            addCardToPlayerHand(pl, cell);
-            showMsg(`${pl.name} compra ${cell.name}`);
-            updateHUD();
-            drawBoard();
-          } else {
-            showMsg("No tienes dinero suficiente.");
-          }
-        } else showMsg(`${pl.name} no compra ${cell.name}`);
-      } else {
-        if(pl.money > cell.price + 200){
-          pl.money -= cell.price;
-          cell.owner = pl.name;
-          addCardToPlayerHand(pl, cell);
-          showMsg(`IA compra ${cell.name}`);
-        } else showMsg(`IA no compra ${cell.name}`);
-      }
-    } else if(cell.owner !== pl.name){
-      const owner = players.find(p => p.name === cell.owner);
-      let rent = 0;
-      if(cell.propertyData){
-        if(cell.propertyData.hotel) rent = cell.propertyData.rent[5];
-        else rent = cell.propertyData.rent[cell.propertyData.houses || 0];
-      } else {
-        rent = Math.floor(cell.price/2);
-      }
-      pl.money -= rent; owner.money += rent;
-      showMsg(`${pl.name} paga $${rent} a ${owner.name}`);
-    } else showMsg(`${pl.name} cae en su propia propiedad`);
-    drawBoard(); updateHUD();
-
-    if(lastRollWasDouble && !pl.inJail){
-      lastRollWasDouble = false;
-      showMsg(`${pl.name} sacó dobles y obtiene un turno extra`);
-      setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
-      return;
-    }
-    setTimeout(()=> nextTurn(), 800);
-    return;
-  }
-
-  if(cell.type === "impuesto"){
-    pl.money -= 100;
-    showMsg(`${pl.name} paga impuesto $100`);
-    drawBoard(); updateHUD();
-    if(lastRollWasDouble && !pl.inJail){
-      lastRollWasDouble = false;
-      showMsg(`${pl.name} sacó dobles y obtiene un turno extra`);
-      setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
-      return;
-    }
-    setTimeout(()=> nextTurn(), 800);
-    return;
-  }
-
-  if(cell.type === "suerte" || cell.type === "arca"){
-    animateTakeCard(cell.type, pl);
-    return;
-  }
-
-  if(cell.name === "Ve a la cárcel"){
-    pl.pos = 10; pl.inJail = true; pl.jailTurns = 0;
-    showMsg(`${pl.name} va directo a la cárcel`);
-    drawBoard(); updateHUD();
-    setTimeout(()=> nextTurn(), 800);
-    return;
-  }
-
-  if(cell.name === "Cárcel"){
-    showMsg(`${pl.name} está en la casilla de Cárcel`);
-    setTimeout(()=> nextTurn(), 800);
-    return;
-  }
-
-  showMsg(`${pl.name} cae en ${cell.name}`);
-  if(lastRollWasDouble && !pl.inJail){
-    lastRollWasDouble = false;
-    showMsg(`${pl.name} sacó dobles y obtiene un turno extra`);
-    setTimeout(()=> { updateHUD(); drawBoard(); }, 700);
-    return;
-  }
-  setTimeout(()=> nextTurn(), 800);
-}
-
-/* stations helper */
-function advanceToNextStation(player){
-  const stations = [5,15,25,35];
-  for(let s of stations){
-    if(s > player.pos){ player.pos = s; break; }
-  }
+function handleLanding(player, diceVals){
   const cell = board[player.pos];
-  if(cell.owner && cell.owner !== player.name){
-    const owner = players.find(p=>p.name === cell.owner);
-    player.money -= 100; owner.money += 100;
-    showMsg(`${player.name} paga $100 a ${owner.name} por estación`);
-  } else showMsg(`${player.name} avanza a estación`);
-  drawBoard(); updateHUD();
-  setTimeout(()=> nextTurn(), 900);
+
+  // PROPERTY / STATION / COMPANY
+  if (cell.type === "propiedad"){
+    if(!cell.owner){
+      // offer buy to player
+      openPropertyModalForBuy(player, cell);
+      return;
+    } else if (cell.owner !== player.name){
+      // rent calculation based on houses/hotel
+      const owner = players.find(p=>p.name === cell.owner);
+      const pd = cell.propertyData;
+      let rent = 0;
+      if(pd.hotel) rent = pd.rent[5];
+      else rent = pd.rent[pd.houses || 0];
+      player.money -= rent; owner.money += rent;
+      log(`${player.name} paga $${rent} a ${owner.name}`);
+    } else {
+      log(`${player.name} cae en su propia propiedad.`);
+    }
+    updateHUD();
+    return;
+  }
+
+  if (cell.type === "estacion"){
+    // find owner of this station (if any)
+    if (!cell.owner){
+      openPropertyModalForBuy(player, cell);
+      return;
+    }
+    if (cell.owner !== player.name){
+      const owner = players.find(p=>p.name === cell.owner);
+      // count how many stations owner has
+      const ownedCount = owner.properties.filter(pr => pr.type === "estacion").length;
+      // rents: 25, 50, 100, 200 for 1..4
+      const rents = [25,50,100,200];
+      const rent = rents[Math.max(0, Math.min(3, ownedCount-1))] || 25;
+      player.money -= rent; owner.money += rent;
+      log(`${player.name} paga $${rent} a ${owner.name} por estación (${ownedCount})`);
+      updateHUD();
+    } else log(`${player.name} cae en su propia estación.`);
+    return;
+  }
+
+  if (cell.type === "compañia"){
+    if (!cell.owner){
+      openPropertyModalForBuy(player, cell);
+      return;
+    }
+    if (cell.owner !== player.name){
+      const owner = players.find(p=>p.name === cell.owner);
+      // compute dice sum (we have diceVals)
+      const diceSum = (diceVals && diceVals.length)? (diceVals[0]+diceVals[1]) : diceResult[0]+diceResult[1];
+      // count how many services owner has
+      const ownedCount = owner.properties.filter(pr => pr.type === "compañia").length;
+      const mult = ownedCount === 2 ? 10 : 4;
+      const rent = diceSum * mult;
+      player.money -= rent; owner.money += rent;
+      log(`${player.name} paga $${rent} a ${owner.name} por compañía (${ownedCount} servicios).`);
+      updateHUD();
+    } else log(`${player.name} cae en su propia compañía.`);
+    return;
+  }
+
+  if (cell.type === "impuesto"){
+    // tax simple
+    const tax = (cell.name.includes('lujo')) ? 200 : 100;
+    player.money -= tax;
+    log(`${player.name} paga impuesto $${tax}`);
+    updateHUD();
+    return;
+  }
+
+  if (cell.type === "suerte" || cell.type === "arca"){
+    // animate and reveal
+    animateTakeCard(cell.type, player);
+    return;
+  }
+
+  if (cell.name === "Ve a la cárcel"){
+    player.pos = 10;
+    player.inJail = true;
+    player.jailTurns = 0;
+    log(`${player.name} va directo a la cárcel`);
+    updateHUD();
+    return;
+  }
+
+  if (cell.name === "Cárcel"){
+    log(`${player.name} está en la casilla de Cárcel (visitando).`);
+    return;
+  }
+
+  log(`${player.name} cae en ${cell.name}`);
 }
 
-/* ---------- CARD animation & reveal (deck drawing) ---------- */
+/* -------------- PROPERTY MODAL & BUY -------------- */
+let modalOpenProperty = null;
+function openPropertyModalForBuy(player, property){
+  modalOpenProperty = property;
+  pmName.textContent = property.name;
+  pmColor.style.background = property.color || '#ddd';
+  pmPrice.textContent = property.price || (property.propertyData?property.propertyData.price:"-");
+  pmHouseCost.textContent = property.propertyData?property.propertyData.houseCost:"-";
+  pmHotelCost.textContent = property.propertyData?property.propertyData.hotelCost:"-";
+  if(property.propertyData && property.type === "propiedad"){
+    pmRents.innerHTML = `
+      Base: $${property.propertyData.rent[0]}<br>
+      1 Casa: $${property.propertyData.rent[1]}<br>
+      2 Casas: $${property.propertyData.rent[2]}<br>
+      3 Casas: $${property.propertyData.rent[3]}<br>
+      4 Casas: $${property.propertyData.rent[4]}<br>
+      Hotel: $${property.propertyData.rent[5]}
+    `;
+    pmImprovements.textContent = `${property.propertyData.houses || 0} casas ${property.propertyData.hotel ? "y hotel" : ""}`;
+    buyHouseBtn.style.display = (property.owner === players[current].name) ? "inline-block" : "none";
+    buyHotelBtn.style.display = (property.owner === players[current].name) ? "inline-block" : "none";
+  } else {
+    pmRents.innerHTML = `<i>No aplicable</i>`;
+    pmImprovements.textContent = "-";
+    buyHouseBtn.style.display = "none";
+    buyHotelBtn.style.display = "none";
+  }
+  propMsg.textContent = "";
+  // show buy button only if unowned
+  buyPropBtn.style.display = property.owner ? "none" : "inline-block";
+  propModal.style.display = "flex";
+
+  // If AI and unowned, auto-decide
+  if(player.name === "IA" && !property.owner){
+    setTimeout(()=> {
+      // Simple decision: buy if money > price + 150
+      if(player.money > (property.price + 150)){
+        completePurchase(player, property);
+      } else {
+        log(`IA decide no comprar ${property.name}`);
+      }
+      propModal.style.display = 'none';
+      updateHUD();
+      // continue turn handling after buy
+      resolveAfterLanding(player);
+    }, 700);
+  }
+}
+
+closePropBtn.addEventListener('click', ()=> { propModal.style.display = 'none'; modalOpenProperty = null; resolveAfterLanding(players[current]); });
+buyPropBtn.addEventListener('click', ()=> {
+  const p = players[current];
+  const prop = modalOpenProperty;
+  if (!prop) return;
+  if (p.money >= prop.price){
+    completePurchase(p, prop);
+    propModal.style.display = 'none';
+    updateHUD();
+    resolveAfterLanding(p);
+  } else {
+    propMsg.textContent = "No tienes dinero suficiente.";
+  }
+});
+
+buyHouseBtn.addEventListener('click', ()=> {
+  const p = players[current];
+  const prop = modalOpenProperty;
+  if(!prop || !prop.propertyData) return;
+  if(prop.owner !== p.name){ propMsg.textContent = "No eres el propietario."; return; }
+  if(prop.propertyData.houses >= 4){ propMsg.textContent = "Compra hotel."; return; }
+  const cost = prop.propertyData.houseCost;
+  if(p.money < cost){ propMsg.textContent = "No tienes dinero."; return; }
+  p.money -= cost; prop.propertyData.houses++; propMsg.textContent = `Comprada 1 casa por $${cost}.`; updateHUD();
+});
+buyHotelBtn.addEventListener('click', ()=> {
+  const p = players[current];
+  const prop = modalOpenProperty;
+  if(!prop || !prop.propertyData) return;
+  if(prop.owner !== p.name){ propMsg.textContent = "No eres el propietario."; return; }
+  if(prop.propertyData.houses < 4){ propMsg.textContent = "Necesitas 4 casas."; return; }
+  const cost = prop.propertyData.hotelCost;
+  if(p.money < cost){ propMsg.textContent = "No tienes dinero."; return; }
+  p.money -= cost; prop.propertyData.houses = 0; prop.propertyData.hotel = true; propMsg.textContent = `Comprado hotel por $${cost}.`; updateHUD();
+});
+
+function completePurchase(player, prop){
+  player.money -= prop.price;
+  prop.owner = player.name;
+  // add property reference into player's properties (reference to board cell)
+  player.properties.push(prop);
+  log(`${player.name} compra ${prop.name} por $${prop.price}`);
+  renderFullHands();
+}
+
+/* -------------- CARDS (animate & reveal) -------------- */
 function animateTakeCard(deckName, player){
   const canvasRect = canvas.getBoundingClientRect();
   const deckCenterCanvas = { x: SIZE/2 + (deckName==="arca"? - (60/2 + 12) : (60/2 + 12)), y: SIZE/2 };
@@ -802,285 +885,230 @@ function revealCard(deckName, player){
   let deck = deckName === "suerte" ? suerteDeck : arcaDeck;
   if(deck.length === 0){ createDecks(); deck = deckName==="suerte"?suerteDeck:arcaDeck; }
   const card = deck.shift();
+  // place back at end unless card says otherwise
+  deck.push(card);
   cardTextEl.textContent = card.text;
   cardModal.style.display = "flex";
   function closeHandler(){
     cardModal.style.display = "none";
     closeCardBtn.removeEventListener('click', closeHandler);
     card.action(player);
-    updateHUD(); drawBoard();
-    setTimeout(()=> nextTurn(), 700);
+    updateHUD();
+    // After card executed, continue turn flow
+    resolveAfterLanding(player);
   }
   closeCardBtn.addEventListener('click', closeHandler);
 }
 
-/* ---------- dice animation ---------- */
-function randDice(){ return Math.floor(Math.random()*6)+1; }
-function drawPips(x,y,w,num){
-  ctx.fillStyle="#000";
-  const r=4; const cx = x + w/2, cy = y + w/2, offset= Math.max(10, w/4);
-  const left = cx - offset, right = cx + offset, top = cy - offset, bottom = cy + offset;
-  const draw = (px,py)=>{ ctx.beginPath(); ctx.arc(px,py,r,0,Math.PI*2); ctx.fill(); };
-  if(num===1) draw(cx,cy);
-  if(num===2){ draw(left,top); draw(right,bottom); }
-  if(num===3){ draw(left,top); draw(cx,cy); draw(right,bottom); }
-  if(num===4){ draw(left,top); draw(right,top); draw(left,bottom); draw(right,bottom); }
-  if(num===5){ draw(left,top); draw(right,top); draw(cx,cy); draw(left,bottom); draw(right,bottom); }
-  if(num===6){ draw(left,top); draw(right,top); draw(left,cy); draw(right,cy); draw(left,bottom); draw(right,bottom); }
-}
-function drawDicePreview(d1,d2){
-  const sizeDie = 44; const margin = 10;
-  const x1 = SIZE - sizeDie*2 - margin - 6; const y1 = SIZE - sizeDie - margin - 6;
-  ctx.fillStyle = "rgba(0,0,0,0.06)"; ctx.fillRect(x1-8,y1-8,sizeDie*2+18,sizeDie+16);
-  ctx.fillStyle="#fff"; ctx.fillRect(x1,y1,sizeDie,sizeDie); ctx.strokeStyle="#333"; ctx.strokeRect(x1,y1,sizeDie,sizeDie); drawPips(x1,y1,sizeDie,d1);
-  const x2 = x1 + sizeDie + 10; ctx.fillStyle="#fff"; ctx.fillRect(x2,y1,sizeDie,sizeDie); ctx.strokeRect(x2,y1,sizeDie,sizeDie); drawPips(x2,y1,sizeDie,d2);
-}
-function rollDiceAnimated(callback){
-  if(diceRolling) return;
-  diceRolling = true;
-  let frames = 12, f = 0;
-  const interval = 70;
-  const anim = setInterval(()=>{
-    diceResult = [randDice(), randDice()];
-    drawBoard(); drawDicePreview(diceResult[0], diceResult[1]);
-    f++;
-    if(f >= frames){
-      clearInterval(anim);
-      diceRolling = false;
-      drawBoard(); drawDicePreview(diceResult[0], diceResult[1]);
-      setTimeout(()=> callback(diceResult[0], diceResult[1]), 180);
-    }
-  }, interval);
-}
-
-/* ---------- jail mechanics ---------- */
-function rollForJail(pl){
+/* -------------- JAIL -------------- */
+function rollForJail(pl, cb){
   rollDiceAnimated((d1,d2)=>{
-    showMsg(`${pl.name} intenta sacar dobles: ${d1}, ${d2}`);
-    if(d1===d2){
+    log(`${pl.name} intenta sacar dobles: ${d1}-${d2}`);
+    if(d1 === d2){
       pl.inJail = false; pl.jailTurns = 0;
-      showMsg(`${pl.name} sacó dobles y sale`); animateMove(pl, d1 + d2);
+      log(`${pl.name} sacó dobles y sale de la cárcel`);
+      animateMove(pl, d1 + d2, ()=> {
+        handleLanding(pl, [d1,d2]);
+        if(cb) cb();
+      });
     } else {
       pl.jailTurns++;
-      showMsg(`${pl.name} no saca dobles (${pl.jailTurns}/3)`);
+      log(`${pl.name} no saca dobles (${pl.jailTurns}/3)`);
       if(pl.jailTurns >= 3){
         pl.money -= 50; pl.inJail = false; pl.jailTurns = 0;
-        showMsg(`${pl.name} paga $50 tras 3 intentos y sale`);
-        animateMove(pl, d1 + d2);
+        log(`${pl.name} paga $50 y sale de la cárcel`);
+        animateMove(pl, d1 + d2, ()=> {
+          handleLanding(pl, [d1,d2]);
+          if(cb) cb();
+        });
       } else {
-        setTimeout(()=> nextTurn(), 700);
+        // next player's turn
+        setTimeout(()=> { nextTurn(); if(cb) cb(); }, 700);
       }
     }
   });
 }
-
-document.getElementById('payJailBtn').addEventListener('click', ()=>{
+payJailBtn.addEventListener('click', ()=>{
   const pl = players[current];
-  if(pl.inJail){ pl.money -= 50; pl.inJail = false; pl.jailTurns = 0; showMsg(`${pl.name} paga $50 y sale`); drawBoard(); updateHUD(); }
+  if(pl.inJail){ pl.money -= 50; pl.inJail = false; pl.jailTurns = 0; log(`${pl.name} paga $50 y sale`); drawBoard(); updateHUD(); }
 });
-document.getElementById('useCardBtn').addEventListener('click', ()=>{
+useCardBtn.addEventListener('click', ()=>{
   const pl = players[current];
   if(pl.hasGetOutCard){
-    pl.hasGetOutCard = false; pl.inJail = false; pl.jailTurns = 0; showMsg(`${pl.name} usa 'Salir de la cárcel'`);
+    pl.hasGetOutCard = false; pl.inJail = false; pl.jailTurns = 0; log(`${pl.name} usa 'Salir de la cárcel'`);
     const idx = pl.properties.findIndex(x=>x.name === "Salir de la cárcel");
     if(idx>=0) pl.properties.splice(idx,1);
     drawBoard(); updateHUD();
   }
 });
 
-/* ---------- roll button ---------- */
+/* -------------- TURN FLOW -------------- */
+function nextTurn(){
+  current = (current + 1) % players.length;
+  lastRollWasDouble = false;
+  updateHUD();
+  drawBoard();
+  const pl = players[current];
+  log(`Turno: ${pl.name}`);
+  if(pl.name === "IA"){
+    setTimeout(()=> aiTakeTurn(pl), 700);
+  }
+}
+
+// top-level roll triggered by UI
 rollBtn.addEventListener('click', ()=>{
   const pl = players[current];
   if(animating || diceRolling) return;
-  if(pl.inJail){ rollForJail(pl); return; }
-  rollDiceAnimated((d1,d2)=>{
-    const sum = d1 + d2;
-    showMsg(`${pl.name} tira ${d1} + ${d2} = ${sum}`);
-    lastRollWasDouble = (d1 === d2);
-    animateMove(pl, sum);
-  });
-});
-
-/* ---------- AI ---------- */
-function aiTakeTurn(ai){
-  if(ai.inJail){
-    if(ai.hasGetOutCard){ ai.hasGetOutCard = false; ai.inJail = false; ai.jailTurns = 0; showMsg("IA usa 'Salir de la cárcel'"); setTimeout(()=> animateMove(ai, randDice()+randDice()), 500); return; }
-    if(ai.money > 120){ ai.money -= 50; ai.inJail = false; ai.jailTurns = 0; showMsg("IA paga $50 y sale"); setTimeout(()=> animateMove(ai, randDice()+randDice()), 500); return; }
-    rollForJail(ai); return;
-  }
-  rollDiceAnimated((d1,d2)=>{
-    const sum = d1+d2;
-    showMsg(`IA tira ${d1} + ${d2} = ${sum}`);
-    lastRollWasDouble = (d1===d2);
-    setTimeout(()=> animateMove(ai, sum), 220);
-  });
-}
-
-/* ---------- Property modal ---------- */
-let modalOpenFor = null;
-function openPropertyModal(playerObj, p){
-  modalOpenFor = p;
-  pmName.textContent = p.name;
-  pmColor.style.background = p.color || '#ddd';
-  pmPrice.textContent = p.propertyData ? p.propertyData.price : (p.price || "-");
-  pmHouseCost.textContent = p.propertyData ? p.propertyData.houseCost : "-";
-  pmHotelCost.textContent = p.propertyData ? p.propertyData.hotelCost : "-";
-  if(p.propertyData){
-    pmRents.innerHTML = `
-      Base: $${p.propertyData.rent[0]}<br>
-      1 Casa: $${p.propertyData.rent[1]}<br>
-      2 Casas: $${p.propertyData.rent[2]}<br>
-      3 Casas: $${p.propertyData.rent[3]}<br>
-      4 Casas: $${p.propertyData.rent[4]}<br>
-      Hotel: $${p.propertyData.rent[5]}
-    `;
-    pmImprovements.textContent = `${p.propertyData.houses || 0} casas ${p.propertyData.hotel ? "y hotel" : ""}`;
-  } else {
-    pmRents.innerHTML = `<i>No aplicable</i>`;
-    pmImprovements.textContent = "-";
-  }
-  propMsg.textContent = "";
-  const currentPlayerObj = players[current];
-  const ownerName = p.owner || null;
-  if(ownerName === currentPlayerObj.name && p.propertyData){
-    buyHouseBtn.style.display = "inline-block";
-    buyHotelBtn.style.display = "inline-block";
-    buyHouseBtn.disabled = false;
-    buyHotelBtn.disabled = false;
-  } else {
-    buyHouseBtn.style.display = "none";
-    buyHotelBtn.style.display = "none";
-  }
-  propModal.style.display = "flex";
-}
-closePropBtn.addEventListener('click', ()=>{ propModal.style.display = "none"; modalOpenFor = null; });
-
-buyHouseBtn.addEventListener('click', ()=>{
-  const p = modalOpenFor;
-  const pl = players[current];
-  if(!p || !p.propertyData){ propMsg.textContent = "No es propiedad construible."; return; }
-  if(p.owner !== pl.name){ propMsg.textContent = "No eres el propietario."; return; }
-  if(p.propertyData.hotel){ propMsg.textContent = "Ya tienes hotel."; return; }
-  if(p.propertyData.houses >= 4){ propMsg.textContent = "4 casas alcanzadas; compra hotel."; return; }
-  const cost = p.propertyData.houseCost;
-  if(pl.money < cost){ propMsg.textContent = "No tienes dinero suficiente."; return; }
-  pl.money -= cost; p.propertyData.houses++;
-  propMsg.textContent = `Comprada 1 casa por $${cost}.`;
-  updateHUD(); drawBoard();
-  openPropertyModal(pl,p);
-});
-
-buyHotelBtn.addEventListener('click', ()=>{
-  const p = modalOpenFor;
-  const pl = players[current];
-  if(!p || !p.propertyData){ propMsg.textContent = "No es propiedad construible."; return; }
-  if(p.owner !== pl.name){ propMsg.textContent = "No eres el propietario."; return; }
-  if(p.propertyData.hotel){ propMsg.textContent = "Ya tienes hotel."; return; }
-  if(p.propertyData.houses < 4){ propMsg.textContent = "Necesitas 4 casas antes de comprar hotel."; return; }
-  const cost = p.propertyData.hotelCost;
-  if(pl.money < cost){ propMsg.textContent = "No tienes dinero suficiente."; return; }
-  pl.money -= cost; p.propertyData.houses = 0; p.propertyData.hotel = true;
-  propMsg.textContent = `Comprado hotel por $${cost}.`;
-  updateHUD(); drawBoard();
-  openPropertyModal(pl,p);
-});
-
-/* ---------- STARTUP ---------- */
-createDecks();
-drawBoard();
-updateHUD();
-showMsg("Juego listo. Pulsa 'Tirar dados'.");
-
-/* keep board refreshing */
-setInterval(()=>{ if(!diceRolling) drawBoard(); }, 700);
-/* ---------- INICIALIZACIÓN ---------- */
-createDecks();
-updateHUD();
-drawBoard();
-showMsg("Bienvenido — pulsa 'Tirar dados'.");
-
-/* ---------- EVENTOS ---------- */
-rollBtn.onclick = () => rollDice();
-closeCardBtn.onclick = () => cardModal.style.display = 'none';
-closePropBtn.onclick = () => propModal.style.display = 'none';
-
-function rollDice(){
-  if(animating) return;
-  const p = players[current];
-  if(p.inJail){
-    showMsg(`${p.name} está en la cárcel.`);
+  if(pl.inJail){
+    rollForJail(pl);
     return;
   }
-  const d1 = Math.floor(Math.random()*6)+1;
-  const d2 = Math.floor(Math.random()*6)+1;
-  diceResult = [d1,d2];
-  showMsg(`${p.name} tira ${d1} y ${d2}`);
-  movePlayer(p, d1+d2);
-  lastRollWasDouble = (d1===d2);
-  if(p.name==="IA" && lastRollWasDouble) setTimeout(()=>rollDice(),1200);
-}
-
-/* ---------- FUNCIONES CLAVE ---------- */
-function movePlayer(p, steps){
-  animating = true;
-  const target = (p.pos + steps) % 40;
-  let i=0;
-  const moveAnim = setInterval(()=>{
-    p.pos = (p.pos + 1) % 40;
-    drawBoard();
-    if(++i >= steps){
-      clearInterval(moveAnim);
-      animating=false;
-      landedOn(p);
+  rollDiceAnimated((d1,d2)=>{
+    diceResult = [d1,d2];
+    const sum = d1 + d2;
+    lastRollWasDouble = (d1 === d2);
+    log(`${pl.name} tira ${d1} + ${d2} = ${sum}`);
+    animateMove(pl, sum, ()=> {
+      handleLanding(pl, [d1,d2]);
+      // continue after landing when appropriate (if modal opened, modal handler will continue)
+      if(!(board[pl.pos].type === "suerte" || board[pl.pos].type === "arca" || !board[pl.pos].owner && (board[pl.pos].type === "propiedad" || board[pl.pos].type === "estacion" || board[pl.pos].type === "compañia"))){
+        // if no modal opened and not card, process double-turn logic:
+        if(lastRollWasDouble && !pl.inJail){
+          log(`${pl.name} sacó dobles y repite turno`);
+          // same player continues; if AI, we'll auto roll
+          if(pl.name === "IA"){
+            setTimeout(()=> aiTakeTurn(pl), 800);
+          }
+        } else {
+          setTimeout(()=> nextTurn(), 700);
+        }
+      }
       updateHUD();
+    });
+  });
+});
+
+/* Called to continue after landing resolution (used by modals/cards) */
+function resolveAfterLanding(player){
+  // If player got doubles, same player continues
+  if (lastRollWasDouble && !player.inJail){
+    log(`${player.name} repite turno por dobles`);
+    if (player.name === "IA") setTimeout(()=> aiTakeTurn(player), 700);
+    // if human, keep same turn (button active)
+  } else {
+    setTimeout(()=> nextTurn(), 700);
+  }
+}
+
+/* -------------- AI -------------- */
+function aiTakeTurn(ai){
+  if(ai.inJail){
+    // decide: use card > pay if affordable > try to roll
+    if(ai.hasGetOutCard){
+      ai.hasGetOutCard = false; ai.inJail = false; ai.jailTurns = 0; log("IA usa 'Salir de la cárcel'"); setTimeout(()=> { rollBtn.disabled=true; aiRoll(); }, 500);
+      return;
     }
-  }, 200);
+    if(ai.money > 120){
+      ai.money -= 50; ai.inJail = false; ai.jailTurns = 0; log("IA paga $50 y sale"); setTimeout(()=> { aiRoll(); }, 500);
+      return;
+    }
+    rollForJail(ai);
+    return;
+  }
+
+  // AI roll helper
+  function aiRoll(){
+    rollDiceAnimated((d1,d2)=>{
+      diceResult = [d1,d2];
+      const sum = d1 + d2;
+      lastRollWasDouble = (d1 === d2);
+      log(`IA tira ${d1} + ${d2} = ${sum}`);
+      animateMove(ai, sum, ()=> {
+        handleLanding(ai, [d1,d2]);
+        // If a modal opened (like buying), the buy handler calls resolveAfterLanding.
+        // If not, continue with double logic:
+        if(board[ai.pos].type === "suerte" || board[ai.pos].type === "arca" || (!board[ai.pos].owner && (board[ai.pos].type === "propiedad" || board[ai.pos].type === "estacion" || board[ai.pos].type === "compañia"))){
+          // handled by modal/card callbacks
+        } else {
+          if(lastRollWasDouble && !ai.inJail){
+            log("IA sacó dobles y vuelve a tirar automáticamente");
+            setTimeout(()=> aiTakeTurn(ai), 800);
+          } else {
+            setTimeout(()=> nextTurn(), 700);
+          }
+        }
+        updateHUD();
+      });
+    });
+  }
+
+  // start AI roll
+  aiRoll();
 }
 
-function landedOn(p){
-  const cell = board[p.pos];
-  if(cell.type === "suerte" || cell.type === "arca"){
-    drawBoard();
-    const deck = cell.type === "suerte" ? suerteDeck : arcaDeck;
-    const card = deck.shift();
-    deck.push(card);
-    animateAddToHand(current, {name: cell.type.toUpperCase(), type:"deck"});
-    cardTextEl.textContent = card.text;
-    cardModal.style.display='flex';
-    card.action(p);
-  }
-  if(cell.type === "estacion"){
-    const owned = players[current].properties.filter(pr => pr.type==="estacion").length;
-    const rent = [25,50,100,200][owned-1] || 25;
-    showMsg(`${p.name} cae en ${cell.name} (Renta $${rent})`);
-  }
-  if(cell.type === "compañia"){
-    const diceVal = diceResult[0]+diceResult[1];
-    const owned = players[current].properties.filter(pr => pr.type==="compañia").length;
-    const mult = owned === 2 ? 10 : 4;
-    const rent = diceVal * mult;
-    showMsg(`${p.name} paga $${rent} por servicios`);
-  }
-}
-
-/* ---------- HUD Y MANOS ---------- */
+/* -------------- UTIL / HUD -------------- */
 function updateHUD(){
-  playerMoneyEl.textContent = "$"+players[0].money;
-  aiMoneyEl.textContent = "$"+players[1].money;
+  turnName.textContent = players[current].name;
+  playersListDiv.innerHTML = "";
+  players.forEach(p=>{
+    const row = document.createElement('div'); row.className = "playerRow";
+    const left = document.createElement('div'); left.innerHTML = `<strong style="color:${p.color}">${p.name}</strong><br><span class="small">Pos: ${p.pos}</span>`;
+    const right = document.createElement('div'); right.innerHTML = `<div>$${p.money}</div><div class="small">${p.properties.length} cartas</div>`;
+    row.appendChild(left); row.appendChild(right);
+    playersListDiv.appendChild(row);
+  });
   suerteCount.textContent = suerteDeck.length;
   arcaCount.textContent = arcaDeck.length;
-  turnName.textContent = players[current].name;
-  drawBoard();
+  playerMoneyEl.textContent = `$${players[0].money}`;
+  aiMoneyEl.textContent = `$${players[1].money}`;
+  // jail controls
+  const pl = players[current];
+  if(pl.inJail){
+    payJailBtn.style.display = "inline-block";
+    useCardBtn.style.display = pl.hasGetOutCard ? "inline-block" : "none";
+  } else {
+    payJailBtn.style.display = "none";
+    useCardBtn.style.display = "none";
+  }
+  renderFullHands();
 }
 
-/* Añadir carta a mano visualmente */
-function addCardToPlayerHandDOM(playerIndex, item){
-  const container = playerIndex === 0 ? playerHandDiv : aiHandDiv;
-  const empty = container.querySelector('.handEmpty');
-  if(empty) empty.remove();
-  const card = createHandCardDOM(item);
-  container.appendChild(card);
+/* -------------- STARTUP -------------- */
+createDecks();
+updateHUD();
+drawBoard();
+log("Juego listo. Pulsa 'Tirar dados'.");
+
+/* keep board refreshing if not rolling */
+setInterval(()=>{ if(!diceRolling) drawBoard(); }, 700);
+
+/* bottom controls */
+skipBtn.addEventListener('click', ()=> { if(logTimeout) clearTimeout(logTimeout); logDiv.textContent = ""; infoBox.textContent = ""; });
+
+/* helper: advance to next station for cards */
+function advanceToNextStation(player){
+  const stations = [5,15,25,35];
+  for(let s of stations){
+    if(s > player.pos){ player.pos = s; break; }
+    if(s === stations[stations.length-1]) player.pos = stations[0]; // wrap
+  }
+  const cell = board[player.pos];
+  if(cell.owner && cell.owner !== player.name){
+    const owner = players.find(p=>p.name === cell.owner);
+    // station rent based on owner count
+    const ownedCount = owner.properties.filter(pr => pr.type === "estacion").length;
+    const rents = [25,50,100,200];
+    const rent = rents[Math.max(0,Math.min(3,ownedCount-1))] || 25;
+    player.money -= rent; owner.money += rent;
+    log(`${player.name} avanza a estación y paga $${rent} a ${owner.name}`);
+  } else {
+    log(`${player.name} avanza a estación ${cell.name}`);
+  }
+  updateHUD();
 }
+
+/* EXPOSED small helpers for debugging in console (optional) */
+window._MONOPOLY = {players, board, drawBoard, rollDiceAnimated};
 
 </script>
 </body>
