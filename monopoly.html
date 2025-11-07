@@ -250,8 +250,8 @@
    If you don't want multiplayer, leave them empty and use One Player.
    IMPORTANT: use ANON public key (not your service_role) in client-side code.
 */
-const SUPABASE_URL = ""; // <-- pega aquí tu URL supabase
-const SUPABASE_KEY = ""; // <-- pega aquí tu KEY publica (anon)
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co"; // <-- pega aquí tu URL supabase
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // <-- pega aquí tu KEY publica (anon)
 let supabase = null;
 if(SUPABASE_URL && SUPABASE_KEY){
   supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -716,25 +716,6 @@ function updateHUD(){
   renderFullHands();
 }
 
-/* change: when landing on property we open property modal in center */
-function nextTurn(){
-  current = (current + 1) % players.length;
-  lastRollWasDouble = false;
-  updateHUD();
-  drawBoard();
-  if(inMultiplayer){
-    // push state so other player sees it
-    pushStateToRoom();
-  }
-  if(players[current].name === "Oponente" && !inMultiplayer){
-    setTimeout(()=> aiTakeTurn(players[current]), 700);
-  } else if(inMultiplayer && players[current].id !== players[myPlayerIndex].id){
-    // wait for remote player's move (poll will fetch)
-    showMsg("Esperando al oponente...");
-  } else {
-    showMsg(`${players[current].name}, es tu turno.`);
-  }
-}
 
 function animateMove(player, steps){
   if(animating) return;
@@ -1318,6 +1299,147 @@ function resizeCanvas(){
 addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
+  // =========================
+// 🔁 CAMBIO DE TURNO
+// =========================
+function nextTurn() {
+  currentPlayer = (currentPlayer === player) ? ai : player;
+  if (currentPlayer === ai) {
+    setTimeout(handleAITurn, 1000); // IA actúa con pequeña pausa
+  } else {
+    log("🎲 Es tu turno. Tira los dados.");
+  }
+}
+
+// =========================
+// 🎯 MOVER JUGADOR
+// =========================
+function movePlayer(playerObj, steps) {
+  playerObj.position = (playerObj.position + steps) % board.length;
+  updatePlayerPositions();
+
+  const cell = board[playerObj.position];
+  log(`${playerObj.name} cae en ${cell.name}.`);
+
+  if (cell.type === "property") {
+    handlePropertyLanding(playerObj, cell);
+  } else if (cell.type === "chance" || cell.type === "community") {
+    drawCard(cell.type, playerObj);
+  } else if (cell.type === "tax") {
+    payTax(playerObj, cell);
+  } else if (cell.type === "jail") {
+    sendToJail(playerObj);
+  } else if (cell.type === "go") {
+    collectGo(playerObj);
+  }
+
+  updateHUD();
+}
+
+// =========================
+// 🏠 MANEJAR CAER EN PROPIEDAD
+// =========================
+function handlePropertyLanding(playerObj, property) {
+  if (!property.owner) {
+    if (playerObj === player) {
+      // Mostrar carta al jugador humano
+      showPropertyCard(property, playerObj);
+    } else {
+      // La IA decide automáticamente si comprar
+      aiBuyProperty(property);
+    }
+  } else if (property.owner !== playerObj) {
+    // Propiedad de otro jugador
+    const rent = calculateRent(property);
+    playerObj.money -= rent;
+    property.owner.money += rent;
+    log(`${playerObj.name} paga $${rent} de renta a ${property.owner.name}.`);
+    updateHUD();
+  } else {
+    // Propiedad propia: mostrar carta informativa si es jugador humano
+    if (playerObj === player) {
+      showPropertyCard(property, playerObj, true);
+    }
+  }
+}
+
+// =========================
+// 🧱 MOSTRAR CARTA DE PROPIEDAD
+// =========================
+function showPropertyCard(property, playerObj, isOwner = false) {
+  const modal = document.getElementById("propertyModal");
+  const modalContent = modal.querySelector(".property-content");
+  modalContent.innerHTML = `
+    <div class="property-card" style="border:2px solid black; background:#fff; border-radius:10px; width:300px; margin:auto; text-align:center; font-family:Arial;">
+      <div style="background:${property.color}; color:white; padding:10px; border-top-left-radius:10px; border-top-right-radius:10px;">
+        <strong>${property.name}</strong>
+      </div>
+      <div style="padding:10px;">
+        <p>Renta base: $${property.rent}</p>
+        <p>Con 1 casa: $${property.houseRent1}</p>
+        <p>Con 2 casas: $${property.houseRent2}</p>
+        <p>Con 3 casas: $${property.houseRent3}</p>
+        <p>Con 4 casas: $${property.houseRent4}</p>
+        <p>Hotel: $${property.hotelRent}</p>
+        <p>Casas cuestan: $${property.houseCost}</p>
+        <p>Hotel cuesta: $${property.hotelCost}</p>
+        <p>Precio de compra: $${property.price}</p>
+      </div>
+      <div style="padding:10px;">
+        ${
+          !isOwner
+            ? (!property.owner
+                ? `<button id="buyBtn" class="buy-btn">Comprar</button>`
+                : `<p>Propietario: ${property.owner.name}</p>`)
+            : `<p>Ya eres dueño de esta propiedad.</p>`
+        }
+        <button id="closeBtn" class="close-btn">Cerrar</button>
+      </div>
+    </div>
+  `;
+  modal.style.display = "flex";
+  modal.style.animation = "fadeIn 0.3s ease, zoomIn 0.3s ease";
+
+  const closeBtn = document.getElementById("closeBtn");
+  closeBtn.onclick = () => (modal.style.display = "none");
+
+  const buyBtn = document.getElementById("buyBtn");
+  if (buyBtn) {
+    buyBtn.onclick = () => {
+      if (playerObj.money >= property.price) {
+        playerObj.money -= property.price;
+        property.owner = playerObj;
+        playerObj.properties.push(property);
+        log(`${playerObj.name} compró ${property.name} por $${property.price}.`);
+        updateHands();
+        updateHUD();
+      } else {
+        log("No tienes suficiente dinero para comprar esta propiedad.");
+      }
+      modal.style.display = "none";
+      nextTurn();
+    };
+  }
+}
+
+// =========================
+// 🧠 DECISIONES DE LA IA
+// =========================
+function aiBuyProperty(property) {
+  setTimeout(() => {
+    if (ai.money >= property.price) {
+      ai.money -= property.price;
+      property.owner = ai;
+      ai.properties.push(property);
+      log(`🤖 La IA compró ${property.name} por $${property.price}.`);
+    } else {
+      log(`🤖 La IA no tiene suficiente dinero para comprar ${property.name}.`);
+    }
+    updateHands();
+    updateHUD();
+    nextTurn();
+  }, 1200);
+}
 </script>
 </body>
 </html>
