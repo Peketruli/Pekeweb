@@ -2,22 +2,21 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Casino 3D — Clásico (Pequeño) — FPS WASD + Flechas</title>
+<title>Casino 3D — Fix (WASD correcto, ruleta horizontal, tragaperras funcional)</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  html,body{height:100%;margin:0;background:#03060a;color:#fff;font-family:Inter,Arial,Helvetica}
+  html,body{height:100%;margin:0;background:#030612;color:#fff;font-family:Inter,Arial,Helvetica}
   #wrap{position:relative;height:100vh;overflow:hidden}
   canvas{display:block}
-  .hud{position:absolute;right:12px;top:12px;z-index:40;max-width:360px}
-  .panel{background:rgba(0,0,0,0.55);padding:10px;border-radius:10px;margin-bottom:10px}
+  .hud{position:absolute;right:12px;top:12px;z-index:40;max-width:380px}
+  .panel{background:rgba(0,0,0,0.56);padding:10px;border-radius:10px;margin-bottom:10px}
   .info-row{display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:13px}
-  #prompt{position:absolute;left:50%;transform:translateX(-50%);bottom:96px;background:rgba(0,0,0,0.6);padding:8px 12px;border-radius:8px;display:none;z-index:45}
+  #prompt{position:absolute;left:50%;transform:translateX(-50%);bottom:92px;background:rgba(0,0,0,0.7);padding:8px 12px;border-radius:8px;display:none;z-index:45}
   #overlay{position:absolute;left:0;top:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;z-index:60}
-  #overlay .ui{background:rgba(12,14,16,0.98);padding:14px;border-radius:10px;width:420px;box-shadow:0 10px 40px rgba(0,0,0,0.7);color:#ddd}
+  #overlay .ui{background:rgba(8,10,12,0.96);padding:14px;border-radius:10px;width:420px;box-shadow:0 10px 40px rgba(0,0,0,0.7);color:#ddd}
   .btn{background:#d95d00;color:white;padding:8px 10px;border-radius:8px;border:none;cursor:pointer}
-  footer{position:absolute;left:12px;bottom:12px;color:#ccc;font-size:13px}
+  footer{position:absolute;left:12px;bottom:12px;color:#bbb;font-size:13px}
   #minimap{position:absolute;left:12px;top:12px;width:120px;height:120px;background:rgba(255,255,255,0.02);border-radius:8px;z-index:30}
-  .centerNotice{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:80;color:#fff;font-size:18px;text-align:center;display:none}
 </style>
 </head>
 <body>
@@ -26,7 +25,7 @@
 
     <div class="hud">
       <div class="panel">
-        <h3>Casino Clásico — Pequeño</h3>
+        <h3>Casino — Fix</h3>
         <div class="info-row"><span>Saldo</span><strong id="balance">1000</strong></div>
         <div class="info-row"><span>Apuesta</span><strong id="bet">0</strong></div>
         <div style="font-size:13px;margin-top:6px">
@@ -35,7 +34,7 @@
       </div>
       <div class="panel">
         <h4>Interactúa</h4>
-        <div id="interact-info" style="font-size:13px">Acércate a la ruleta o tragaperras y pulsa <strong>E</strong>.</div>
+        <div id="interact-info" style="font-size:13px">Acércate y pulsa <strong>E</strong> (o usa UI).</div>
       </div>
       <div class="panel">
         <h4>Historial</h4>
@@ -44,14 +43,9 @@
     </div>
 
     <div id="prompt">[E] Interactuar</div>
+    <div id="overlay"><div class="ui" id="ui-box"></div></div>
 
-    <div id="overlay">
-      <div class="ui" id="ui-box"></div>
-    </div>
-
-    <div class="centerNotice" id="centerNotice"></div>
-
-    <footer>Estilo clásico · Sala pequeña · Ruleta a 0.75m</footer>
+    <footer>Primera persona · Ruleta horizontal · Tragaperras con pantalla</footer>
   </div>
 
   <!-- Three.js UMD -->
@@ -69,158 +63,133 @@
     renderer.setSize(wrap.clientWidth, wrap.clientHeight);
     wrap.appendChild(renderer.domElement);
 
-    // camera is the player (first person)
+    // Camera IS the player (first-person)
     const camera = new THREE.PerspectiveCamera(72, wrap.clientWidth / wrap.clientHeight, 0.1, 1000);
-    camera.position.set(0, 1.7, 12); // start in room
+    camera.position.set(0, 1.7, 12);
 
-    // we keep a player position vector separately for collisions/movement
+    // Player position vector
     const playerPos = new THREE.Vector3(0, 0, 12);
     let yaw = 0, pitch = 0;
 
-    // lights
+    // Lights
     scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(5,20,10); scene.add(dir);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(8,20,10); scene.add(dir);
     const bulb = new THREE.PointLight(0xfff3d6,0.9,200); bulb.position.set(0,20,0); scene.add(bulb);
 
-    // floor
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(120,120), new THREE.MeshStandardMaterial({color:0x0a0f12,roughness:0.95}));
+    // Floor and room
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(90,90), new THREE.MeshStandardMaterial({color:0x091217,roughness:0.95}));
     floor.rotation.x = -Math.PI/2; floor.position.y = 0; scene.add(floor);
+    function wall(w,h,d,x,y,z,rotY){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color:0x071018})); m.position.set(x,y,z); if(rotY) m.rotation.y=rotY; scene.add(m); return m;}
+    wall(50,10,2,0,5,-40); wall(2,10,50,-24,5,0); wall(2,10,50,24,5,0); wall(50,10,2,0,5,40);
 
-    // small room walls (low-poly)
-    function makeWall(w,h,d,x,y,z,rotY){
-      const mat = new THREE.MeshStandardMaterial({color:0x071018});
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
-      m.position.set(x,y,z); if(rotY) m.rotation.y = rotY; scene.add(m); return m;
-    }
-    makeWall(60,10,2,0,5,-28);
-    makeWall(2,10,60,-28,5,0);
-    makeWall(2,10,60,28,5,0);
-    makeWall(60,10,2,0,5,28);
-
-    // decorative rug under play area
-    const rug = new THREE.Mesh(new THREE.CircleGeometry(14,32), new THREE.MeshStandardMaterial({color:0x102826, roughness:0.9}));
+    // Rug
+    const rug = new THREE.Mesh(new THREE.CircleGeometry(14,32), new THREE.MeshStandardMaterial({color:0x183430}));
     rug.rotation.x = -Math.PI/2; rug.position.y = 0.01; scene.add(rug);
 
-    // ---------- TABLE + RULETA ----------
+    // ---------- TABLE + RUETA (HORIZONTAL CORRECTA) ----------
     const table = new THREE.Group();
     table.position.set(0,0,0);
-    // table base
-    const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(8.5,8.5,0.9,36), new THREE.MeshStandardMaterial({color:0x2a5b3f}));
+    const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(8.5,8.5,0.9,36), new THREE.MeshStandardMaterial({color:0x214f3d}));
     tableTop.position.y = 0.75; table.add(tableTop);
-    // small pedestal
-    const tablePed = new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,1.2,12), new THREE.MeshStandardMaterial({color:0x1b3b2a}));
-    tablePed.position.y = 0.15; table.add(tablePed);
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,1.2,12), new THREE.MeshStandardMaterial({color:0x163826}));
+    pedestal.position.y = 0.15; table.add(pedestal);
 
-    // wheel (horizontal, top face up)
+    // wheel: cylinder aligned with Y axis (no rotation) -> top face horizontal
     const wheelRadius = 6;
-    function createWheelCanvas(size=1024){
-      const c = document.createElement('canvas'); c.width = c.height = size;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#072b22'; ctx.fillRect(0,0,size,size);
-      const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23];
-      const count = pockets.length;
-      const cx = size/2, cy = size/2, r = size*0.45;
+    function wheelCanvas(size=1024){
+      const c=document.createElement('canvas'); c.width=c.height=size; const ctx=c.getContext('2d');
+      ctx.fillStyle='#052b23'; ctx.fillRect(0,0,size,size);
+      const pockets=[0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23];
+      const count=pockets.length; const cx=size/2,cy=size/2,r=size*0.45;
       for(let i=0;i<count;i++){
-        const a0 = (i/count)*Math.PI*2 - Math.PI/2;
-        const a1 = ((i+1)/count)*Math.PI*2 - Math.PI/2;
+        const a0=(i/count)*Math.PI*2 - Math.PI/2, a1 = ((i+1)/count)*Math.PI*2 - Math.PI/2;
         ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a0,a1); ctx.closePath();
-        ctx.fillStyle = (i%2===0)?'#b71c1c':'#000';
-        ctx.fill();
-        const mid = a0 + (a1-a0)/2;
-        ctx.save(); ctx.translate(cx + Math.cos(mid)*(r*0.66), cy + Math.sin(mid)*(r*0.66));
+        ctx.fillStyle=(i%2===0)?'#b71c1c':'#000'; ctx.fill();
+        const mid=a0+(a1-a0)/2; ctx.save(); ctx.translate(cx + Math.cos(mid)*(r*0.66), cy + Math.sin(mid)*(r*0.66));
         ctx.rotate(mid + Math.PI/2); ctx.fillStyle='#fff'; ctx.font=`${Math.floor(size*0.05)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
         ctx.fillText(pockets[i],0,0); ctx.restore();
       }
       ctx.beginPath(); ctx.fillStyle='#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
       return c;
     }
-    const wheelTex = new THREE.CanvasTexture(createWheelCanvas(2048));
+    const wheelTex = new THREE.CanvasTexture(wheelCanvas(2048));
     wheelTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    const wheelMesh = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius, wheelRadius, 1.2, 64), new THREE.MeshStandardMaterial({map:wheelTex}));
-    wheelMesh.rotation.x = Math.PI/2; wheelMesh.position.y = 0.88; table.add(wheelMesh);
+    const wheelMesh = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius, wheelRadius, 1.4, 64), new THREE.MeshStandardMaterial({map:wheelTex}));
+    // IMPORTANT: NO rotation.x here (cylinder axis is Y, faces up) -> top is horizontal
+    wheelMesh.position.y = 0.88; table.add(wheelMesh);
 
-    // rim and separators
+    // rim visual
     const rim = new THREE.Mesh(new THREE.TorusGeometry(wheelRadius+0.6,0.45,8,64), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
     rim.rotation.x = Math.PI/2; rim.position.y = 0.88; table.add(rim);
 
-    // ball on rim
-    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.12,12,10), new THREE.MeshStandardMaterial({metalness:0.9,roughness:0.2}));
+    // ball: orbit around wheel center (xz plane)
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.14,12,10), new THREE.MeshStandardMaterial({metalness:0.9,roughness:0.2}));
     ball.position.set(wheelRadius-0.8, 1.02, 0); table.add(ball);
 
     scene.add(table);
 
-    // ---------- SILLAS alrededor ----------
-    function makeChair(x,z,angle){
-      const g = new THREE.Group();
-      const seat = new THREE.Mesh(new THREE.BoxGeometry(1.1,0.35,1.1), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
-      seat.position.y = 0.42;
-      const back = new THREE.Mesh(new THREE.BoxGeometry(1.1,1.2,0.28), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
-      back.position.set(0,0.95,-0.45);
-      g.add(seat); g.add(back);
-      g.position.set(x,0,z);
-      g.lookAt(0,0,0); // face table center
-      scene.add(g);
-      return g;
+    // ---------- Sillas colocadas correctamente ----------
+    function makeChair(x,z){
+      const g=new THREE.Group();
+      const seat=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.35,1.1), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
+      const back=new THREE.Mesh(new THREE.BoxGeometry(1.1,1.0,0.28), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
+      seat.position.y=0.42; back.position.set(0,0.9,-0.45);
+      g.add(seat); g.add(back); g.position.set(x,0,z); g.lookAt(0,0,0); scene.add(g);
     }
-    const chairRadius = 10;
-    for(let i=0;i<6;i++){
-      const a = (i/6)*Math.PI*2;
-      const x = Math.cos(a)*chairRadius, z = Math.sin(a)*chairRadius;
-      makeChair(x,z,a + Math.PI); // orientation towards center
-    }
+    for(let i=0;i<6;i++){ const a=(i/6)*Math.PI*2; makeChair(Math.cos(a)*10, Math.sin(a)*10); }
 
-    // ---------- TRAGAPERRAS clásica (3D) ----------
-    const slot = new THREE.Group();
-    slot.position.set(14,0,-6);
-    // body
-    const body = new THREE.Mesh(new THREE.BoxGeometry(5.2,8.4,3.2), new THREE.MeshStandardMaterial({color:0x8b0b00,metalness:0.15,roughness:0.35}));
-    body.position.y = 4.2; slot.add(body);
-    // coin tray
-    const tray = new THREE.Mesh(new THREE.BoxGeometry(2.8,0.25,1.6), new THREE.MeshStandardMaterial({color:0x222}));
-    tray.position.set(14,1.0,-6); scene.add(tray);
-    // front recessed panel for reels
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(4.4,3.2,0.4), new THREE.MeshStandardMaterial({color:0x071016}));
+    // ---------- TRAGAPERRAS (MÁQUINA CON PANTALLA) ----------
+    const slotGroup = new THREE.Group();
+    slotGroup.position.set(14,0,-6);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(5.2,8.4,3.2), new THREE.MeshStandardMaterial({color:0x8a0f05,metalness:0.12,roughness:0.36}));
+    body.position.y=4.2; slotGroup.add(body);
+    // recessed screen panel
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(4.4,3.2,0.4), new THREE.MeshStandardMaterial({color:0x050506}));
     panel.position.set(14,5.2,-4.9); scene.add(panel);
-    // reels as canvas textures inside panel
-    const reelCanvases = [];
-    const reelPlanes = [];
+    // reels: three canvas textures mapped to planes in front of panel
+    const reelCanvases = []; const reelTexes = []; const reelPlanes = [];
     const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
     for(let i=0;i<3;i++){
-      const c = document.createElement('canvas'); c.width=128; c.height=192;
-      const ctx = c.getContext('2d'); ctx.fillStyle='#0b0b0b'; ctx.fillRect(0,0,c.width,c.height); ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      const c=document.createElement('canvas'); c.width=128; c.height=192;
+      const ctx=c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,c.width,c.height); ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)], c.width/2, c.height/2);
       reelCanvases.push(c);
-      const tex = new THREE.CanvasTexture(c);
-      const plane = new THREE.Mesh(new THREE.PlaneGeometry(1.0,1.5), new THREE.MeshBasicMaterial({map:tex}));
-      plane.position.set(14 + (i-1)*1.1, 5.2, -4.7);
-      scene.add(plane);
-      reelPlanes.push({plane,tex});
+      const t=new THREE.CanvasTexture(c); reelTexes.push(t);
+      const p=new THREE.Mesh(new THREE.PlaneGeometry(1.0,1.5), new THREE.MeshBasicMaterial({map:t}));
+      p.position.set(14 + (i-1)*1.1, 5.2, -4.7);
+      scene.add(p); reelPlanes.push(p);
     }
     // lever
     const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,2.6,8), new THREE.MeshStandardMaterial({color:0x8b5a2b}));
-    lever.position.set(16.6,5,-6); lever.rotation.z = Math.PI/8; scene.add(lever);
+    lever.position.set(16.6,5,-6); lever.rotation.z=Math.PI/8; scene.add(lever);
+    scene.add(slotGroup);
 
-    scene.add(slot);
-
-    // ---------- colliders (simple boxes) ----------
+    // colliders
     const colliders = [];
-    const tableCollider = new THREE.Mesh(new THREE.BoxGeometry(16,2,16), new THREE.MeshStandardMaterial({visible:false}));
-    tableCollider.position.set(0,1.0,0); scene.add(tableCollider); colliders.push(tableCollider);
-    const slotCollider = new THREE.Mesh(new THREE.BoxGeometry(6,10,5), new THREE.MeshStandardMaterial({visible:false}));
-    slotCollider.position.set(14,5,-6); scene.add(slotCollider); colliders.push(slotCollider);
+    const tableColl = new THREE.Mesh(new THREE.BoxGeometry(16,2,16), new THREE.MeshStandardMaterial({visible:false}));
+    tableColl.position.set(0,1,0); scene.add(tableColl); colliders.push(tableColl);
+    const slotColl = new THREE.Mesh(new THREE.BoxGeometry(6,10,5), new THREE.MeshStandardMaterial({visible:false}));
+    slotColl.position.set(14,5,-6); scene.add(slotColl); colliders.push(slotColl);
 
-    // ---------- interaction zones ----------
+    // interaction zones
     const ruletaZone = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(0,1,0), new THREE.Vector3(12,3,12));
     const slotZone = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(14,3.5,-6), new THREE.Vector3(6,6,6));
 
-    // ---------- movement & camera control ----------
+    // ---------- Movement & Camera control (WASD correct) ----------
     const keys = {w:false,a:false,s:false,d:false,ArrowLeft:false,ArrowRight:false,ArrowUp:false,ArrowDown:false};
     const speed = 5.6;
     window.addEventListener('keydown', (e)=>{ const k=e.key; if(k in keys) keys[k]=true; if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(k)) e.preventDefault(); });
     window.addEventListener('keyup', (e)=>{ const k=e.key; if(k in keys) keys[k]=false; });
 
-    // movement helpers
+    // compute movement using camera orientation (forward = camera -Z)
     function computeDelta(dt){
+      // build camera quaternion from yaw/pitch
+      const e = new THREE.Euler(pitch, yaw, 0, 'YXZ'); // pitch around X, yaw around Y
+      const q = new THREE.Quaternion().setFromEuler(e);
+      // forward = (0,0,-1) in camera local -> world
+      const forward = new THREE.Vector3(0,0,-1).applyQuaternion(q);
+      forward.y = 0; forward.normalize();
+      const right = new THREE.Vector3(1,0,0).applyQuaternion(q); right.y = 0; right.normalize();
       let mf=0, mr=0;
       if(keys.w) mf += 1;
       if(keys.s) mf -= 1;
@@ -228,9 +197,6 @@
       if(keys.d) mr += 1;
       const len = Math.hypot(mf,mr);
       if(len>0){ mf/=len; mr/=len; }
-      // yaw forward vector: forward = (sin(yaw), 0, -cos(yaw))
-      const forward = new THREE.Vector3(Math.sin(yaw),0,-Math.cos(yaw));
-      const right = new THREE.Vector3(Math.cos(yaw),0,Math.sin(yaw));
       const delta = new THREE.Vector3();
       delta.addScaledVector(forward, mf * speed * dt);
       delta.addScaledVector(right, mr * speed * dt);
@@ -238,211 +204,172 @@
     }
 
     function checkCollision(pos){
-      const r = 0.4;
+      const r=0.45;
       for(const c of colliders){
         const box = new THREE.Box3().setFromObject(c);
         if(box.expandByScalar(r).containsPoint(pos)) return true;
       }
-      if(Math.abs(pos.x) > 28 || Math.abs(pos.z) > 28) return true;
+      if(Math.abs(pos.x)>28||Math.abs(pos.z)>28) return true;
       return false;
     }
 
-    // ---------- HUD, logging & state ----------
-    const balanceEl = document.getElementById('balance'), betEl = document.getElementById('bet'), logEl = document.getElementById('log');
-    let balance = 1000, currentBet = 0;
-    function updateHUD(){ balanceEl.textContent = balance.toFixed(0); betEl.textContent = currentBet.toFixed(0); }
-    function appendLog(t){ const d=new Date(); const el=document.createElement('div'); el.textContent=`[${d.toLocaleTimeString()}] ${t}`; logEl.prepend(el); }
+    // HUD + logging
+    const balanceEl=document.getElementById('balance'), betEl=document.getElementById('bet'), logEl=document.getElementById('log');
+    let balance=1000, currentBet=0;
+    function updateHUD(){ balanceEl.textContent=balance.toFixed(0); betEl.textContent=currentBet.toFixed(0); }
+    function appendLog(t){ const d=new Date(); const e=document.createElement('div'); e.textContent=`[${d.toLocaleTimeString()}] ${t}`; logEl.prepend(e); }
 
-    // detect zones and prompt
-    const prompt = document.getElementById('prompt');
-    let nearZone = null;
+    // detect zones & prompt
+    const prompt = document.getElementById('prompt'); let nearZone = null;
     function detectZones(){
       const eye = playerPos.clone(); eye.y = 1.4;
       if(ruletaZone.containsPoint(eye)){ nearZone='ruleta'; prompt.style.display='block'; prompt.textContent='[E] Interactuar: Ruleta'; return; }
       if(slotZone.containsPoint(eye)){ nearZone='slot'; prompt.style.display='block'; prompt.textContent='[E] Interactuar: Tragaperras'; return; }
-      nearZone = null; prompt.style.display='none';
+      nearZone=null; prompt.style.display='none';
     }
 
-    // overlay UI
-    const overlay = document.getElementById('overlay'), uiBox = document.getElementById('ui-box');
-    let activeUI = null;
-    const ruletaState = {bets:[], spinning:false, wheelVel:0, ballVel:0, ballAngle:0};
-    const slotState = {credits:0};
+    // UI overlay
+    const overlay=document.getElementById('overlay'), uiBox=document.getElementById('ui-box'); let activeUI=null;
+    const ruletaState={bets:[],spinning:false,wheelVel:0,ballVel:0,ballAngle:0};
+    const slotState={credits:0};
 
     function openRuletaUI(){
       activeUI='ruleta'; overlay.style.display='flex';
-      uiBox.innerHTML = `
-        <h3 style="margin:0 0 8px 0;color:#fff">Ruleta</h3>
+      uiBox.innerHTML = `<h3 style="margin:0 0 8px 0;color:#fff">Ruleta</h3>
         <div style="margin-bottom:8px;color:#ddd">Saldo: <strong id="ui-balance">${balance}</strong></div>
-        <div style="margin-bottom:8px;color:#ddd">Apuesta índice (0-17): <input id="ui-num" type="number" min="0" max="17" value="0" style="width:80px"/> Monto: <input id="ui-amt" type="number" min="1" value="5" style="width:100px"/></div>
-        <div style="text-align:right"><button class="btn" id="ui-place">Colocar</button> <button class="btn" id="ui-spin">Girar</button> <button class="btn" id="ui-close">Cerrar</button></div>
-      `;
-      document.getElementById('ui-place').addEventListener('click', ()=> {
-        const idx = parseInt(document.getElementById('ui-num').value||0);
-        const amt = parseInt(document.getElementById('ui-amt').value||1);
-        if(isNaN(idx)||idx<0||idx>17) return alert('Número inválido');
-        if(amt<=0||amt>balance) return alert('Monto inválido o saldo insuficiente');
-        balance -= amt; currentBet += amt; ruletaState.bets.push({idx,amt}); updateHUD(); appendLog(`Apuesta ${amt} al índice ${idx} (ruleta)`); document.getElementById('ui-balance').textContent = balance;
+        <div style="margin-bottom:8px;color:#ddd">Índice (0-17): <input id="ui-num" type="number" min="0" max="17" value="0" style="width:80px"/> Monto: <input id="ui-amt" type="number" min="1" value="5" style="width:100px"/></div>
+        <div style="text-align:right"><button class="btn" id="ui-place">Colocar</button> <button class="btn" id="ui-spin">Girar</button> <button class="btn" id="ui-close">Cerrar</button></div>`;
+      document.getElementById('ui-place').addEventListener('click', ()=>{
+        const idx=parseInt(document.getElementById('ui-num').value||0);
+        const amt=parseInt(document.getElementById('ui-amt').value||1);
+        if(isNaN(idx)||idx<0||idx>17) return alert('Índice inválido');
+        if(amt<=0||amt>balance) return alert('Saldo insuficiente');
+        balance-=amt; currentBet+=amt; ruletaState.bets.push({idx,amt}); updateHUD(); appendLog(`Apuesta ${amt} índice ${idx} (ruleta)`); document.getElementById('ui-balance').textContent=balance;
       });
-      document.getElementById('ui-spin').addEventListener('click', ()=> {
-        if(ruletaState.spinning) return alert('Ya girando');
-        if(ruletaState.bets.length===0) return alert('Sin apuestas');
-        startRuletaSpin(); closeUI();
-      });
-      document.getElementById('ui-close').addEventListener('click', ()=> closeUI());
+      document.getElementById('ui-spin').addEventListener('click', ()=>{ if(ruletaState.spinning) return alert('Ya girando'); if(ruletaState.bets.length===0) return alert('Sin apuestas'); startRuletaSpin(); closeUI(); });
+      document.getElementById('ui-close').addEventListener('click', closeUI);
     }
 
     function openSlotUI(){
       activeUI='slot'; overlay.style.display='flex';
-      uiBox.innerHTML = `
-        <h3 style="margin:0 0 8px 0;color:#fff">Tragaperras</h3>
+      uiBox.innerHTML = `<h3 style="margin:0 0 8px 0;color:#fff">Tragaperras</h3>
         <div style="margin-bottom:8px;color:#ddd">Saldo: <strong id="ui-balance2">${balance}</strong></div>
         <div style="margin-bottom:8px;color:#ddd">Créditos: <strong id="ui-credits">${slotState.credits}</strong></div>
-        <div style="text-align:right"><button class="btn" id="ui-insert">Insertar (1)</button> <button class="btn" id="ui-play">Jugar</button> <button class="btn" id="ui-close2">Cerrar</button></div>
-      `;
-      document.getElementById('ui-insert').addEventListener('click', ()=> {
-        if(balance<1) return alert('Saldo insuficiente');
-        balance -= 1; slotState.credits += 1; updateHUD(); appendLog('Ficha insertada (tragaperras)'); document.getElementById('ui-balance2').textContent = balance; document.getElementById('ui-credits').textContent = slotState.credits;
-      });
-      document.getElementById('ui-play').addEventListener('click', ()=> {
-        if(slotState.credits<=0) return alert('Inserta fichas');
-        spinSlot(); closeUI();
-      });
-      document.getElementById('ui-close2').addEventListener('click', ()=> closeUI());
+        <div style="text-align:right"><button class="btn" id="ui-insert">Insertar (1)</button> <button class="btn" id="ui-play">Jugar</button> <button class="btn" id="ui-close2">Cerrar</button></div>`;
+      document.getElementById('ui-insert').addEventListener('click', ()=>{ if(balance<1) return alert('Saldo insuficiente'); balance-=1; slotState.credits+=1; updateHUD(); appendLog('Ficha insertada (slot)'); document.getElementById('ui-balance2').textContent=balance; document.getElementById('ui-credits').textContent=slotState.credits; });
+      document.getElementById('ui-play').addEventListener('click', ()=>{ if(slotState.credits<=0) return alert('Inserta fichas'); spinSlot(); closeUI(); });
+      document.getElementById('ui-close2').addEventListener('click', closeUI);
     }
 
-    function closeUI(){ overlay.style.display='none'; uiBox.innerHTML=''; activeUI=null; }
+    function closeUI(){ activeUI=null; overlay.style.display='none'; uiBox.innerHTML=''; }
+    window.addEventListener('keydown', (e)=>{ if((e.key==='e'||e.key==='E') && !activeUI){ if(nearZone==='ruleta') openRuletaUI(); else if(nearZone==='slot') openSlotUI(); } if(e.key==='Escape' && activeUI) closeUI(); });
 
-    window.addEventListener('keydown', (e)=> {
-      if((e.key==='e' || e.key==='E') && !activeUI){
-        if(nearZone==='ruleta') openRuletaUI();
-        else if(nearZone==='slot') openSlotUI();
-      }
-      if(e.key === 'Escape' && activeUI) closeUI();
-    });
-
-    // ---------- Ruleta spin logic ----------
+    // ---------- Ruleta physics (spin around Y) ----------
     function startRuletaSpin(){
-      ruletaState.spinning = true;
-      ruletaState.wheelVel = 6 + Math.random()*5;
-      ruletaState.ballVel = 14 + Math.random()*6;
-      ruletaState.ballAngle = Math.random()*Math.PI*2;
+      ruletaState.spinning=true; ruletaState.wheelVel = 4 + Math.random()*5; ruletaState.ballVel = 12 + Math.random()*8; ruletaState.ballAngle = Math.random()*Math.PI*2;
       appendLog('Ruleta: girando...');
     }
-
     function finalizeRuleta(){
-      const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23];
-      const count = pockets.length;
-      const totalRot = wheelMesh.rotation.z;
+      const pockets=[0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23];
+      const count=pockets.length;
+      // note: wheelMesh.rotation.y is spin
+      const totalRot = wheelMesh.rotation.y;
       const localAngle = (ruletaState.ballAngle - totalRot) % (Math.PI*2);
-      let norm = localAngle + Math.PI/2; while(norm<0) norm += Math.PI*2; while(norm>=Math.PI*2) norm -= Math.PI*2;
+      let norm = localAngle + Math.PI/2; while(norm<0) norm+=Math.PI*2; while(norm>=Math.PI*2) norm-=Math.PI*2;
       const idx = Math.floor(norm / (Math.PI*2/count));
-      const resultNumber = pockets[idx];
-      appendLog(`Ruleta resultado: ${resultNumber}`);
+      const result = pockets[idx];
+      appendLog(`Ruleta resultado: ${result}`);
       let payout = 0;
-      ruletaState.bets.forEach(b => { if(b.idx === idx) payout += b.amt * 36; });
-      if(payout>0){ balance += payout; appendLog(`Has ganado ${payout} en la ruleta!`); } else appendLog('Sin premio en la ruleta.');
-      ruletaState.bets = []; currentBet = 0; updateHUD(); ruletaState.spinning = false;
+      ruletaState.bets.forEach(b=>{ if(b.idx===idx) payout += b.amt * 36; });
+      if(payout>0){ balance += payout; appendLog(`Has ganado ${payout} en la ruleta`); } else appendLog('Sin premio ruleta');
+      ruletaState.bets = []; currentBet = 0; updateHUD(); ruletaState.spinning=false;
     }
 
-    // ---------- Tragaperras logic ----------
+    // ---------- Slot logic ----------
     function randSym(){ return symbols[Math.floor(Math.random()*symbols.length)]; }
     function spinSlot(){
       slotState.credits -= 1;
-      // lever animation (tilt)
-      const start = lever.rotation.z; lever.rotation.z = start + 0.5;
-      setTimeout(()=> lever.rotation.z = start, 250);
-      // generate results
+      const start = lever.rotation.z; lever.rotation.z = start + 0.6;
+      setTimeout(()=> lever.rotation.z = start, 280);
       const res = [randSym(), randSym(), randSym()];
       appendLog(`Tragaperras: ${res.join(' | ')}`);
-      // update reels
       for(let i=0;i<3;i++){
-        const c = reelCanvases[i]; const ctx = c.getContext('2d');
-        ctx.fillStyle = '#0b0b0b'; ctx.fillRect(0,0,c.width,c.height);
-        ctx.fillStyle = '#fff'; ctx.font = '64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-        ctx.fillText(res[i], c.width/2, c.height/2);
-        reelPlanes[i].tex.needsUpdate = true;
+        const c=reelCanvases[i]; const ctx=c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,c.width,c.height); ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(res[i], c.width/2, c.height/2);
+        reelTexes[i].needsUpdate = true;
       }
-      // payout
-      let payout = 0;
-      if(res[0]===res[1] && res[1]===res[2]) payout = 50;
-      else if(res[0]===res[1] || res[1]===res[2] || res[0]===res[2]) payout = 5;
+      let payout=0;
+      if(res[0]===res[1] && res[1]===res[2]) payout=50;
+      else if(res[0]===res[1] || res[1]===res[2] || res[0]===res[2]) payout=5;
       if(payout>0){ balance += payout; appendLog(`Tragaperras: ganas ${payout}`); updateHUD(); } else appendLog('Tragaperras: sin premio');
     }
 
     // ---------- Minimap ----------
     const minimap = document.getElementById('minimap');
-    const mmCanvas = document.createElement('canvas'); mmCanvas.width = mmCanvas.height = 120; minimap.appendChild(mmCanvas);
-    const mmCtx = mmCanvas.getContext('2d');
-    function drawMinimap(){
-      mmCtx.fillStyle='#041018'; mmCtx.fillRect(0,0,120,120);
-      const scale = 2; // world->map
-      const px = 60 + playerPos.x/scale, pz = 60 + playerPos.z/scale;
-      mmCtx.fillStyle = '#1d7cf0'; mmCtx.beginPath(); mmCtx.arc(px,pz,4,0,Math.PI*2); mmCtx.fill();
-      mmCtx.fillStyle = '#a2d9c8'; mmCtx.fillRect(60-6,60-6,12,12); // ruleta
-      const sx = 60 + 14/scale, sz = 60 + (-6)/scale;
-      mmCtx.fillStyle = '#f0c050'; mmCtx.fillRect(sx-4,sz-6,8,12); // slot
-    }
+    const mmC=document.createElement('canvas'); mmC.width=mmC.height=120; minimap.appendChild(mmC);
+    const mm=mmC.getContext('2d');
+    function drawMinimap(){ mm.fillStyle='#041018'; mm.fillRect(0,0,120,120); const scale=2; const px=60 + playerPos.x/scale, pz=60 + playerPos.z/scale; mm.fillStyle='#1d7cf0'; mm.beginPath(); mm.arc(px,pz,4,0,Math.PI*2); mm.fill(); mm.fillStyle='#a2d9c8'; mm.fillRect(60-6,60-6,12,12); mm.fillStyle='#f0c050'; mm.fillRect(60 + 14/scale -4, 60 + (-6)/scale -6,8,12); }
 
-    // ---------- Main loop ----------
+    // ---------- Animation loop ----------
     const clock = new THREE.Clock();
     (function animate(){
       requestAnimationFrame(animate);
       const dt = clock.getDelta();
 
-      // arrow keys control yaw/pitch
+      // camera rotation with arrows
       if(keys.ArrowLeft) yaw += 1.8 * dt;
       if(keys.ArrowRight) yaw -= 1.8 * dt;
       if(keys.ArrowUp) pitch = Math.max(-Math.PI/6, pitch + 1.2 * dt);
       if(keys.ArrowDown) pitch = Math.min(Math.PI/6, pitch - 1.2 * dt);
 
-      // movement (W forward, S back)
+      // movement (W forward, S back) computed from camera quaternion
       const delta = computeDelta(dt);
       const newPos = playerPos.clone().add(delta);
       if(!checkCollision(newPos)) playerPos.copy(newPos);
 
-      // update camera matrix from playerPos + yaw/pitch
+      // update camera pose
       camera.position.set(playerPos.x, playerPos.y + 1.7, playerPos.z);
-      // compute camera direction from yaw/pitch
       const euler = new THREE.Euler(pitch, yaw, 0, 'YXZ');
       camera.quaternion.setFromEuler(euler);
 
       // detect zones
       detectZones();
 
-      // ruleta animation
+      // RUETA: spin around Y axis (horizontal wheel)
       if(ruletaState.spinning){
-        wheelMesh.rotation.z += ruletaState.wheelVel * dt * 0.6;
-        ruletaState.wheelVel *= Math.max(0.995, 1 - 0.5*dt);
-        ruletaState.ballAngle += ruletaState.ballVel * dt * 0.8;
-        ruletaState.ballVel *= Math.max(0.99, 1 - 0.7*dt);
-        const r = wheelRadius - 0.8;
+        wheelMesh.rotation.y += ruletaState.wheelVel * dt;
+        ruletaState.wheelVel *= Math.max(0.995, 1 - 0.4*dt);
+        ruletaState.ballAngle += ruletaState.ballVel * dt * 0.85;
+        ruletaState.ballVel *= Math.max(0.99, 1 - 0.6*dt);
+        // ball orbit in XZ around center
+        const r = wheelRadius - 0.75;
         const bx = Math.cos(ruletaState.ballAngle) * r, bz = Math.sin(ruletaState.ballAngle) * r;
         ball.position.set(bx, 1.02, bz);
         if(Math.abs(ruletaState.wheelVel) < 0.02 && Math.abs(ruletaState.ballVel) < 0.06){
           setTimeout(finalizeRuleta, 700);
         }
       } else {
-        wheelMesh.rotation.z += Math.sin(clock.elapsedTime*0.5)*0.0004;
+        wheelMesh.rotation.y += Math.sin(clock.elapsedTime*0.5)*0.0004;
       }
 
-      // update minimap & render
+      // render
       drawMinimap();
       renderer.render(scene, camera);
     })();
 
-    // resize handling
+    // ---------- Resize ----------
     window.addEventListener('resize', ()=>{ renderer.setSize(wrap.clientWidth, wrap.clientHeight); camera.aspect = wrap.clientWidth / wrap.clientHeight; camera.updateProjectionMatrix(); });
 
-    // basic bindings & helpers
-    updateHUD(); appendLog('Listo: W adelante, S atrás · Flechas giran cámara · E interactúa. Pulsa R para reposicionar si te quedas atascado.');
+    // ---------- HUD init ----------
+    updateHUD(); appendLog('Fix aplicado: W adelante · S atrás · Ruleta horizontal · Tragaperras con pantalla. Pulsa E cerca de un objeto.');
 
-    // debug reposition
-    window.addEventListener('keydown', (e)=> { if(e.key==='r' || e.key==='R'){ playerPos.set(0,0,12); updateHUD(); appendLog('Player reposicionado'); } });
+    // Open UI on E
+    window.addEventListener('keydown', (e)=>{ if(e.key==='r' || e.key==='R'){ playerPos.set(0,0,12); updateHUD(); appendLog('Player reposicionado'); } });
 
-    // simple expose to console for debugging
-    window.__casino = { playerPos, scene, camera };
+    // Expose for debug
+    window.__casino = { playerPos, camera, scene };
 
+    // make reel texture arrays accessible inside closures
+    // (they already are in this closure)
   })();
   </script>
 </body>
