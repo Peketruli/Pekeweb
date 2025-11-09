@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Casino 3D — Fix (WASD correcto, ruleta horizontal, tragaperras funcional)</title>
+<title>Casino 3D — Ruleta corregida (WASD, FPS)</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
   html,body{height:100%;margin:0;background:#030612;color:#fff;font-family:Inter,Arial,Helvetica}
@@ -25,7 +25,7 @@
 
     <div class="hud">
       <div class="panel">
-        <h3>Casino — Fix</h3>
+        <h3>Casino — Ruleta corregida</h3>
         <div class="info-row"><span>Saldo</span><strong id="balance">1000</strong></div>
         <div class="info-row"><span>Apuesta</span><strong id="bet">0</strong></div>
         <div style="font-size:13px;margin-top:6px">
@@ -45,10 +45,10 @@
     <div id="prompt">[E] Interactuar</div>
     <div id="overlay"><div class="ui" id="ui-box"></div></div>
 
-    <footer>Primera persona · Ruleta horizontal · Tragaperras con pantalla</footer>
+    <footer>Primera persona · Ruleta europea (0–36) · Tragaperras</footer>
   </div>
 
-  <!-- Three.js UMD -->
+  <!-- Three.js -->
   <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 
   <script>
@@ -57,78 +57,91 @@
     const wrap = document.getElementById('wrap');
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x041018);
-
     const renderer = new THREE.WebGLRenderer({antialias:true});
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(wrap.clientWidth, wrap.clientHeight);
     wrap.appendChild(renderer.domElement);
 
-    // Camera IS the player (first-person)
+    // Camera = player (FPS)
     const camera = new THREE.PerspectiveCamera(72, wrap.clientWidth / wrap.clientHeight, 0.1, 1000);
     camera.position.set(0, 1.7, 12);
-
-    // Player position vector
-    const playerPos = new THREE.Vector3(0, 0, 12);
+    const playerPos = new THREE.Vector3(0,0,12);
     let yaw = 0, pitch = 0;
 
     // Lights
-    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.9); dir.position.set(8,20,10); scene.add(dir);
+    scene.add(new THREE.AmbientLight(0xffffff,0.35));
+    const dir = new THREE.DirectionalLight(0xffffff,0.9); dir.position.set(8,20,10); scene.add(dir);
     const bulb = new THREE.PointLight(0xfff3d6,0.9,200); bulb.position.set(0,20,0); scene.add(bulb);
 
-    // Floor and room
+    // Floor & room
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(90,90), new THREE.MeshStandardMaterial({color:0x091217,roughness:0.95}));
     floor.rotation.x = -Math.PI/2; floor.position.y = 0; scene.add(floor);
-    function wall(w,h,d,x,y,z,rotY){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color:0x071018})); m.position.set(x,y,z); if(rotY) m.rotation.y=rotY; scene.add(m); return m;}
+    function wall(w,h,d,x,y,z,rotY){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color:0x071018})); m.position.set(x,y,z); if(rotY) m.rotation.y = rotY; scene.add(m); return m; }
     wall(50,10,2,0,5,-40); wall(2,10,50,-24,5,0); wall(2,10,50,24,5,0); wall(50,10,2,0,5,40);
-
-    // Rug
     const rug = new THREE.Mesh(new THREE.CircleGeometry(14,32), new THREE.MeshStandardMaterial({color:0x183430}));
     rug.rotation.x = -Math.PI/2; rug.position.y = 0.01; scene.add(rug);
 
-       // ---------- TABLE + RUETA (HORIZONTAL CORRECTA) ----------
+    // ---------- TABLE + RUETA ----------
     const table = new THREE.Group();
     table.position.set(0,0,0);
-    const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(8.5,8.5,0.9,36), new THREE.MeshStandardMaterial({color:0x214f3d}));
-    tableTop.position.y = 0; table.add(tableTop);
-    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,1.2,12), new THREE.MeshStandardMaterial({color:0x163826}));
-    pedestal.position.y = 0; table.add(pedestal);
 
-    // wheel: cylinder aligned with Y axis (no rotation) -> top face horizontal
+    // table top slightly lower so the wheel is visible above it
+    const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(8.5,8.5,0.9,36), new THREE.MeshStandardMaterial({color:0x214f3d}));
+    tableTop.position.y = 0.12; table.add(tableTop);
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,1.2,12), new THREE.MeshStandardMaterial({color:0x163826}));
+    pedestal.position.y = 0.0; table.add(pedestal);
+
+    // wheel geometry and texture (top face horizontal)
     const wheelRadius = 6;
-    function wheelCanvas(size=1024){
-      const c=document.createElement('canvas'); c.width=c.height=size; const ctx=c.getContext('2d');
-      ctx.fillStyle='#052b23'; ctx.fillRect(0,0,size,size);
-      const pockets=[0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23];
-      const count=pockets.length; const cx=size/2,cy=size/2,r=size*0.45;
-      for(let i=0;i<count;i++){
-        const a0=(i/count)*Math.PI*2 - Math.PI/2, a1 = ((i+1)/count)*Math.PI*2 - Math.PI/2;
+    // FULL EUROPEAN ORDER (37 pockets)
+    const pockets = [
+      0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,
+      10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26
+    ];
+    const pocketCount = pockets.length; // 37
+    const anglePerPocket = (Math.PI*2) / pocketCount;
+
+    function createWheelCanvas(size=2048){
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#072b22'; ctx.fillRect(0,0,size,size);
+      const cx = size/2, cy = size/2, r = size*0.45;
+      for(let i=0;i<pocketCount;i++){
+        const a0 = i * (Math.PI*2/pocketCount) - Math.PI/2;
+        const a1 = (i+1) * (Math.PI*2/pocketCount) - Math.PI/2;
         ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a0,a1); ctx.closePath();
-        ctx.fillStyle=(i%2===0)?'#b71c1c':'#000'; ctx.fill();
-        const mid=a0+(a1-a0)/2; ctx.save(); ctx.translate(cx + Math.cos(mid)*(r*0.66), cy + Math.sin(mid)*(r*0.66));
-        ctx.rotate(mid + Math.PI/2); ctx.fillStyle='#fff'; ctx.font=`${Math.floor(size*0.05)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
-        ctx.fillText(pockets[i],0,0); ctx.restore();
+        ctx.fillStyle = (pockets[i]===0) ? '#1b8b41' : ((i % 2 === 0) ? '#b71c1c' : '#000');
+        ctx.fill();
+        // number
+        const mid = a0 + (a1-a0)/2;
+        ctx.save(); ctx.translate(cx + Math.cos(mid)*(r*0.66), cy + Math.sin(mid)*(r*0.66));
+        ctx.rotate(mid + Math.PI/2); ctx.fillStyle = '#fff'; ctx.font = `${Math.floor(size*0.04)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(pockets[i], 0, 0); ctx.restore();
       }
-      ctx.beginPath(); ctx.fillStyle='#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.fillStyle = '#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
       return c;
     }
-    const wheelTex = new THREE.CanvasTexture(wheelCanvas(2048));
+
+    const wheelTex = new THREE.CanvasTexture(createWheelCanvas(2048));
     wheelTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    const wheelMesh = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius, wheelRadius, 1.4, 64), new THREE.MeshStandardMaterial({map:wheelTex}));
-    // IMPORTANT: NO rotation.x here (cylinder axis is Y, faces up) -> top is horizontal
-    wheelMesh.position.y = 0.15; table.add(wheelMesh);
+    const wheelMesh = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius, wheelRadius, 1.4, 128), new THREE.MeshStandardMaterial({map:wheelTex}));
+    // cylinder axis Y -> top face horizontal
+    // place the wheel so it sits slightly above the table top
+    wheelMesh.position.y = 0.28; table.add(wheelMesh);
 
-    // rim visual
-    const rim = new THREE.Mesh(new THREE.TorusGeometry(wheelRadius+0.6,0.45,8,64), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
-    rim.rotation.x = Math.PI/2; rim.position.y = 0.35; table.add(rim);
+    // rim
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(wheelRadius+0.6,0.45,12,128), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
+    rim.rotation.x = Math.PI/2; rim.position.y = 0.30; table.add(rim);
 
-    // ball: orbit around wheel center (xz plane)
+    // ball: start at some angle (world space); we compute collision based on ballAngle - wheelRotation
     const ball = new THREE.Mesh(new THREE.SphereGeometry(0.14,12,10), new THREE.MeshStandardMaterial({metalness:0.9,roughness:0.2}));
-    ball.position.set(wheelRadius-0.8, 1.02, 0); table.add(ball);
+    // ball initial position in wheel coordinates (r - small)
+    ball.position.set(wheelRadius-0.8, 0.45, 0);
+    table.add(ball);
 
     scene.add(table);
 
-    // ---------- Sillas colocadas correctamente ----------
+    // ---------- Chairs ----------
     function makeChair(x,z){
       const g=new THREE.Group();
       const seat=new THREE.Mesh(new THREE.BoxGeometry(1.1,0.35,1.1), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
@@ -138,72 +151,56 @@
     }
     for(let i=0;i<6;i++){ const a=(i/6)*Math.PI*2; makeChair(Math.cos(a)*10, Math.sin(a)*10); }
 
-    // ---------- TRAGAPERRAS (MÁQUINA CON PANTALLA) ----------
-    const slotGroup = new THREE.Group();
-    slotGroup.position.set(14,0,-6);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(5.2,8.4,3.2), new THREE.MeshStandardMaterial({color:0x8a0f05,metalness:0.12,roughness:0.36}));
-    body.position.y=4.2; slotGroup.add(body);
-    // recessed screen panel
+    // ---------- Slot machine (kept simple) ----------
+    const slotGroup = new THREE.Group(); slotGroup.position.set(14,0,-6);
+    const slotBody = new THREE.Mesh(new THREE.BoxGeometry(5.2,8.4,3.2), new THREE.MeshStandardMaterial({color:0x8a0f05,metalness:0.12,roughness:0.36}));
+    slotBody.position.y=4.2; slotGroup.add(slotBody);
     const panel = new THREE.Mesh(new THREE.BoxGeometry(4.4,3.2,0.4), new THREE.MeshStandardMaterial({color:0x050506}));
     panel.position.set(14,5.2,-4.9); scene.add(panel);
-    // reels: three canvas textures mapped to planes in front of panel
+    // reels (canvas textures)
     const reelCanvases = []; const reelTexes = []; const reelPlanes = [];
     const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
     for(let i=0;i<3;i++){
       const c=document.createElement('canvas'); c.width=128; c.height=192;
-      const ctx=c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,c.width,c.height); ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      const ctx=c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,c.width,c.height);
+      ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)], c.width/2, c.height/2);
       reelCanvases.push(c);
       const t=new THREE.CanvasTexture(c); reelTexes.push(t);
       const p=new THREE.Mesh(new THREE.PlaneGeometry(1.0,1.5), new THREE.MeshBasicMaterial({map:t}));
-      p.position.set(14 + (i-1)*1.1, 5.2, -4.7);
-      scene.add(p); reelPlanes.push(p);
+      p.position.set(14 + (i-1)*1.1, 5.2, -4.7); scene.add(p); reelPlanes.push(p);
     }
-    // lever
     const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,2.6,8), new THREE.MeshStandardMaterial({color:0x8b5a2b}));
     lever.position.set(16.6,5,-6); lever.rotation.z=Math.PI/8; scene.add(lever);
     scene.add(slotGroup);
-    
-   // colliders (invisibles)
-const colliders = [];
 
-// Table collider
-const tableColl = new THREE.Mesh(new THREE.BoxGeometry(10,5,0));
-tableColl.visible = false; // no se renderiza
-colliders.push(tableColl);
+    // ---------- Colliders (NO MESH, Box3-only) ----------
+    // Use Box3 instances for collisions, don't add any visible mesh to scene
+    const colliders = [];
+    // table collider - positioned slightly under table top, low height so it doesn't block view
+    const tableColliderBox = new THREE.Box3(new THREE.Vector3(-8, 0.0, -8), new THREE.Vector3(8, 0.75, 8));
+    colliders.push(tableColliderBox);
+    // slot collider
+    const slotColliderBox = new THREE.Box3(new THREE.Vector3(14-3, 0, -6-2.5), new THREE.Vector3(14+3, 8, -6+2.5));
+    colliders.push(slotColliderBox);
 
-// Slot machine collider
-const slotColl = new THREE.Mesh(new THREE.BoxGeometry(0,0,0));
-slotColl.visible = false; // no se renderiza
-colliders.push(slotColl);
-
-    
-    // interaction zones
+    // ---------- Interaction zones ----------
     const ruletaZone = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(0,1,0), new THREE.Vector3(12,3,12));
     const slotZone = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(14,3.5,-6), new THREE.Vector3(6,6,6));
 
-    // ---------- Movement & Camera control (WASD correct) ----------
+    // ---------- Movement & Camera control ----------
     const keys = {w:false,a:false,s:false,d:false,ArrowLeft:false,ArrowRight:false,ArrowUp:false,ArrowDown:false};
     const speed = 5.6;
     window.addEventListener('keydown', (e)=>{ const k=e.key; if(k in keys) keys[k]=true; if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(k)) e.preventDefault(); });
     window.addEventListener('keyup', (e)=>{ const k=e.key; if(k in keys) keys[k]=false; });
 
-    // compute movement using camera orientation (forward = camera -Z)
     function computeDelta(dt){
-      // build camera quaternion from yaw/pitch
-      const e = new THREE.Euler(pitch, yaw, 0, 'YXZ'); // pitch around X, yaw around Y
+      const e = new THREE.Euler(pitch, yaw, 0, 'YXZ');
       const q = new THREE.Quaternion().setFromEuler(e);
-      // forward = (0,0,-1) in camera local -> world
-      const forward = new THREE.Vector3(0,0,-1).applyQuaternion(q);
-      forward.y = 0; forward.normalize();
+      const forward = new THREE.Vector3(0,0,-1).applyQuaternion(q); forward.y = 0; forward.normalize();
       const right = new THREE.Vector3(1,0,0).applyQuaternion(q); right.y = 0; right.normalize();
-      let mf=0, mr=0;
-      if(keys.w) mf += 1;
-      if(keys.s) mf -= 1;
-      if(keys.a) mr -= 1;
-      if(keys.d) mr += 1;
-      const len = Math.hypot(mf,mr);
-      if(len>0){ mf/=len; mr/=len; }
+      let mf=0, mr=0; if(keys.w) mf += 1; if(keys.s) mf -= 1; if(keys.a) mr -= 1; if(keys.d) mr += 1;
+      const len = Math.hypot(mf,mr); if(len>0){ mf/=len; mr/=len; }
       const delta = new THREE.Vector3();
       delta.addScaledVector(forward, mf * speed * dt);
       delta.addScaledVector(right, mr * speed * dt);
@@ -211,22 +208,24 @@ colliders.push(slotColl);
     }
 
     function checkCollision(pos){
-      const r=0.45;
-      for(const c of colliders){
-        const box = new THREE.Box3().setFromObject(c);
-        if(box.expandByScalar(r).containsPoint(pos)) return true;
+      // pos is Vector3 (player feet). We'll check against Box3 colliders.
+      const r = 0.45;
+      for(const b of colliders){
+        // expand the box by r and test
+        const expanded = b.clone().expandByScalar(r);
+        if(expanded.containsPoint(pos)) return true;
       }
-      if(Math.abs(pos.x)>28||Math.abs(pos.z)>28) return true;
+      if(Math.abs(pos.x) > 28 || Math.abs(pos.z) > 28) return true;
       return false;
     }
 
-    // HUD + logging
-    const balanceEl=document.getElementById('balance'), betEl=document.getElementById('bet'), logEl=document.getElementById('log');
-    let balance=1000, currentBet=0;
-    function updateHUD(){ balanceEl.textContent=balance.toFixed(0); betEl.textContent=currentBet.toFixed(0); }
-    function appendLog(t){ const d=new Date(); const e=document.createElement('div'); e.textContent=`[${d.toLocaleTimeString()}] ${t}`; logEl.prepend(e); }
+    // ---------- HUD / state ----------
+    const balanceEl = document.getElementById('balance'), betEl = document.getElementById('bet'), logEl = document.getElementById('log');
+    let balance = 1000, currentBet = 0;
+    function updateHUD(){ balanceEl.textContent = balance.toFixed(0); betEl.textContent = currentBet.toFixed(0); }
+    function appendLog(t){ const d=new Date(); const el=document.createElement('div'); el.textContent = `[${d.toLocaleTimeString()}] ${t}`; logEl.prepend(el); }
 
-    // detect zones & prompt
+    // ---------- Zone detection & UI ----------
     const prompt = document.getElementById('prompt'); let nearZone = null;
     function detectZones(){
       const eye = playerPos.clone(); eye.y = 1.4;
@@ -235,23 +234,29 @@ colliders.push(slotColl);
       nearZone=null; prompt.style.display='none';
     }
 
-    // UI overlay
-    const overlay=document.getElementById('overlay'), uiBox=document.getElementById('ui-box'); let activeUI=null;
-    const ruletaState={bets:[],spinning:false,wheelVel:0,ballVel:0,ballAngle:0};
-    const slotState={credits:0};
+    const overlay = document.getElementById('overlay'), uiBox = document.getElementById('ui-box'); let activeUI=null;
+    const ruletaState = {
+      bets: [],
+      spinning: false,
+      wheelVel: 0,
+      ballVel: 0,
+      ballAngle: Math.random()*Math.PI*2,
+      // We'll compute winner at finalize phase based on current rotation & ballAngle
+    };
+    const slotState = {credits:0};
 
     function openRuletaUI(){
       activeUI='ruleta'; overlay.style.display='flex';
       uiBox.innerHTML = `<h3 style="margin:0 0 8px 0;color:#fff">Ruleta</h3>
         <div style="margin-bottom:8px;color:#ddd">Saldo: <strong id="ui-balance">${balance}</strong></div>
-        <div style="margin-bottom:8px;color:#ddd">Índice (0-17): <input id="ui-num" type="number" min="0" max="17" value="0" style="width:80px"/> Monto: <input id="ui-amt" type="number" min="1" value="5" style="width:100px"/></div>
+        <div style="margin-bottom:8px;color:#ddd">Índice (0-36): <input id="ui-num" type="number" min="0" max="36" value="0" style="width:80px"/> Monto: <input id="ui-amt" type="number" min="1" value="5" style="width:100px"/></div>
         <div style="text-align:right"><button class="btn" id="ui-place">Colocar</button> <button class="btn" id="ui-spin">Girar</button> <button class="btn" id="ui-close">Cerrar</button></div>`;
       document.getElementById('ui-place').addEventListener('click', ()=>{
-        const idx=parseInt(document.getElementById('ui-num').value||0);
-        const amt=parseInt(document.getElementById('ui-amt').value||1);
-        if(isNaN(idx)||idx<0||idx>17) return alert('Índice inválido');
-        if(amt<=0||amt>balance) return alert('Saldo insuficiente');
-        balance-=amt; currentBet+=amt; ruletaState.bets.push({idx,amt}); updateHUD(); appendLog(`Apuesta ${amt} índice ${idx} (ruleta)`); document.getElementById('ui-balance').textContent=balance;
+        const idx = parseInt(document.getElementById('ui-num').value||0);
+        const amt = parseInt(document.getElementById('ui-amt').value||1);
+        if(isNaN(idx) || idx<0 || idx>36) return alert('Índice inválido (0-36)');
+        if(amt<=0 || amt>balance) return alert('Monto inválido o saldo insuficiente');
+        balance -= amt; currentBet += amt; ruletaState.bets.push({idx, amt}); updateHUD(); appendLog(`Apuesta ${amt} índice ${idx} (ruleta)`); document.getElementById('ui-balance').textContent = balance;
       });
       document.getElementById('ui-spin').addEventListener('click', ()=>{ if(ruletaState.spinning) return alert('Ya girando'); if(ruletaState.bets.length===0) return alert('Sin apuestas'); startRuletaSpin(); closeUI(); });
       document.getElementById('ui-close').addEventListener('click', closeUI);
@@ -269,30 +274,53 @@ colliders.push(slotColl);
     }
 
     function closeUI(){ activeUI=null; overlay.style.display='none'; uiBox.innerHTML=''; }
-    window.addEventListener('keydown', (e)=>{ if((e.key==='e'||e.key==='E') && !activeUI){ if(nearZone==='ruleta') openRuletaUI(); else if(nearZone==='slot') openSlotUI(); } if(e.key==='Escape' && activeUI) closeUI(); });
+    window.addEventListener('keydown', (e)=>{ if((e.key==='e' || e.key==='E') && !activeUI){ if(nearZone==='ruleta') openRuletaUI(); else if(nearZone==='slot') openSlotUI(); } if(e.key==='Escape' && activeUI) closeUI(); });
 
-    // ---------- Ruleta physics (spin around Y) ----------
+    // ---------- Ruleta spin logic (improved) ----------
     function startRuletaSpin(){
-      ruletaState.spinning=true; ruletaState.wheelVel = 4 + Math.random()*5; ruletaState.ballVel = 12 + Math.random()*8; ruletaState.ballAngle = Math.random()*Math.PI*2;
+      // start rotating both wheel and ball; we will determine winner by final geometry
+      ruletaState.spinning = true;
+      ruletaState.wheelVel = 6 + Math.random()*5; // initial wheel angular speed
+      ruletaState.ballVel = 14 + Math.random()*8;  // initial ball angular speed
+      // ballAngle already present; leave it as world angle and animate its decay
       appendLog('Ruleta: girando...');
     }
+
     function finalizeRuleta(){
-      const pockets=[0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23];
-      const count=pockets.length;
-      // note: wheelMesh.rotation.y is spin
-      const totalRot = wheelMesh.rotation.y;
-      const localAngle = (ruletaState.ballAngle - totalRot) % (Math.PI*2);
-      let norm = localAngle + Math.PI/2; while(norm<0) norm+=Math.PI*2; while(norm>=Math.PI*2) norm-=Math.PI*2;
-      const idx = Math.floor(norm / (Math.PI*2/count));
+      // Compute winner using current wheel rotation and ball world angle:
+      // localAngle = (ballAngle - wheelRotation) mod 2π
+      const totalRot = wheelMesh.rotation.y; // wheel rotation in radians
+      let localAngle = (ruletaState.ballAngle - totalRot) % (Math.PI*2);
+      if(localAngle < 0) localAngle += Math.PI*2;
+      // shift so sector 0 starts at -PI/2 like our canvas mapping
+      // our wheel drawing used offset: each pocket i placed at angle = i*anglePerPocket - PI/2
+      // So to find index: we align localAngle + PI/2 to [0,2PI)
+      let norm = localAngle + Math.PI/2;
+      norm = norm % (Math.PI*2);
+      const idx = Math.floor(norm / anglePerPocket) % pocketCount;
       const result = pockets[idx];
-      appendLog(`Ruleta resultado: ${result}`);
+      appendLog(`Ruleta resultado: ${result} (índice ${idx})`);
+      // payouts: bets stored as index on pockets[] (we used the index scheme in UI)
       let payout = 0;
-      ruletaState.bets.forEach(b=>{ if(b.idx===idx) payout += b.amt * 36; });
-      if(payout>0){ balance += payout; appendLog(`Has ganado ${payout} en la ruleta`); } else appendLog('Sin premio ruleta');
-      ruletaState.bets = []; currentBet = 0; updateHUD(); ruletaState.spinning=false;
+      ruletaState.bets.forEach(b => {
+        if(b.idx === idx) payout += b.amt * 36;
+      });
+      if(payout > 0){ balance += payout; appendLog(`Has ganado ${payout} en la ruleta!`); } else appendLog('Sin premio en la ruleta.');
+      ruletaState.bets = []; currentBet = 0; updateHUD();
+      ruletaState.spinning = false;
+      // ensure ball visually sits on the winning sector
+      // compute absolute world angle where the winning sector is located:
+      const winningSectorAngle = idx * anglePerPocket - Math.PI/2; // this is angle in wheel-local coords
+      // world space position = rotate by wheel rotation + winningSectorAngle
+      const worldAngle = totalRot + winningSectorAngle;
+      const r = wheelRadius - 0.6;
+      ball.position.set(Math.cos(worldAngle) * r, 0.45, Math.sin(worldAngle) * r);
+      // small visual settle
+      wheelMesh.rotation.y = totalRot; // snap to current
+      rim.rotation.x = Math.PI/2;
     }
 
-    // ---------- Slot logic ----------
+    // ---------- Slot (unchanged logic) ----------
     function randSym(){ return symbols[Math.floor(Math.random()*symbols.length)]; }
     function spinSlot(){
       slotState.credits -= 1;
@@ -312,8 +340,8 @@ colliders.push(slotColl);
 
     // ---------- Minimap ----------
     const minimap = document.getElementById('minimap');
-    const mmC=document.createElement('canvas'); mmC.width=mmC.height=120; minimap.appendChild(mmC);
-    const mm=mmC.getContext('2d');
+    const mmC = document.createElement('canvas'); mmC.width = mmC.height = 120; minimap.appendChild(mmC);
+    const mm = mmC.getContext('2d');
     function drawMinimap(){ mm.fillStyle='#041018'; mm.fillRect(0,0,120,120); const scale=2; const px=60 + playerPos.x/scale, pz=60 + playerPos.z/scale; mm.fillStyle='#1d7cf0'; mm.beginPath(); mm.arc(px,pz,4,0,Math.PI*2); mm.fill(); mm.fillStyle='#a2d9c8'; mm.fillRect(60-6,60-6,12,12); mm.fillStyle='#f0c050'; mm.fillRect(60 + 14/scale -4, 60 + (-6)/scale -6,8,12); }
 
     // ---------- Animation loop ----------
@@ -341,20 +369,29 @@ colliders.push(slotColl);
       // detect zones
       detectZones();
 
-      // RUETA: spin around Y axis (horizontal wheel)
+      // RUETA animation: update wheel rotation & ball angle; when velocities low, finalize
       if(ruletaState.spinning){
+        // integrate rotation
         wheelMesh.rotation.y += ruletaState.wheelVel * dt;
-        ruletaState.wheelVel *= Math.max(0.995, 1 - 0.4*dt);
-        ruletaState.ballAngle += ruletaState.ballVel * dt * 0.85;
-        ruletaState.ballVel *= Math.max(0.99, 1 - 0.6*dt);
-        // ball orbit in XZ around center
-        const r = wheelRadius - 0.75;
-        const bx = Math.cos(ruletaState.ballAngle) * r, bz = Math.sin(ruletaState.ballAngle) * r;
-        ball.position.set(bx, 1.02, bz);
+        // slow down wheel
+        ruletaState.wheelVel *= Math.max(0.995, 1 - 0.35 * dt);
+        // ball moves opposite relative to wheel (ballAngle is world angle)
+        ruletaState.ballAngle += ruletaState.ballVel * dt;
+        ruletaState.ballVel *= Math.max(0.99, 1 - 0.6 * dt);
+
+        // update ball world position (orbit)
+        const r = wheelRadius - 0.6;
+        const bx = Math.cos(ruletaState.ballAngle) * r;
+        const bz = Math.sin(ruletaState.ballAngle) * r;
+        ball.position.set(bx, 0.45, bz);
+
+        // When both are slow enough, compute final index
         if(Math.abs(ruletaState.wheelVel) < 0.02 && Math.abs(ruletaState.ballVel) < 0.06){
+          // small timeout to simulate ball bouncing, then finalize
           setTimeout(finalizeRuleta, 700);
         }
       } else {
+        // idle subtle spin
         wheelMesh.rotation.y += Math.sin(clock.elapsedTime*0.5)*0.0004;
       }
 
@@ -367,16 +404,14 @@ colliders.push(slotColl);
     window.addEventListener('resize', ()=>{ renderer.setSize(wrap.clientWidth, wrap.clientHeight); camera.aspect = wrap.clientWidth / wrap.clientHeight; camera.updateProjectionMatrix(); });
 
     // ---------- HUD init ----------
-    updateHUD(); appendLog('Fix aplicado: W adelante · S atrás · Ruleta horizontal · Tragaperras con pantalla. Pulsa E cerca de un objeto.');
+    updateHUD(); appendLog('Ruleta corregida: índices 0–36 disponibles. Pulsa E cerca de la ruleta o tragaperras.');
 
-    // Open UI on E
-    window.addEventListener('keydown', (e)=>{ if(e.key==='r' || e.key==='R'){ playerPos.set(0,0,12); updateHUD(); appendLog('Player reposicionado'); } });
+    // debug reposition
+    window.addEventListener('keydown', (e)=> { if(e.key==='r' || e.key==='R'){ playerPos.set(0,0,12); updateHUD(); appendLog('Player reposicionado'); } });
 
-    // Expose for debug
-    window.__casino = { playerPos, camera, scene };
+    // expose for debug
+    window.__casino = { playerPos, camera, scene, pockets };
 
-    // make reel texture arrays accessible inside closures
-    // (they already are in this closure)
   })();
   </script>
 </body>
