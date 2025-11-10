@@ -239,10 +239,9 @@
   // -------------------------
   const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-
+  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
   // -------------------------
-  // Usuario actual (localStorage)
+  // 2️⃣ Usuario actual (localStorage)
   // -------------------------
   let currentUserId = localStorage.getItem('userId');
   let currentUsername = localStorage.getItem('username');
@@ -254,7 +253,7 @@
   }
 
   // -------------------------
-  // Variables
+  // 3️⃣ Variables globales
   // -------------------------
   let currentChatId = null;
   const chatsContainer = document.getElementById('chats-container');
@@ -275,7 +274,7 @@
   const closeMembersBtn = document.getElementById('close-members');
 
   // -------------------------
-  // Mostrar mensaje
+  // 4️⃣ Mostrar mensaje en UI
   // -------------------------
   function addMessageToUI(message){
     const isMe = message.sender_id === currentUserId;
@@ -287,102 +286,133 @@
   }
 
   // -------------------------
-  // Cargar mensajes
+  // 5️⃣ Cargar mensajes
   // -------------------------
   async function loadMessages(chatId){
     messagesEl.innerHTML = '';
+    chatTitle.textContent = chatId; // temporal, se puede poner nombre real después
+
     const { data: messages } = await supabase.from('messages')
-      .select('*').eq('chat_id', chatId)
+      .select('*')
+      .eq('chat_id', chatId)
       .order('created_at', { ascending: true });
     messages.forEach(addMessageToUI);
 
-    chatTitle.textContent = chatId; // temporal
-
+    // Realtime listener
     supabase.removeAllChannelSubscriptions();
     supabase.channel('chat-'+chatId)
-      .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`chat_id=eq.${chatId}`},
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages', filter:`chat_id=eq.${chatId}` },
         payload => addMessageToUI(payload.new)
       ).subscribe();
   }
 
   // -------------------------
-  // Cargar chats
+  // 6️⃣ Cargar chats
   // -------------------------
   async function loadChats(){
     chatsContainer.innerHTML = '';
     const { data: chatMembers } = await supabase.from('chat_members')
-      .select('chat_id, chats(type,name)').eq('user_id', currentUserId);
+      .select('chat_id, chats(type,name)')
+      .eq('user_id', currentUserId);
 
-    chatMembers.forEach(cm=>{
+    if(!chatMembers) return;
+
+    chatMembers.forEach(cm => {
       const div = document.createElement('div');
       div.classList.add('chat-item');
-      div.textContent = cm.chats.type==='private'?'Chat privado':cm.chats.name;
+      div.textContent = cm.chats.type==='private'? 'Chat privado' : cm.chats.name;
       div.onclick = ()=>{currentChatId = cm.chat_id; loadMessages(cm.chat_id);}
       chatsContainer.appendChild(div);
     });
   }
 
   // -------------------------
-  // Enviar mensaje
+  // 7️⃣ Enviar mensaje
   // -------------------------
-  messageForm.addEventListener('submit', async e=>{
+  messageForm.addEventListener('submit', async e => {
     e.preventDefault();
     const text = messageInput.value.trim();
     if(!text || !currentChatId) return;
 
-    await supabase.from('messages').insert([{chat_id:currentChatId, sender_id:currentUserId, sender_name:currentUsername, content:text}]);
-    messageInput.value='';
+    const { error } = await supabase.from('messages').insert([{
+      chat_id: currentChatId,
+      sender_id: currentUserId,
+      sender_name: currentUsername,
+      content: text
+    }]);
+    if(error) console.error(error);
+    messageInput.value = '';
   });
 
   // -------------------------
-  // Crear grupo
+  // 8️⃣ Crear grupo
   // -------------------------
-  createGroupBtn.addEventListener('click', async ()=>{
-    groupModal.style.display='flex';
+  createGroupBtn.addEventListener('click', async () => {
+    groupModal.style.display = 'flex';
     await loadUsersIntoSelect();
   });
 
-  createGroupConfirm.addEventListener('click', async ()=>{
+  createGroupConfirm.addEventListener('click', async () => {
     const groupName = groupNameInput.value.trim();
-    const selected = Array.from(groupMembersSelect.selectedOptions).map(o=>o.value);
-    if(!groupName || selected.length===0){alert('Pon nombre y selecciona usuarios'); return;}
+    const selected = Array.from(groupMembersSelect.selectedOptions).map(o => o.value);
+    if(!groupName || selected.length === 0){ alert('Pon nombre y selecciona usuarios'); return; }
 
-    const { data: chat } = await supabase.from('chats').insert({type:'group',name:groupName,owner:currentUserId}).select().single();
-    const members = selected.map(uid=>({chat_id:chat.id,user_id:uid}));
-    members.push({chat_id:chat.id,user_id:currentUserId});
-    await supabase.from('chat_members').insert(members);
+    // Insertar chat y obtener ID
+    const { data: chatData, error: chatError } = await supabase.from('chats')
+      .insert({ type:'group', name:groupName, owner:currentUserId })
+      .select('id');
+    if(chatError){ console.error(chatError); return; }
 
-    groupModal.style.display='none';
-    groupNameInput.value='';
+    const chatId = chatData[0].id;
+
+    // Insertar miembros
+    const members = selected.map(uid => ({ chat_id: chatId, user_id: uid }));
+    members.push({ chat_id: chatId, user_id: currentUserId }); // agregar creador
+    const { error: membersError } = await supabase.from('chat_members').insert(members);
+    if(membersError){ console.error(membersError); return; }
+
+    groupModal.style.display = 'none';
+    groupNameInput.value = '';
     loadChats();
   });
 
-  groupModal.addEventListener('click', e=>{if(e.target===groupModal) groupModal.style.display='none';});
+  groupModal.addEventListener('click', e => { if(e.target===groupModal) groupModal.style.display='none'; });
 
+  // -------------------------
+  // 9️⃣ Cargar usuarios en select (ejemplo)
+  // -------------------------
   async function loadUsersIntoSelect(){
     groupMembersSelect.innerHTML='';
-    const users = [{id:'user1',name:'Alice'},{id:'user2',name:'Bob'},{id:'user3',name:'Charlie'}];
+    const users = [
+      {id:'user1',name:'Alice'},
+      {id:'user2',name:'Bob'},
+      {id:'user3',name:'Charlie'}
+    ];
     users.forEach(u=>{
       if(u.id!==currentUserId){
         const opt = document.createElement('option');
-        opt.value=u.id;
-        opt.textContent=u.name;
+        opt.value = u.id;
+        opt.textContent = u.name;
         groupMembersSelect.appendChild(opt);
       }
     });
   }
 
   // -------------------------
-  // Ver miembros
+  // 🔟 Ver miembros
   // -------------------------
   membersBtn.addEventListener('click', async ()=>{
-    if(!currentChatId){alert('Selecciona un chat'); return;}
+    if(!currentChatId){ alert('Selecciona un chat'); return; }
     membersListEl.innerHTML='';
+
     const { data: members } = await supabase.from('chat_members')
-      .select('user_id').eq('chat_id',currentChatId);
+      .select('user_id')
+      .eq('chat_id', currentChatId);
+    if(!members) return;
+
     members.forEach(m=>{
       const div = document.createElement('div');
-      div.textContent=m.user_id;
+      div.textContent = m.user_id;
       membersListEl.appendChild(div);
     });
     membersModal.style.display='flex';
@@ -391,7 +421,7 @@
   closeMembersBtn.addEventListener('click', ()=>{membersModal.style.display='none';});
 
   // -------------------------
-  // Inicializar
+  // 1️⃣1️⃣ Inicializar
   // -------------------------
   loadChats();
 </script>
