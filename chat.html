@@ -235,27 +235,44 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 /* -------------------------
-   CONFIGURACIÓN SUPABASE
-   ------------------------- */
-const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+  CONFIG
+------------------------- */
+const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'; // deja tu URL si quieres
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let supabase;
+try { supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch(e){ console.warn('Supabase no inicializado:', e); supabase = null; }
 
 /* -------------------------
-   USUARIO ACTUAL (localStorage)
-   ------------------------- */
+  UTIL / FALLBACK LOCAL
+------------------------- */
+function uid() {
+  // id simple para local (no uuid lib)
+  return 'local-' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
+}
+function saveLocal(key, val){ localStorage.setItem(key, JSON.stringify(val)); }
+function loadLocal(key){ try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch(e){ return null; } }
+
+/* Local stores */
+let localChats = loadLocal('local_chats') || []; // [{id,name,type,owner,created_at}]
+let localChatMembers = loadLocal('local_chat_members') || []; // [{chat_id,user_id,role}]
+let localMessages = loadLocal('local_messages') || []; // [{id,chat_id,sender_id,sender_name,content,created_at}]
+let localAppUsers = loadLocal('local_app_users') || []; // [{id,name}]
+
+/* -------------------------
+  USER (localStorage-based)
+------------------------- */
 let currentUserId = localStorage.getItem('userId');
 let currentUsername = localStorage.getItem('username');
 if (!currentUserId || !currentUsername) {
-  currentUserId = 'user0';
+  currentUserId = 'me-' + Math.random().toString(36).slice(2,8);
   currentUsername = 'Tú';
   localStorage.setItem('userId', currentUserId);
   localStorage.setItem('username', currentUsername);
 }
 
 /* -------------------------
-   ELEMENTOS DOM
-   ------------------------- */
+  DOM ELEMENTS
+------------------------- */
 const chatsContainer = document.getElementById('chats-container');
 const messagesEl = document.getElementById('messages');
 const messageForm = document.getElementById('message-form');
@@ -273,43 +290,59 @@ const membersListEl = document.getElementById('members-list');
 const membersBtn = document.getElementById('members-btn');
 const closeMembersBtn = document.getElementById('close-members');
 
-/* Nuevo: botón Agregar contacto -> lo añadiremos dinámicamente en el sidebar */
+/* -------------------------
+  AÑADIR BOTÓN "AGREGAR CONTACTO" (asegurar que sea visible)
+------------------------- */
 let addContactBtn = document.getElementById('add-contact-btn');
-if(!addContactBtn){
+if (!addContactBtn) {
   addContactBtn = document.createElement('button');
   addContactBtn.id = 'add-contact-btn';
   addContactBtn.textContent = 'Agregar contacto';
+  // estilos claros para que se vea
   addContactBtn.style.margin = '10px';
-  addContactBtn.style.padding = '8px';
+  addContactBtn.style.padding = '10px';
   addContactBtn.style.background = '#34b7f1';
+  addContactBtn.style.color = '#fff';
   addContactBtn.style.border = 'none';
-  addContactBtn.style.cursor = 'pointer';
   addContactBtn.style.borderRadius = '6px';
-  // insert after create-group-btn
+  addContactBtn.style.cursor = 'pointer';
+  // insertarlo después del botón crear grupo (si existe)
   const createGroupBtnDom = document.getElementById('create-group-btn');
-  createGroupBtnDom.parentNode.insertBefore(addContactBtn, createGroupBtnDom.nextSibling);
+  if (createGroupBtnDom && createGroupBtnDom.parentNode) {
+    createGroupBtnDom.parentNode.insertBefore(addContactBtn, createGroupBtnDom.nextSibling);
+  } else {
+    // fallback: append en chat-list
+    const chatList = document.getElementById('chat-list');
+    if (chatList) chatList.appendChild(addContactBtn);
+  }
 }
 
 /* -------------------------
-   DATOS DE CONTACTOS (in-memory + intento en Supabase)
-   ------------------------- */
-let appUsers = []; // {id, name}
+  CARGA CONTACTOS (Supabase o fallback)
+------------------------- */
+let appUsers = []; // visible lista para selects
 
-/* Carga contactos desde Supabase (tabla 'app_users' opcional), si falla usa fallback */
 async function loadAppUsers(){
   appUsers = []; // reset
-  try {
-    const { data, error } = await supabase.from('app_users').select('*');
-    if (error){
-      console.info('Tabla app_users no accesible o no existe. Usando fallback local.', error.message);
-    } else if (data && data.length){
-      appUsers = data.map(u => ({ id: String(u.id), name: String(u.name) }));
+  // primero intentar Supabase
+  if (supabase) {
+    try {
+      const { data, error } = await supabase.from('app_users').select('*');
+      if (!error && data && data.length) {
+        appUsers = data.map(u => ({ id: String(u.id), name: String(u.name) }));
+      } else {
+        console.info('app_users no accesible o vacía; usar fallback local.');
+      }
+    } catch(e) {
+      console.info('Error leyendo app_users (supabase):', e);
     }
-  } catch(err){
-    console.error('Error al leer app_users:', err);
   }
-
-  // Si no hay usuarios traídos, usar fallback local (ejemplos)
+  // merge con localAppUsers
+  if (localAppUsers && localAppUsers.length) {
+    // añadir sin duplicados
+    localAppUsers.forEach(u => { if (!appUsers.some(x => x.id === u.id)) appUsers.push(u); });
+  }
+  // si no hay nada, fallback demo
   if (appUsers.length === 0) {
     appUsers = [
       { id: 'user1', name: 'Alice' },
@@ -317,278 +350,317 @@ async function loadAppUsers(){
       { id: 'user3', name: 'Charlie' }
     ];
   }
-
-  // Asegurarse de que el usuario actual esté en la lista
-  if (!appUsers.some(u => u.id === currentUserId)) {
-    appUsers.push({ id: currentUserId, name: currentUsername });
-  }
+  // asegurarse de meter al current user
+  if (!appUsers.some(u => u.id === currentUserId)) appUsers.push({ id: currentUserId, name: currentUsername });
 }
 
 /* -------------------------
-   ESTADO
-   ------------------------- */
-let currentChatId = null;
-
-/* -------------------------
-   FUNCIONES UI / CHAT
-   ------------------------- */
+  UI: mensajes
+------------------------- */
+function escapeHtml(t){ return String(t||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
 function addMessageToUI(message){
   const isMe = message.sender_id === currentUserId;
   const div = document.createElement('div');
   div.classList.add('message', isMe ? 'my-message' : 'other-message');
-  div.innerHTML = `<strong>${message.sender_name || message.sender_id}:</strong> ${escapeHtml(message.content)}`;
+  div.innerHTML = `<strong>${escapeHtml(message.sender_name || message.sender_id)}:</strong> ${escapeHtml(message.content)}`;
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
-function escapeHtml(text){
-  if(!text) return '';
-  return text.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+/* -------------------------
+  Realtime (si Supabase) -> si no, no hace nada extra
+------------------------- */
+function subscribeToChatRealtime(chatId){
+  if (!supabase) return; // no supabase
+  try {
+    supabase.removeAllChannelSubscriptions();
+  } catch(e){}
+  try {
+    supabase.channel('chat-'+chatId)
+      .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages', filter:`chat_id=eq.${chatId}` },
+        payload => {
+          if (payload && payload.new) addMessageToUI(payload.new);
+        }
+      ).subscribe();
+  } catch(e){ console.warn('Realtime subscribe failed:', e); }
 }
 
-/* Cargar mensajes de un chat y suscribirse realtime */
+/* -------------------------
+  Cargar mensajes (Supabase o Local)
+------------------------- */
 async function loadMessages(chatId){
   messagesEl.innerHTML = '';
   chatTitle.textContent = 'Cargando...';
 
-  try {
-    const { data: messages, error } = await supabase.from('messages')
-      .select('*')
-      .eq('chat_id', chatId)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      console.error('Error al cargar mensajes:', error);
-      alert('Error al cargar mensajes: ' + (error.message || JSON.stringify(error)));
-      chatTitle.textContent = 'Error';
-      return;
-    }
-
-    if (messages && messages.length) messages.forEach(addMessageToUI);
-    chatTitle.textContent = 'Chat: ' + chatId;
-
-    // Realtime listener (limpiamos antes)
-    try { supabase.removeAllChannelSubscriptions(); } catch(e){ console.warn(e); }
-
-    supabase.channel('chat-'+chatId)
-      .on('postgres_changes', { event:'INSERT', schema:'public', table:'messages', filter:`chat_id=eq.${chatId}` },
-        payload => addMessageToUI(payload.new)
-      ).subscribe();
-  } catch (err) {
-    console.error('loadMessages exception:', err);
-    alert('Excepción al cargar mensajes: ' + err.message);
+  // intentar Supabase
+  if (supabase) {
+    try {
+      const { data: messages, error } = await supabase.from('messages')
+        .select('*').eq('chat_id', chatId).order('created_at', { ascending: true });
+      if (!error && messages) {
+        messages.forEach(addMessageToUI);
+        chatTitle.textContent = 'Chat: ' + (getChatName(chatId) || chatId);
+        subscribeToChatRealtime(chatId);
+        return;
+      } else {
+        console.warn('Supabase no devolvió mensajes, usando local. Err:', error);
+      }
+    } catch(e){ console.warn('Error leyendo supabase messages:', e); }
   }
+
+  // fallback: localMessages
+  const msgs = localMessages.filter(m => m.chat_id === chatId).sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+  msgs.forEach(addMessageToUI);
+  chatTitle.textContent = 'Chat: ' + (getChatName(chatId) || chatId);
 }
 
-/* Cargar lista de chats donde eres miembro */
+/* -------------------------
+  Obtener nombre de chat (local o supabase)
+------------------------- */
+function getChatName(chatId){
+  const local = localChats.find(c => c.id === chatId);
+  if (local) return local.name;
+  // not local => we could query supabase sync but keep simple
+  return null;
+}
+
+/* -------------------------
+  Cargar lista de chats (combina supabase y local)
+------------------------- */
 async function loadChats(){
   chatsContainer.innerHTML = '';
-  try {
-    const { data: chatMembers, error } = await supabase.from('chat_members')
-      .select('chat_id, chats(type,name)')
-      .eq('user_id', currentUserId);
 
-    if (error) {
-      console.error('Error al cargar chats (chat_members):', error);
-      // No hacemos return; intentamos mostrar nada o fallback
-    }
-
-    const items = chatMembers && chatMembers.length ? chatMembers : [];
-
-    if (items.length === 0) {
-      const empty = document.createElement('div');
-      empty.style.padding = '12px';
-      empty.textContent = 'No estás en ningún chat. Crea uno.';
-      chatsContainer.appendChild(empty);
-      return;
-    }
-
-    items.forEach(cm => {
-      const div = document.createElement('div');
-      div.classList.add('chat-item');
-      const title = cm.chats && cm.chats.type === 'private' ? 'Chat privado' : (cm.chats && cm.chats.name ? cm.chats.name : 'Chat');
-      div.textContent = title;
-      div.onclick = () => { currentChatId = cm.chat_id; loadMessages(cm.chat_id); };
-      chatsContainer.appendChild(div);
-    });
-
-  } catch (err) {
-    console.error('loadChats exception:', err);
-    alert('Excepción al cargar chats: ' + err.message);
+  // intentamos cargar desde supabase chat_members
+  let items = [];
+  if (supabase) {
+    try {
+      const { data: chatMembers, error } = await supabase.from('chat_members')
+        .select('chat_id, chats(type,name)').eq('user_id', currentUserId);
+      if (!error && chatMembers) items = chatMembers;
+    } catch(e){ console.warn('Error leyendo chat_members supabase:', e); }
   }
+
+  // añadir local chats donde seas miembro
+  const localMemberChats = localChatMembers.filter(cm => cm.user_id === currentUserId).map(cm => {
+    const chat = localChats.find(c => c.id === cm.chat_id);
+    return chat ? { chat_id: chat.id, chats: { type: chat.type, name: chat.name } } : null;
+  }).filter(Boolean);
+
+  // merge (evitar duplicados)
+  localMemberChats.forEach(lc => { if (!items.some(i => i.chat_id === lc.chat_id)) items.push(lc); });
+
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.style.padding = '12px';
+    empty.style.color = '#fff';
+    empty.textContent = 'No estás en ningún chat. Crea uno.';
+    chatsContainer.appendChild(empty);
+    return;
+  }
+
+  items.forEach(cm => {
+    const div = document.createElement('div');
+    div.classList.add('chat-item');
+    const title = cm.chats && cm.chats.type === 'private' ? 'Chat privado' : (cm.chats && cm.chats.name ? cm.chats.name : 'Chat');
+    div.textContent = title;
+    div.onclick = () => { currentChatId = cm.chat_id; loadMessages(cm.chat_id); };
+    chatsContainer.appendChild(div);
+  });
 }
 
-/* Enviar mensaje */
-messageForm.addEventListener('submit', async e => {
+/* -------------------------
+  Enviar mensaje (intenta supabase, si falla guarda local)
+------------------------- */
+messageForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = messageInput.value.trim();
   if (!text) return alert('Escribe algo.');
   if (!currentChatId) return alert('Selecciona un chat.');
 
-  try {
-    const { error } = await supabase.from('messages').insert([{
-      chat_id: currentChatId,
-      sender_id: currentUserId,
-      sender_name: currentUsername,
-      content: text
-    }]);
+  const row = {
+    id: uid(),
+    chat_id: currentChatId,
+    sender_id: currentUserId,
+    sender_name: currentUsername,
+    content: text,
+    created_at: new Date().toISOString()
+  };
 
-    if (error) {
-      console.error('Error insert message:', error);
-      alert('Error al enviar mensaje: ' + (error.message || JSON.stringify(error)));
+  if (supabase) {
+    try {
+      const { error } = await supabase.from('messages').insert([row]);
+      if (error) throw error;
+      messageInput.value = '';
       return;
+    } catch (err) {
+      console.warn('Enviar mensaje supabase falló, guardando local. Err:', err);
+      alert('No se pudo enviar a Supabase; mensaje guardado localmente.');
     }
-    messageInput.value = '';
-  } catch (err) {
-    console.error('Exception send message:', err);
-    alert('Excepción al enviar mensaje: ' + err.message);
   }
+
+  // fallback local
+  localMessages.push(row);
+  saveLocal('local_messages', localMessages);
+  addMessageToUI(row);
+  messageInput.value = '';
 });
 
 /* -------------------------
-   CREAR GRUPO (ARREGLADO)
-   ------------------------- */
+  CREAR GRUPO (intenta Supabase, sino local)
+------------------------- */
 createGroupBtn.addEventListener('click', async () => {
-  await loadAppUsers();            // refrescar contactos
-  await populateGroupMembers();    // rellenar select
+  await loadAppUsers();
+  populateGroupMembers();
   groupModal.style.display = 'flex';
 });
 
 createGroupConfirm.addEventListener('click', async () => {
-  const groupName = groupNameInput.value.trim();
+  const name = groupNameInput.value.trim();
   const selected = Array.from(groupMembersSelect.selectedOptions).map(o => o.value);
+  if (!name) return alert('Pon nombre al grupo');
+  if (!selected.length) return alert('Selecciona al menos 1 miembro');
 
-  if (!groupName) return alert('Pon un nombre al grupo.');
-  if (selected.length === 0) return alert('Selecciona al menos un miembro.');
+  // intentamos insertar en supabase
+  if (supabase) {
+    try {
+      const { data: chatData, error: chatError } = await supabase.from('chats')
+        .insert({ type: 'group', name, owner: currentUserId })
+        .select('id');
+      if (chatError) throw chatError;
+      if (!chatData || chatData.length === 0) throw new Error('No se obtuvo id del chat');
 
-  try {
-    // Insert chat y obtener ID (select('id') devuelve array)
-    const { data: chatData, error: chatError } = await supabase.from('chats')
-      .insert({ type: 'group', name: groupName, owner: currentUserId })
-      .select('id');
-    if (chatError) {
-      console.error('chat insert error:', chatError);
-      alert('Error creando chat: ' + (chatError.message || JSON.stringify(chatError)));
+      const chatId = chatData[0].id;
+      const membersRows = selected.map(uid => ({ chat_id: chatId, user_id: uid }));
+      membersRows.push({ chat_id: chatId, user_id: currentUserId });
+      const { error: membersError } = await supabase.from('chat_members').insert(membersRows);
+      if (membersError) throw membersError;
+
+      // éxito supabase
+      groupModal.style.display = 'none';
+      groupNameInput.value = '';
+      await loadChats();
+      currentChatId = chatId;
+      await loadMessages(chatId);
       return;
+    } catch (err) {
+      console.warn('Crear grupo en Supabase falló, se creará local. Err:', err);
+      alert('No se pudo crear el grupo en Supabase; se creará localmente.');
     }
-    if (!chatData || chatData.length === 0) {
-      console.error('chatData vacío al crear chat:', chatData);
-      alert('No se obtuvo ID del chat tras crear.');
-      return;
-    }
-    const chatId = chatData[0].id;
-
-    // Insertar miembros
-    const membersRows = selected.map(uid => ({ chat_id: chatId, user_id: uid }));
-    membersRows.push({ chat_id: chatId, user_id: currentUserId }); // agregar creador
-
-    const { error: membersError } = await supabase.from('chat_members').insert(membersRows);
-    if (membersError) {
-      console.error('chat_members insert error:', membersError);
-      alert('Error añadiendo miembros: ' + (membersError.message || JSON.stringify(membersError)));
-      return;
-    }
-
-    // éxito
-    groupModal.style.display = 'none';
-    groupNameInput.value = '';
-    await loadChats();
-
-    // opcional: abrir el chat creado
-    currentChatId = chatId;
-    await loadMessages(chatId);
-  } catch (err) {
-    console.error('Exception crear grupo:', err);
-    alert('Excepción creando grupo: ' + err.message);
   }
+
+  // fallback local create
+  const chatId = uid();
+  localChats.push({ id: chatId, type: 'group', name, owner: currentUserId, created_at: new Date().toISOString() });
+  const membersRows = selected.map(uid => ({ chat_id: chatId, user_id: uid }));
+  membersRows.push({ chat_id: chatId, user_id: currentUserId });
+  localChatMembers.push(...membersRows);
+  saveLocal('local_chats', localChats);
+  saveLocal('local_chat_members', localChatMembers);
+
+  groupModal.style.display = 'none';
+  groupNameInput.value = '';
+  await loadChats();
+  currentChatId = chatId;
+  await loadMessages(chatId);
 });
 
-/* Cerrar modal si clic fuera del contenido */
-groupModal.addEventListener('click', e => { if (e.target === groupModal) groupModal.style.display = 'none'; });
-
-/* rellenar selector de miembros con appUsers */
-async function populateGroupMembers(){
+/* populate select with appUsers */
+function populateGroupMembers(){
   groupMembersSelect.innerHTML = '';
-  appUsers.forEach(u => {
-    if (u.id === currentUserId) return; // no añadir a sí mismo en la lista (lo añadimos al crear)
+  (appUsers || []).forEach(u => {
+    if (u.id === currentUserId) return;
     const opt = document.createElement('option');
     opt.value = u.id;
-    opt.textContent = u.name + ' (' + u.id + ')';
+    opt.textContent = `${u.name} (${u.id})`;
     groupMembersSelect.appendChild(opt);
   });
 }
 
 /* -------------------------
-   AGREGAR CONTACTO (nuevo botón)
-   ------------------------- */
+  AGREGAR CONTACTO (botón)
+------------------------- */
 addContactBtn.addEventListener('click', async () => {
-  // modal simple: pedir id y nombre
   const id = prompt('ID del contacto (ej: user5):');
   if (!id) return;
   const name = prompt('Nombre del contacto:');
   if (!name) return;
 
-  // añadir a memoria
-  if (appUsers.some(u => u.id === id)) {
-    alert('Ese contacto ya existe en tu lista local.');
-  } else {
-    appUsers.push({ id, name });
-    // intentar guardar en supabase (tabla app_users opcional)
-    try {
-      const { error } = await supabase.from('app_users').upsert({ id: id, name: name });
-      if (error) {
-        console.info('Upsert app_users falló (puede que la tabla no exista):', error.message);
-        // no frenar; ya lo tenemos localmente
-      } else {
-        console.log('Contacto guardado en app_users (Supabase).');
-      }
-    } catch (err) {
-      console.warn('No se guardó en Supabase (posible tabla inexistente):', err.message);
-    }
-    alert('Contacto añadido localmente: ' + name);
+  if (appUsers.some(u => u.id === id) || localAppUsers.some(u => u.id === id)) {
+    return alert('Contacto ya existe localmente.');
   }
+
+  // intentar Supabase (upsert) si existe tabla
+  if (supabase) {
+    try {
+      const { error } = await supabase.from('app_users').upsert({ id, name });
+      if (!error) {
+        // recargar
+        await loadAppUsers();
+        saveLocal('local_app_users', localAppUsers);
+        return alert('Contacto guardado en Supabase y en lista local.');
+      }
+    } catch(e){ console.warn('Upsert app_users falló:', e); }
+  }
+
+  // fallback local
+  localAppUsers.push({ id, name });
+  saveLocal('local_app_users', localAppUsers);
+  await loadAppUsers();
+  alert('Contacto guardado localmente: ' + name);
 });
 
 /* -------------------------
-   VER MIEMBROS DEL CHAT
-   ------------------------- */
+  VER MIEMBROS (supabase o local)
+------------------------- */
 membersBtn.addEventListener('click', async () => {
-  if (!currentChatId) return alert('Selecciona un chat primero.');
+  if (!currentChatId) return alert('Selecciona un chat antes');
   membersListEl.innerHTML = '';
-  try {
-    const { data: members, error } = await supabase.from('chat_members').select('user_id').eq('chat_id', currentChatId);
-    if (error) {
-      console.error('Error al leer miembros:', error);
-      alert('Error al leer miembros: ' + (error.message || JSON.stringify(error)));
-      return;
-    }
-    if (!members || members.length === 0) {
-      membersListEl.textContent = 'No hay miembros o fallo al leer.';
-    } else {
-      members.forEach(m => {
-        const u = appUsers.find(x => x.id === m.user_id);
-        const nameToShow = u ? u.name + ' (' + m.user_id + ')' : m.user_id;
-        const div = document.createElement('div');
-        div.style.padding = '6px';
-        div.style.borderBottom = '1px solid #eee';
-        div.textContent = nameToShow;
-        membersListEl.appendChild(div);
-      });
-    }
-    membersModal.style.display = 'flex';
-  } catch (err) {
-    console.error('Exception ver miembros:', err);
-    alert('Excepción leyendo miembros: ' + err.message);
+
+  // try supabase
+  if (supabase) {
+    try {
+      const { data: members, error } = await supabase.from('chat_members').select('user_id').eq('chat_id', currentChatId);
+      if (!error && members && members.length) {
+        members.forEach(m => {
+          const u = appUsers.find(x => x.id === m.user_id) || localAppUsers.find(x => x.id === m.user_id);
+          const name = u ? `${u.name} (${m.user_id})` : m.user_id;
+          const div = document.createElement('div');
+          div.style.padding = '6px';
+          div.style.borderBottom = '1px solid #eee';
+          div.textContent = name;
+          membersListEl.appendChild(div);
+        });
+        membersModal.style.display = 'flex';
+        return;
+      }
+    } catch(e){ console.warn('Leer miembros supabase falló:', e); }
   }
+
+  // fallback local
+  const members = localChatMembers.filter(m => m.chat_id === currentChatId);
+  if (!members || members.length === 0) {
+    membersListEl.textContent = 'No hay miembros (local).';
+  } else {
+    members.forEach(m => {
+      const u = appUsers.find(x => x.id === m.user_id) || localAppUsers.find(x => x.id === m.user_id);
+      const name = u ? `${u.name} (${m.user_id})` : m.user_id;
+      const div = document.createElement('div');
+      div.style.padding = '6px';
+      div.style.borderBottom = '1px solid #eee';
+      div.textContent = name;
+      membersListEl.appendChild(div);
+    });
+  }
+  membersModal.style.display = 'flex';
 });
 closeMembersBtn.addEventListener('click', () => { membersModal.style.display = 'none'; });
 
 /* -------------------------
-   INICIALIZACIÓN
-   ------------------------- */
+  INIT
+------------------------- */
 (async function init(){
-  await loadAppUsers();  // carga contactos (o fallback)
-  await loadChats();     // carga chats del usuario
+  await loadAppUsers();
+  await loadChats();
 })();
 </script>
 </body>
