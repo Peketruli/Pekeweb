@@ -128,9 +128,7 @@ const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 let currentUserId = localStorage.getItem("userId");
 let currentUsername = localStorage.getItem("username");
 
-if (!currentUserId || !currentUsername) {
-  alert("No hay usuario en localStorage");
-}
+if (!currentUserId) alert("No hay userId en localStorage");
 
 // -----------------------------------------------------
 // 3️⃣ ELEMENTOS DOM
@@ -155,10 +153,7 @@ async function loadUsuarios() {
     .select("*")
     .order("name");
 
-  if (error) {
-    alert("Error usuarios: " + error.message);
-    return;
-  }
+  if (error) return alert("Error cargando usuarios\n" + error.message);
 
   allUsers = data.filter(u => u.id !== currentUserId);
 }
@@ -168,38 +163,25 @@ async function loadUsuarios() {
 // -----------------------------------------------------
 async function loadRecentChats() {
   const { data, error } = await supabase
-    .rpc("get_recent_chats", { uid: currentUserId });
-
-  if (error) {
-    console.warn("RPC no disponible, usando backup…");
-    await loadChatsFallback();
-    return;
-  }
-
-  recentChats = data;
-  updateUserLists();
-}
-
-// -----------------------------------------------------
-// 5.1 FALLBACK SI NO EXISTE RPC
-// -----------------------------------------------------
-async function loadChatsFallback() {
-  const { data, error } = await supabase
-    .from("chats")
-    .select("id, updated_at, chat_members ( user_id ), mensajes:messages (*)")
+    .from("new_chats")
+    .select(`
+      id,
+      updated_at,
+      new_chat_members ( user_id )
+    `)
     .order("updated_at", { ascending: false });
 
   if (error) return;
 
   recentChats = data
-    .filter(c =>
-      c.chat_members.some(m => m.user_id === currentUserId)
+    .filter(chat =>
+      chat.new_chat_members.some(m => m.user_id === currentUserId)
     )
-    .map(c => {
-      const other = c.chat_members.find(m => m.user_id !== currentUserId);
+    .map(chat => {
+      const other = chat.new_chat_members.find(m => m.user_id !== currentUserId);
       return {
-        chat_id: c.id,
-        user_id: other.user_id
+        chat_id: chat.id,
+        user_id: other ? other.user_id : null
       };
     });
 
@@ -209,7 +191,7 @@ async function loadChatsFallback() {
 // -----------------------------------------------------
 // 6️⃣ ACTUALIZAR LISTAS (RECIENTES / TODOS)
 // -----------------------------------------------------
-function updateUserLists() {
+async function updateUserLists() {
   recientesList.innerHTML = "";
   todosList.innerHTML = "";
 
@@ -218,7 +200,7 @@ function updateUserLists() {
   const recientes = allUsers.filter(u => recentUserIds.includes(u.id));
   const otros = allUsers.filter(u => !recentUserIds.includes(u.id));
 
-  // ✅ Imprimir recientes
+  // ✅ Mostrar recientes
   recientes.forEach(user => {
     const div = document.createElement("div");
     div.className = "chat-item";
@@ -227,7 +209,7 @@ function updateUserLists() {
     recientesList.appendChild(div);
   });
 
-  // ✅ Imprimir todos
+  // ✅ Mostrar todos
   otros.forEach(user => {
     const div = document.createElement("div");
     div.className = "chat-item";
@@ -238,11 +220,12 @@ function updateUserLists() {
 }
 
 // -----------------------------------------------------
-// 7️⃣ CREAR CHAT PRIVADO SI NO EXISTE
+// 7️⃣ CREAR CHAT PRIVADO NUEVO
 // -----------------------------------------------------
 async function createPrivateChat(otherId, otherName) {
+  // Crear chat
   const { data: chat, error } = await supabase
-    .from("chats")
+    .from("new_chats")
     .insert([{ type: "private" }])
     .select("id")
     .single();
@@ -251,11 +234,13 @@ async function createPrivateChat(otherId, otherName) {
 
   const chatId = chat.id;
 
-  await supabase.from("chat_members").insert([
+  // Añadir ambos miembros
+  await supabase.from("new_chat_members").insert([
     { chat_id: chatId, user_id: currentUserId },
     { chat_id: chatId, user_id: otherId }
   ]);
 
+  // Añadir a recientes
   recentChats.unshift({
     chat_id: chatId,
     user_id: otherId
@@ -266,19 +251,19 @@ async function createPrivateChat(otherId, otherName) {
 }
 
 // -----------------------------------------------------
-// 8️⃣ ABRIR CHAT EXISTENTE
+// 8️⃣ ABRIR CHAT CON UN USUARIO
 // -----------------------------------------------------
 function openChatWithUser(userId, username, forcedChatId = null) {
   chatTitle.textContent = username;
 
   if (forcedChatId) {
     currentChatId = forcedChatId;
-    loadMessages(currentChatId);
+    loadMessages(forcedChatId);
     return;
   }
 
   const chat = recentChats.find(c => c.user_id === userId);
-  if (!chat) return alert("No se encontró chat.");
+  if (!chat) return alert("No existe chat.");
 
   currentChatId = chat.chat_id;
   loadMessages(chat.chat_id);
@@ -291,22 +276,23 @@ async function loadMessages(chatId) {
   messagesEl.innerHTML = "";
 
   const { data, error } = await supabase
-    .from("messages")
+    .from("new_messages")
     .select("*")
     .eq("chat_id", chatId)
     .order("created_at");
 
-  if (error) return;
+  if (error) return alert(error.message);
 
   data.forEach(addMessageToUI);
 
+  // Realtime
   supabase.removeAllChannels();
 
-  supabase.channel("chat-" + chatId)
+  supabase.channel("room-" + chatId)
     .on("postgres_changes", {
       event: "INSERT",
       schema: "public",
-      table: "messages",
+      table: "new_messages",
       filter: `chat_id=eq.${chatId}`
     }, payload => {
       addMessageToUI(payload.new);
@@ -316,7 +302,18 @@ async function loadMessages(chatId) {
 }
 
 // -----------------------------------------------------
-// 🔟 ENVIAR MENSAJE
+// 🔟 MOSTRAR MENSAJE
+// -----------------------------------------------------
+function addMessageToUI(msg) {
+  const div = document.createElement("div");
+  div.className = msg.sender_id === currentUserId ? "my-message" : "other-message";
+  div.textContent = msg.sender_name + ": " + msg.content;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+// -----------------------------------------------------
+// 1️⃣1️⃣ ENVIAR MENSAJE
 // -----------------------------------------------------
 messageForm.addEventListener("submit", async e => {
   e.preventDefault();
@@ -325,29 +322,35 @@ messageForm.addEventListener("submit", async e => {
   const text = messageInput.value.trim();
   if (!text) return;
 
-  await supabase.from("messages").insert([{
+  await supabase.from("new_messages").insert([{
     chat_id: currentChatId,
     sender_id: currentUserId,
     sender_name: currentUsername,
     content: text
   }]);
 
+  // Actualizar timestamp del chat
+  await supabase
+    .from("new_chats")
+    .update({ updated_at: new Date() })
+    .eq("id", currentChatId);
+
   messageInput.value = "";
 });
 
 // -----------------------------------------------------
-// 1️⃣1️⃣ SUBIR CHAT A RECIENTES (TOP)
+// 1️⃣2️⃣ SUBIR CHAT A ARRIBA
 // -----------------------------------------------------
 function bumpChatToTop(chatId) {
-  const chat = recentChats.find(c => c.chat_id === chatId);
-  if (!chat) return;
-  recentChats = recentChats.filter(c => c.chat_id !== chatId);
-  recentChats.unshift(chat);
+  const c = recentChats.find(rc => rc.chat_id === chatId);
+  if (!c) return;
+  recentChats = recentChats.filter(rc => rc.chat_id !== chatId);
+  recentChats.unshift(c);
   updateUserLists();
 }
 
 // -----------------------------------------------------
-// ✅ INICIO
+// ✅ INICIALIZAR
 // -----------------------------------------------------
 (async function init() {
   await loadUsuarios();
