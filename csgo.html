@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSGO 2D - Prototipo</title>
+<title>CSGO 2D - Con paredes</title>
 <style>
   body { margin:0; padding:0; overflow:hidden; background:#111; }
   canvas { display:block; background:#222; margin:0 auto; }
@@ -29,9 +29,7 @@ canvas.addEventListener("mousedown", () => mouse.clicked = true);
 canvas.addEventListener("mouseup", () => mouse.clicked = false);
 
 // --- Jugador ---
-const player = {
-  x: 400, y: 300, size: 20, speed: 3, color: "cyan", bullets: [], reload: 0
-};
+const player = { x: 100, y: 100, size: 20, speed: 3, color: "cyan", bullets: [], reload: 0 };
 
 // --- Enemigos ---
 const enemies = [];
@@ -49,6 +47,14 @@ for(let i=0;i<3;i++){
   });
 }
 
+// --- Paredes ---
+const walls = [
+  {x: 200, y: 150, w: 400, h: 20},
+  {x: 200, y: 430, w: 400, h: 20},
+  {x: 200, y: 150, w: 20, h: 300},
+  {x: 580, y: 150, w: 20, h: 300}
+];
+
 // --- Balas ---
 function shootBullet(shooter, targetX, targetY){
   const dx = targetX - shooter.x;
@@ -63,31 +69,49 @@ function shootBullet(shooter, targetX, targetY){
   });
 }
 
+// --- Colisiones jugador/paredes ---
+function collideRectCircle(rect, circle){
+  const closestX = Math.max(rect.x, Math.min(circle.x, rect.x+rect.w));
+  const closestY = Math.max(rect.y, Math.min(circle.y, rect.y+rect.h));
+  const dx = circle.x - closestX;
+  const dy = circle.y - closestY;
+  return (dx*dx + dy*dy) < (circle.size*circle.size);
+}
+
+function moveWithCollisions(entity, dx, dy){
+  entity.x += dx;
+  if(walls.some(wall => collideRectCircle(wall, entity))) entity.x -= dx;
+  entity.y += dy;
+  if(walls.some(wall => collideRectCircle(wall, entity))) entity.y -= dy;
+}
+
 // --- Game Loop ---
 function update(){
-  // Movimiento jugador
-  if(keys["w"]) player.y -= player.speed;
-  if(keys["s"]) player.y += player.speed;
-  if(keys["a"]) player.x -= player.speed;
-  if(keys["d"]) player.x += player.speed;
+  // Movimiento jugador con colisiones
+  let dx=0, dy=0;
+  if(keys["w"]) dy -= player.speed;
+  if(keys["s"]) dy += player.speed;
+  if(keys["a"]) dx -= player.speed;
+  if(keys["d"]) dx += player.speed;
+  moveWithCollisions(player, dx, dy);
 
   // Disparo jugador
   if(mouse.clicked && player.reload <= 0){
     shootBullet(player, mouse.x, mouse.y);
-    player.reload = 15; // velocidad de disparo
+    player.reload = 15;
   }
   if(player.reload>0) player.reload--;
 
   // Movimiento y disparo enemigos
   enemies.forEach(enemy => {
     if(!enemy.alive) return;
-    const dx = player.x - enemy.x;
-    const dy = player.y - enemy.y;
-    const dist = Math.hypot(dx,dy);
-    if(dist>0){
-      enemy.x += (dx/dist)*enemy.speed;
-      enemy.y += (dy/dist)*enemy.speed;
-    }
+    const dxE = player.x - enemy.x;
+    const dyE = player.y - enemy.y;
+    const dist = Math.hypot(dxE,dyE);
+    const moveX = (dxE/dist)*enemy.speed;
+    const moveY = (dyE/dist)*enemy.speed;
+    moveWithCollisions(enemy, moveX, moveY);
+
     // Disparo IA
     if(enemy.reload<=0 && dist<250){
       shootBullet(enemy, player.x, player.y);
@@ -101,6 +125,9 @@ function update(){
     shooter.bullets.forEach((b,i) => {
       b.x += b.vx;
       b.y += b.vy;
+      // Colisiones con paredes
+      if(walls.some(wall => collideRectCircle(wall,b))) shooter.bullets.splice(i,1);
+
       // Colisiones con enemigos
       if(shooter===player){
         enemies.forEach(enemy => {
@@ -126,6 +153,10 @@ function update(){
 // --- Dibujar ---
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Dibujar paredes
+  ctx.fillStyle = "#555";
+  walls.forEach(wall => ctx.fillRect(wall.x, wall.y, wall.w, wall.h));
 
   // Dibujar jugador
   ctx.fillStyle = player.color;
