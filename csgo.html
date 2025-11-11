@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSGO 2D - Prototipo</title>
+<style>
+  body { margin:0; padding:0; overflow:hidden; background:#111; }
+  canvas { display:block; background:#222; margin:0 auto; }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
+
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key] = true);
+document.addEventListener("keyup", e => keys[e.key] = false);
+
+const mouse = { x: 0, y: 0, clicked: false };
+canvas.addEventListener("mousemove", e => {
+  const rect = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - rect.left;
+  mouse.y = e.clientY - rect.top;
+});
+canvas.addEventListener("mousedown", () => mouse.clicked = true);
+canvas.addEventListener("mouseup", () => mouse.clicked = false);
+
+// --- Jugador ---
+const player = {
+  x: 400, y: 300, size: 20, speed: 3, color: "cyan", bullets: [], reload: 0
+};
+
+// --- Enemigos ---
+const enemies = [];
+for(let i=0;i<3;i++){
+  enemies.push({
+    x: Math.random()*canvas.width,
+    y: Math.random()*canvas.height,
+    size: 20,
+    speed: 2,
+    color: "red",
+    bullets: [],
+    reload: 0,
+    alive: true,
+    hp: 3
+  });
+}
+
+// --- Balas ---
+function shootBullet(shooter, targetX, targetY){
+  const dx = targetX - shooter.x;
+  const dy = targetY - shooter.y;
+  const dist = Math.hypot(dx,dy);
+  shooter.bullets.push({
+    x: shooter.x,
+    y: shooter.y,
+    vx: (dx/dist)*5,
+    vy: (dy/dist)*5,
+    size: 5
+  });
+}
+
+// --- Game Loop ---
+function update(){
+  // Movimiento jugador
+  if(keys["w"]) player.y -= player.speed;
+  if(keys["s"]) player.y += player.speed;
+  if(keys["a"]) player.x -= player.speed;
+  if(keys["d"]) player.x += player.speed;
+
+  // Disparo jugador
+  if(mouse.clicked && player.reload <= 0){
+    shootBullet(player, mouse.x, mouse.y);
+    player.reload = 15; // velocidad de disparo
+  }
+  if(player.reload>0) player.reload--;
+
+  // Movimiento y disparo enemigos
+  enemies.forEach(enemy => {
+    if(!enemy.alive) return;
+    const dx = player.x - enemy.x;
+    const dy = player.y - enemy.y;
+    const dist = Math.hypot(dx,dy);
+    if(dist>0){
+      enemy.x += (dx/dist)*enemy.speed;
+      enemy.y += (dy/dist)*enemy.speed;
+    }
+    // Disparo IA
+    if(enemy.reload<=0 && dist<250){
+      shootBullet(enemy, player.x, player.y);
+      enemy.reload = 60;
+    }
+    if(enemy.reload>0) enemy.reload--;
+  });
+
+  // Actualizar balas
+  [player,...enemies].forEach(shooter => {
+    shooter.bullets.forEach((b,i) => {
+      b.x += b.vx;
+      b.y += b.vy;
+      // Colisiones con enemigos
+      if(shooter===player){
+        enemies.forEach(enemy => {
+          if(enemy.alive && Math.hypot(enemy.x-b.x,enemy.y-b.y)<enemy.size){
+            enemy.hp--;
+            shooter.bullets.splice(i,1);
+            if(enemy.hp<=0) enemy.alive=false;
+          }
+        });
+      } else {
+        if(Math.hypot(player.x-b.x,player.y-b.y)<player.size){
+          console.log("¡Has sido alcanzado!");
+          shooter.bullets.splice(i,1);
+        }
+      }
+    });
+  });
+
+  draw();
+  requestAnimationFrame(update);
+}
+
+// --- Dibujar ---
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  // Dibujar jugador
+  ctx.fillStyle = player.color;
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, player.size, 0, Math.PI*2);
+  ctx.fill();
+
+  // Dibujar enemigos
+  enemies.forEach(enemy => {
+    if(!enemy.alive) return;
+    ctx.fillStyle = enemy.color;
+    ctx.beginPath();
+    ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI*2);
+    ctx.fill();
+  });
+
+  // Dibujar balas
+  [player,...enemies].forEach(shooter => {
+    shooter.bullets.forEach(b => {
+      ctx.fillStyle = "yellow";
+      ctx.beginPath();
+      ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
+      ctx.fill();
+    });
+  });
+}
+
+update();
+</script>
+</body>
+</html>
