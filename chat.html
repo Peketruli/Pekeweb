@@ -116,206 +116,244 @@
 
 <script>
 // -----------------------------------------------------
-// CONFIG SUPABASE
+// 1️⃣ CONFIG SUPABASE
 // -----------------------------------------------------
 const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-
 const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-// ID desde localStorage
+// ID del usuario actual desde localStorage
 const currentUserId = localStorage.getItem("userId");
 
-// ELEMENTOS DEL DOM
-const chatsList = document.getElementById("chats-list");
-const contactsList = document.getElementById("contacts-list");
-const messagesBox = document.getElementById("messages");
-const chatTitle = document.getElementById("chat-title");
+// Contenedores del DOM
+const recentList = document.getElementById("recent-users");
+const allUsersList = document.getElementById("all-users");
+const chatBox = document.getElementById("chat-box");
 const messageInput = document.getElementById("message-input");
 
+// Guardará qué chat está abierto
 let currentChatId = null;
 
-// -----------------------------------------------------
-// 1️⃣ CARGAR CONTACTOS (TODOS LOS USUARIOS)
-// -----------------------------------------------------
-async function loadContacts() {
-    const { data: users, error } = await supabase
-        .from("usuarios")
-        .select("id, username");
+// Canal Realtime
+let messageChannel = null;
 
-    if (error) {
-        alert("Error cargando usuarios");
-        return;
-    }
+// ==============================
+// CARGAR USUARIOS
+// ==============================
 
-    contactsList.innerHTML = "";
+async function loadUsers() {
+  // 1. Cargar todos los usuarios desde tu tabla real
+  const { data: users, error } = await supabase
+    .from("usuarios")
+    .select("id, username");
 
-    users
-        .filter(u => u.id !== currentUserId)
-        .forEach(user => {
-            const div = document.createElement("div");
-            div.className = "contact-item";
-            div.textContent = user.username;
-            div.onclick = () => openOrCreateChat(user.id, user.username);
-            contactsList.appendChild(div);
-        });
+  if (error) {
+    alert("Error cargando usuarios");
+    return;
+  }
+
+  // 2. Evitar que tú mismo salgas en la lista
+  const filteredUsers = users.filter(u => u.id !== currentUserId);
+
+  // 3. Cargar el historial de chats recientes
+  const { data: recentMessages } = await supabase
+    .from("new_messages")
+    .select("chat_id, created_at")
+    .order("created_at", { ascending: false });
+
+  const recentChats = [];
+  if (recentMessages) {
+    recentMessages.forEach(msg => {
+      if (!recentChats.includes(msg.chat_id)) {
+        recentChats.push(msg.chat_id);
+      }
+    });
+  }
+
+  // 4. Mostrar usuarios recientes
+  recentList.innerHTML = "";
+  for (const chatId of recentChats) {
+    const { data: members } = await supabase
+      .from("new_chat_members")
+      .select("user_id")
+      .eq("chat_id", chatId);
+
+    if (!members) continue;
+
+    const otherUser = members.find(m => m.user_id !== currentUserId);
+    if (!otherUser) continue;
+
+    const profile = filteredUsers.find(u => u.id === otherUser.user_id);
+    if (!profile) continue;
+
+    const li = document.createElement("li");
+    li.textContent = profile.username;
+    li.onclick = () => openChat(chatId, profile);
+    recentList.appendChild(li);
+  }
+
+  // 5. Mostrar TODOS los usuarios
+  allUsersList.innerHTML = "";
+  filteredUsers.forEach(user => {
+    const li = document.createElement("li");
+    li.textContent = user.username;
+    li.onclick = () => openOrCreatePrivateChat(user.id, user.username);
+    allUsersList.appendChild(li);
+  });
 }
 
-// -----------------------------------------------------
-// 2️⃣ CARGAR CHATS RECIENTES
-// -----------------------------------------------------
-async function loadChats() {
-    const { data: chats } = await supabase
-        .from("new_chats")
-        .select("id, type");
+// ==============================
+// CREAR O ABRIR CHAT PRIVADO
+// ==============================
 
-    if (!chats) return;
+async function openOrCreatePrivateChat(otherUserId, username) {
+  // Buscar chat existente entre los 2
+  const { data: chats } = await supabase
+    .from("new_chats")
+    .select("id")
+    .eq("type", "private");
 
-    chatsList.innerHTML = "";
-
+  if (chats) {
     for (const chat of chats) {
-        // ver si yo soy miembro
-        const { data: members } = await supabase
-            .from("new_chat_members")
-            .select("user_id")
-            .eq("chat_id", chat.id);
+      const { data: members } = await supabase
+        .from("new_chat_members")
+        .select("user_id")
+        .eq("chat_id", chat.id);
 
-        if (!members) continue;
+      if (!members) continue;
 
-        if (!members.some(m => m.user_id === currentUserId)) continue;
+      const hasMe = members.some(m => m.user_id === currentUserId);
+      const hasOther = members.some(m => m.user_id === otherUserId);
 
-        // obtener nombre del otro usuario en chat privado
-        let title = "Grupo";
+      if (hasMe && hasOther) {
+        return openChat(chat.id, { username });
+      }
+    }
+  }
 
-        if (chat.type === "private") {
-            const other = members.find(m => m.user_id !== currentUserId);
-            if (other) {
-                const { data: user } = await supabase
-                    .from("usuarios")
-                    .select("username")
-                    .eq("id", other.user_id)
-                    .single();
+  // Crear chat nuevo si no existía
+  const { data: newChat, error } = await supabase
+    .from("new_chats")
+    .insert({ type: "private" })
+    .select()
+    .single();
 
-                title = user?.username || "Chat";
-            }
-        }
+  if (error) {
+    alert("Error creando chat privado");
+    return;
+  }
 
-        // mostrar chat
+  await supabase.from("new_chat_members").insert([
+    { chat_id: newChat.id, user_id: currentUserId },
+    { chat_id: newChat.id, user_id: otherUserId }
+  ]);
+
+  openChat(newChat.id, { username });
+}
+
+// ==============================
+// ABRIR CHAT
+// ==============================
+
+async function openChat(chatId, user) {
+  currentChatId = chatId;
+
+  chatBox.innerHTML = `<h3>Chat con ${user.username}</h3>`;
+
+  loadMessages(chatId);
+  subscribeToChat(chatId); // ✅ ESCUCHAR MENSAJES EN TIEMPO REAL
+
+  messageInput.onkeydown = e => {
+    if (e.key === "Enter") sendMessage(chatId);
+  };
+}
+
+// ==============================
+// ESCUCHAR MENSAJES EN TIEMPO REAL
+// ==============================
+
+function subscribeToChat(chatId) {
+  // Si ya había un canal, lo cerramos
+  if (messageChannel) {
+    supabase.removeChannel(messageChannel);
+  }
+
+  // Crear canal realtime
+  messageChannel = supabase
+    .channel(`chat_${chatId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "new_messages",
+        filter: `chat_id=eq.${chatId}`
+      },
+      payload => {
+        const msg = payload.new;
+
         const div = document.createElement("div");
-        div.className = "chat-item";
-        div.textContent = title;
-        div.onclick = () => openChat(chat.id, title);
-        chatsList.appendChild(div);
-    }
-}
+        div.className = (msg.sender_id === currentUserId)
+          ? "my-message"
+          : "their-message";
 
-// -----------------------------------------------------
-// 3️⃣ ABRIR O CREAR CHAT PRIVADO
-// -----------------------------------------------------
-async function openOrCreateChat(otherUserId, username) {
-    // Buscar si ya existe chat privado
-    const { data: chats } = await supabase
-        .from("new_chats")
-        .select("id")
-        .eq("type", "private");
-
-    if (chats) {
-        for (const chat of chats) {
-            const { data: members } = await supabase
-                .from("new_chat_members")
-                .select("user_id")
-                .eq("chat_id", chat.id);
-
-            if (!members) continue;
-
-            const hasMe = members.some(m => m.user_id === currentUserId);
-            const hasOther = members.some(m => m.user_id === otherUserId);
-
-            if (hasMe && hasOther) {
-                return openChat(chat.id, username);
-            }
-        }
-    }
-
-    // Si no existe, crearlo
-    const { data: newChat, error } = await supabase
-        .from("new_chats")
-        .insert({ type: "private" })
-        .select()
-        .single();
-
-    if (error) {
-        alert("Error creando chat");
-        return;
-    }
-
-    await supabase.from("new_chat_members").insert([
-        { chat_id: newChat.id, user_id: currentUserId },
-        { chat_id: newChat.id, user_id: otherUserId }
-    ]);
-
-    openChat(newChat.id, username);
-}
-
-// -----------------------------------------------------
-// 4️⃣ ABRIR CHAT
-// -----------------------------------------------------
-async function openChat(chatId, title) {
-    currentChatId = chatId;
-    chatTitle.textContent = title;
-    loadMessages(chatId);
-}
-
-// -----------------------------------------------------
-// 5️⃣ ENVIAR MENSAJE
-// -----------------------------------------------------
-async function sendMessage() {
-    if (!currentChatId) return;
-
-    const content = messageInput.value.trim();
-    if (!content) return;
-
-    await supabase.from("new_messages").insert({
-        chat_id: currentChatId,
-        sender_id: currentUserId,
-        content
-    });
-
-    messageInput.value = "";
-
-    loadMessages(currentChatId);
-    loadChats(); // actualizar lista
-}
-
-document.getElementById("send").onclick = sendMessage;
-
-// -----------------------------------------------------
-// 6️⃣ CARGAR MENSAJES
-// -----------------------------------------------------
-async function loadMessages(chatId) {
-    const { data: messages } = await supabase
-        .from("new_messages")
-        .select("*")
-        .eq("chat_id", chatId)
-        .order("created_at", { ascending: true });
-
-    messagesBox.innerHTML = "";
-
-    messages.forEach(msg => {
-        const div = document.createElement("div");
-        div.className = "message " + (msg.sender_id === currentUserId ? "my-message" : "other-message");
         div.textContent = msg.content;
-        messagesBox.appendChild(div);
-    });
+        chatBox.appendChild(div);
 
-    messagesBox.scrollTop = messagesBox.scrollHeight;
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+    )
+    .subscribe();
 }
 
-// -----------------------------------------------------
-// 7️⃣ INICIAR
-// -----------------------------------------------------
-loadContacts();
-loadChats();
+// ==============================
+// ENVIAR MENSAJE
+// ==============================
+
+async function sendMessage(chatId) {
+  const content = messageInput.value.trim();
+  if (!content) return;
+
+  await supabase.from("new_messages").insert({
+    chat_id: chatId,
+    sender_id: currentUserId,
+    content
+  });
+
+  messageInput.value = "";
+
+  loadMessages(chatId); // refresca por si acaso
+  loadUsers(); // actualiza los recientes
+}
+
+// ==============================
+// CARGAR MENSAJES
+// ==============================
+
+async function loadMessages(chatId) {
+  const { data: messages } = await supabase
+    .from("new_messages")
+    .select("*")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true });
+
+  chatBox.innerHTML = "";
+
+  messages.forEach(msg => {
+    const div = document.createElement("div");
+    div.className = (msg.sender_id === currentUserId) ? "my-message" : "their-message";
+    div.textContent = msg.content;
+    chatBox.appendChild(div);
+  });
+
+  chatBox.scrollTop = chatBox.scrollHeight;
+}
+
+// ==============================
+// INICIAR TODO
+// ==============================
+
+loadUsers();
 </script>
 </body>
 </html>
