@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSGO 2D - Rondas y armas</title>
+<title>CSGO 2D - Minimap y efectos</title>
 <style>
   body { margin:0; padding:0; overflow:hidden; background:#111; }
   canvas { display:block; }
@@ -16,10 +16,16 @@
 <body>
 <canvas id="gameCanvas"></canvas>
 <div id="hud"></div>
+
+<audio id="shotSound" src="https://freesound.org/data/previews/66/66717_931655-lq.mp3"></audio>
+<audio id="deathSound" src="https://freesound.org/data/previews/41/41524_512123-lq.mp3"></audio>
+
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
 const hud = document.getElementById("hud");
+const shotSound = document.getElementById("shotSound");
+const deathSound = document.getElementById("deathSound");
 
 function resizeCanvas() {
   canvas.width = window.innerWidth;
@@ -72,7 +78,7 @@ function spawnEnemies(){
 }
 spawnEnemies();
 
-// --- Paredes ---
+// --- Paredes y coberturas ---
 const walls = [
   {x:0, y:0, w:canvas.width, h:20},
   {x:0, y:canvas.height-20, w:canvas.width, h:20},
@@ -84,7 +90,8 @@ const walls = [
   {x:580, y:150, w:20, h:300},
   {x:650, y:100, w:20, h:200},
   {x:100, y:350, w:150, h:20},
-  {x:400, y:500, w:300, h:20}
+  {x:400, y:500, w:300, h:20},
+  {x:500, y:250, w:40, h:40, destructible:true, hp:3} // Cobertura interactiva
 ];
 
 // --- Balas ---
@@ -100,6 +107,7 @@ function shootBullet(shooter, targetX, targetY){
     size: 5,
     damage: weapons[shooter.weapon].damage
   });
+  if(shooter===player) shotSound.play();
 }
 
 // --- Colisiones ---
@@ -120,7 +128,6 @@ function moveWithCollisions(entity, dx, dy){
 
 // --- Game Loop ---
 function update(){
-  // Movimiento jugador
   let dx=0, dy=0;
   if(keys["w"]) dy -= player.speed;
   if(keys["s"]) dy += player.speed;
@@ -128,19 +135,16 @@ function update(){
   if(keys["d"]) dx += player.speed;
   moveWithCollisions(player, dx, dy);
 
-  // Cambiar arma
   if(keys["1"]) player.weapon=0;
   if(keys["2"]) player.weapon=1;
   if(keys["3"]) player.weapon=2;
 
-  // Disparo jugador
   if(mouse.clicked && player.reload <=0){
     shootBullet(player, mouse.x, mouse.y);
     player.reload = weapons[player.weapon].rate;
   }
   if(player.reload>0) player.reload--;
 
-  // Enemigos
   enemies.forEach(enemy => {
     if(!enemy.alive) return;
     const dxE = player.x - enemy.x;
@@ -150,28 +154,41 @@ function update(){
     const moveY = (dyE/dist)*enemy.speed;
     moveWithCollisions(enemy, moveX, moveY);
 
-    // IA disparo
     if(enemy.reload<=0 && dist<300){
-      enemy.weapon = 0; // todos disparan como pistola
+      enemy.weapon = 0;
       shootBullet(enemy, player.x, player.y);
       enemy.reload = 60;
     }
     if(enemy.reload>0) enemy.reload--;
   });
 
-  // Actualizar balas
-  [player,...enemies].forEach(shooter => {
-    shooter.bullets.forEach((b,i) => {
+  [player,...enemies].forEach(shooter=>{
+    shooter.bullets.forEach((b,i)=>{
       b.x += b.vx;
       b.y += b.vy;
-      if(walls.some(wall => collideRectCircle(wall,b))) shooter.bullets.splice(i,1);
 
+      // Colisiones con paredes
+      for(let wall of walls){
+        if(collideRectCircle(wall,b)){
+          if(wall.destructible){
+            wall.hp -= b.damage;
+            if(wall.hp<=0) walls.splice(walls.indexOf(wall),1);
+          }
+          shooter.bullets.splice(i,1);
+          break;
+        }
+      }
+
+      // Colisiones con enemigos
       if(shooter===player){
         enemies.forEach(enemy => {
           if(enemy.alive && Math.hypot(enemy.x-b.x,enemy.y-b.y)<enemy.size){
             enemy.hp -= b.damage;
             shooter.bullets.splice(i,1);
-            if(enemy.hp<=0) enemy.alive=false;
+            if(enemy.hp<=0){
+              enemy.alive=false;
+              deathSound.play();
+            }
           }
         });
       } else {
@@ -179,7 +196,7 @@ function update(){
           player.hp -= b.damage;
           shooter.bullets.splice(i,1);
           if(player.hp<=0){
-            alert("¡Has muerto! Ronda reiniciada");
+            alert("¡Has muerto! Reiniciando ronda");
             player.hp=10;
             spawnEnemies();
           }
@@ -188,11 +205,9 @@ function update(){
     });
   });
 
-  // Rondas
   if(enemies.every(e=>!e.alive)){
     round++;
     spawnEnemies();
-    console.log("¡Ronda " + round + "!");
   }
 
   draw();
@@ -204,8 +219,10 @@ function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
 
   // Paredes
-  ctx.fillStyle = "#555";
-  walls.forEach(wall => ctx.fillRect(wall.x, wall.y, wall.w, wall.h));
+  walls.forEach(wall=>{
+    ctx.fillStyle = wall.destructible ? "#aa6600" : "#555";
+    ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
+  });
 
   // Jugador
   ctx.fillStyle = player.color;
@@ -234,6 +251,20 @@ function draw(){
 
   // HUD
   hud.innerHTML = `Vida: ${player.hp} | Arma: ${weapons[player.weapon].name} | Ronda: ${round}`;
+
+  // Minimapa
+  const mapW = 150, mapH = 150;
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillRect(canvas.width-mapW-10, 10, mapW, mapH);
+  // Jugador en minimapa
+  ctx.fillStyle="cyan";
+  ctx.fillRect(canvas.width-mapW-10 + player.x/canvas.width*mapW-2, 10+player.y/canvas.height*mapH-2,4,4);
+  // Enemigos en minimapa
+  enemies.forEach(e=>{
+    if(!e.alive) return;
+    ctx.fillStyle="red";
+    ctx.fillRect(canvas.width-mapW-10 + e.x/canvas.width*mapW-2, 10+e.y/canvas.height*mapH-2,4,4);
+  });
 }
 
 update();
