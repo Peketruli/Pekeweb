@@ -3,19 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSGO 2D - Pantalla completa</title>
+<title>CSGO 2D - Rondas y armas</title>
 <style>
   body { margin:0; padding:0; overflow:hidden; background:#111; }
   canvas { display:block; }
+  #hud {
+    position: absolute; top:10px; left:10px; color:white; font-family:sans-serif;
+    font-size:18px; background:rgba(0,0,0,0.5); padding:10px; border-radius:8px;
+  }
 </style>
 </head>
 <body>
 <canvas id="gameCanvas"></canvas>
+<div id="hud"></div>
 <script>
 const canvas = document.getElementById("gameCanvas");
 const ctx = canvas.getContext("2d");
+const hud = document.getElementById("hud");
 
-// Ajustar canvas al tamaño de la ventana
 function resizeCanvas() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
@@ -23,12 +28,10 @@ function resizeCanvas() {
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
-// --- Teclado ---
 const keys = {};
 document.addEventListener("keydown", e => keys[e.key] = true);
 document.addEventListener("keyup", e => keys[e.key] = false);
 
-// --- Ratón ---
 const mouse = { x: 0, y: 0, clicked: false };
 canvas.addEventListener("mousemove", e => {
   const rect = canvas.getBoundingClientRect();
@@ -39,30 +42,42 @@ canvas.addEventListener("mousedown", () => mouse.clicked = true);
 canvas.addEventListener("mouseup", () => mouse.clicked = false);
 
 // --- Jugador ---
-const player = { x: 100, y: 100, size: 20, speed: 3, color: "cyan", bullets: [], reload: 0 };
+const player = { x: 100, y: 100, size: 20, speed: 3, color: "cyan", bullets: [], reload:0, hp: 10, weapon:0 };
+
+// --- Armas ---
+const weapons = [
+  {name:"Pistola", damage:1, rate:15, speed:7},
+  {name:"Rifle", damage:2, rate:8, speed:10},
+  {name:"Escopeta", damage:3, rate:30, speed:6}
+];
 
 // --- Enemigos ---
-const enemies = [];
-for(let i=0;i<5;i++){
-  enemies.push({
-    x: Math.random()*canvas.width,
-    y: Math.random()*canvas.height,
-    size: 20,
-    speed: 2,
-    color: "red",
-    bullets: [],
-    reload: 0,
-    alive: true,
-    hp: 3
-  });
+let enemies = [];
+let round = 1;
+function spawnEnemies(){
+  enemies = [];
+  for(let i=0;i<round+2;i++){
+    enemies.push({
+      x: Math.random()*canvas.width,
+      y: Math.random()*canvas.height,
+      size:20,
+      speed:2,
+      color:"red",
+      bullets: [],
+      reload:0,
+      alive:true,
+      hp: 3+round
+    });
+  }
 }
+spawnEnemies();
 
-// --- Paredes (mapa más completo) ---
+// --- Paredes ---
 const walls = [
-  {x: 0, y:0, w:canvas.width, h:20}, // borde superior
-  {x: 0, y:canvas.height-20, w:canvas.width, h:20}, // borde inferior
-  {x:0, y:0, w:20, h:canvas.height}, // borde izquierdo
-  {x:canvas.width-20, y:0, w:20, h:canvas.height}, // borde derecho
+  {x:0, y:0, w:canvas.width, h:20},
+  {x:0, y:canvas.height-20, w:canvas.width, h:20},
+  {x:0, y:0, w:20, h:canvas.height},
+  {x:canvas.width-20, y:0, w:20, h:canvas.height},
   {x:200, y:150, w:400, h:20},
   {x:200, y:430, w:400, h:20},
   {x:200, y:150, w:20, h:300},
@@ -80,9 +95,10 @@ function shootBullet(shooter, targetX, targetY){
   shooter.bullets.push({
     x: shooter.x,
     y: shooter.y,
-    vx: (dx/dist)*7,
-    vy: (dy/dist)*7,
-    size: 5
+    vx: (dx/dist)*weapons[shooter.weapon].speed,
+    vy: (dy/dist)*weapons[shooter.weapon].speed,
+    size: 5,
+    damage: weapons[shooter.weapon].damage
   });
 }
 
@@ -112,10 +128,15 @@ function update(){
   if(keys["d"]) dx += player.speed;
   moveWithCollisions(player, dx, dy);
 
+  // Cambiar arma
+  if(keys["1"]) player.weapon=0;
+  if(keys["2"]) player.weapon=1;
+  if(keys["3"]) player.weapon=2;
+
   // Disparo jugador
-  if(mouse.clicked && player.reload <= 0){
+  if(mouse.clicked && player.reload <=0){
     shootBullet(player, mouse.x, mouse.y);
-    player.reload = 15;
+    player.reload = weapons[player.weapon].rate;
   }
   if(player.reload>0) player.reload--;
 
@@ -129,8 +150,9 @@ function update(){
     const moveY = (dyE/dist)*enemy.speed;
     moveWithCollisions(enemy, moveX, moveY);
 
-    // Disparo IA
+    // IA disparo
     if(enemy.reload<=0 && dist<300){
+      enemy.weapon = 0; // todos disparan como pistola
       shootBullet(enemy, player.x, player.y);
       enemy.reload = 60;
     }
@@ -144,23 +166,34 @@ function update(){
       b.y += b.vy;
       if(walls.some(wall => collideRectCircle(wall,b))) shooter.bullets.splice(i,1);
 
-      // Colisiones con enemigos
       if(shooter===player){
         enemies.forEach(enemy => {
           if(enemy.alive && Math.hypot(enemy.x-b.x,enemy.y-b.y)<enemy.size){
-            enemy.hp--;
+            enemy.hp -= b.damage;
             shooter.bullets.splice(i,1);
             if(enemy.hp<=0) enemy.alive=false;
           }
         });
       } else {
         if(Math.hypot(player.x-b.x,player.y-b.y)<player.size){
-          console.log("¡Has sido alcanzado!");
+          player.hp -= b.damage;
           shooter.bullets.splice(i,1);
+          if(player.hp<=0){
+            alert("¡Has muerto! Ronda reiniciada");
+            player.hp=10;
+            spawnEnemies();
+          }
         }
       }
     });
   });
+
+  // Rondas
+  if(enemies.every(e=>!e.alive)){
+    round++;
+    spawnEnemies();
+    console.log("¡Ronda " + round + "!");
+  }
 
   draw();
   requestAnimationFrame(update);
@@ -177,7 +210,7 @@ function draw(){
   // Jugador
   ctx.fillStyle = player.color;
   ctx.beginPath();
-  ctx.arc(player.x, player.y, player.size, 0, Math.PI*2);
+  ctx.arc(player.x, player.y, player.size,0,Math.PI*2);
   ctx.fill();
 
   // Enemigos
@@ -185,19 +218,22 @@ function draw(){
     if(!enemy.alive) return;
     ctx.fillStyle = enemy.color;
     ctx.beginPath();
-    ctx.arc(enemy.x, enemy.y, enemy.size, 0, Math.PI*2);
+    ctx.arc(enemy.x, enemy.y, enemy.size,0,Math.PI*2);
     ctx.fill();
   });
 
   // Balas
-  [player,...enemies].forEach(shooter => {
-    shooter.bullets.forEach(b => {
+  [player,...enemies].forEach(shooter=>{
+    shooter.bullets.forEach(b=>{
       ctx.fillStyle = "yellow";
       ctx.beginPath();
       ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
       ctx.fill();
     });
   });
+
+  // HUD
+  hud.innerHTML = `Vida: ${player.hp} | Arma: ${weapons[player.weapon].name} | Ronda: ${round}`;
 }
 
 update();
