@@ -115,451 +115,244 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
-/* ---------------------------
-  CONFIG - PON TUS CREDENCIALES
----------------------------- */
-const SUPABASE_URL = 'TU_SUPABASE_URL';
-const SUPABASE_KEY = 'TU_SUPABASE_ANON_KEY';
+// -----------------------------------------------------
+// 1️⃣ CONFIG SUPABASE
+// -----------------------------------------------------
+const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-/* intenta inicializar supabase; si falla el script seguirá en modo local */
-let supabase = null;
-try { supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); } catch(e){ console.warn('Supabase init error', e); supabase = null; }
+// -----------------------------------------------------
+// 2️⃣ USUARIO ACTUAL
+// -----------------------------------------------------
+let currentUserId = localStorage.getItem("userId");
+let currentUsername = localStorage.getItem("username");
 
-/* ---------------------------
-  HELPERS: local fallback + small utils
----------------------------- */
-const L = { chats:'pc_chats', members:'pc_chat_members', messages:'pc_messages', users:'pc_users' };
-
-function uid(){ return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,6); }
-function save(k,v){ localStorage.setItem(k, JSON.stringify(v)); }
-function load(k){ try{ return JSON.parse(localStorage.getItem(k) || 'null') } catch(e){ return null } }
-function escapeHtml(t){ return String(t||'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;'); }
-
-/* ---------------------------
-  STATE
----------------------------- */
-let currentUserId = localStorage.getItem('userId');
-let currentUsername = localStorage.getItem('username');
-if(!currentUserId || !currentUsername){
-  currentUserId = 'me-' + Math.random().toString(36).slice(2,8);
-  currentUsername = 'Tú';
-  localStorage.setItem('userId', currentUserId);
-  localStorage.setItem('username', currentUsername);
+if (!currentUserId || !currentUsername) {
+  alert("No hay usuario en localStorage");
 }
 
-document.getElementById('profile-name').textContent = currentUsername;
-document.getElementById('profile-id').textContent = currentUserId;
-document.getElementById('profile-avatar').textContent = (currentUsername[0]||'P').toUpperCase();
-
-let appUsers = [];      // contactos visibles (from supabase usuarios or fallback)
-let localChats = load(L.chats) || [];        // [{id,type,name,owner,created_at}]
-let localChatMembers = load(L.members) || []; // [{chat_id,user_id,role}]
-let localMessages = load(L.messages) || [];   // [{id,chat_id,sender_id,sender_name,content,created_at}]
-let localAppUsers = load(L.users) || [];      // [{id,name}]
+// -----------------------------------------------------
+// 3️⃣ ELEMENTOS DOM
+// -----------------------------------------------------
+const recientesList = document.getElementById("recientes");
+const todosList = document.getElementById("todos");
+const messagesEl = document.getElementById("messages");
+const messageInput = document.getElementById("message-input");
+const messageForm = document.getElementById("message-form");
+const chatTitle = document.getElementById("chat-title");
 
 let currentChatId = null;
+let allUsers = [];
+let recentChats = [];
 
-/* ---------------------------
-  UI refs
----------------------------- */
-const chatsListEl = document.getElementById('chats-list');
-const contactsListEl = document.getElementById('contacts-list');
-const messagesEl = document.getElementById('messages');
-const chatTitleEl = document.getElementById('chat-title');
-const inputEl = document.getElementById('message-input');
-const sendBtn = document.getElementById('send');
+// -----------------------------------------------------
+// 4️⃣ CARGAR USUARIOS REGISTRADOS
+// -----------------------------------------------------
+async function loadUsuarios() {
+  const { data, error } = await supabase
+    .from("usuarios")
+    .select("*")
+    .order("name");
 
-const btnAddContact = document.getElementById('btn-add-contact');
-const btnCreateGroup = document.getElementById('btn-create-group');
-const btnMembers = document.getElementById('btn-members');
-
-const modalCreateGroup = document.getElementById('modal-create-group');
-const groupNameInput = document.getElementById('group-name');
-const groupMembersList = document.getElementById('group-members-list');
-const confirmCreateGroup = document.getElementById('confirm-create-group');
-const cancelCreateGroup = document.getElementById('cancel-create-group');
-
-const modalMembers = document.getElementById('modal-members');
-const membersListEl = document.getElementById('members-list');
-const closeMembersBtn = document.getElementById('close-members');
-
-const searchContacts = document.getElementById('search-contacts');
-
-/* ---------------------------
-  Load users (from 'usuarios' table) OR fallback
----------------------------- */
-async function loadAppUsers(){
-  appUsers = [];
-  // try supabase
-  if(supabase){
-    try{
-      // asumimos tabla 'usuarios' y columnas id, username, avatar_url(optional)
-      const { data, error } = await supabase.from('usuarios').select('id, username, avatar_url');
-      if(!error && data && data.length){
-        appUsers = data.map(u => ({ id: String(u.id), name: u.username, avatar: u.avatar_url || null }));
-      } else {
-        console.info('Tabla usuarios vacía o inaccesible, usando fallback.');
-      }
-    } catch(e){ console.warn('Error leyendo usuarios table:', e); }
+  if (error) {
+    alert("Error usuarios: " + error.message);
+    return;
   }
-  // merge with localAppUsers
-  (localAppUsers || []).forEach(u => { if(!appUsers.some(x => x.id===u.id)) appUsers.push(u); });
-  if(appUsers.length===0){
-    appUsers = [ {id:'user1',name:'Alice'}, {id:'user2',name:'Bob'}, {id:'user3',name:'Charlie'} ];
-  }
-  if(!appUsers.some(u=>u.id===currentUserId)) appUsers.push({id:currentUserId,name:currentUsername});
+
+  allUsers = data.filter(u => u.id !== currentUserId);
 }
 
-/* ---------------------------
-  Render lists
----------------------------- */
-function renderChats(){
-  chatsListEl.innerHTML = '';
-  // combine supabase chat_members + localChatMembers
-  (async ()=>{
-    let items = [];
-    if(supabase){
-      try{
-        const { data, error } = await supabase.from('chat_members').select('chat_id, chats(type,name)').eq('user_id', currentUserId);
-        if(!error && data) items = data;
-      } catch(e){ console.warn('err load supabase chat_members',e); }
-    }
-    // add local member chats
-    const localItems = localChatMembers.filter(cm=>cm.user_id===currentUserId).map(cm=>{
-      const chat = localChats.find(c=>c.id===cm.chat_id);
-      if(!chat) return null;
-      return { chat_id: chat.id, chats: { type: chat.type, name: chat.name } };
-    }).filter(Boolean);
-    localItems.forEach(li => { if(!items.some(i=>i.chat_id===li.chat_id)) items.push(li); });
+// -----------------------------------------------------
+// 5️⃣ CARGAR CHATS RECIENTES
+// -----------------------------------------------------
+async function loadRecentChats() {
+  const { data, error } = await supabase
+    .rpc("get_recent_chats", { uid: currentUserId });
 
-    if(items.length===0){
-      const empty = document.createElement('div'); empty.className='small-muted'; empty.style.padding='12px'; empty.textContent='Sin chats aún';
-      chatsListEl.appendChild(empty); return;
-    }
-    items.forEach(it=>{
-      const el = document.createElement('div'); el.className='chat-item';
-      el.textContent = it.chats && it.chats.type==='private' ? 'Chat privado' : (it.chats && it.chats.name ? it.chats.name : 'Chat');
-      el.onclick = ()=>{ currentChatId = it.chat_id; openChat(it.chat_id); }
-      chatsListEl.appendChild(el);
-    });
-  })();
+  if (error) {
+    console.warn("RPC no disponible, usando backup…");
+    await loadChatsFallback();
+    return;
+  }
+
+  recentChats = data;
+  updateUserLists();
 }
 
-function renderContacts(filter=''){
-  contactsListEl.innerHTML = '';
-  const q = filter.trim().toLowerCase();
-  appUsers.filter(u=>u.id!==currentUserId && (!q || u.name.toLowerCase().includes(q) || u.id.toLowerCase().includes(q)))
-    .forEach(u=>{
-      const el = document.createElement('div'); el.className='contact-item';
-      el.innerHTML = `<div><strong style="color:#fff">${escapeHtml(u.name)}</strong><div class="small-muted">${escapeHtml(u.id)}</div></div>
-                      <div style="display:flex;gap:6px">
-                        <button class="btn" style="background:#fff;color:#000">Chat</button>
-                      </div>`;
-      el.querySelector('button').onclick = (ev)=>{
-        ev.stopPropagation();
-        ensurePrivateChat(u.id, u.name);
+// -----------------------------------------------------
+// 5.1 FALLBACK SI NO EXISTE RPC
+// -----------------------------------------------------
+async function loadChatsFallback() {
+  const { data, error } = await supabase
+    .from("chats")
+    .select("id, updated_at, chat_members ( user_id ), mensajes:messages (*)")
+    .order("updated_at", { ascending: false });
+
+  if (error) return;
+
+  recentChats = data
+    .filter(c =>
+      c.chat_members.some(m => m.user_id === currentUserId)
+    )
+    .map(c => {
+      const other = c.chat_members.find(m => m.user_id !== currentUserId);
+      return {
+        chat_id: c.id,
+        user_id: other.user_id
       };
-      contactsListEl.appendChild(el);
     });
+
+  updateUserLists();
 }
 
-/* ---------------------------
-  OPEN CHAT (load messages & title)
----------------------------- */
-async function openChat(chatId){
-  messagesEl.innerHTML = '';
-  chatTitleEl.textContent = 'Cargando...';
+// -----------------------------------------------------
+// 6️⃣ ACTUALIZAR LISTAS (RECIENTES / TODOS)
+// -----------------------------------------------------
+function updateUserLists() {
+  recientesList.innerHTML = "";
+  todosList.innerHTML = "";
 
-  // get name (if supabase available)
-  let name = null;
-  if(supabase){
-    try{
-      const { data } = await supabase.from('chats').select('name').eq('id', chatId).single();
-      if(data) name = data.name;
-    }catch(e){}
-  }
-  // fallback local
-  if(!name){
-    const c = localChats.find(x=>x.id===chatId); name = c ? c.name : chatId;
-  }
-  chatTitleEl.textContent = name;
+  const recentUserIds = recentChats.map(c => c.user_id);
 
-  // try supabase messages
-  if(supabase){
-    try{
-      const { data, error } = await supabase.from('messages').select('*').eq('chat_id', chatId).order('created_at', {ascending:true});
-      if(!error && data){
-        data.forEach(m=> addMessageRow(m));
-      }
-      // subscribe realtime
-      try{ supabase.removeAllChannelSubscriptions(); } catch(e){}
-      supabase.channel('chat-'+chatId)
-        .on('postgres_changes',{event:'INSERT',schema:'public',table:'messages',filter:`chat_id=eq.${chatId}`},
-            payload => addMessageRow(payload.new)
-        ).subscribe();
-      return;
-    } catch(e){ console.warn('error reading supabase messages',e); }
-  }
+  const recientes = allUsers.filter(u => recentUserIds.includes(u.id));
+  const otros = allUsers.filter(u => !recentUserIds.includes(u.id));
 
-  // fallback local messages
-  localMessages.filter(m=>m.chat_id===chatId).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).forEach(addMessageRow);
+  // ✅ Imprimir recientes
+  recientes.forEach(user => {
+    const div = document.createElement("div");
+    div.className = "chat-item";
+    div.textContent = user.name;
+    div.onclick = () => openChatWithUser(user.id, user.name);
+    recientesList.appendChild(div);
+  });
+
+  // ✅ Imprimir todos
+  otros.forEach(user => {
+    const div = document.createElement("div");
+    div.className = "chat-item";
+    div.textContent = user.name;
+    div.onclick = () => createPrivateChat(user.id, user.name);
+    todosList.appendChild(div);
+  });
 }
 
-/* helper to render a message */
-function addMessageRow(m){
-  const div = document.createElement('div'); div.className = 'message ' + (m.sender_id===currentUserId? 'my-message':'other-message');
-  div.innerHTML = `<strong>${escapeHtml(m.sender_name||m.sender_id)}:</strong> ${escapeHtml(m.content)}`;
-  messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;
+// -----------------------------------------------------
+// 7️⃣ CREAR CHAT PRIVADO SI NO EXISTE
+// -----------------------------------------------------
+async function createPrivateChat(otherId, otherName) {
+  const { data: chat, error } = await supabase
+    .from("chats")
+    .insert([{ type: "private" }])
+    .select("id")
+    .single();
+
+  if (error) return alert(error.message);
+
+  const chatId = chat.id;
+
+  await supabase.from("chat_members").insert([
+    { chat_id: chatId, user_id: currentUserId },
+    { chat_id: chatId, user_id: otherId }
+  ]);
+
+  recentChats.unshift({
+    chat_id: chatId,
+    user_id: otherId
+  });
+
+  updateUserLists();
+  openChatWithUser(otherId, otherName, chatId);
 }
 
-/* ---------------------------
-  SEND MESSAGE
----------------------------- */
-async function sendMessage(){
-  const txt = inputEl.value.trim();
-  if(!txt) return;
-  if(!currentChatId) return alert('Selecciona un chat');
+// -----------------------------------------------------
+// 8️⃣ ABRIR CHAT EXISTENTE
+// -----------------------------------------------------
+function openChatWithUser(userId, username, forcedChatId = null) {
+  chatTitle.textContent = username;
 
-  const row = {
-    id: uid(),
+  if (forcedChatId) {
+    currentChatId = forcedChatId;
+    loadMessages(currentChatId);
+    return;
+  }
+
+  const chat = recentChats.find(c => c.user_id === userId);
+  if (!chat) return alert("No se encontró chat.");
+
+  currentChatId = chat.chat_id;
+  loadMessages(chat.chat_id);
+}
+
+// -----------------------------------------------------
+// 9️⃣ CARGAR MENSAJES
+// -----------------------------------------------------
+async function loadMessages(chatId) {
+  messagesEl.innerHTML = "";
+
+  const { data, error } = await supabase
+    .from("messages")
+    .select("*")
+    .eq("chat_id", chatId)
+    .order("created_at");
+
+  if (error) return;
+
+  data.forEach(addMessageToUI);
+
+  supabase.removeAllChannels();
+
+  supabase.channel("chat-" + chatId)
+    .on("postgres_changes", {
+      event: "INSERT",
+      schema: "public",
+      table: "messages",
+      filter: `chat_id=eq.${chatId}`
+    }, payload => {
+      addMessageToUI(payload.new);
+      bumpChatToTop(chatId);
+    })
+    .subscribe();
+}
+
+// -----------------------------------------------------
+// 🔟 ENVIAR MENSAJE
+// -----------------------------------------------------
+messageForm.addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!currentChatId) return;
+
+  const text = messageInput.value.trim();
+  if (!text) return;
+
+  await supabase.from("messages").insert([{
     chat_id: currentChatId,
     sender_id: currentUserId,
     sender_name: currentUsername,
-    content: txt,
-    created_at: new Date().toISOString()
-  };
+    content: text
+  }]);
 
-  // intentar supabase
-  if(supabase){
-    try{
-      const { error } = await supabase.from('messages').insert([{
-        chat_id: currentChatId,
-        sender_id: currentUserId,
-        sender_name: currentUsername,
-        content: txt
-      }]);
-      if(error) throw error;
-      inputEl.value = ''; return;
-    }catch(e){
-      console.warn('Enviar a supabase falló, guardando local', e);
-      alert('No se pudo enviar a Supabase; mensaje guardado localmente.');
-    }
-  }
+  messageInput.value = "";
+});
 
-  // fallback local
-  localMessages.push(row); save(L.messages, localMessages);
-  addMessageRow(row);
-  inputEl.value = '';
+// -----------------------------------------------------
+// 1️⃣1️⃣ SUBIR CHAT A RECIENTES (TOP)
+// -----------------------------------------------------
+function bumpChatToTop(chatId) {
+  const chat = recentChats.find(c => c.chat_id === chatId);
+  if (!chat) return;
+  recentChats = recentChats.filter(c => c.chat_id !== chatId);
+  recentChats.unshift(chat);
+  updateUserLists();
 }
 
-  async function createPrivateChat(otherUserId) {
-  // 1. Crear el chat
-  const { data: chat, error: chatErr } = await supabase
-    .from('chats')
-    .insert({ type: 'private' })
-    .select()
-    .single();
-
-  if (chatErr) {
-    console.error('Error creando chat:', chatErr);
-    return;
-  }
-
-  // 2. Insertar ambos usuarios en el chat_members
-  const { error: memberErr } = await supabase
-    .from('chat_members')
-    .insert([
-      { chat_id: chat.id, user_id: currentUserId },
-      { chat_id: chat.id, user_id: otherUserId }
-    ]);
-
-  if (memberErr) {
-    console.error('Error creando miembros:', memberErr);
-    return;
-  }
-
-  loadChats();
-  return chat.id;
-}
-
-/* ---------------------------
-  ENSURE PRIVATE CHAT (create if not exists)
----------------------------- */
-async function ensurePrivateChat(otherId, otherName){
-  // 1) buscar en supabase chat con 2 miembros? Simplicidad: creamos siempre nuevo chat privado
-  // si quieres deduplicar, habría que buscar chats donde ambos sean miembros - lo puedo añadir si quieres
-  const name = 'Chat privado';
-  if(supabase){
-    try{
-      const { data: chatData, error: chatError } = await supabase.from('chats').insert({ type:'private', name }).select('id');
-      if(chatError) throw chatError;
-      const chatId = chatData[0].id;
-      const members = [{chat_id:chatId,user_id:currentUserId},{chat_id:chatId,user_id:otherId}];
-      const { error: membersError } = await supabase.from('chat_members').insert(members);
-      if(membersError) throw membersError;
-      // open
-      currentChatId = chatId; await openChat(chatId);
-      await renderAll();
-      return;
-    }catch(e){ console.warn('Crear private chat supabase falló, creando local', e); alert('No se pudo crear en Supabase; creado local.'); }
-  }
-  // local fallback
-  const chatId = uid();
-  localChats.push({id:chatId,type:'private',name,owner:currentUserId,created_at:new Date().toISOString()});
-  localChatMembers.push({chat_id:chatId,user_id:currentUserId,role:'owner'});
-  localChatMembers.push({chat_id:chatId,user_id:otherId,role:'member'});
-  save(L.chats, localChats); save(L.members, localChatMembers);
-  currentChatId = chatId; openChat(chatId); renderAll();
-}
-
-/* ---------------------------
-  CREATE GROUP modal flow
----------------------------- */
-btnCreateGroup.onclick = async ()=>{
-  await loadAppUsers(); populateGroupMembers(); modalCreateGroup.style.display='flex';
-};
-cancelCreateGroup.onclick = ()=>{ modalCreateGroup.style.display='none'; groupNameInput.value=''; }
-
-function populateGroupMembers(){
-  groupMembersList.innerHTML = '';
-  appUsers.filter(u=>u.id!==currentUserId).forEach(u=>{
-    const row = document.createElement('div'); row.style.padding='8px'; row.style.borderBottom='1px solid #eee';
-    row.innerHTML = `<label style="display:flex;justify-content:space-between;align-items:center">
-      <span><strong>${escapeHtml(u.name)}</strong> <div class="small-muted" style="font-size:12px">${escapeHtml(u.id)}</div></span>
-      <input type="checkbox" value="${escapeHtml(u.id)}"/>
-    </label>`;
-    groupMembersList.appendChild(row);
-  });
-}
-
-confirmCreateGroup.onclick = async ()=>{
-  const name = groupNameInput.value.trim();
-  if(!name) return alert('Pon nombre al grupo');
-  const selected = Array.from(groupMembersList.querySelectorAll('input[type=checkbox]:checked')).map(i=>i.value);
-  if(selected.length===0) return alert('Selecciona al menos un miembro');
-
-  // try supabase
-  if(supabase){
-    try{
-      const { data: chatData, error: chatError } = await supabase.from('chats').insert({type:'group',name,owner:currentUserId}).select('id');
-      if(chatError) throw chatError;
-      const chatId = chatData[0].id;
-      const membersRows = selected.map(uid=>({chat_id:chatId,user_id:uid}));
-      membersRows.push({chat_id:chatId,user_id:currentUserId});
-      const { error: membersError } = await supabase.from('chat_members').insert(membersRows);
-      if(membersError) throw membersError;
-      modalCreateGroup.style.display='none';
-      groupNameInput.value=''; renderAll(); currentChatId = chatId; openChat(chatId); return;
-    }catch(e){ console.warn('Crear grupo supabase falló', e); alert('No se pudo crear en Supabase; creado local.'); }
-  }
-
-  // local fallback
-  const chatId = uid();
-  localChats.push({id:chatId,type:'group',name,owner:currentUserId,created_at:new Date().toISOString()});
-  const membersRows = selected.map(uid=>({chat_id:chatId,user_id:uid}));
-  membersRows.push({chat_id:chatId,user_id:currentUserId});
-  localChatMembers.push(...membersRows); save(L.chats, localChats); save(L.members, localChatMembers);
-  modalCreateGroup.style.display='none'; groupNameInput.value=''; renderAll(); currentChatId = chatId; openChat(chatId);
-};
-
-/* ---------------------------
-  ADD CONTACT flow
----------------------------- */
-btnAddContact.onclick = async ()=>{
-  let id = prompt('ID del contacto (ej: user5)');
-  if(!id) return;
-  id = id.trim();
-  let name = prompt('Nombre del contacto');
-  if(!name) return;
-  name = name.trim();
-
-  // check duplicates in appUsers and localAppUsers
-  if((appUsers||[]).some(u=>u.id===id) || (localAppUsers||[]).some(u=>u.id===id)){
-    return alert('Ese contacto ya existe localmente.');
-  }
-
-  // try supabase upsert into 'usuarios'
-  if(supabase){
-    try{
-      const { error } = await supabase.from('usuarios').upsert({ id, username: name });
-      if(error) throw error;
-      // reload users
-      await loadAppUsers();
-      alert('Contacto guardado en Supabase');
-      return renderContacts(searchContacts.value||'');
-    }catch(e){ console.warn('Upsert supabase falló:', e); }
-  }
-
-  // fallback local
-  localAppUsers.push({id,name}); save(L.users, localAppUsers);
-  await loadAppUsers(); renderContacts(searchContacts.value||'');
-  alert('Contacto guardado localmente');
-};
-
-/* ---------------------------
-  VIEW MEMBERS
----------------------------- */
-btnMembers.onclick = async ()=>{
-  if(!currentChatId) return alert('Selecciona un chat');
-  membersListEl.innerHTML = '';
-  // try supabase first
-  if(supabase){
-    try{
-      const { data, error } = await supabase.from('chat_members').select('user_id').eq('chat_id', currentChatId);
-      if(!error && data && data.length){
-        for(const m of data){
-          const u = (appUsers||[]).find(x=>x.id===m.user_id) || (localAppUsers||[]).find(x=>x.id===m.user_id);
-          const text = u ? `${u.name} (${m.user_id})` : m.user_id;
-          const d = document.createElement('div'); d.textContent = text; membersListEl.appendChild(d);
-        }
-        modalMembers.style.display='flex'; return;
-      }
-    }catch(e){ console.warn('read members supabase failed', e); }
-  }
-  // fallback local
-  const members = localChatMembers.filter(m=>m.chat_id===currentChatId);
-  if(members.length===0) membersListEl.textContent='Sin miembros (local)';
-  else members.forEach(m=>{
-    const u = (appUsers||[]).find(x=>x.id===m.user_id) || (localAppUsers||[]).find(x=>x.id===m.user_id);
-    const text = u ? `${u.name} (${m.user_id})` : m.user_id;
-    const d = document.createElement('div'); d.textContent = text; membersListEl.appendChild(d);
-  });
-  modalMembers.style.display='flex';
-};
-closeMembersBtn.onclick = ()=> modalMembers.style.display='none';
-
-/* ---------------------------
-  SEARCH contacts
----------------------------- */
-searchContacts.addEventListener('input', e=> renderContacts(e.target.value));
-
-/* ---------------------------
-  Render everything
----------------------------- */
-async function renderAll(){
-  await loadAppUsers();
-  renderContacts(searchContacts.value||'');
-  renderChats();
-}
-
-/* ---------------------------
-  Init
----------------------------- */
-(async function init(){
-  await renderAll();
+// -----------------------------------------------------
+// ✅ INICIO
+// -----------------------------------------------------
+(async function init() {
+  await loadUsuarios();
+  await loadRecentChats();
 })();
-
-/* ---------------------------
-  UI events
----------------------------- */
-sendBtn.onclick = sendMessage;
-inputEl.addEventListener('keydown', e=>{ if(e.key==='Enter') sendMessage(); });
-
-/* ---------------------------
-  Small note for the user
----------------------------- */
-console.log('PekeChat loaded. user:', currentUserId, currentUsername);
 </script>
 </body>
 </html>
