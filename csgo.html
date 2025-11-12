@@ -1,297 +1,659 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSGO 2D — Híbrido Dust2-Inferno-Office</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CSGO 2D — 5v5 Terroristas vs Antiterroristas (Estable)</title>
 <style>
-  body { margin:0; overflow:hidden; background:#222; }
-  canvas { display:block; background:#1a1a1a; }
-  #hud {
-    position: absolute; top:10px; left:10px;
-    color:white; font-family:Arial; font-size:16px;
-    background:rgba(0,0,0,0.4); padding:10px; border-radius:8px;
-  }
+  html,body{height:100%;margin:0;background:#101217;color:#fff;font-family:Inter,Arial,sans-serif}
+  canvas{display:block}
+  #hud{position:absolute;left:10px;top:10px;background:rgba(0,0,0,0.45);padding:10px;border-radius:8px;font-size:15px}
+  #info{position:absolute;right:10px;top:10px;background:rgba(0,0,0,0.45);padding:10px;border-radius:8px;font-size:14px;text-align:right}
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
 <div id="hud"></div>
+<div id="info"></div>
 
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-const hud = document.getElementById("hud");
+/* ----------------------------------------
+   CSGO 2D - 5v5 Terroristas vs Antiterroristas
+   Estable: limpieza de memoria, IA aliada, mapa ciudad
+   Controls: W/A/S/D mover, click disparar, E plantar (si eres T y en site),
+             F para desactivar si CT y cerca de bomba.
+   ---------------------------------------- */
 
-function resizeCanvas(){
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
-}
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas();
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const hud = document.getElementById('hud');
+const info = document.getElementById('info');
 
-// --- Teclado y ratón ---
+let W = window.innerWidth, H = window.innerHeight;
+function resize(){ W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; buildMap(); }
+window.addEventListener('resize', resize);
+resize();
+
+// input
 const keys = {};
-document.addEventListener("keydown", e => keys[e.key] = true);
-document.addEventListener("keyup", e => keys[e.key] = false);
-const mouse = {x:0,y:0,clicked:false};
-canvas.addEventListener("mousemove", e=>{
-  const r=canvas.getBoundingClientRect();
-  mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top;
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+const mouse = { x:0, y:0, down:false };
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - r.left; mouse.y = e.clientY - r.top;
 });
-canvas.addEventListener("mousedown", ()=>mouse.clicked=true);
-canvas.addEventListener("mouseup", ()=>mouse.clicked=false);
+canvas.addEventListener('mousedown', ()=> mouse.down = true);
+canvas.addEventListener('mouseup', ()=> mouse.down = false);
 
-// --- Jugador ---
-const player = {x:200,y:200,size:20,speed:3,color:"#0ff",bullets:[],reload:0,hp:10,weapon:0};
+// game constants
+const FRAME_RATE = 60;
+const MAX_BULLETS = 300; // global cap
 
-// --- Armas ---
-const weapons=[
-  {name:"Pistola",damage:1,rate:15,speed:7},
-  {name:"Rifle",damage:2,rate:8,speed:10},
-  {name:"Escopeta",damage:3,rate:30,speed:6}
-];
+// weapons
+const WEAPONS = {
+  pistol: { name:'Pistola', damage:1, rate:16, speed:9 },
+  rifle:  { name:'Rifle', damage:2, rate:9, speed:12 },
+  shotgun:{ name:'Escopeta', damage:3, rate:28, speed:8 }
+};
 
-// --- Enemigos ---
-let enemies=[];
-let round=1;
-function spawnEnemies(){
-  enemies=[];
-  for(let i=0;i<3+round;i++){
-    enemies.push({
-      x:Math.random()*canvas.width,
-      y:Math.random()*canvas.height,
-      size:20,speed:2,color:"red",bullets:[],reload:0,alive:true,hp:3+round
-    });
+// map (city style) - will be rebuilt on resize
+let walls = [], covers = [], siteA = {}, siteB = {}, spawnT = {}, spawnCT = {};
+function buildMap(){
+  walls = []; covers = [];
+  // border walls
+  walls.push({x:0,y:0,w:W,h:22});
+  walls.push({x:0,y:H-22,w:W,h:22});
+  walls.push({x:0,y:0,w:22,h:H});
+  walls.push({x:W-22,y:0,w:22,h:H});
+
+  // main boulevards & blocks (city feel)
+  walls.push({x: W*0.08, y: H*0.12, w: W*0.02, h: H*0.76});
+  walls.push({x: W*0.3, y: H*0.05, w: W*0.02, h: H*0.5});
+  walls.push({x: W*0.3, y: H*0.55, w: W*0.02, h: H*0.4});
+  walls.push({x: W*0.6, y: H*0.15, w: W*0.02, h: H*0.7});
+  walls.push({x: W*0.45, y: H*0.3, w: W*0.28, h: 18});
+  walls.push({x: W*0.45, y: H*0.6, w: W*0.28, h: 18});
+
+  // plazas (open areas) with covers (Dust2 vibe mixed)
+  const plazaAX = W*0.12, plazaAY = H*0.18, plazaW = W*0.18, plazaH = H*0.18;
+  const plazaBX = W*0.7, plazaBY = H*0.5;
+
+  covers.push({x:plazaAX+40, y:plazaAY+40, w:70, h:40, hp:3});
+  covers.push({x:plazaAX+110,y:plazaAY+70, w:60, h:50, hp:2});
+  covers.push({x:plazaBX+20, y:plazaBY+30, w:80, h:40, hp:3});
+  covers.push({x:plazaBX+120,y:plazaBY+80, w:50, h:40, hp:2});
+
+  // office-like blocks (interior partitions, but not closed rooms)
+  walls.push({x: W*0.38, y: H*0.72, w: W*0.24, h: 18});
+  walls.push({x: W*0.38, y: H*0.72, w: 18, h: H*0.18});
+  walls.push({x: W*0.62, y: H*0.72, w: 18, h: H*0.18});
+
+  // small destructible objects
+  covers.push({x: W*0.53, y: H*0.28, w:40, h:40, hp:2});
+  covers.push({x: W*0.43, y: H*0.42, w:40, h:40, hp:2});
+
+  // spawn areas (rects)
+  spawnT = { x: W*0.05 + 20, y: H*0.75, w: W*0.12, h: H*0.12 };
+  spawnCT = { x: W*0.82, y: H*0.08, w: W*0.12, h: H*0.12 };
+
+  // sites
+  siteA = { x: plazaAX+10, y: plazaAY+10, w: plazaW-20, h: plazaH-20 };
+  siteB = { x: plazaBX+10, y: plazaBY+10, w: plazaW-20, h: plazaH-20 };
+}
+buildMap();
+
+// util collisions
+function rectCircleCollide(rect, circle){
+  const cx = Math.max(rect.x, Math.min(circle.x, rect.x + rect.w));
+  const cy = Math.max(rect.y, Math.min(circle.y, rect.y + rect.h));
+  const dx = circle.x - cx, dy = circle.y - cy;
+  return (dx*dx + dy*dy) < ((circle.size || 1) * (circle.size || 1));
+}
+function rectRectCollide(a,b){
+  return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
+}
+
+// entity pools
+let bullets = []; // global bullets (to cap easily)
+function pushBullet(b){
+  bullets.push(b);
+  if(bullets.length > MAX_BULLETS){ bullets.shift(); }
+}
+
+// Player
+const player = {
+  team: 'CT', // starts CT
+  name: 'Tú',
+  x: 0, y: 0, size:18, color:'#3fe8d0', speed:3.2, hp: 10,
+  weapon: WEAPONS.rifle, reload:0, defuseProgress:0, bullets:[]
+};
+
+// Bot class
+class Bot {
+  constructor(x,y,team,name){
+    this.team = team; this.name = name || 'Bot';
+    this.x = x; this.y = y; this.size = 16;
+    this.color = (team==='T')? '#ff6b6b' : '#7fb3ff';
+    this.speed = (team==='T')? 1.5 : 1.6;
+    this.hp = 4;
+    this.alive = true;
+    this.weapon = WEAPONS.pistol;
+    this.reload = Math.floor(10 + Math.random()*50);
+    this.bullets = [];
+    this.state = 'idle'; // idle, follow, engage, toSite, planting, defuse
+    this.targetSite = (Math.random()<0.5)?'A':'B';
+    this.plantTimer = 0;
+    this.aggroRange = 300;
+  }
+  update(){
+    if(!this.alive) return;
+    // simple team behaviours
+    if(this.team === 'T'){
+      this.behaveTerror();
+    } else {
+      this.behaveCT();
+    }
+    // update bullets
+    for(let i=this.bullets.length-1;i>=0;i--){
+      const b = this.bullets[i];
+      b.x += b.vx; b.y += b.vy; b.life--;
+      if(b.life<=0) this.bullets.splice(i,1);
+      // collisions handled globally later
+    }
+    if(this.reload>0) this.reload--;
+  }
+  behaveTerror(){
+    // If planting already done elsewhere, switch to attack
+    if(gameState.bomb && gameState.bomb.planted){
+      // go attack CT (simple: approach player)
+      const dx = player.x - this.x, dy = player.y - this.y;
+      const d = Math.hypot(dx,dy) || 1;
+      this.move((dx/d)*this.speed, (dy/d)*this.speed);
+      if(d < 260 && this.reload<=0){ this.shoot(player.x, player.y); this.reload = 50; }
+      return;
+    }
+    // if close to chosen site -> try to plant
+    const site = (this.targetSite==='A')? siteA : siteB;
+    const dx = (site.x + site.w/2) - this.x;
+    const dy = (site.y + site.h/2) - this.y;
+    const d = Math.hypot(dx,dy) || 1;
+    if(this.state === 'idle' || this.state === 'toSite'){
+      // move to site
+      this.move((dx/d)*this.speed, (dy/d)*this.speed);
+      if(d < 26){ this.state = 'planting'; this.plantTimer = FRAME_RATE * 2; }
+      // if see CT player or CT bots, engage
+      const target = detectNearestEnemy(this, 'CT');
+      if(target && Math.hypot(target.x-this.x,target.y-this.y) < 240){ this.state = 'engage'; this.engageTarget = target; }
+    } else if(this.state === 'planting'){
+      this.plantTimer--;
+      if(this.plantTimer<=0){
+        // plant only if bomb not planted yet
+        if(!gameState.bomb.planted){
+          gameState.bomb.planted = true;
+          gameState.bomb.x = site.x + site.w/2;
+          gameState.bomb.y = site.y + site.h/2;
+          gameState.bomb.timer = FRAME_RATE * 45; // 45s
+          gameState.roundMessage = 'Bomba plantada en ' + this.targetSite;
+          gameState.msgTimer = FRAME_RATE*3;
+        }
+        this.state = 'engage';
+      }
+    } else if(this.state === 'engage'){
+      const target = this.engageTarget || detectNearestEnemy(this,'CT');
+      if(target){
+        const dx2 = target.x - this.x, dy2 = target.y - this.y;
+        const d2 = Math.hypot(dx2,dy2) || 1;
+        this.move((dx2/d2)*this.speed, (dy2/d2)*this.speed);
+        if(d2 < 260 && this.reload<=0){ this.shoot(target.x, target.y); this.reload = 50; }
+      } else {
+        this.state = 'toSite';
+      }
+    }
+  }
+  behaveCT(){
+    // simple CT behaviour: follow player, help attack nearest T
+    // follow player if no immediate enemy
+    const enemy = detectNearestEnemy(this, 'T');
+    if(enemy && Math.hypot(enemy.x-this.x, enemy.y-this.y) < 260){
+      // engage enemy
+      const dx = enemy.x - this.x, dy = enemy.y - this.y, d = Math.hypot(dx,dy)||1;
+      this.move((dx/d)*this.speed, (dy/d)*this.speed);
+      if(d < 260 && this.reload<=0){ this.shoot(enemy.x, enemy.y); this.reload = 50; }
+      return;
+    }
+    // follow player at small offset
+    const offsetAngle = Math.PI*2*(Math.random());
+    const tx = player.x + Math.cos(offsetAngle)*40 + (Math.random()*20-10);
+    const ty = player.y + Math.sin(offsetAngle)*40 + (Math.random()*20-10);
+    const dx2 = tx - this.x, dy2 = ty - this.y, d2 = Math.hypot(dx2,dy2)||1;
+    if(d2 > 6) this.move((dx2/d2)*this.speed, (dy2/d2)*this.speed);
+  }
+  move(vx, vy){
+    // axis move with simple wall avoidance
+    this.x += vx;
+    if(walls.some(w=>rectCircleCollide(w, this)) || covers.some(w=>rectCircleCollide(w, this))) this.x -= vx;
+    this.y += vy;
+    if(walls.some(w=>rectCircleCollide(w, this)) || covers.some(w=>rectCircleCollide(w, this))) this.y -= vy;
+  }
+  shoot(tx,ty){
+    const dx = tx - this.x, dy = ty - this.y, dist = Math.hypot(dx,dy) || 1;
+    const speed = this.weapon.speed;
+    const b = { x:this.x, y:this.y, vx:(dx/dist)*speed, vy:(dy/dist)*speed, size:4, damage:this.weapon.damage, life:FRAME_RATE*3 };
+    this.bullets.push(b);
+    pushBullet(b);
+  }
+  draw(ctx){
+    if(!this.alive) return;
+    ctx.fillStyle = this.color;
+    ctx.beginPath(); ctx.arc(this.x,this.y,this.size,0,Math.PI*2); ctx.fill();
+    // name
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(this.x-22, this.y - this.size - 14, 44, 10);
+    ctx.fillStyle = '#fff';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(this.name, this.x, this.y - this.size - 6);
+    ctx.textAlign = 'start';
+
+    // hp bar
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(this.x-16, this.y - this.size - 20, 32, 5);
+    ctx.fillStyle = '#ff6b6b';
+    ctx.fillRect(this.x-16, this.y - this.size - 20, 32 * Math.max(0,this.hp)/6, 5);
   }
 }
-spawnEnemies();
 
-// --- Paredes (Mapa híbrido Dust2 + Inferno + Office) ---
-const walls=[
-  // Bordes
-  {x:0,y:0,w:canvas.width,h:20},
-  {x:0,y:canvas.height-20,w:canvas.width,h:20},
-  {x:0,y:0,w:20,h:canvas.height},
-  {x:canvas.width-20,y:0,w:20,h:canvas.height},
+// global arrays
+let bots = []; // includes both teams
 
-  // Zona Dust2 (arena)
-  {x:100,y:100,w:300,h:20},
-  {x:380,y:100,w:20,h:200},
-  {x:200,y:300,w:200,h:20},
-
-  // Zona Inferno (ciudad naranja)
-  {x:600,y:150,w:20,h:300},
-  {x:620,y:150,w:250,h:20},
-  {x:850,y:150,w:20,h:200},
-  {x:620,y:350,w:250,h:20},
-
-  // Zona Office (interior gris)
-  {x:300,y:450,w:300,h:20},
-  {x:300,y:450,w:20,h:150},
-  {x:580,y:450,w:20,h:150},
-  {x:300,y:580,w:300,h:20},
-
-  // Coberturas destructibles
-  {x:500,y:300,w:40,h:40,destructible:true,hp:3},
-  {x:700,y:400,w:40,h:40,destructible:true,hp:3}
-];
-
-// --- Bombas ---
-let bomb=null;
-let bombTimer=0;
-let roundTimer=60*30; // 30 segundos de ronda
-let winsPlayer=0, winsEnemy=0;
-
-function plantBomb(x,y){
-  bomb={x,y,active:true,defusing:false,defused:false};
-  bombTimer=60*10; // 10 segundos hasta explotar
+// helper: detect nearest enemy for a bot
+function detectNearestEnemy(bot, enemyTeam){
+  let nearest=null, nd=999999;
+  for(let b of bots){
+    if(!b.alive) continue;
+    if(b.team !== enemyTeam) continue;
+    const d = Math.hypot(b.x - bot.x, b.y - bot.y);
+    if(d < nd){ nd = d; nearest = b; }
+  }
+  // also consider player if player is the requested team
+  if(enemyTeam === player.team){
+    const dP = Math.hypot(player.x - bot.x, player.y - bot.y);
+    if(dP < nd){ nd = dP; nearest = player; }
+  } else if(enemyTeam !== player.team){
+    // enemyTeam could be 'CT' and player CT already considered above
+  }
+  return nearest;
 }
 
-function defuseBomb(){
-  if(bomb && bomb.active && !bomb.defused){
-    bomb.defusing=true;
-    setTimeout(()=>{
-      bomb.defused=true;
-      bomb.active=false;
-      winsPlayer++;
-      spawnNextRound();
-    },4000);
+// game state & bomb
+const gameState = {
+  round: 1, roundTimer: FRAME_RATE * 90, // 90s
+  bomb: { planted:false, x:0, y:0, timer:0, site:null },
+  roundMessage: '', msgTimer: 0,
+  playerWins:0, enemyWins:0
+};
+
+// init round and spawn teams
+function initRound(){
+  // cleanup arrays
+  bullets = []; // global bullets
+  bots = [];
+  // spawn player in CT spawn
+  const p = randomPointInRect(spawnCT); player.x = p.x; player.y = p.y; player.hp = 10; player.weapon = WEAPONS.rifle; player.reload = 0; player.defuseProgress = 0;
+
+  // create CT team: player + 4 bots
+  const ctNames = ['Alex','Nico','Rita','Javi']; // allies names
+  // bots placed near CT spawn
+  for(let i=0;i<4;i++){
+    const s = randomPointInRect(spawnCT);
+    const bot = new Bot(s.x + (i*12), s.y + (i*8), 'CT', ctNames[i]);
+    bot.weapon = WEAPONS.pistol;
+    bots.push(bot);
+  }
+
+  // create T team: 5 bots
+  for(let i=0;i<5;i++){
+    const s = randomPointInRect(spawnT);
+    const bot = new Bot(s.x + (i*10), s.y + (i*6), 'T', 'T-'+(i+1));
+    bot.weapon = WEAPONS.pistol;
+    bots.push(bot);
+  }
+
+  // reset gameState values
+  gameState.bomb = { planted:false, x:0, y:0, timer:0, site:null };
+  gameState.roundTimer = FRAME_RATE * 90;
+  gameState.round = gameState.round || 1;
+  gameState.roundMessage = 'Ronda ' + gameState.round;
+  gameState.msgTimer = FRAME_RATE * 2;
+}
+initRound();
+
+// helper to spawn items
+function randomPointInRect(r){ return { x: r.x + 10 + Math.random()*(Math.max(1,r.w-20)), y: r.y + 10 + Math.random()*(Math.max(1,r.h-20)) }; }
+
+// shooting helpers (player)
+function playerShoot(tx,ty){
+  if(player.reload>0) return;
+  const dx = tx - player.x, dy = ty - player.y; const dist = Math.hypot(dx,dy)||1;
+  const speed = player.weapon.speed;
+  const b = { x: player.x, y: player.y, vx: (dx/dist)*speed, vy: (dy/dist)*speed, size:4, damage: player.weapon.damage, life: FRAME_RATE*3 };
+  player.bullets.push(b); pushBullet(b);
+  player.reload = player.weapon.rate;
+}
+
+// global bullets update and collisions (handles both player and bot bullets)
+function updateBullets(){
+  // update player's bullets
+  for(let i = player.bullets.length-1; i>=0; i--){
+    const b = player.bullets[i];
+    b.x += b.vx; b.y += b.vy; b.life--;
+    if(b.life <= 0 || b.x < -50 || b.x > W+50 || b.y < -50 || b.y > H+50){ player.bullets.splice(i,1); continue; }
+    // collide with walls
+    let hit = false;
+    for(let wi=walls.length-1; wi>=0; wi--){
+      if(rectCircleCollide(walls[wi], {x:b.x,y:b.y,size:b.size})){
+        hit = true; break;
+      }
+    }
+    for(let ci=covers.length-1; ci>=0; ci--){
+      if(rectCircleCollide(covers[ci], {x:b.x,y:b.y,size:b.size})){
+        covers[ci].hp -= b.damage; hit = true;
+        if(covers[ci].hp <= 0) covers.splice(ci,1);
+        break;
+      }
+    }
+    if(hit){ player.bullets.splice(i,1); continue; }
+    // hit bots (T)
+    for(let bo of bots){
+      if(!bo.alive) continue;
+      if(bo.team === 'T' && Math.hypot(bo.x-b.x, bo.y-b.y) < bo.size + b.size){
+        bo.hp -= b.damage; player.bullets.splice(i,1);
+        if(bo.hp <= 0) bo.alive = false;
+        break;
+      }
+    }
+    // if bomb exists and is in site area, bullets won't affect bomb (no friendly fire)
+  }
+
+  // update bots bullets (they are also in global bullets array via pushBullet when fired)
+  // but we need to process each bot's bullets array too (their own bullets are separate objects)
+  for(let bot of bots){
+    for(let i = bot.bullets.length-1; i>=0; i--){
+      const b = bot.bullets[i];
+      b.x += b.vx; b.y += b.vy; b.life--;
+      if(b.life <= 0 || b.x < -50 || b.x > W+50 || b.y < -50 || b.y > H+50){ bot.bullets.splice(i,1); continue; }
+      // collide with walls/covers
+      let hit = false;
+      for(let wi=walls.length-1; wi>=0; wi--){
+        if(rectCircleCollide(walls[wi], {x:b.x,y:b.y,size:b.size})){ hit = true; break; }
+      }
+      for(let ci=covers.length-1; ci>=0; ci--){
+        if(rectCircleCollide(covers[ci], {x:b.x,y:b.y,size:b.size})){
+          covers[ci].hp -= b.damage; hit = true;
+          if(covers[ci].hp <= 0) covers.splice(ci,1);
+          break;
+        }
+      }
+      if(hit){ bot.bullets.splice(i,1); continue; }
+      // hit player if opposing team
+      if(bot.team !== player.team && Math.hypot(player.x-b.x, player.y-b.y) < player.size + b.size){
+        player.hp -= b.damage; bot.bullets.splice(i,1);
+        if(player.hp <= 0){
+          // CT team lose round instantly
+          gameState.enemyWins++;
+          endRound('T');
+          return;
+        }
+      }
+      // hit CT bots
+      for(let bo of bots){
+        if(!bo.alive) continue;
+        if(bo.team !== bot.team && bo.team === player.team && Math.hypot(bo.x-b.x, bo.y-b.y) < bo.size + b.size){
+          bo.hp -= b.damage; bot.bullets.splice(i,1);
+          if(bo.hp <= 0) bo.alive = false;
+          break;
+        }
+      }
+    }
+  }
+
+  // clean global bullets array (we used pushBullet to cap them)
+  for(let i=bullets.length-1;i>=0;i--){
+    const b = bullets[i]; b.life--; if(b.life<=0) bullets.splice(i,1);
   }
 }
 
-// --- Funciones de juego ---
-function shoot(shooter,tx,ty){
-  const dx=tx-shooter.x,dy=ty-shooter.y,dist=Math.hypot(dx,dy);
-  shooter.bullets.push({
-    x:shooter.x,y:shooter.y,
-    vx:(dx/dist)*weapons[shooter.weapon].speed,
-    vy:(dy/dist)*weapons[shooter.weapon].speed,
-    size:5,damage:weapons[shooter.weapon].damage
-  });
+// end round, reset safely without setTimeout stacking
+let roundEnding = false;
+function endRound(winner){
+  if(roundEnding) return;
+  roundEnding = true;
+  gameState.roundTimer = 0;
+  gameState.roundMessage = (winner === 'CT') ? 'Ronda ganada' : (winner === 'T' ? 'Ronda perdida' : 'Empate');
+  gameState.msgTimer = FRAME_RATE * 2;
+  if(winner === 'CT') gameState.playerWins++; else if(winner === 'T') gameState.enemyWins++;
+  // schedule reset after short delay using frame counter (no setTimeout chains)
+  resetCounter = FRAME_RATE * 2; // 2 seconds
 }
 
-function collideRectCircle(r,c){
-  const cx=Math.max(r.x,Math.min(c.x,r.x+r.w));
-  const cy=Math.max(r.y,Math.min(c.y,r.y+r.h));
-  const dx=c.x-cx,dy=c.y-cy;
-  return dx*dx+dy*dy < c.size*c.size;
+// reset counter variable and reset function
+let resetCounter = 0;
+function performResetIfNeeded(){
+  if(resetCounter > 0){
+    resetCounter--;
+    if(resetCounter === 0){
+      // clean arrays & re-init round
+      bullets = [];
+      // remove any lingering bullets in bots
+      for(let b of bots) b.bullets = [];
+      player.bullets = [];
+      // increase round count and respawn
+      gameState.round++;
+      // respawn players and bots fresh
+      initRound();
+      roundEnding = false;
+    }
+  }
 }
 
-function moveEntity(e,dx,dy){
-  e.x+=dx;
-  if(walls.some(w=>collideRectCircle(w,e))) e.x-=dx;
-  e.y+=dy;
-  if(walls.some(w=>collideRectCircle(w,e))) e.y-=dy;
-}
-
-function spawnNextRound(){
-  bomb=null; bombTimer=0; roundTimer=60*30;
-  round++; spawnEnemies();
-  player.hp=10;
-}
-
-// --- Bucle principal ---
+// main update loop
 function update(){
-  // Movimiento
-  let dx=0,dy=0;
-  if(keys["w"]) dy-=player.speed;
-  if(keys["s"]) dy+=player.speed;
-  if(keys["a"]) dx-=player.speed;
-  if(keys["d"]) dx+=player.speed;
-  moveEntity(player,dx,dy);
+  // message timer
+  if(gameState.msgTimer > 0){ gameState.msgTimer--; if(gameState.msgTimer === 0) gameState.roundMessage = ''; }
 
-  if(keys["1"]) player.weapon=0;
-  if(keys["2"]) player.weapon=1;
-  if(keys["3"]) player.weapon=2;
+  // round timer
+  if(gameState.roundTimer > 0) gameState.roundTimer--;
+  // player movement
+  let mvx = 0, mvy = 0;
+  if(keys['w']||keys['arrowup']) mvy -= player.speed;
+  if(keys['s']||keys['arrowdown']) mvy += player.speed;
+  if(keys['a']||keys['arrowleft']) mvx -= player.speed;
+  if(keys['d']||keys['arrowright']) mvx += player.speed;
+  if(mvx !== 0 && mvy !== 0){ mvx *= Math.SQRT1_2; mvy *= Math.SQRT1_2; }
+  // move with wall avoidance (axis)
+  player.x += mvx; if(walls.some(w=>rectCircleCollide(w, player)) || covers.some(w=>rectCircleCollide(w, player))) player.x -= mvx;
+  player.y += mvy; if(walls.some(w=>rectCircleCollide(w, player)) || covers.some(w=>rectCircleCollide(w, player))) player.y -= mvy;
 
-  if(mouse.clicked && player.reload<=0){
-    shoot(player,mouse.x,mouse.y);
-    player.reload=weapons[player.weapon].rate;
+  // player shooting
+  if(mouse.down && player.reload <= 0){
+    playerShoot(mouse.x, mouse.y);
   }
-  if(player.reload>0) player.reload--;
+  if(player.reload > 0) player.reload--;
 
-  // Plantar bomba con "E"
-  if(keys["e"] && !bomb){
-    plantBomb(player.x,player.y);
+  // player bullets update handled in updateBullets()
+  // bots update
+  for(let b of bots){ b.update(); }
+
+  // synchronize bots bullets into global bullets array for capping
+  for(let bo of bots){
+    for(let bb of bo.bullets){ if(!bullets.includes(bb)) bullets.push(bb); }
   }
-  // Desactivar bomba con "f"
-  if(keys["f"]){
-    defuseBomb();
-  }
+  // also include player's bullets
+  for(let pb of player.bullets){ if(!bullets.includes(pb)) bullets.push(pb); }
 
-  // Enemigos
-  enemies.forEach(e=>{
-    if(!e.alive) return;
-    const dx=player.x-e.x,dy=player.y-e.y,dist=Math.hypot(dx,dy);
-    moveEntity(e,(dx/dist)*e.speed,(dy/dist)*e.speed);
-    if(e.reload<=0 && dist<300){
-      shoot(e,player.x,player.y);
-      e.reload=60;
-    }
-    if(e.reload>0)e.reload--;
-  });
+  // update bullets and collisions
+  updateBullets();
 
-  // Balas
-  [player,...enemies].forEach(s=>{
-    s.bullets.forEach((b,i)=>{
-      b.x+=b.vx;b.y+=b.vy;
-      for(let w of walls){
-        if(collideRectCircle(w,b)){
-          if(w.destructible){w.hp-=b.damage;if(w.hp<=0)walls.splice(walls.indexOf(w),1);}
-          s.bullets.splice(i,1);return;
+  // bomb logic
+  if(gameState.bomb.planted){
+    gameState.bomb.timer--;
+    // if timer reaches zero bomb explodes and Terrorists win
+    if(gameState.bomb.timer <= 0){
+      gameState.roundMessage = 'Bomba explotó — Pierdes';
+      gameState.msgTimer = FRAME_RATE * 3;
+      gameState.enemyWins++;
+      endRound('T');
+    } else {
+      // defuse by CT player or CT bots
+      // CT player
+      const d = Math.hypot(player.x - gameState.bomb.x, player.y - gameState.bomb.y);
+      if(d < 32 && keys['f'] && player.team === 'CT' && player.hp > 0){
+        player.defuseProgress++;
+        if(player.defuseProgress >= FRAME_RATE * 5){
+          // defused
+          gameState.bomb.planted = false;
+          gameState.roundMessage = 'Bomba desactivada';
+          gameState.msgTimer = FRAME_RATE * 2;
+          gameState.playerWins++;
+          endRound('CT');
         }
+      } else {
+        if(player.defuseProgress > 0) player.defuseProgress = Math.max(0, player.defuseProgress - 2);
       }
-      if(s===player){
-        enemies.forEach(e=>{
-          if(e.alive && Math.hypot(e.x-b.x,e.y-b.y)<e.size){
-            e.hp-=b.damage; s.bullets.splice(i,1);
-            if(e.hp<=0) e.alive=false;
-          }
-        });
-      }else{
-        if(Math.hypot(player.x-b.x,player.y-b.y)<player.size){
-          player.hp-=b.damage; s.bullets.splice(i,1);
-          if(player.hp<=0){winsEnemy++;spawnNextRound();}
-        }
+    }
+  } else {
+    // if bomb not planted, check if any T bot close to site -> they will plant in bot logic
+    // player can plant if on T side and presses E and inside site
+    if(keys['e'] && player.team === 'T'){
+      // check if in any site
+      if(rectRectCollide(player, siteA) || rectRectCollide(player, siteB) || rectCircleCollide(siteA, player) || rectCircleCollide(siteB, player)){
+        const site = rectRectCollide(player, siteA) || rectCircleCollide(siteA, player) ? 'A' : 'B';
+        gameState.bomb.planted = true;
+        const s = (site === 'A') ? siteA : siteB;
+        gameState.bomb.x = s.x + s.w/2; gameState.bomb.y = s.y + s.h/2;
+        gameState.bomb.timer = FRAME_RATE * 45;
+        gameState.bomb.site = site;
+        gameState.roundMessage = 'Bomba plantada por jugador en ' + site;
+        gameState.msgTimer = FRAME_RATE * 3;
       }
-    });
-  });
-
-  // Bomba
-  if(bomb && bomb.active && !bomb.defused){
-    bombTimer--;
-    if(bombTimer<=0){
-      winsEnemy++;
-      bomb.active=false;
-      spawnNextRound();
     }
   }
 
-  roundTimer--;
-  if(roundTimer<=0){
-    winsEnemy++;
-    spawnNextRound();
-  }
+  // if all T bots and player-terror (no T alive) and bomb not planted => CT wins
+  const anyTAlive = bots.some(b => b.alive && b.team === 'T');
+  const anyCTAlive = bots.some(b => b.alive && b.team === 'CT') || player.hp > 0;
+  if(!anyTAlive && !gameState.bomb.planted){ gameState.playerWins++; endRound('CT'); }
+  // if round timer expires and bomb not planted -> CT win
+  if(gameState.roundTimer <= 0 && !gameState.bomb.planted){ gameState.playerWins++; endRound('CT'); }
 
+  // perform reset if scheduled
+  performResetIfNeeded();
+
+  // draw & loop
   draw();
   requestAnimationFrame(update);
 }
 
+// draw
 function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // background
+  ctx.fillStyle = '#0f1418'; ctx.fillRect(0,0,W,H);
+  // ground plaza colors
+  ctx.fillStyle = '#23272b';
+  ctx.fillRect(siteA.x - 20, siteA.y - 20, siteA.w + 40, siteA.h + 40);
+  ctx.fillRect(siteB.x - 20, siteB.y - 20, siteB.w + 40, siteB.h + 40);
 
-  // Fondo
-  const grad = ctx.createLinearGradient(0,0,canvas.width,canvas.height);
-  grad.addColorStop(0,"#403020");
-  grad.addColorStop(1,"#1b1b1b");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-
-  // Paredes
-  walls.forEach(w=>{
-    ctx.fillStyle=w.destructible?"#a60":"#555";
-    ctx.fillRect(w.x,w.y,w.w,w.h);
-  });
-
-  // Bomba
-  if(bomb && bomb.active){
-    ctx.fillStyle = bomb.defusing?"#0f0":"#ff0";
-    ctx.beginPath();
-    ctx.arc(bomb.x,bomb.y,10,0,Math.PI*2);
-    ctx.fill();
+  // walls
+  for(let w of walls){
+    ctx.fillStyle = (w.destructible ? '#a65' : '#4f5559');
+    ctx.fillRect(w.x, w.y, w.w, w.h);
+  }
+  // covers
+  for(let c of covers){
+    ctx.fillStyle = '#5f6d74';
+    ctx.fillRect(c.x, c.y, c.w, c.h);
   }
 
-  // Jugador
+  // sites outlines
+  ctx.strokeStyle = 'rgba(190,160,80,0.8)'; ctx.lineWidth = 2;
+  ctx.strokeRect(siteA.x, siteA.y, siteA.w, siteA.h);
+  ctx.strokeRect(siteB.x, siteB.y, siteB.w, siteB.h);
+
+  // spawn boxes
+  ctx.fillStyle = 'rgba(255,120,60,0.08)'; ctx.fillRect(spawnT.x, spawnT.y, spawnT.w, spawnT.h);
+  ctx.fillStyle = 'rgba(60,160,255,0.06)'; ctx.fillRect(spawnCT.x, spawnCT.y, spawnCT.w, spawnCT.h);
+
+  // draw bomb if planted
+  if(gameState.bomb.planted){
+    ctx.fillStyle = '#ffd24d';
+    ctx.beginPath(); ctx.arc(gameState.bomb.x, gameState.bomb.y, 10,0,Math.PI*2); ctx.fill();
+    // timer arc
+    const pct = (gameState.bomb.timer / (FRAME_RATE*45));
+    ctx.strokeStyle = 'rgba(255,200,0,0.95)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(gameState.bomb.x, gameState.bomb.y, 16, -Math.PI/2, -Math.PI/2 + Math.PI*2*pct); ctx.stroke();
+  }
+
+  // draw bots
+  for(let b of bots) b.draw(ctx);
+
+  // draw player
   ctx.fillStyle = player.color;
-  ctx.beginPath();
-  ctx.arc(player.x,player.y,player.size,0,Math.PI*2);
-  ctx.fill();
+  ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
+  // player hp bar
+  ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(player.x - 26, player.y - player.size - 14, 52, 8);
+  ctx.fillStyle = '#3fe8d0'; ctx.fillRect(player.x - 26, player.y - player.size - 14, 52 * (player.hp/10), 8);
 
-  // Enemigos
-  enemies.forEach(e=>{
-    if(!e.alive)return;
-    ctx.fillStyle=e.color;
-    ctx.beginPath();
-    ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
-    ctx.fill();
-  });
+  // draw bullets (player)
+  ctx.fillStyle = '#ffe78a';
+  for(let b of player.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); }
 
-  // Balas
-  [player,...enemies].forEach(s=>{
-    s.bullets.forEach(b=>{
-      ctx.fillStyle="yellow";
-      ctx.beginPath();
-      ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
-      ctx.fill();
-    });
-  });
+  // draw bullets (bots)
+  ctx.fillStyle = '#ffcdcd';
+  for(let bo of bots){
+    for(let b of bo.bullets){ ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill(); }
+  }
 
   // HUD
-  hud.innerHTML=`❤️ Vida: ${player.hp} | 🔫 ${weapons[player.weapon].name} | 💣 ${bomb?"Plantada":"Sin bomba"} | 🕒 ${Math.floor(roundTimer/60)}s | Ronda ${round}<br>Victorias: Tú ${winsPlayer} — Enemigos ${winsEnemy}`;
+  const seconds = Math.ceil(gameState.roundTimer / FRAME_RATE);
+  hud.innerHTML = `Vida: ${player.hp} • Arma: ${player.weapon.name} • Ronda: ${gameState.round} • Tiempo: ${seconds}s<br>
+  Marcador: CT ${gameState.playerWins} - T ${gameState.enemyWins} • Bomb: ${gameState.bomb.planted ? 'Sí ('+Math.ceil(gameState.bomb.timer/FRAME_RATE)+'s)' : 'No'}`;
+
+  // info / defuse
+  if(gameState.bomb.planted){
+    const d = Math.hypot(player.x - gameState.bomb.x, player.y - gameState.bomb.y);
+    if(d < 60 && player.team === 'CT'){
+      info.innerHTML = `Bomba en ${gameState.bomb.site} • Mantén <b>F</b> para desactivar (${Math.ceil((FRAME_RATE*5 - player.defuseProgress)/FRAME_RATE)}s)` ;
+      // progress bar
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(10, H - 36, 180, 22);
+      ctx.fillStyle = '#6aff9e'; ctx.fillRect(12, H - 34, 176 * (player.defuseProgress / (FRAME_RATE*5)), 18);
+    } else {
+      info.innerHTML = `Bomba en ${gameState.bomb.site} • ${Math.ceil(gameState.bomb.timer/FRAME_RATE)}s restantes`;
+    }
+  } else {
+    info.innerHTML = `Objetivo: evita que planten la bomba. Presiona <b>E</b> para plantar si eres Terrorista.`;
+  }
+
+  // round messages
+  if(gameState.roundMessage){
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(W/2 - 200, 30, 400, 48);
+    ctx.fillStyle = '#fff'; ctx.font = '20px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(gameState.roundMessage, W/2, 62);
+    ctx.textAlign = 'start';
+  }
 }
 
-update();
+// start update loop
+requestAnimationFrame(update);
+
+/* -------------------------
+   Safety & stability notes:
+   - No setInterval loops left running. Only one requestAnimationFrame.
+   - Reset uses frame-based counter (resetCounter) to avoid stacked timeouts.
+   - Bullets are capped with MAX_BULLETS and have limited life.
+   - When resetting we clear arrays and re-init round.
+   ------------------------- */
+
 </script>
 </body>
 </html>
