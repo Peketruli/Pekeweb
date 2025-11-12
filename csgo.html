@@ -1,272 +1,556 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSGO 2D - Minimap y efectos</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CSGO 2D — Prototype (Bombs & Rounds)</title>
 <style>
-  body { margin:0; padding:0; overflow:hidden; background:#111; }
-  canvas { display:block; }
-  #hud {
-    position: absolute; top:10px; left:10px; color:white; font-family:sans-serif;
-    font-size:18px; background:rgba(0,0,0,0.5); padding:10px; border-radius:8px;
+  html,body{height:100%;margin:0;background:#0b0f14;color:#fff;font-family:Inter,Arial,sans-serif}
+  canvas{display:block}
+  #hud{
+    position: absolute; left:10px; top:10px; background:rgba(0,0,0,0.45);
+    padding:10px;border-radius:8px;font-size:15px;
   }
+  #info { position: absolute; right:10px; top:10px; background:rgba(0,0,0,0.45);
+    padding:10px;border-radius:8px; font-size:14px; text-align:right; }
 </style>
 </head>
 <body>
-<canvas id="gameCanvas"></canvas>
+<canvas id="c"></canvas>
 <div id="hud"></div>
-
-<audio id="shotSound" src="https://freesound.org/data/previews/66/66717_931655-lq.mp3"></audio>
-<audio id="deathSound" src="https://freesound.org/data/previews/41/41524_512123-lq.mp3"></audio>
+<div id="info"></div>
 
 <script>
-const canvas = document.getElementById("gameCanvas");
-const ctx = canvas.getContext("2d");
-const hud = document.getElementById("hud");
-const shotSound = document.getElementById("shotSound");
-const deathSound = document.getElementById("deathSound");
+// --------------------------- SETUP --------------------------------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const hud = document.getElementById('hud');
+const info = document.getElementById('info');
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+function resize(){
+  canvas.width = innerWidth;
+  canvas.height = innerHeight;
+  buildMap(); // rebuild boundaries scaled to new size
 }
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas();
+addEventListener('resize', resize);
+resize();
 
+// input
 const keys = {};
-document.addEventListener("keydown", e => keys[e.key] = true);
-document.addEventListener("keyup", e => keys[e.key] = false);
-
-const mouse = { x: 0, y: 0, clicked: false };
-canvas.addEventListener("mousemove", e => {
-  const rect = canvas.getBoundingClientRect();
-  mouse.x = e.clientX - rect.left;
-  mouse.y = e.clientY - rect.top;
+addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+const mouse = {x:0,y:0,down:false};
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - r.left;
+  mouse.y = e.clientY - r.top;
 });
-canvas.addEventListener("mousedown", () => mouse.clicked = true);
-canvas.addEventListener("mouseup", () => mouse.clicked = false);
+canvas.addEventListener('mousedown', () => mouse.down = true);
+canvas.addEventListener('mouseup', () => mouse.down = false);
 
-// --- Jugador ---
-const player = { x: 100, y: 100, size: 20, speed: 3, color: "cyan", bullets: [], reload:0, hp: 10, weapon:0 };
-
-// --- Armas ---
-const weapons = [
-  {name:"Pistola", damage:1, rate:15, speed:7},
-  {name:"Rifle", damage:2, rate:8, speed:10},
-  {name:"Escopeta", damage:3, rate:30, speed:6}
-];
-
-// --- Enemigos ---
-let enemies = [];
+// ------------------------- GAME STATE ------------------------------
 let round = 1;
+let playerScore = 0;
+let enemyScore = 0;
+let roundTimer = 90 * 60; // frames (60fps) -> 90s
+const FRAME_RATE = 60;
+let bomb = {
+  planted: false,
+  x:0,y:0,
+  timer: 0, // frames
+  site: null // 'A' or 'B'
+};
+let roundActive = true;
+let roundMessage = "";
+let messageTimer = 0; // frames to show round messages
+
+// ------------------------ PLAYER ----------------------------------
+const player = {
+  x: 0, y: 0,
+  size: 18,
+  color: '#2fe8d0',
+  speed: 3.2,
+  hp: 10,
+  weapon: { name:'Rifle', damage:2, rate:8, speed:10 },
+  reload:0,
+  bullets: [],
+  defusing: false,
+  defuseProgress: 0 // frames
+};
+
+// ------------------------ WEAPONS ---------------------------------
+const weapons = {
+  pistol: {name:'Pistola', damage:1, rate:15, speed:8},
+  rifle: {name:'Rifle', damage:2, rate:8, speed:12},
+  shotgun: {name:'Escopeta', damage:3, rate:30, speed:7}
+};
+player.weapon = weapons.rifle;
+
+// ------------------------ ENEMIES ---------------------------------
+let enemies = [];
 function spawnEnemies(){
   enemies = [];
-  for(let i=0;i<round+2;i++){
+  // Spawn on T-side spawn area
+  for(let i=0;i<Math.min(6, 1 + round + 1); i++){
+    const s = randomPointInRect(spawnT);
     enemies.push({
-      x: Math.random()*canvas.width,
-      y: Math.random()*canvas.height,
-      size:20,
-      speed:2,
-      color:"red",
+      x: s.x, y: s.y,
+      size: 17,
+      color: '#ff5f5f',
+      speed: 1.6 + Math.min(0.6, round*0.05),
+      hp: 3 + Math.floor(round*0.5),
+      alive: true,
       bullets: [],
-      reload:0,
-      alive:true,
-      hp: 3+round
+      reload: Math.floor(30 + Math.random()*60),
+      state: 'moveToSite', // moveToSite, planting, attacking
+      targetSite: (Math.random()<0.5)?'A':'B',
+      plantTimer: 0
     });
   }
 }
 spawnEnemies();
 
-// --- Paredes y coberturas ---
-const walls = [
-  {x:0, y:0, w:canvas.width, h:20},
-  {x:0, y:canvas.height-20, w:canvas.width, h:20},
-  {x:0, y:0, w:20, h:canvas.height},
-  {x:canvas.width-20, y:0, w:20, h:canvas.height},
-  {x:200, y:150, w:400, h:20},
-  {x:200, y:430, w:400, h:20},
-  {x:200, y:150, w:20, h:300},
-  {x:580, y:150, w:20, h:300},
-  {x:650, y:100, w:20, h:200},
-  {x:100, y:350, w:150, h:20},
-  {x:400, y:500, w:300, h:20},
-  {x:500, y:250, w:40, h:40, destructible:true, hp:3} // Cobertura interactiva
-];
+// ------------------------ MAP DESIGN -------------------------------
+// We'll create a map scaled to canvas size. The map is deliberately open with
+// corridors, no fully trapped closed rooms. Mix of 3 themes in colors.
+let walls = [];
+let coverables = []; // destructible cover (optional)
+let siteA = {}, siteB = {}, spawnT = {}, spawnCT = {};
 
-// --- Balas ---
-function shootBullet(shooter, targetX, targetY){
-  const dx = targetX - shooter.x;
-  const dy = targetY - shooter.y;
-  const dist = Math.hypot(dx,dy);
-  shooter.bullets.push({
-    x: shooter.x,
-    y: shooter.y,
-    vx: (dx/dist)*weapons[shooter.weapon].speed,
-    vy: (dy/dist)*weapons[shooter.weapon].speed,
-    size: 5,
-    damage: weapons[shooter.weapon].damage
-  });
-  if(shooter===player) shotSound.play();
+function buildMap(){
+  walls = []; coverables = [];
+  const W = canvas.width, H = canvas.height;
+  // boundaries (thick)
+  walls.push({x:0,y:0,w:W,h:24});
+  walls.push({x:0,y:H-24,w:W,h:24});
+  walls.push({x:0,y:0,w:24,h:H});
+  walls.push({x:W-24,y:0,w:24,h:H});
+
+  // central long corridor (Inferno-style)
+  walls.push({x: W*0.15, y: H*0.18, w: W*0.7, h: 18});
+  walls.push({x: W*0.15, y: H*0.82 - 18, w: W*0.7, h: 18});
+  walls.push({x: W*0.15, y: H*0.18, w: 18, h: H*0.64});
+
+  // open plazas (Dust2 vibe)
+  const plazaW = W*0.24;
+  const plazaH = H*0.22;
+  const plazaAX = W*0.12, plazaAY = H*0.25;
+  const plazaBX = W*0.64, plazaBY = H*0.55;
+  // plaza obstacles (covers)
+  coverables.push({x:plazaAX + 40, y: plazaAY + 30, w:70, h:40, hp:3});
+  coverables.push({x:plazaAX + 150, y: plazaAY + 70, w:50, h:50, hp:2});
+  coverables.push({x:plazaBX + 40, y: plazaBY + 30, w:70, h:40, hp:3});
+  coverables.push({x:plazaBX + 130, y: plazaBY + 60, w:60, h:60, hp:2});
+
+  // office interior blocks (Office vibe) - open partitions not closed rooms
+  walls.push({x: W*0.35, y: H*0.38, w: W*0.08, h: H*0.18});
+  walls.push({x: W*0.53, y: H*0.22, w: W*0.06, h: H*0.14});
+  walls.push({x: W*0.42, y: H*0.62, w: W*0.12, h: H*0.06});
+
+  // L-shaped cover lines mixing styles
+  walls.push({x: W*0.24, y: H*0.5, w: W*0.12, h: 18});
+  walls.push({x: W*0.6, y: H*0.38, w: 18, h: H*0.12});
+
+  // spawn areas (T and CT)
+  spawnT = {x: W*0.05 + 40, y: H*0.75 - 40, w: W*0.12, h: H*0.12};
+  spawnCT = {x: W*0.85 - 40, y: H*0.12 + 40, w: W*0.12, h: H*0.12};
+
+  // bombsites (rects) - A left, B right
+  siteA = {x: plazaAX+20, y: plazaAY+20, w: plazaW-40, h: plazaH-40};
+  siteB = {x: plazaBX+20, y: plazaBY+20, w: plazaW-40, h: plazaH-40};
+
+  // add some small cover inside sites
+  coverables.push({x: siteA.x + siteA.w*0.45, y: siteA.y + siteA.h*0.45, w: 40, h: 40, hp: 2});
+  coverables.push({x: siteB.x + siteB.w*0.2, y: siteB.y + siteB.h*0.35, w: 50, h: 30, hp: 2});
 }
 
-// --- Colisiones ---
-function collideRectCircle(rect, circle){
-  const closestX = Math.max(rect.x, Math.min(circle.x, rect.x+rect.w));
-  const closestY = Math.max(rect.y, Math.min(circle.y, rect.y+rect.h));
-  const dx = circle.x - closestX;
-  const dy = circle.y - closestY;
-  return (dx*dx + dy*dy) < (circle.size*circle.size);
+buildMap();
+
+// ---------------------- UTILITIES ---------------------------------
+function rnd(min,max){ return min + Math.random()*(max-min); }
+function randomPointInRect(r){
+  return { x: r.x + Math.random()*Math.max(1,r.w-1), y: r.y + Math.random()*Math.max(1,r.h-1) };
 }
 
-function moveWithCollisions(entity, dx, dy){
-  entity.x += dx;
-  if(walls.some(wall => collideRectCircle(wall, entity))) entity.x -= dx;
-  entity.y += dy;
-  if(walls.some(wall => collideRectCircle(wall, entity))) entity.y -= dy;
+function rectCircleCollide(rect, c){
+  const cx = Math.max(rect.x, Math.min(c.x, rect.x + rect.w));
+  const cy = Math.max(rect.y, Math.min(c.y, rect.y + rect.h));
+  const dx = c.x - cx, dy = c.y - cy;
+  return (dx*dx + dy*dy) < (c.size*c.size || 1);
+}
+function rectRectCollide(a,b){
+  return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
 }
 
-// --- Game Loop ---
-function update(){
-  let dx=0, dy=0;
-  if(keys["w"]) dy -= player.speed;
-  if(keys["s"]) dy += player.speed;
-  if(keys["a"]) dx -= player.speed;
-  if(keys["d"]) dx += player.speed;
-  moveWithCollisions(player, dx, dy);
-
-  if(keys["1"]) player.weapon=0;
-  if(keys["2"]) player.weapon=1;
-  if(keys["3"]) player.weapon=2;
-
-  if(mouse.clicked && player.reload <=0){
-    shootBullet(player, mouse.x, mouse.y);
-    player.reload = weapons[player.weapon].rate;
-  }
-  if(player.reload>0) player.reload--;
-
-  enemies.forEach(enemy => {
-    if(!enemy.alive) return;
-    const dxE = player.x - enemy.x;
-    const dyE = player.y - enemy.y;
-    const dist = Math.hypot(dxE, dyE);
-    const moveX = (dxE/dist)*enemy.speed;
-    const moveY = (dyE/dist)*enemy.speed;
-    moveWithCollisions(enemy, moveX, moveY);
-
-    if(enemy.reload<=0 && dist<300){
-      enemy.weapon = 0;
-      shootBullet(enemy, player.x, player.y);
-      enemy.reload = 60;
+// attempt to move entity with axis-aligned avoidance of walls
+function moveAvoidWalls(entity, vx, vy){
+  // try X then Y, if colliding revert single axis
+  entity.x += vx;
+  if(walls.some(w=>rectCircleCollide(w, entity)) || coverables.some(w=>rectCircleCollide(w, entity))){
+    entity.x -= vx;
+    // try small detour (vertical)
+    entity.y += Math.sign(vy||1)*1.5;
+    if(walls.some(w=>rectCircleCollide(w, entity)) || coverables.some(w=>rectCircleCollide(w, entity))){
+      entity.y -= Math.sign(vy||1)*1.5;
     }
-    if(enemy.reload>0) enemy.reload--;
-  });
+  }
+  entity.y += vy;
+  if(walls.some(w=>rectCircleCollide(w, entity)) || coverables.some(w=>rectCircleCollide(w, entity))){
+    entity.y -= vy;
+    // try small detour (horizontal)
+    entity.x += Math.sign(vx||1)*1.5;
+    if(walls.some(w=>rectCircleCollide(w, entity)) || coverables.some(w=>rectCircleCollide(w, entity))){
+      entity.x -= Math.sign(vx||1)*1.5;
+    }
+  }
+}
 
-  [player,...enemies].forEach(shooter=>{
-    shooter.bullets.forEach((b,i)=>{
-      b.x += b.vx;
-      b.y += b.vy;
+// ----------------------- BULLETS ----------------------------------
+function shoot(shooter, tx, ty){
+  const dx = tx - shooter.x, dy = ty - shooter.y;
+  const dist = Math.hypot(dx,dy) || 1;
+  const speed = shooter.weapon?.speed || 10;
+  shooter.bullets.push({ x: shooter.x, y: shooter.y, vx: (dx/dist)*speed, vy: (dy/dist)*speed, size:4, damage: shooter.weapon?.damage || 1 });
+}
 
-      // Colisiones con paredes
-      for(let wall of walls){
-        if(collideRectCircle(wall,b)){
-          if(wall.destructible){
-            wall.hp -= b.damage;
-            if(wall.hp<=0) walls.splice(walls.indexOf(wall),1);
-          }
-          shooter.bullets.splice(i,1);
+// ----------------------- GAME LOGIC -------------------------------
+function resetRound(winner){
+  roundActive = false;
+  if(winner === 'player'){ playerScore++; roundMessage = 'Ronda ganada'; }
+  else if(winner === 'enemies'){ enemyScore++; roundMessage = 'Ronda perdida'; }
+  else roundMessage = 'Empate';
+  messageTimer = 180; // 3s
+  setTimeout(()=>{ // small delay then restart
+    round++;
+    player.hp = 10;
+    bomb = {planted:false,x:0,y:0,timer:0,site:null};
+    roundTimer = 90*FRAME_RATE;
+    spawnEnemies();
+    // respawn player in CT spawn
+    const p = randomPointInRect(spawnCT);
+    player.x = p.x; player.y = p.y;
+    roundActive = true;
+  }, 1000);
+}
+
+// initial player pos
+const p0 = randomPointInRect(spawnCT);
+player.x = p0.x; player.y = p0.y;
+
+// ----------------------- MAIN UPDATE ------------------------------
+function update(){
+  // handle round message timer
+  if(messageTimer>0){ messageTimer--; if(messageTimer===0) roundMessage=''; }
+
+  if(!roundActive){
+    draw(); requestAnimationFrame(update); return;
+  }
+
+  // timers
+  if(roundTimer>0) roundTimer--;
+  // player movement
+  let mvx = 0, mvy = 0;
+  if(keys['w']||keys['arrowup']) mvy -= player.speed;
+  if(keys['s']||keys['arrowdown']) mvy += player.speed;
+  if(keys['a']||keys['arrowleft']) mvx -= player.speed;
+  if(keys['d']||keys['arrowright']) mvx += player.speed;
+  // normalize diagonal
+  if(mvx !== 0 && mvy !== 0){ mvx *= Math.SQRT1_2; mvy *= Math.SQRT1_2; }
+  moveAvoidWalls(player, mvx, mvy);
+
+  // player shooting
+  if(mouse.down && player.reload <= 0){
+    shoot(player, mouse.x, mouse.y);
+    player.reload = player.weapon.rate || 12;
+  }
+  if(player.reload > 0) player.reload--;
+
+  // player bullets update
+  for(let i = player.bullets.length-1; i>=0; i--){
+    const b = player.bullets[i];
+    b.x += b.vx; b.y += b.vy;
+    // collisions with walls/cover
+    if(walls.some(w=>rectCircleCollide(w, {x:b.x,y:b.y,size:b.size})) || coverables.some(w=>rectCircleCollide(w, {x:b.x,y:b.y,size:b.size}))){
+      // damage cover if hit
+      for(let k=0;k<coverables.length;k++){
+        if(rectCircleCollide(coverables[k], {x:b.x,y:b.y,size:b.size})){
+          coverables[k].hp -= b.damage;
+          if(coverables[k].hp <= 0) coverables.splice(k,1);
           break;
         }
       }
+      player.bullets.splice(i,1); continue;
+    }
+    // collide with enemies
+    for(let e of enemies){
+      if(e.alive && Math.hypot(e.x-b.x, e.y-b.y) < e.size + b.size){
+        e.hp -= b.damage;
+        player.bullets.splice(i,1);
+        if(e.hp <= 0){
+          e.alive = false;
+        }
+        break;
+      }
+    }
+  }
 
-      // Colisiones con enemigos
-      if(shooter===player){
-        enemies.forEach(enemy => {
-          if(enemy.alive && Math.hypot(enemy.x-b.x,enemy.y-b.y)<enemy.size){
-            enemy.hp -= b.damage;
-            shooter.bullets.splice(i,1);
-            if(enemy.hp<=0){
-              enemy.alive=false;
-              deathSound.play();
-            }
-          }
-        });
-      } else {
-        if(Math.hypot(player.x-b.x,player.y-b.y)<player.size){
-          player.hp -= b.damage;
-          shooter.bullets.splice(i,1);
-          if(player.hp<=0){
-            alert("¡Has muerto! Reiniciando ronda");
-            player.hp=10;
-            spawnEnemies();
-          }
+  // enemies AI
+  let aliveEnemies = 0;
+  for(let en of enemies){
+    if(!en.alive) continue;
+    aliveEnemies++;
+    // target: go to site center
+    const site = (en.targetSite === 'A')? siteA : siteB;
+    // if enemy is planting or close and not enough time, switch to plant
+    const dx = (site.x + site.w/2) - en.x;
+    const dy = (site.y + site.h/2) - en.y;
+    const dist = Math.hypot(dx,dy);
+    if(en.state === 'moveToSite'){
+      // move toward site but avoid walls
+      const mvxs = (dx/dist) * en.speed;
+      const mvys = (dy/dist) * en.speed;
+      moveAvoidWalls(en, mvxs, mvys);
+      // if close enough start planting
+      if(dist < 28){
+        en.state = 'planting';
+        en.plantTimer = 2 * FRAME_RATE; // 2s to plant
+      }
+    } else if(en.state === 'planting'){
+      // count down plant timer
+      en.plantTimer--;
+      if(en.plantTimer <= 0){
+        // plant bomb if not already planted
+        if(!bomb.planted){
+          bomb.planted = true;
+          bomb.x = site.x + site.w/2;
+          bomb.y = site.y + site.h/2;
+          bomb.timer = 45 * FRAME_RATE; // 45s bomb timer
+          bomb.site = en.targetSite;
+          roundMessage = 'Bomba plantada en sitio ' + bomb.site;
+          messageTimer = 180;
+        }
+        en.state = 'attacking';
+      }
+      // if player nearby while planting, could be shot (player can stop them by shooting)
+    } else if(en.state === 'attacking'){
+      // attack player: move toward player and shoot if in range
+      const ddx = player.x - en.x, ddy = player.y - en.y;
+      const dd = Math.hypot(ddx,ddy);
+      if(dd > 26){
+        moveAvoidWalls(en, (ddx/dd)*en.speed, (ddy/dd)*en.speed);
+      }
+      // shooting
+      if(en.reload <= 0 && dd < 300){
+        shoot(en, player.x, player.y);
+        en.reload = 55;
+      }
+      if(en.reload>0) en.reload--;
+    }
+    // update enemy bullets
+    for(let i = en.bullets.length-1; i>=0; i--){
+      const b = en.bullets[i];
+      b.x += b.vx; b.y += b.vy;
+      if(walls.some(w=>rectCircleCollide(w,{x:b.x,y:b.y,size:b.size})) || coverables.some(w=>rectCircleCollide(w,{x:b.x,y:b.y,size:b.size}))){
+        en.bullets.splice(i,1); continue;
+      }
+      if(Math.hypot(player.x-b.x, player.y-b.y) < player.size + b.size){
+        player.hp -= b.damage;
+        en.bullets.splice(i,1);
+        if(player.hp <= 0){
+          // player dead -> lose round
+          resetRound('enemies');
         }
       }
-    });
-  });
+    }
+  }
 
-  if(enemies.every(e=>!e.alive)){
-    round++;
-    spawnEnemies();
+  // enemies dead => round player wins (if no bomb planted)
+  if(aliveEnemies === 0 && !bomb.planted){
+    resetRound('player');
+  }
+
+  // bomb timer logic
+  if(bomb.planted){
+    bomb.timer--;
+    if(bomb.timer <= 0){
+      // bomb exploded -> enemies win
+      resetRound('enemies');
+    } else {
+      // player can defuse if close and pressing F
+      const dd = Math.hypot(player.x - bomb.x, player.y - bomb.y);
+      if(dd < 28){
+        if(keys['f']){
+          player.defusing = true;
+          player.defuseProgress++;
+          // need to hold for 5s -> frames
+          if(player.defuseProgress >= 5*FRAME_RATE){
+            // defused
+            bomb = {planted:false,x:0,y:0,timer:0,site:null};
+            resetRound('player');
+          }
+        } else {
+          if(player.defusing) player.defusing = false;
+          player.defuseProgress = Math.max(0, player.defuseProgress - 2);
+        }
+      } else {
+        player.defusing = false;
+        player.defuseProgress = Math.max(0, player.defuseProgress - 2);
+      }
+    }
+  }
+
+  // round timer (if reaches 0 and bomb not planted => CT win)
+  if(roundTimer <= 0 && !bomb.planted){
+    resetRound('player');
+  }
+  // if round timer <=0 but bomb already planted, keep going (bomb timer decides)
+
+  // check lose by player hp
+  if(player.hp <= 0){
+    resetRound('enemies');
   }
 
   draw();
   requestAnimationFrame(update);
 }
 
-// --- Dibujar ---
+// ----------------------- DRAW -------------------------------------
 function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // background blend of styles
+  ctx.fillStyle = '#0c0f12';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
 
-  // Paredes
-  walls.forEach(wall=>{
-    ctx.fillStyle = wall.destructible ? "#aa6600" : "#555";
-    ctx.fillRect(wall.x, wall.y, wall.w, wall.h);
-  });
+  // draw plaza ground colors to mix themes
+  ctx.fillStyle = '#2b2b2b'; // neutral pavement
+  // big plazaA
+  ctx.fillRect(siteA.x - 20, siteA.y - 20, siteA.w + 40, siteA.h + 40);
+  // big plazaB
+  ctx.fillRect(siteB.x - 20, siteB.y - 20, siteB.w + 40, siteB.h + 40);
 
-  // Jugador
+  // draw walls (mixing colors: inferno/orange for some)
+  for(let w of walls){
+    if(w === walls[4] || w === walls[5]){
+      ctx.fillStyle = '#b86b2e'; // inferno-style
+    } else {
+      ctx.fillStyle = '#52585d';
+    }
+    ctx.fillRect(w.x, w.y, w.w, w.h);
+  }
+
+  // draw coverables
+  for(let c of coverables){
+    ctx.fillStyle = '#6f7f8a';
+    ctx.fillRect(c.x, c.y, c.w, c.h);
+  }
+
+  // draw spawn areas
+  ctx.fillStyle = 'rgba(255,120,60,0.12)';
+  ctx.fillRect(spawnT.x, spawnT.y, spawnT.w, spawnT.h);
+  ctx.fillStyle = 'rgba(60,160,255,0.12)';
+  ctx.fillRect(spawnCT.x, spawnCT.y, spawnCT.w, spawnCT.h);
+
+  // draw bombsites outlines
+  ctx.strokeStyle = 'rgba(200,180,80,0.8)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(siteA.x, siteA.y, siteA.w, siteA.h);
+  ctx.strokeRect(siteB.x, siteB.y, siteB.w, siteB.h);
+  ctx.fillStyle = 'rgba(220,200,120,0.06)';
+  ctx.fillRect(siteA.x, siteA.y, siteA.w, siteA.h);
+  ctx.fillRect(siteB.x, siteB.y, siteB.w, siteB.h);
+
+  // draw bomb if planted
+  if(bomb.planted){
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath();
+    ctx.arc(bomb.x, bomb.y, 10, 0, Math.PI*2);
+    ctx.fill();
+    // timer ring
+    const pct = Math.max(0, bomb.timer) / (45*FRAME_RATE);
+    ctx.strokeStyle = 'rgba(255,200,0,0.95)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(bomb.x, bomb.y, 18, -Math.PI/2, -Math.PI/2 + Math.PI*2*pct);
+    ctx.stroke();
+  }
+
+  // draw enemies
+  for(let e of enemies){
+    if(!e.alive) continue;
+    ctx.fillStyle = e.color;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.size, 0, Math.PI*2);
+    ctx.fill();
+    // enemy health
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(e.x - 18, e.y - e.size - 12, 36, 6);
+    ctx.fillStyle = '#ff6666';
+    const hpPct = Math.max(0,e.hp) / (3 + Math.floor(round*0.5));
+    ctx.fillRect(e.x - 18, e.y - e.size - 12, 36*hpPct, 6);
+  }
+
+  // draw player
   ctx.fillStyle = player.color;
   ctx.beginPath();
   ctx.arc(player.x, player.y, player.size,0,Math.PI*2);
   ctx.fill();
+  // player health HUD small
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(player.x - 26, player.y - player.size - 14, 52, 8);
+  ctx.fillStyle = '#2fe8d0';
+  ctx.fillRect(player.x - 26, player.y - player.size - 14, 52 * (player.hp/10), 8);
 
-  // Enemigos
-  enemies.forEach(enemy => {
-    if(!enemy.alive) return;
-    ctx.fillStyle = enemy.color;
-    ctx.beginPath();
-    ctx.arc(enemy.x, enemy.y, enemy.size,0,Math.PI*2);
-    ctx.fill();
-  });
+  // draw bullets
+  // player bullets
+  ctx.fillStyle = '#ffe78a';
+  for(let b of player.bullets){
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
+  }
+  // enemies bullets
+  ctx.fillStyle = '#ffdbdb';
+  for(let e of enemies){
+    for(let b of e.bullets){
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
+    }
+  }
 
-  // Balas
-  [player,...enemies].forEach(shooter=>{
-    shooter.bullets.forEach(b=>{
-      ctx.fillStyle = "yellow";
-      ctx.beginPath();
-      ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
-      ctx.fill();
-    });
-  });
+  // HUD text
+  const mins = Math.floor((roundTimer/FRAME_RATE)/60);
+  const secs = Math.floor((roundTimer/FRAME_RATE)%60).toString().padStart(2,'0');
+  hud.innerHTML = `Vida: ${player.hp} • Ronda: ${round} • Marcador: CT ${playerScore} - T ${enemyScore}<br>
+  Tiempo ronda: ${mins}:${secs} • Bomb: ${bomb.planted?('Sí, sitio '+bomb.site):'No'}`;
 
-  // HUD
-  hud.innerHTML = `Vida: ${player.hp} | Arma: ${weapons[player.weapon].name} | Ronda: ${round}`;
+  // defuse progress bar when near
+  if(bomb.planted){
+    const dd = Math.hypot(player.x-bomb.x, player.y-bomb.y);
+    if(dd < 100){
+      // show defuse prompt
+      info.innerHTML = `BOMBA en ${bomb.site} • ${Math.ceil(bomb.timer/FRAME_RATE)}s restantes<br>
+      Mantén <b>F</b> para desactivar (${Math.ceil((5*FRAME_RATE - player.defuseProgress)/FRAME_RATE)}s)`;
+      // progress bar
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(10, canvas.height - 34, 180, 20);
+      ctx.fillStyle = '#6aff9e';
+      ctx.fillRect(12, canvas.height - 32, 176 * (player.defuseProgress / (5*FRAME_RATE)), 16);
+    } else {
+      info.innerHTML = `BOMBA en ${bomb.site} • ${Math.ceil(bomb.timer/FRAME_RATE)}s restantes`;
+    }
+  } else {
+    info.innerHTML = `Objetivo: evita que planten la bomba en A o B. Presiona F para desactivar si aparece.`;
+  }
 
-  // Minimapa
-  const mapW = 150, mapH = 150;
-  ctx.fillStyle = "rgba(0,0,0,0.5)";
-  ctx.fillRect(canvas.width-mapW-10, 10, mapW, mapH);
-  // Jugador en minimapa
-  ctx.fillStyle="cyan";
-  ctx.fillRect(canvas.width-mapW-10 + player.x/canvas.width*mapW-2, 10+player.y/canvas.height*mapH-2,4,4);
-  // Enemigos en minimapa
-  enemies.forEach(e=>{
-    if(!e.alive) return;
-    ctx.fillStyle="red";
-    ctx.fillRect(canvas.width-mapW-10 + e.x/canvas.width*mapW-2, 10+e.y/canvas.height*mapH-2,4,4);
-  });
+  // round message big
+  if(roundMessage){
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(canvas.width/2 - 180, 40, 360, 50);
+    ctx.fillStyle = '#fff';
+    ctx.font = '22px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(roundMessage, canvas.width/2, 74);
+    ctx.textAlign = 'start';
+  }
 }
 
+// ----------------------- START ------------------------------------
 update();
 </script>
 </body>
