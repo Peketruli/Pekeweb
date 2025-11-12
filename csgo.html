@@ -1,260 +1,936 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CSGO 2D — Ciudad 5v5</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CSGO 2D — Ciudad (IA FSM, Cámara, FOV)</title>
 <style>
-  body { margin:0; overflow:hidden; background:#111; }
-  canvas { display:block; background:#1a1a1a; }
-  #hud {
-    position:absolute; top:10px; left:10px;
-    color:white; font-family:Arial; font-size:16px;
-    background:rgba(0,0,0,0.5); padding:10px; border-radius:8px;
-  }
+  html,body{height:100%;margin:0;background:#0b0f14;color:#fff;font-family:Inter,Arial,sans-serif}
+  canvas{display:block}
+  #hud{position:fixed;left:10px;top:10px;background:rgba(0,0,0,0.5);padding:8px;border-radius:8px;font-size:14px}
+  #tips{position:fixed;right:10px;top:10px;background:rgba(0,0,0,0.45);padding:8px;border-radius:8px;font-size:13px;text-align:right}
 </style>
 </head>
 <body>
-<canvas id="game"></canvas>
-<div id="hud"></div>
+<canvas id="cv"></canvas>
+<div id="hud">Cargando...</div>
+<div id="tips">WASD mover • Click disparar • E plantar (si T) • F desactivar (si CT)</div>
 
 <script>
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-const hud = document.getElementById("hud");
+/* =============================
+   CSGO 2D - Ciudad (IA FSM + Cámara + FOV)
+   - Cámara centrada
+   - Vision cone + fog of war
+   - Bots con FSM (patrol, alert, combat, search)
+   - Line-of-sight checado contra paredes
+   - Stable: bullet caps, single RAF loop
+   ============================= */
 
-function resizeCanvas(){
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+const canvas = document.getElementById('cv');
+const ctx = canvas.getContext('2d');
+const hud = document.getElementById('hud');
+
+let W = innerWidth, H = innerHeight;
+function resize(){
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
 }
-window.addEventListener("resize", resizeCanvas);
-resizeCanvas();
+addEventListener('resize', resize);
+resize();
 
-// ==== INPUT ====
+// ---------- util ----------
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const rnd = (a,b)=>a + Math.random()*(b-a);
+const dist = (a,b)=>Math.hypot(a.x-b.x, a.y-b.y);
+const pointDist = (x1,y1,x2,y2)=>Math.hypot(x2-x1,y2-y1);
+
+// ---------- input ----------
 const keys = {};
-document.addEventListener("keydown", e=>keys[e.key]=true);
-document.addEventListener("keyup", e=>keys[e.key]=false);
-const mouse = {x:0,y:0,clicked:false};
-canvas.addEventListener("mousemove", e=>{
-  const r=canvas.getBoundingClientRect();
-  mouse.x=e.clientX-r.left; mouse.y=e.clientY-r.top;
+addEventListener('keydown', e=>keys[e.key.toLowerCase()] = true);
+addEventListener('keyup', e=>keys[e.key.toLowerCase()] = false);
+
+const mouse = { x:0, y:0, down:false };
+canvas.addEventListener('mousemove', e=>{
+  const r = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - r.left;
+  mouse.y = e.clientY - r.top;
 });
-canvas.addEventListener("mousedown", ()=>mouse.clicked=true);
-canvas.addEventListener("mouseup", ()=>mouse.clicked=false);
+canvas.addEventListener('mousedown', ()=>mouse.down = true);
+canvas.addEventListener('mouseup', ()=>mouse.down = false);
 
-// ==== CONFIG ====
-const TEAM_CT = "CT";
-const TEAM_T = "T";
+// ---------- world & camera ----------
+const MAP_W = 2400;
+const MAP_H = 1400;
 
-const weapons = [
-  {name:"Pistola", damage:1, rate:15, speed:7},
-  {name:"Rifle", damage:2, rate:8, speed:10}
-];
+// camera follows player, but clamped to map edges
+const camera = { x:0, y:0, update(target){
+  camera.x = clamp(target.x, W/2, MAP_W - W/2);
+  camera.y = clamp(target.y, H/2, MAP_H - H/2);
+}};
 
-// ==== ENTIDADES ====
-class Entity {
+// ---------- map: city layout with accessible routes ----------
+const walls = []; // rectangles {x,y,w,h,destructible?,hp?}
+const covers = []; // small cover boxes used by bots
+const siteA = {}, siteB = {}, spawnCT = {}, spawnT = {};
+
+function buildMap(){
+  walls.length = 0; covers.length = 0;
+  // outer bounds
+  walls.push({x:0,y:0,w:MAP_W,h:18});
+  walls.push({x:0,y:MAP_H-18,w:MAP_W,h:18});
+  walls.push({x:0,y:0,w:18,h:MAP_H});
+  walls.push({x:MAP_W-18,y:0,w:18,h:MAP_H});
+
+  // central arterials and city blocks (designed to be accessible)
+  // vertical blocks
+  walls.push({x:300,y:60,w:22,h:600});
+  walls.push({x:800,y:260,w:22,h:800});
+  walls.push({x:1360,y:60,w:22,h:600});
+  walls.push({x:1900,y:260,w:22,h:800});
+
+  // horizontal boulevards
+  walls.push({x:60,y:380,w:1200,h:22});
+  walls.push({x:1000,y:760,w:1200,h:22});
+
+  // office partitions, not fully closed
+  walls.push({x:520,y:420,w:220,h:22});
+  walls.push({x:520,y:420,w:22,h:150});
+  walls.push({x:760,y:420,w:22,h:150});
+
+  // destructible cover boxes in plazas
+  covers.push({x:140,y:120,w:80,h:60,hp:3});
+  covers.push({x:160,y:240,w:60,h:60,hp:2});
+  covers.push({x:1700,y:420,w:70,h:50,hp:3});
+  covers.push({x:1750,y:520,w:60,h:60,hp:2});
+  covers.push({x:1100,y:200,w:50,h:50,hp:2});
+  covers.push({x:900,y:600,w:50,h:50,hp:2});
+  // small blocks for using as cover near sites
+  covers.push({x:260,y:520,w:60,h:40,hp:3});
+  covers.push({x:1550,y:820,w:60,h:40,hp:3});
+
+  // spawn and sites
+  spawnCT.x = 1800; spawnCT.y = 80; spawnCT.w = 180; spawnCT.h = 120;
+  spawnT.x = 80; spawnT.y = MAP_H-220; spawnT.w = 220; spawnT.h = 160;
+
+  // site A left, site B right-ish
+  siteA.x = 220; siteA.y = 320; siteA.w = 260; siteA.h = 220;
+  siteB.x = 1500; siteB.y = 560; siteB.w = 300; siteB.h = 200;
+}
+buildMap();
+
+// ---------- bullets pool ----------
+const BULLET_CAP = 500;
+const bullets = []; // {x,y,vx,vy,size,life,owner}
+
+// push bullet with cap
+function pushBullet(b){
+  bullets.push(b);
+  if(bullets.length > BULLET_CAP) bullets.shift();
+}
+
+// ---------- line-of-sight / raycast ----------
+function lineIntersectsRect(x1,y1,x2,y2, rect){
+  // check if segment intersects rect (AABB)
+  // Liang-Barsky algorithm simplified to check segment-rect intersection
+  let t0 = 0, t1 = 1;
+  const dx = x2 - x1, dy = y2 - y1;
+  function clip(p, q){
+    if(p === 0){
+      if(q < 0) return false;
+    } else {
+      const r = q / p;
+      if(p < 0){
+        if(r > t1) return false;
+        if(r > t0) t0 = r;
+      } else {
+        if(r < t0) return false;
+        if(r < t1) t1 = r;
+      }
+    }
+    return true;
+  }
+  // left
+  if(!clip(-dx, x1 - rect.x)) return false;
+  // right
+  if(!clip(dx, rect.x + rect.w - x1)) return false;
+  // top
+  if(!clip(-dy, y1 - rect.y)) return false;
+  // bottom
+  if(!clip(dy, rect.y + rect.h - y1)) return false;
+  return true;
+}
+
+function hasLineOfSight(x1,y1,x2,y2){
+  // returns true if segment (x1,y1)-(x2,y2) does NOT hit any wall
+  for(let w of walls){
+    if(lineIntersectsRect(x1,y1,x2,y2,w)) return false;
+  }
+  // also blocks by big covers
+  for(let c of covers){
+    if(lineIntersectsRect(x1,y1,x2,y2,c)) return false;
+  }
+  return true;
+}
+
+// ---------- entity / bot definitions ----------
+const TEAM_CT = 'CT', TEAM_T = 'T';
+
+// simple weapon definitions
+const WEAPONS = {
+  pistol: {name:'Pistola', damage:1, rate:18, speed:9, burst:1},
+  rifle:  {name:'Rifle', damage:2, rate:10, speed:14, burst:3}
+};
+
+// Player entity
+const player = {
+  x: spawnCT.x + spawnCT.w/2,
+  y: spawnCT.y + spawnCT.h/2,
+  size: 18,
+  hp: 10,
+  speed: 3.4,
+  team: TEAM_CT,
+  weapon: WEAPONS.rifle,
+  reload: 0,
+  bullets: [],
+  defuseProgress: 0,
+  isPlayer: true,
+  alive: true
+};
+
+// Bot class (both T and CT)
+class Bot {
   constructor(x,y,team,name){
-    this.x=x; this.y=y;
-    this.size=18;
-    this.speed=2.5;
-    this.hp=10;
-    this.team=team;
-    this.name=name;
-    this.weapon=0;
-    this.bullets=[];
-    this.reload=0;
-    this.target=null;
-    this.isPlayer=false;
-    this.alive=true;
+    this.x = x; this.y = y;
+    this.team = team;
+    this.name = name || 'Bot';
+    this.size = 16;
+    this.speed = (team===TEAM_T)? 1.6 : 1.8;
+    this.hp = 6;
+    this.weapon = (team===TEAM_T)? WEAPONS.pistol : WEAPONS.pistol;
+    this.reload = Math.floor(rnd(5,30));
+    this.bullets = [];
+    this.alive = true;
+    this.state = 'patrol'; // patrol, alert, combat, search
+    this.patrolPoints = []; // fill per bot
+    this.patrolIndex = 0;
+    this.target = null; // target entity
+    this.lastSeen = null; // {x,y,ts}
+    this.alertTimer = 0;
+    this.burstCount = 0;
   }
-  shoot(tx,ty){
-    const gun = weapons[this.weapon];
-    const dx = tx - this.x;
-    const dy = ty - this.y;
-    const dist = Math.hypot(dx,dy);
-    if(dist===0) return;
-    this.bullets.push({
-      x:this.x, y:this.y,
-      vx:(dx/dist)*gun.speed,
-      vy:(dy/dist)*gun.speed,
-      size:4, damage:gun.damage
-    });
+  update(dt){
+    if(!this.alive) return;
+    // reload
+    if(this.reload > 0) this.reload--;
+    // FSM behaviour
+    if(this.state === 'patrol'){
+      this.patrolBehavior();
+    } else if(this.state === 'alert'){
+      this.alertBehavior();
+    } else if(this.state === 'combat'){
+      this.combatBehavior();
+    } else if(this.state === 'search'){
+      this.searchBehavior();
+    }
+    // bullets update
+    for(let i=this.bullets.length-1;i>=0;i--){
+      const b = this.bullets[i];
+      b.x += b.vx; b.y += b.vy; b.life--;
+      if(b.life <= 0){ this.bullets.splice(i,1); continue; }
+      // collision with player or bots handled globally
+    }
+  }
+  patrolBehavior(){
+    // follow patrol points
+    if(this.patrolPoints.length === 0){
+      // small random walk
+      const tx = this.x + rnd(-60,60), ty = this.y + rnd(-60,60);
+      this.moveToward(tx,ty);
+    } else {
+      const p = this.patrolPoints[this.patrolIndex];
+      const d = pointDist(this.x,this.y,p.x,p.y);
+      if(d < 8) { this.patrolIndex = (this.patrolIndex+1) % this.patrolPoints.length; }
+      else this.moveToward(p.x,p.y);
+    }
+    // check for visible enemies to switch to alert/combat
+    const enemy = this.detectEnemy();
+    if(enemy){
+      this.target = enemy;
+      this.lastSeen = {x: enemy.x, y: enemy.y, ts: Date.now()};
+      this.state = 'alert';
+      this.alertTimer = 20 + Math.floor(Math.random()*40);
+    }
+  }
+  alertBehavior(){
+    // quick reaction: check LOS again; if see -> combat; else move to last seen
+    if(this.target && this.target.alive && hasLineOfSight(this.x,this.y,this.target.x,this.target.y)
+       && pointDist(this.x,this.y,this.target.x,this.target.y) < 500){
+      this.state = 'combat';
+      this.burstCount = 0;
+      return;
+    }
+    // move to last seen
+    if(this.lastSeen){
+      this.moveToward(this.lastSeen.x + rnd(-20,20), this.lastSeen.y + rnd(-20,20));
+    }
+    this.alertTimer--;
+    if(this.alertTimer <= 0){
+      // move into search state
+      this.state = 'search';
+      this.searchTimer = 90 + Math.floor(Math.random()*60);
+    }
+  }
+  combatBehavior(){
+    if(!this.target || !this.target.alive){
+      this.state = 'search';
+      this.searchTimer = 90;
+      return;
+    }
+    // if no LOS -> go to last seen (and maybe peek)
+    if(!hasLineOfSight(this.x,this.y,this.target.x,this.target.y)){
+      this.lastSeen = {x:this.target.x, y:this.target.y, ts: Date.now()};
+      this.state = 'search';
+      this.searchTimer = 90;
+      return;
+    }
+    // strafing: move sideways while shooting bursts
+    this.peekAndShoot(this.target);
+  }
+  searchBehavior(){
+    if(this.lastSeen){
+      this.moveToward(this.lastSeen.x + rnd(-10,10), this.lastSeen.y + rnd(-10,10));
+    } else {
+      // wander
+      this.moveToward(this.x + rnd(-40,40), this.y + rnd(-40,40));
+    }
+    this.searchTimer--;
+    // look for enemy
+    const e = this.detectEnemy();
+    if(e){
+      this.target = e;
+      this.state = 'combat';
+      return;
+    }
+    if(this.searchTimer <= 0){
+      this.state = 'patrol';
+    }
+  }
+
+  detectEnemy(){
+    // look for nearest living enemy in opposite team with FOV & LOS
+    let best = null, bestD = Infinity;
+    const candidates = (this.team === TEAM_T)? allCTs() : allTs();
+    for(let c of candidates){
+      if(!c.alive) continue;
+      const d = pointDist(this.x,this.y,c.x,c.y);
+      if(d > 700) continue;
+      // fov: wide for bots (they check longer)
+      const angleOK = true; // we keep simple: bot has 360º peripheral, but LOS matters
+      if(angleOK && hasLineOfSight(this.x,this.y,c.x,c.y)){
+        if(d < bestD){ bestD = d; best = c; }
+      }
+    }
+    return best;
+  }
+
+  peekAndShoot(target){
+    // implement strafing: move perpendicular to target occasionally
+    const dx = target.x - this.x, dy = target.y - this.y;
+    const d = Math.hypot(dx,dy) || 1;
+    // choose strafe direction and move small step
+    const perp = { x: -dy/d, y: dx/d };
+    const forward = { x: dx/d, y: dy/d };
+    // decide to take cover sometimes: if health low, try to move to nearest cover
+    if(this.hp < 3 && covers.length){
+      // find nearest cover center
+      let best = null, bd = Infinity;
+      for(let c of covers){
+        const cx = c.x + c.w/2, cy = c.y + c.h/2;
+        const cd = Math.hypot(this.x - cx, this.y - cy);
+        if(cd < bd){ bd = cd; best = {x:cx, y:cy}; }
+      }
+      if(best && bd < 300){
+        this.moveToward(best.x + rnd(-10,10), best.y + rnd(-10,10));
+      } else {
+        // fallback: strafe
+        this.move(perp.x * this.speed * (Math.random()*0.8 + 0.6), perp.y * this.speed * (Math.random()*0.8 + 0.6));
+      }
+    } else {
+      // strafe while moving slightly toward/away to vary
+      const strafeDir = (Math.random() < 0.5)? 1 : -1;
+      this.move(perp.x * this.speed * strafeDir * 0.9, perp.y * this.speed * strafeDir * 0.9);
+      // small forward/back movement
+      const fb = (Math.random() < 0.6)? 1 : -0.6;
+      this.move(forward.x * this.speed * fb * 0.2, forward.y * this.speed * fb * 0.2);
+    }
+
+    // shooting in bursts
+    if(this.reload <= 0){
+      // burst size depending on weapon
+      const burst = this.weapon.burst || 1;
+      for(let i=0;i<burst;i++){
+        const jitter = (Math.random()-0.5) * 10; // aim jitter
+        const aimx = target.x + jitter;
+        const aimy = target.y + jitter;
+        const spd = this.weapon.speed;
+        const dx2 = aimx - this.x, dy2 = aimy - this.y, dist2 = Math.hypot(dx2,dy2)||1;
+        const b = { x:this.x, y:this.y, vx:(dx2/dist2)*spd, vy:(dy2/dist2)*spd, size:4, damage:this.weapon.damage, life:120 };
+        this.bullets.push(b); pushBullet(b);
+      }
+      this.reload = this.weapon.rate + Math.floor(Math.random()*6) - 3;
+    }
+  }
+
+  moveToward(tx,ty){
+    const dx = tx - this.x, dy = ty - this.y;
+    const d = Math.hypot(dx,dy) || 1;
+    const vx = (dx/d) * this.speed;
+    const vy = (dy/d) * this.speed;
+    this.move(vx, vy);
+  }
+
+  move(vx,vy){
+    this.x += vx;
+    if(walls.some(w=>rectCircleCollide(w,this)) || covers.some(w=>rectCircleCollide(w,this))) this.x -= vx;
+    this.y += vy;
+    if(walls.some(w=>rectCircleCollide(w,this)) || covers.some(w=>rectCircleCollide(w,this))) this.y -= vy;
+  }
+
+  draw(ctx){
+    if(!this.alive) return;
+    ctx.fillStyle = (this.team===TEAM_T)? '#ff5a5a' : '#6fd1ff';
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI*2); ctx.fill();
+    // name plate
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(this.x - 26, this.y - this.size - 16, 52, 12);
+    ctx.fillStyle = '#fff';
+    ctx.font = '11px Arial'; ctx.textAlign = 'center';
+    ctx.fillText(this.name, this.x, this.y - this.size - 6);
+    ctx.textAlign = 'start';
+    // hp bar
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(this.x - 18, this.y - this.size - 26, 36, 6);
+    ctx.fillStyle = '#ff7a7a';
+    ctx.fillRect(this.x - 18, this.y - this.size - 26, 36 * (this.hp/6), 6);
   }
 }
 
-// ==== EQUIPOS ====
-const allies = [];
-const enemies = [];
-let player = new Entity(300,300,TEAM_CT,"Tú");
-player.isPlayer=true;
-allies.push(player);
+// ---------- helper sets ----------
+function allTs(){ return bots.filter(b=>b.team===TEAM_T); }
+function allCTs(){ return bots.filter(b=>b.team===TEAM_CT); }
 
-const allyNames = ["Alex","Nico","Santi","Pablo"];
-allyNames.forEach((n,i)=>{
-  allies.push(new Entity(300+Math.random()*100, 300+Math.random()*100, TEAM_CT, n));
-});
+// ---------- spawn bots ----------
+const bots = [];
+function spawnTeams(){
+  bots.length = 0;
+  // CT player is separate (player)
+  // spawn CT bots around CT spawn
+  const ctNames = ['Alex','Nico','Rita','Javi'];
+  for(let i=0;i<4;i++){
+    const px = spawnCT.x + 40 + i*18, py = spawnCT.y + 20 + i*12;
+    const b = new Bot(px,py, TEAM_CT, ctNames[i]);
+    // patrol points near CT region
+    b.patrolPoints = [
+      {x: spawnCT.x + 60, y: spawnCT.y + 50},
+      {x: spawnCT.x + 140, y: spawnCT.y + 100},
+      {x: spawnCT.x + 80, y: spawnCT.y + 140}
+    ];
+    bots.push(b);
+  }
+  // spawn Terrorists
+  for(let i=0;i<5;i++){
+    const px = spawnT.x + 40 + i*30, py = spawnT.y + 30 + i*10;
+    const b = new Bot(px,py, TEAM_T, 'T-'+(i+1));
+    b.patrolPoints = [
+      {x: spawnT.x + 80, y: spawnT.y + 40},
+      {x: siteA.x + siteA.w/2, y: siteA.y + siteA.h/2},
+      {x: siteB.x + siteB.w/2, y: siteB.y + siteB.h/2}
+    ];
+    bots.push(b);
+  }
+}
+spawnTeams();
 
-const enemyNames = ["Ivan","Diego","Leo","Marco","Tomas"];
-enemyNames.forEach((n,i)=>{
-  enemies.push(new Entity(800+Math.random()*100, 400+Math.random()*100, TEAM_T, n));
-});
-
-// ==== MAPA ====
-const walls = [
-  {x:100,y:100,w:600,h:20},
-  {x:100,y:100,w:20,h:400},
-  {x:100,y:480,w:600,h:20},
-  {x:700,y:100,w:20,h:400},
-  {x:350,y:250,w:100,h:20},
-  {x:500,y:350,w:150,h:20}
-];
-
-// ==== FUNCIONES ====
-function collideRectCircle(r,c){
-  const cx=Math.max(r.x,Math.min(c.x,r.x+r.w));
-  const cy=Math.max(r.y,Math.min(c.y,r.y+r.h));
-  const dx=c.x-cx,dy=c.y-cy;
-  return dx*dx+dy*dy < c.size*c.size;
+// ---------- collision helpers ----------
+function rectCircleCollide(r, c){
+  const cx = Math.max(r.x, Math.min(c.x, r.x + r.w));
+  const cy = Math.max(r.y, Math.min(c.y, r.y + r.h));
+  const dx = c.x - cx, dy = c.y - cy;
+  return (dx*dx + dy*dy) < (c.size*c.size);
 }
 
-function moveEntity(e,dx,dy){
-  if(!e.alive) return;
-  e.x+=dx;
-  for(let w of walls) if(collideRectCircle(w,e)) e.x-=dx;
-  e.y+=dy;
-  for(let w of walls) if(collideRectCircle(w,e)) e.y-=dy;
+// ---------- player shooting ----------
+function playerShoot(tx,ty){
+  if(!player.alive) return;
+  if(player.reload > 0) return;
+  const dx = tx - player.x, dy = ty - player.y;
+  const d = Math.hypot(dx,dy) || 1;
+  const gun = player.weapon;
+  const b = { x: player.x, y: player.y, vx: (dx/d)*gun.speed, vy: (dy/d)*gun.speed, size:4, damage:gun.damage, life: 140 };
+  player.bullets.push(b); pushBullet(b);
+  player.reload = gun.rate;
 }
 
-function getClosestTarget(e,arr){
-  let minDist=Infinity, target=null;
-  arr.forEach(o=>{
-    if(!o.alive) return;
-    const d=Math.hypot(e.x-o.x,e.y-o.y);
-    if(d<minDist){minDist=d;target=o;}
-  });
-  return target;
-}
+// ---------- game state: bomb & rounds ----------
+const game = {
+  bomb: {planted:false, x:0,y:0, timer:0, site:null},
+  roundTime: 90 * 60,
+  round: 1,
+  playerScore: 0, enemyScore: 0,
+  roundActive: true,
+  roundMsg: ''
+};
 
-// ==== IA ====
-function updateAI(){
-  allies.forEach(a=>{
-    if(a.isPlayer || !a.alive) return;
-    // seguir al jugador
-    const dx = player.x - a.x;
-    const dy = player.y - a.y;
-    const dist = Math.hypot(dx,dy);
-    if(dist>100) moveEntity(a, (dx/dist)*a.speed, (dy/dist)*a.speed);
+// ---------- main update loop ----------
+let lastFrame = performance.now();
 
-    // buscar enemigo y disparar
-    const t = getClosestTarget(a,enemies);
-    if(t && Math.hypot(a.x-t.x,a.y-t.y)<400){
-      if(a.reload<=0){ a.shoot(t.x,t.y); a.reload=weapons[a.weapon].rate; }
+function update(now){
+  const dt = (now - lastFrame) / (1000/60);
+  lastFrame = now;
+
+  // player controls
+  if(player.alive){
+    let mvx = 0, mvy = 0;
+    if(keys['w'] || keys['arrowup']) mvy -= player.speed;
+    if(keys['s'] || keys['arrowdown']) mvy += player.speed;
+    if(keys['a'] || keys['arrowleft']) mvx -= player.speed;
+    if(keys['d'] || keys['arrowright']) mvx += player.speed;
+    if(mvx !== 0 && mvy !== 0){ mvx *= Math.SQRT1_2; mvy *= Math.SQRT1_2; }
+    moveEntity(player, mvx, mvy);
+    // shooting
+    if(mouse.down) playerShoot(mouse.x + camera.x - W/2, mouse.y + camera.y - H/2);
+    if(player.reload > 0) player.reload--;
+
+    // plant/desactivate
+    if(keys['e'] && player.team === TEAM_T && !game.bomb.planted){
+      // if inside site A or site B plant
+      if(pointInRect(player.x, player.y, siteA)){ plantBomb('A', siteA); }
+      else if(pointInRect(player.x, player.y, siteB)){ plantBomb('B', siteB); }
     }
-  });
+    // defuse
+    if(keys['f'] && player.team === TEAM_CT && game.bomb.planted){
+      const d = pointDist(player.x, player.y, game.bomb.x, game.bomb.y);
+      if(d < 28){ player.defuseProgress++; if(player.defuseProgress >= 5*60){ defuseBomb(); } }
+    } else { player.defuseProgress = Math.max(0, player.defuseProgress - 2); }
+  }
 
-  enemies.forEach(e=>{
-    if(!e.alive) return;
-    // patrullar o atacar
-    const t = getClosestTarget(e,allies);
-    if(t){
-      const dx=t.x-e.x, dy=t.y-e.y, dist=Math.hypot(dx,dy);
-      if(dist>150) moveEntity(e,(dx/dist)*e.speed,(dy/dist)*e.speed);
-      if(e.reload<=0){ e.shoot(t.x,t.y); e.reload=weapons[e.weapon].rate; }
+  // bots update
+  for(let b of bots) b.update(dt);
+
+  // update bullets (player + bots) + collisions
+  // player bullets
+  for(let i=player.bullets.length-1;i>=0;i--){
+    const b = player.bullets[i];
+    b.x += b.vx; b.y += b.vy; b.life--;
+    if(b.life <= 0 || b.x < -100 || b.x > MAP_W + 100 || b.y < -100 || b.y > MAP_H + 100){ player.bullets.splice(i,1); continue; }
+    // walls/covers
+    if(walls.some(w=>lineIntersectsRect(b.x-b.vx,b.y-b.vy,b.x,b.y,w)) || covers.some(w=>lineIntersectsRect(b.x-b.vx,b.y-b.vy,b.x,b.y,w))){
+      // hits cover? damage
+      for(let ci=covers.length-1; ci>=0; ci--){
+        const c = covers[ci];
+        if(rectCircleCollide(c, {x:b.x,y:b.y,size:b.size})){ c.hp -= b.damage; if(c.hp<=0) covers.splice(ci,1); break; }
+      }
+      player.bullets.splice(i,1); continue;
     }
-  });
-}
+    // hits bots (opposite team)
+    for(let bo of bots){
+      if(!bo.alive) continue;
+      if(bo.team !== player.team && pointDist(b.x,b.y,bo.x,bo.y) < bo.size + b.size){
+        bo.hp -= b.damage; player.bullets.splice(i,1);
+        if(bo.hp <= 0) bo.alive = false;
+        // if bot was target of others, update their lastSeen
+        bo.lastSeen = {x:bo.x,y:bo.y,ts:Date.now()};
+        break;
+      }
+    }
+  }
 
-// ==== BALAS ====
-function updateBullets(group,targetGroup){
-  group.forEach(e=>{
-    for(let i=e.bullets.length-1;i>=0;i--){
-      const b=e.bullets[i];
-      b.x+=b.vx; b.y+=b.vy;
-      for(let w of walls) if(collideRectCircle(w,b)){ e.bullets.splice(i,1); return; }
-      targetGroup.forEach(t=>{
-        if(!t.alive) return;
-        if(Math.hypot(b.x-t.x,b.y-t.y)<t.size){
-          t.hp-=b.damage;
-          e.bullets.splice(i,1);
-          if(t.hp<=0){t.alive=false;}
+  // bots bullets
+  for(let bo of bots){
+    for(let i=bo.bullets.length-1;i>=0;i--){
+      const b = bo.bullets[i];
+      b.x += b.vx; b.y += b.vy; b.life--;
+      if(b.life <= 0 || b.x < -100 || b.x > MAP_W + 100 || b.y < -100 || b.y > MAP_H + 100){ bo.bullets.splice(i,1); continue; }
+      if(walls.some(w=>lineIntersectsRect(b.x-b.vx,b.y-b.vy,b.x,b.y,w)) || covers.some(w=>lineIntersectsRect(b.x-b.vx,b.y-b.vy,b.x,b.y,w))){
+        // damage cover
+        for(let ci=covers.length-1; ci>=0; ci--){
+          const c = covers[ci];
+          if(rectCircleCollide(c, {x:b.x,y:b.y,size:b.size})){ c.hp -= b.damage; if(c.hp<=0) covers.splice(ci,1); break; }
         }
-      });
+        bo.bullets.splice(i,1); continue;
+      }
+      // hit player?
+      if(bo.team !== player.team && pointDist(b.x,b.y,player.x,player.y) < player.size + b.size){
+        player.hp -= b.damage; bo.bullets.splice(i,1);
+        if(player.hp <= 0){
+          player.alive = false;
+          game.roundMsg = 'Has muerto — Ronda perdida';
+          game.roundActive = false;
+          scheduleRoundReset('T');
+        }
+        break;
+      }
+      // hit allied bots
+      for(let targ of bots){
+        if(!targ.alive) continue;
+        if(targ.team !== bo.team && targ.team === player.team && pointDist(b.x,b.y,targ.x,targ.y) < targ.size + b.size){
+          targ.hp -= b.damage; bo.bullets.splice(i,1);
+          if(targ.hp <= 0) targ.alive = false;
+          break;
+        }
+      }
     }
-  });
-}
-
-// ==== DRAW ====
-function drawEntity(e){
-  if(!e.alive) return;
-  ctx.beginPath();
-  ctx.arc(e.x,e.y,e.size,0,Math.PI*2);
-  ctx.fillStyle = e.team===TEAM_CT ? "#0af" : "#f33";
-  ctx.fill();
-  ctx.fillStyle="white";
-  ctx.font="12px Arial";
-  ctx.fillText(e.name, e.x-15, e.y-25);
-}
-
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.fillStyle="#2a2a2a";
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-
-  walls.forEach(w=>{
-    ctx.fillStyle="#555";
-    ctx.fillRect(w.x,w.y,w.w,w.h);
-  });
-
-  [...allies,...enemies].forEach(e=>drawEntity(e));
-
-  // Balas
-  [...allies,...enemies].forEach(e=>{
-    e.bullets.forEach(b=>{
-      ctx.beginPath();
-      ctx.arc(b.x,b.y,b.size,0,Math.PI*2);
-      ctx.fillStyle="yellow";
-      ctx.fill();
-    });
-  });
-
-  hud.innerHTML = `CT vivos: ${allies.filter(a=>a.alive).length} /5 | T vivos: ${enemies.filter(e=>e.alive).length} /5`;
-}
-
-// ==== UPDATE ====
-function update(){
-  if(!player.alive){
-    hud.innerHTML = "💀 Has muerto — Ronda perdida";
-    return;
   }
 
-  // movimiento jugador
-  let dx=0,dy=0;
-  if(keys["w"]) dy-=player.speed;
-  if(keys["s"]) dy+=player.speed;
-  if(keys["a"]) dx-=player.speed;
-  if(keys["d"]) dx+=player.speed;
-  moveEntity(player,dx,dy);
+  // bullets global cap cleaning
+  while(bullets.length > BULLET_CAP) bullets.shift();
 
-  if(mouse.clicked && player.reload<=0){
-    player.shoot(mouse.x,mouse.y);
-    player.reload=weapons[player.weapon].rate;
+  // bomb ticking
+  if(game.bomb.planted){
+    game.bomb.timer--;
+    if(game.bomb.timer <= 0){
+      // bomb exploded -> T win
+      game.enemyScore++;
+      game.roundMsg = 'Bomba explotó — Pierdes';
+      game.roundActive = false;
+      scheduleRoundReset('T');
+    }
+  } else {
+    // check if all Ts dead and bomb not planted -> CT win
+    const anyT = bots.some(b=>b.alive && b.team===TEAM_T);
+    if(!anyT){
+      game.playerScore++;
+      game.roundMsg = 'Ronda ganada';
+      game.roundActive = false;
+      scheduleRoundReset('CT');
+    }
   }
 
-  [...allies,...enemies].forEach(e=>{ if(e.reload>0) e.reload--; });
+  // round timer
+  game.roundTime--;
+  if(game.roundTime <= 0 && !game.bomb.planted){
+    // time out -> CT win
+    game.playerScore++;
+    game.roundMsg = 'Tiempo acabado — Ronda ganada';
+    game.roundActive = false;
+    scheduleRoundReset('CT');
+  }
 
-  updateAI();
-  updateBullets(allies,enemies);
-  updateBullets(enemies,allies);
+  // update camera
+  camera.update(player);
+
+  // schedule reset counter decrement if set
+  if(resetCounter > 0) { resetCounter--; if(resetCounter === 0) resetRound(); }
+
   draw();
-
-  // limpiar basura
-  allies.forEach(a=>a.bullets=a.bullets.slice(-200));
-  enemies.forEach(a=>a.bullets=a.bullets.slice(-200));
-
   requestAnimationFrame(update);
 }
 
-update();
+// ---------- helpers: plant / defuse / round reset ----------
+function pointInRect(x,y,rect){ return x >= rect.x && x <= rect.x+rect.w && y >= rect.y && y <= rect.y+rect.h; }
+
+function plantBomb(siteLabel, siteRect){
+  if(game.bomb.planted) return;
+  game.bomb.planted = true;
+  game.bomb.x = siteRect.x + siteRect.w/2;
+  game.bomb.y = siteRect.y + siteRect.h/2;
+  game.bomb.timer = 45 * 60; // 45s
+  game.bomb.site = siteLabel;
+  game.roundMsg = 'Bomba plantada en ' + siteLabel;
+}
+
+function defuseBomb(){
+  if(!game.bomb.planted) return;
+  game.bomb.planted = false;
+  game.playerScore++;
+  game.roundMsg = 'Bomba desactivada';
+  scheduleRoundReset('CT');
+}
+
+// controlled reset (frame-based) — avoid setTimeout stacking
+let resetCounter = 0;
+function scheduleRoundReset(winner){
+  // winner = 'CT' or 'T'
+  resetCounter = 120; // 2 seconds
+}
+
+function resetRound(){
+  // reset players, bots, bullets, map covers etc. preserve scores
+  // rebuild map and covers intact
+  buildMap();
+  bullets.length = 0;
+  player.x = spawnCT.x + spawnCT.w/2;
+  player.y = spawnCT.y + spawnCT.h/2;
+  player.hp = 10; player.alive = true; player.bullets = [];
+  game.round++;
+  game.roundTime = 90 * 60;
+  game.bomb = {planted:false,x:0,y:0,timer:0,site:null};
+  spawnTeams();
+  game.roundActive = true;
+  game.roundMsg = 'Ronda ' + game.round;
+}
+
+// ---------- drawing with camera and fog of war ----------
+function worldToScreen(x,y){
+  return { x: x - camera.x + W/2, y: y - camera.y + H/2 };
+}
+
+function draw(){
+  // clear screen
+  ctx.clearRect(0,0,W,H);
+
+  // draw ground (city asphalt)
+  ctx.fillStyle = '#1f2326';
+  ctx.fillRect(0,0,W,H);
+
+  // save and translate world by camera
+  ctx.save();
+  ctx.translate(-(camera.x - W/2), -(camera.y - H/2));
+
+  // draw map walls
+  for(let w of walls){
+    ctx.fillStyle = w.destructible ? '#8d4' : '#444';
+    ctx.fillRect(w.x, w.y, w.w, w.h);
+  }
+  // draws covers
+  for(let c of covers){
+    ctx.fillStyle = '#5a666c';
+    ctx.fillRect(c.x, c.y, c.w, c.h);
+  }
+  // draw sites
+  ctx.strokeStyle = 'rgba(200,160,60,0.9)'; ctx.lineWidth = 2;
+  ctx.strokeRect(siteA.x, siteA.y, siteA.w, siteA.h);
+  ctx.strokeRect(siteB.x, siteB.y, siteB.w, siteB.h);
+
+  // draw bombs
+  if(game.bomb.planted){
+    ctx.fillStyle = '#ffd24d';
+    ctx.beginPath(); ctx.arc(game.bomb.x, game.bomb.y, 10, 0, Math.PI*2); ctx.fill();
+    // arc timer
+    const pct = game.bomb.timer / (45*60);
+    ctx.strokeStyle = 'rgba(255,200,0,0.9)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(game.bomb.x, game.bomb.y, 18, -Math.PI/2, -Math.PI/2 + Math.PI*2*pct); ctx.stroke();
+  }
+
+  // draw bots & player in world coordinates
+  // bots
+  for(let b of bots) b.draw(ctx);
+  // player
+  if(player.alive){
+    ctx.fillStyle = '#3fe8d0';
+    ctx.beginPath(); ctx.arc(player.x, player.y, player.size, 0, Math.PI*2); ctx.fill();
+    // small HP bar
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(player.x - 26, player.y - player.size - 14, 52, 8);
+    ctx.fillStyle = '#3fe8d0';
+    ctx.fillRect(player.x - 26, player.y - player.size - 14, 52 * (player.hp/10), 8);
+  }
+
+  // draw bullets (player & bots)
+  ctx.fillStyle = '#ffe78a';
+  for(let b of player.bullets){
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
+  }
+  ctx.fillStyle = '#ffdbdb';
+  for(let bo of bots){
+    for(let b of bo.bullets){
+      ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
+    }
+  }
+
+  // restore camera transform
+  ctx.restore();
+
+  // ====== FOV / fog of war: darken everything then carve player's FOV ======
+  // dark overlay
+  ctx.fillStyle = 'rgba(0,0,0,0.82)';
+  ctx.fillRect(0,0,W,H);
+  // create cone of vision based on player's facing towards mouse on screen
+  if(player.alive){
+    // calculate world mouse (mouse relative to world)
+    const worldMouseX = mouse.x + camera.x - W/2;
+    const worldMouseY = mouse.y + camera.y - H/2;
+    const ang = Math.atan2(worldMouseY - player.y, worldMouseX - player.x);
+    const FOV = Math.PI * 0.9; // ~162deg wide (you can reduce to 90deg)
+    const VDIST = 420; // vision distance
+
+    // build polygon for vision cone with occlusion clipping by walls (approx: mask cone then cut using line-of-sight rays)
+    // draw visible area into an offscreen path
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+
+    // sample multiple rays across FOV and cut where walls block
+    const RAYS = 90;
+    for(let i=0;i<=RAYS;i++){
+      const a = ang - FOV/2 + (i/RAYS)*FOV;
+      // compute far point but clamp at nearest wall intersection
+      const fx = player.x + Math.cos(a) * VDIST;
+      const fy = player.y + Math.sin(a) * VDIST;
+      // raycast against walls: find nearest intersection
+      let nearest = {x: fx, y: fy, d: VDIST};
+      for(let w of walls.concat(covers)){
+        // check intersection of ray (player -> fx,fy) with rect edges
+        // sample multiple points along ray and stop when collision (cheap but effective)
+        const STEPS = 60;
+        for(let si=1; si<=STEPS; si++){
+          const t = si/ STEPS;
+          const sx = player.x + (fx - player.x)*t;
+          const sy = player.y + (fy - player.y)*t;
+          if(rectContainsPoint(w, sx, sy)){
+            const dd = Math.hypot(sx - player.x, sy - player.y);
+            if(dd < nearest.d){ nearest = {x:sx, y:sy, d:dd}; }
+            break;
+          }
+        }
+      }
+      const screen = worldToScreen(nearest.x, nearest.y);
+      if(i===0) ctx.moveTo(screen.x, screen.y);
+      else ctx.lineTo(screen.x, screen.y);
+    }
+    // connect back to player screen pos
+    const pScreen = worldToScreen(player.x, player.y);
+    ctx.lineTo(pScreen.x, pScreen.y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  } else {
+    // if dead, reveal full map? keep dark
+  }
+
+  // HUD overlay (screen space)
+  hud.innerHTML = `HP: ${player.hp} • Ronda: ${game.round} • CT: ${game.playerScore} - T: ${game.enemyScore} • Tiempo: ${Math.ceil(game.roundTime / 60)}s<br>
+    Bots vivos CT:${allCTs().filter(b=>b.alive).length+ (player.alive?1:0)} / T:${allTs().filter(b=>b.alive).length}`;
+
+  // optional debug: draw camera center
+  // ctx.fillStyle='red'; ctx.fillRect(W/2-2,H/2-2,4,4);
+
+  // done
+}
+
+// helper to test if point inside rect
+function rectContainsPoint(r, x, y){ return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h; }
+
+// ---------- spawn teams util (for resets) ----------
+function spawnTeams(){
+  // clear bots array then spawn as before
+  bots.length = 0;
+  // CT bots near CT spawn
+  const ctNames = ['Alex','Nico','Rita','Javi'];
+  for(let i=0;i<4;i++){
+    const s = { x: spawnCT.x + 40 + i*20, y: spawnCT.y + 30 + i*18 };
+    const b = new Bot(s.x, s.y, TEAM_CT, ctNames[i]);
+    b.patrolPoints = [{x:s.x, y:s.y}, {x: s.x+70, y: s.y + 40}, {x: s.x-40, y: s.y + 80}];
+    bots.push(b);
+  }
+  // T bots
+  for(let i=0;i<5;i++){
+    const s = { x: spawnT.x + 30 + i*24, y: spawnT.y + 24 + i*12};
+    const b = new Bot(s.x, s.y, TEAM_T, 'T-'+(i+1));
+    b.patrolPoints = [{x: s.x, y: s.y}, {x: siteA.x + 40, y: siteA.y + 40}, {x: siteB.x + 40, y: siteB.y + 40}];
+    bots.push(b);
+  }
+}
+spawnTeams();
+
+// ---------- scheduling game loop ----------
+let raf = null;
+function start(){
+  lastFrame = performance.now();
+  if(!raf) raf = requestAnimationFrame(update);
+}
+start();
+
+// ---------- utility functions for later actions ----------
+function allTs(){ return bots.filter(b=>b.team === TEAM_T); }
+function allCTs(){ return bots.filter(b=>b.team === TEAM_CT); }
+
+// ---------- expose player shooting on click (convert screen mouse to world) ----------
+canvas.addEventListener('mousedown', e=>{
+  mouse.down = true;
+  const wx = mouse.x + camera.x - W/2;
+  const wy = mouse.y + camera.y - H/2;
+  playerShoot(wx, wy);
+});
+canvas.addEventListener('mouseup', e=> mouse.down = false);
+
+// ---------- default controls helpers ----------
+function playerShoot(wx, wy){
+  playerShoot = playerShoot; // avoid lint unused
+  playerShootActual(wx, wy);
+}
+function playerShootActual(wx, wy){
+  playerShootActual = playerShootActual; // no-op to keep function
+}
+function playerShootActual(wx, wy){
+  if(!player.alive) return;
+  if(player.reload > 0) return;
+  const dx = wx - player.x, dy = wy - player.y;
+  const d = Math.hypot(dx,dy) || 1;
+  const gun = player.weapon;
+  const b = { x:player.x, y:player.y, vx:(dx/d)*gun.speed, vy:(dy/d)*gun.speed, size:4, damage:gun.damage, life:140 };
+  player.bullets.push(b); pushBullet(b);
+  player.reload = gun.rate;
+}
+
+// Because of closures above, fix actual shooting function reference properly:
+playerShootActual = function(wx, wy){
+  if(!player.alive) return;
+  if(player.reload > 0) return;
+  const dx = wx - player.x, dy = wy - player.y;
+  const d = Math.hypot(dx,dy) || 1;
+  const gun = player.weapon;
+  const b = { x:player.x, y:player.y, vx:(dx/d)*gun.speed, vy:(dy/d)*gun.speed, size:4, damage:gun.damage, life:140 };
+  player.bullets.push(b); pushBullet(b);
+  player.reload = gun.rate;
+};
+// ensure visible shooting binds to correct function
+function playerShoot(wx, wy){ playerShootActual(wx, wy); }
+
+// expose plant/defuse keys
+addEventListener('keydown', e=>{
+  if(e.key.toLowerCase() === 'e' && player.team === TEAM_T && !game.bomb.planted){
+    // plant if in site
+    if(pointInRect(player.x, player.y, siteA)){
+      plantBomb('A', siteA);
+    } else if(pointInRect(player.x, player.y, siteB)){
+      plantBomb('B', siteB);
+    }
+  }
+  if(e.key.toLowerCase() === 'f' && player.team === TEAM_CT && game.bomb.planted){
+    const d = pointDist(player.x, player.y, game.bomb.x, game.bomb.y);
+    if(d < 28){
+      player.defuseProgress++;
+      if(player.defuseProgress >= 5*60) defuseBomb();
+    }
+  }
+});
+
+// ---------- helper: scheduling resetCooldown ----------
+let resetPending = false;
+function scheduleRoundReset(winner){
+  if(resetPending) return;
+  resetPending = true;
+  setTimeout(()=>{
+    resetPending = false;
+    // quick reset
+    buildMap();
+    spawnTeams();
+    player.x = spawnCT.x + spawnCT.w/2; player.y = spawnCT.y + spawnCT.h/2;
+    player.hp = 10; player.alive = true; player.bullets = [];
+    bullets.length = 0;
+    game.round++;
+    game.roundTime = 90 * 60;
+    game.bomb = {planted:false,x:0,y:0,timer:0,site:null};
+    game.roundActive = true;
+    // update scores
+    if(winner === 'CT') game.playerScore++; else if(winner === 'T') game.enemyScore++;
+  }, 1200);
+}
+
+// minimal start message
+game.roundMsg = 'Ronda ' + game.round;
+
 </script>
 </body>
 </html>
