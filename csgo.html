@@ -1,183 +1,371 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="utf-8">
-<title>CSGO 2D — Ciudad táctica</title>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>CSGO 2D — Boceto Dust2 (map funcional)</title>
 <style>
-  html,body{margin:0;padding:0;overflow:hidden;background:#000;}
-  canvas{display:block;}
-  #hud{
-    position:fixed;top:10px;left:10px;color:white;
-    font-family:Arial, sans-serif;font-size:16px;
-    background:rgba(0,0,0,0.5);padding:5px 10px;border-radius:8px;
-  }
+  html,body{height:100%;margin:0;background:#0b0f14;color:#fff;font-family:Inter,Arial,sans-serif;}
+  canvas{display:block}
+  #hud{position:fixed;left:12px;top:12px;background:rgba(0,0,0,0.5);padding:8px;border-radius:8px}
+  #tips{position:fixed;right:12px;top:12px;background:rgba(0,0,0,0.45);padding:8px;border-radius:8px;font-size:13px}
 </style>
 </head>
 <body>
-<div id="hud">Cargando...</div>
 <canvas id="game"></canvas>
+<div id="hud">Cargando mapa...</div>
+<div id="tips">WASD mover • Click disparar (no implementado) • Esc para pausar</div>
+
 <script>
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
-const hud=document.getElementById("hud");
-let W,H;
+/*
+  Mapa inspirado en Dust2 (boceto):
+  - Spawn T: lejos arriba-izquierda
+  - Mid: centro
+  - Long/Short/Tunnels: rutas
+  - Sites A/B: cerca del Spawn CT (abajo-derecha)
+  - Coberturas (boxes) distribuidas
+*/
+
+// --- canvas / retina sizing ---
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const hud = document.getElementById('hud');
+let W = innerWidth, H = innerHeight;
 function resize(){
-  W=canvas.width=innerWidth;
-  H=canvas.height=innerHeight;
+  W = canvas.width = innerWidth;
+  H = canvas.height = innerHeight;
 }
-resize(); addEventListener("resize",resize);
+addEventListener('resize', resize);
+resize();
 
-//-------------------------
-// MAPA URBANO
-//-------------------------
-const TILE=60;
-const MAP=[
-"############################",
-"#T#......................A.#",
-"#.#....####.......####.....#",
-"#.#....#..#.......#..#.....#",
-"#.#....####.......####.....#",
-"#.#.........................#",
-"#.#..........####...........#",
-"#.#..........#..#...........#",
-"#.#..........####...........#",
-"#..............B............#",
-"#########............########",
-"#C.........................CT#",
-"############################"
+// --- settings ---
+const TILE = 48;            // tamaño visual de celda
+const MAP_GRID = [          // map legend: '#' wall, '.' ground, 'A' siteA, 'B' siteB, 'T' spawnT, 'C' spawnCT, 'X' cover box
+  "###############################",
+  "#T............#######.........#",
+  "#T............#.....#.........#",
+  "#.............#.....#.........#",
+  "#.............#.....#####.....#",
+  "#.............#...............#",
+  "#.............#...............#",
+  "#.............#######.........#",
+  "#..................#####..... #",
+  "#..................#...#......#",
+  "#.......#####......#...#......#",
+  "#.......#...#......#...#......#",
+  "#.......#####......#...#......#",
+  "#.......................#.....#",
+  "#.......................#.....#",
+  "#...........X........B.#.....C#",
+  "#.......................#.....#",
+  "###############################"
 ];
-const walls=[];
-for(let y=0;y<MAP.length;y++){
-  for(let x=0;x<MAP[y].length;x++){
-    const c=MAP[y][x];
-    if(c==="#") walls.push({x:x*TILE,y:y*TILE});
-  }
-}
 
-//-------------------------
-// ENTIDADES
-//-------------------------
-class Entity{
-  constructor(x,y,color,team,name){
-    this.x=x;this.y=y;
-    this.color=color;
-    this.team=team;
-    this.dir=Math.random()*Math.PI*2;
-    this.hp=100;
-    this.name=name||"";
-  }
-  draw(){
-    ctx.fillStyle=this.color;
-    ctx.beginPath();
-    ctx.arc(this.x,this.y,10,0,Math.PI*2);
-    ctx.fill();
-    ctx.font="12px Arial";
-    ctx.fillStyle="#fff";
-    ctx.fillText(this.name,this.x-10,this.y-15);
-  }
-}
+// compute map pixel size
+const MAP_W = MAP_GRID[0].length * TILE;
+const MAP_H = MAP_GRID.length * TILE;
 
-function findChar(ch){
-  for(let y=0;y<MAP.length;y++){
-    for(let x=0;x<MAP[y].length;x++){
-      if(MAP[y][x]===ch)
-        return {x:x*TILE+TILE/2,y:y*TILE+TILE/2};
+// helper to find tile positions
+function findTile(ch){
+  for(let y=0;y<MAP_GRID.length;y++){
+    for(let x=0;x<MAP_GRID[y].length;x++){
+      if(MAP_GRID[y][x]===ch){
+        return {x: x*TILE + TILE/2, y: y*TILE + TILE/2};
+      }
     }
   }
-  return {x:100,y:100};
+  return null;
 }
 
-const playerPos=findChar("CT");
-const player=new Entity(playerPos.x,playerPos.y,"#00aaff","CT","Tú");
-
-const allies=[];const enemies=[];
-const namesCT=["Alpha","Bravo","Charlie","Delta"];
-const namesT=["Nash","Rico","Ivan","Sergei","Boris"];
-for(let i=0;i<4;i++){
-  allies.push(new Entity(playerPos.x+Math.random()*100-50,playerPos.y+Math.random()*100-50,"#00ff88","CT",namesCT[i]));
-}
-const tPos=findChar("T");
-for(let i=0;i<5;i++){
-  enemies.push(new Entity(tPos.x+Math.random()*100-50,tPos.y+Math.random()*100-50,"#ff4444","T",namesT[i]));
-}
-
-//-------------------------
-// INPUT
-//-------------------------
-const keys={};
-addEventListener("keydown",e=>keys[e.key.toLowerCase()]=true);
-addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
-
-//-------------------------
-// IA SIMPLE
-//-------------------------
-function updateAI(bot){
-  const target=player;
-  const dx=target.x-bot.x, dy=target.y-bot.y;
-  const dist=Math.hypot(dx,dy);
-  if(dist<350){
-    bot.dir=Math.atan2(dy,dx);
-    bot.x+=Math.cos(bot.dir)*1.2;
-    bot.y+=Math.sin(bot.dir)*1.2;
-  }else{
-    bot.x+=Math.cos(bot.dir)*0.5;
-    bot.y+=Math.sin(bot.dir)*0.5;
-    if(Math.random()<0.01) bot.dir+=Math.random()-0.5;
+// build simple collision list (walls)
+const walls = [];
+const covers = []; // extra small cover boxes (from 'X' or manually)
+for(let y=0;y<MAP_GRID.length;y++){
+  for(let x=0;x<MAP_GRID[y].length;x++){
+    const c = MAP_GRID[y][x];
+    if(c === "#"){
+      walls.push({x: x*TILE, y: y*TILE, w: TILE, h: TILE});
+    } else if(c === "X"){
+      covers.push({x: x*TILE + 6, y: y*TILE + 6, w: TILE-12, h: TILE-12, hp:3});
+    } else if(c === "A" || c === "B"){
+      // leave as ground but mark sites
+    }
   }
 }
 
-//-------------------------
-// UPDATE
-//-------------------------
-let camX=0,camY=0;
-function update(){
-  // mover jugador
-  let spd=3;
-  if(keys["w"]) player.y-=spd;
-  if(keys["s"]) player.y+=spd;
-  if(keys["a"]) player.x-=spd;
-  if(keys["d"]) player.x+=spd;
+// find spawns and sites
+const spawnT = findTile('T') || {x: TILE*2, y: TILE*2};
+const spawnCT = findTile('C') || {x: MAP_W - TILE*3, y: MAP_H - TILE*3};
+const siteApos = findTile('A') || {x: MAP_W - TILE*6, y: MAP_H - TILE*9};
+const siteBpos = findTile('B') || {x: MAP_W - TILE*5, y: MAP_H - TILE*6};
 
-  // IA
-  [...allies,...enemies].forEach(updateAI);
+// --- entities ---
+class Entity {
+  constructor(x,y,team,name,color){
+    this.x = x; this.y = y;
+    this.size = 10;
+    this.team = team;
+    this.name = name || '';
+    this.color = color || (team==='T' ? '#ff6666' : '#66d1ff');
+    this.hp = 100;
+    this.alive = true;
+    this.state = 'idle'; // idle, patrol, alert, combat
+    this.patrol = [];
+    this.pIndex = 0;
+    this.reload = 0;
+  }
+  draw(ctx){
+    if(!this.alive) return;
+    ctx.fillStyle = this.color;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(this.x - 18, this.y - this.size - 18, 36, 12);
+    ctx.fillStyle = '#fff';
+    ctx.font = '11px Arial';
+    ctx.textAlign = 'center';
+    ctx.fillText(this.name, this.x, this.y - this.size - 9);
+    ctx.textAlign = 'start';
+  }
+  moveTowards(tx,ty,spd){
+    const dx = tx - this.x, dy = ty - this.y;
+    const d = Math.hypot(dx,dy) || 1;
+    const nx = this.x + (dx/d)*spd;
+    const ny = this.y + (dy/d)*spd;
+    if(!collidesAt(nx, this.y, this.size)) this.x = nx;
+    if(!collidesAt(this.x, ny, this.size)) this.y = ny;
+  }
+}
 
-  // Cámara centrada
-  camX=player.x-W/2;
-  camY=player.y-H/2;
+// player and bots
+const player = new Entity(spawnCT.x, spawnCT.y, 'CT', 'Tú', '#3fe8d0');
+player.size = 12;
+player.speed = 3.2;
+
+const allies = [];
+const enemies = [];
+
+// spawn 4 allies near CT (defenders close to sites)
+for(let i=0;i<4;i++){
+  const a = new Entity(spawnCT.x + (Math.random()*80-40), spawnCT.y + (Math.random()*80-40), 'CT',
+                       ['Alpha','Bravo','Charlie','Delta'][i], '#66d1ff');
+  a.patrol = [
+    {x: siteApos.x - 60 + Math.random()*40, y: siteApos.y + Math.random()*40},
+    {x: spawnCT.x + Math.random()*40, y: spawnCT.y + Math.random()*40}
+  ];
+  allies.push(a);
+}
+
+// spawn 5 Ts far from sites (attackers)
+for(let i=0;i<5;i++){
+  const e = new Entity(spawnT.x + Math.random()*100 - 40, spawnT.y + Math.random()*60 - 20, 'T',
+                       'T-' + (i+1), '#ff8a7a');
+  // set patrol towards mid / routes
+  e.patrol = [
+    {x: MAP_W/3 + Math.random()*40, y: MAP_H/3 + Math.random()*40},
+    {x: siteBpos.x - 120 + Math.random()*40, y: siteBpos.y + Math.random()*40},
+    {x: siteApos.x - 160 + Math.random()*40, y: siteApos.y + Math.random()*40}
+  ];
+  enemies.push(e);
+}
+
+// bullets simplified (we won't do full combat now)
+const bullets = [];
+
+// --- input ---
+const keys = {};
+addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if(e.key==='Escape') paused = !paused; });
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// mouse handling for aiming (not used to shoot now)
+const mouse = {x:0,y:0,down:false};
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  mouse.x = e.clientX - r.left;
+  mouse.y = e.clientY - r.top;
+});
+canvas.addEventListener('mousedown', ()=>mouse.down=true);
+canvas.addEventListener('mouseup', ()=>mouse.down=false);
+
+// --- collisions ---
+function rectIntersects(ax,ay,aw,ah, bx,by,bw,bh){
+  return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+}
+function collidesAt(px, py, radius){
+  // check against walls and covers
+  // approximate entity as circle; check if center would be inside a wall rect
+  for(const w of walls){
+    if(rectIntersects(w.x, w.y, w.w, w.h, px - radius, py - radius, radius*2, radius*2)) return true;
+  }
+  return false;
+}
+
+// --- camera ---
+let camX = 0, camY = 0;
+function updateCamera(){
+  camX = player.x - W/2;
+  camY = player.y - H/2;
+  // clamp to map bounds
+  camX = Math.max(0, Math.min(camX, MAP_W - W));
+  camY = Math.max(0, Math.min(camY, MAP_H - H));
+}
+
+// --- AI update (simple patrol + move to points) ---
+function updateBot(bot){
+  if(!bot.alive) return;
+  // simple state: follow patrol points in order
+  if(bot.patrol && bot.patrol.length){
+    const p = bot.patrol[bot.pIndex];
+    const d = Math.hypot(p.x - bot.x, p.y - bot.y);
+    if(d < 8) bot.pIndex = (bot.pIndex + 1) % bot.patrol.length;
+    else bot.moveTowards(p.x, p.y, bot.team==='T' ? 1.2 : 1.0);
+  } else {
+    // small random walk
+    if(Math.random() < 0.01) bot.dir = Math.random()*Math.PI*2;
+    const nx = bot.x + Math.cos(bot.dir) * 0.6;
+    const ny = bot.y + Math.sin(bot.dir) * 0.6;
+    if(!collidesAt(nx, ny, bot.size)){ bot.x = nx; bot.y = ny; }
+  }
+}
+
+// --- world draw helpers ---
+function worldToScreen(x, y){ return { x: x - camX, y: y - camY }; }
+
+// draw map
+function drawMap(){
+  // tiles
+  for(let y=0;y<MAP_GRID.length;y++){
+    for(let x=0;x<MAP_GRID[y].length;x++){
+      const ch = MAP_GRID[y][x];
+      const px = x*TILE, py = y*TILE;
+      if(ch === '#'){
+        // wall
+        ctx.fillStyle = '#2f2f2f';
+        ctx.fillRect(px, py, TILE, TILE);
+        // wall edge
+        ctx.strokeStyle = '#1e1e1e';
+        ctx.strokeRect(px+1, py+1, TILE-2, TILE-2);
+      } else if(ch === 'A' || ch === 'B'){
+        // site ground
+        ctx.fillStyle = '#3a3a2f';
+        ctx.fillRect(px, py, TILE, TILE);
+      } else if(ch === 'T' || ch === 'C' || ch === '.'){
+        ctx.fillStyle = '#272727';
+        ctx.fillRect(px, py, TILE, TILE);
+      } else if(ch === 'X'){
+        ctx.fillStyle = '#1b3a1b';
+        ctx.fillRect(px, py, TILE, TILE);
+      } else {
+        ctx.fillStyle = '#272727';
+        ctx.fillRect(px, py, TILE, TILE);
+      }
+    }
+  }
+  // covers (explicit list)
+  for(const c of covers){
+    ctx.fillStyle = '#5a666c';
+    ctx.fillRect(c.x, c.y, c.w, c.h);
+  }
+  // site markers A and B label
+  const aTile = findTileInGrid('A');
+  const bTile = findTileInGrid('B');
+  if(aTile){
+    ctx.fillStyle = 'rgba(200,140,60,0.9)';
+    ctx.fillRect(aTile.x*TILE, aTile.y*TILE, TILE, TILE);
+    ctx.fillStyle = '#000';
+    ctx.font = '14px Arial';
+    ctx.fillText('A', aTile.x*TILE + TILE/2 - 4, aTile.y*TILE + TILE/2 + 6);
+  }
+  if(bTile){
+    ctx.fillStyle = 'rgba(180,60,60,0.9)';
+    ctx.fillRect(bTile.x*TILE, bTile.y*TILE, TILE, TILE);
+    ctx.fillStyle = '#000';
+    ctx.font = '14px Arial';
+    ctx.fillText('B', bTile.x*TILE + TILE/2 - 4, bTile.y*TILE + TILE/2 + 6);
+  }
+}
+function findTileInGrid(ch){
+  for(let y=0;y<MAP_GRID.length;y++){
+    for(let x=0;x<MAP_GRID[y].length;x++){
+      if(MAP_GRID[y][x]===ch) return {x, y};
+    }
+  }
+  return null;
+}
+
+// --- main update/draw loop ---
+let last = performance.now();
+let paused = false;
+function update(now){
+  if(paused){ requestAnimationFrame(update); return; }
+  const dt = (now - last) / 16.666;
+  last = now;
+
+  // player input movement
+  let mvx = 0, mvy = 0;
+  if(keys['w'] || keys['arrowup']) mvy -= player.speed;
+  if(keys['s'] || keys['arrowdown']) mvy += player.speed;
+  if(keys['a'] || keys['arrowleft']) mvx -= player.speed;
+  if(keys['d'] || keys['arrowright']) mvx += player.speed;
+  if(mvx !== 0 && mvy !== 0){ mvx *= Math.SQRT1_2; mvy *= Math.SQRT1_2; }
+  // move with collision check
+  const tryX = player.x + mvx, tryY = player.y + mvy;
+  if(!collidesAt(tryX, player.y, player.size)) player.x = tryX;
+  if(!collidesAt(player.x, tryY, player.size)) player.y = tryY;
+
+  // update bots
+  for(const a of allies) updateBot(a);
+  for(const e of enemies) updateBot(e);
+
+  // camera
+  updateCamera();
 
   draw();
+
   requestAnimationFrame(update);
 }
 
-//-------------------------
-// DRAW
-//-------------------------
+// draw everything
 function draw(){
-  ctx.fillStyle="#202020";
+  // clear screen
+  ctx.fillStyle = '#0b0f14';
   ctx.fillRect(0,0,W,H);
-  ctx.save();
-  ctx.translate(-camX,-camY);
-  
-  // mapa base
-  for(let y=0;y<MAP.length;y++){
-    for(let x=0;x<MAP[y].length;x++){
-      const c=MAP[y][x];
-      if(c==="#"){ctx.fillStyle="#333";ctx.fillRect(x*TILE,y*TILE,TILE,TILE);}
-      else if(c==="A"||c==="B"){ctx.fillStyle="#555";ctx.fillRect(x*TILE,y*TILE,TILE,TILE);}
-      else{ctx.fillStyle="#2a2a2a";ctx.fillRect(x*TILE,y*TILE,TILE,TILE);}
-    }
-  }
 
-  // entidades
-  [...allies,player,...enemies].forEach(e=>e.draw());
+  // world transform
+  ctx.save();
+  ctx.translate(-camX, -camY);
+
+  // draw map tiles
+  drawMap();
+
+  // draw mid-lines or decorative details (simple)
+  // draw entities
+  for(const e of enemies) e.draw(ctx);
+  for(const a of allies) a.draw(ctx);
+  player.draw(ctx);
+
+  // restore
   ctx.restore();
 
-  hud.innerHTML=`<b>CSGO 2D — Ciudad táctica</b><br>${player.name} HP:${player.hp}`;
+  // hud
+  hud.innerHTML = `<b>CSGO 2D — Boceto Dust2</b><br>HP: ${player.hp} • Allies:${allies.filter(x=>x.alive).length} • Enemies:${enemies.filter(x=>x.alive).length}<br>Sites cerca CT (A & B) — T spawn lejos`;
 }
 
-// iniciar
-hud.textContent="Listo. Iniciando...";
+// --- utility: findTile used earlier ---
+function findTile(ch){
+  for(let y=0;y<MAP_GRID.length;y++){
+    for(let x=0;x<MAP_GRID[y].length;x++){
+      if(MAP_GRID[y][x]===ch) return {x: x*TILE + TILE/2, y: y*TILE + TILE/2};
+    }
+  }
+  return null;
+}
+
+// --- start ---
+hud.textContent = "Mapa cargado. Listo.";
 requestAnimationFrame(update);
+
 </script>
 </body>
 </html>
