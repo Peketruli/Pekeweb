@@ -274,6 +274,7 @@ function draw(){
   ctx.save();
   ctx.translate(-camX,-camY);
 
+  // === MAPA ===
   for(let y=0;y<MAP_GRID.length;y++){
     for(let x=0;x<MAP_GRID[y].length;x++){
       const c=MAP_GRID[y][x];
@@ -282,6 +283,7 @@ function draw(){
     }
   }
 
+  // === Bomba ===
   if(bomb.planted){
     ctx.fillStyle="yellow";
     ctx.beginPath();
@@ -289,10 +291,10 @@ function draw(){
     ctx.fill();
   }
 
+  // === Entidades ===
   for(const e of enemies)e.draw(ctx);
   for(const a of allies)a.draw(ctx);
   player.draw(ctx);
-
   for(const b of bullets){
     ctx.fillStyle='orange';
     ctx.beginPath();
@@ -300,13 +302,52 @@ function draw(){
     ctx.fill();
   }
 
+  // === CONO DE VISIÓN ===
+  const worldMouseX = mouseX + camX;
+  const worldMouseY = mouseY + camY;
+  const angle = Math.atan2(worldMouseY - player.y, worldMouseX - player.x);
+  const FOV = Math.PI / 2; // 90º de visión hacia cada lado (180º total)
+  const viewDistance = 400;
+
+  // Máscara oscura sobre todo
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-atop';
+  ctx.fillStyle = 'rgba(0,0,0,0.92)';
+  ctx.fillRect(camX, camY, W, H);
+
+  // Crear cono visible
+  const gradient = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, viewDistance);
+  gradient.addColorStop(0, 'rgba(255,255,255,1)');
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.beginPath();
+  ctx.moveTo(player.x, player.y);
+  ctx.arc(player.x, player.y, viewDistance, angle - FOV/2, angle + FOV/2);
+  ctx.closePath();
+  ctx.fillStyle = gradient;
+  ctx.fill();
+
+  // Castear rayos que bloquean la visión con paredes
+  ctx.globalCompositeOperation = 'destination-out';
+  for(let i=-FOV/2; i<=FOV/2; i+=Math.PI/180){
+    let rayAngle = angle + i;
+    let rayX = player.x, rayY = player.y;
+    for(let d=0; d<viewDistance; d+=8){
+      const x = rayX + Math.cos(rayAngle)*d;
+      const y = rayY + Math.sin(rayAngle)*d;
+      if(collidesAt(x,y,4)) break;
+      ctx.fillRect(x,y,8,8);
+    }
+  }
+  ctx.restore();
   ctx.restore();
 
+  // === HUD ===
   hud.innerHTML = bomb.planted ? 
     `💣 Bomba plantada en ${bomb.site} — ${(bomb.timer/60).toFixed(1)}s` :
     `HP: ${player.hp} | CT vivos: ${allies.filter(a=>a.alive).length+1} | T vivos: ${enemies.filter(e=>e.alive).length}`;
 }
-
+  
 requestAnimationFrame(update);
 </script>
 </body>
