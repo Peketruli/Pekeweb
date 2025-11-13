@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>CSGO 2D — Boceto Dust2 (map funcional)</title>
+<title>CSGO 2D — Disparos y combate</title>
 <style>
   html,body{height:100%;margin:0;background:#0b0f14;color:#fff;font-family:Inter,Arial,sans-serif;}
-  canvas{display:block}
+  canvas{display:block;cursor:crosshair}
   #hud{position:fixed;left:12px;top:12px;background:rgba(0,0,0,0.5);padding:8px;border-radius:8px}
   #tips{position:fixed;right:12px;top:12px;background:rgba(0,0,0,0.45);padding:8px;border-radius:8px;font-size:13px}
 </style>
@@ -14,283 +14,179 @@
 <body>
 <canvas id="game"></canvas>
 <div id="hud">Cargando mapa...</div>
-<div id="tips">WASD mover • Click disparar (no implementado) • Esc para pausar</div>
+<div id="tips">WASD mover • Click disparar • Esc pausar</div>
 
 <script>
-// --- canvas / retina sizing ---
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const hud = document.getElementById('hud');
-let W = innerWidth, H = innerHeight;
-function resize(){
-  W = canvas.width = innerWidth;
-  H = canvas.height = innerHeight;
-}
-addEventListener('resize', resize);
-resize();
+// --- canvas ---
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+const hud=document.getElementById("hud");
+let W=innerWidth,H=innerHeight;
+function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight;}
+addEventListener("resize",resize);resize();
 
-// --- ajustes ---
-const TILE = 48;
-const MAP_GRID = [
-  "#############################################",
-  "#T............#####..........#..............#",
-  "#T..................#........#..............#",
-  "###########...#.....#####....#..............#",
-  "#.............#.........#....#..............#",
-  "#......#####..#.........#...................#",
-  "#......####...#######.........##............#",
-  "#......###.........#########.......###......#",
-  "#......####............#.....#..............#",
-  "#......######..........#.....#..............#",
-  "#......##########...####.....#..............#",
-  "#......######................#..............#",
-  "#...............##..####.....#####.......####",
-  "#...............##....##....................#",
-  "#...............###...##....................#",
-  "#...............####..##..............B.....#",
-  "#...............####........................#",
-  "#.........##########..##....................#",
-  "######.................#....................#",
-  "#....#.................#....................#",
-  "#..A...................#....................#",
-  "###....................#....................#",
-  "#......................#....................#",
-  "#......................#...................c#",
-  "#..........................................c#",
-  "#############################################"
+// --- mapa ---
+const TILE=48;
+const MAP_GRID=[
+"#############################################",
+"#T............#####..........#..............#",
+"#T..................#........#..............#",
+"###########...#.....#####....#..............#",
+"#.............#.........#....#..............#",
+"#......#####..#.........#...................#",
+"#......####...#######.........##............#",
+"#......###.........#########.......###......#",
+"#......####............#.....#..............#",
+"#......######..........#.....#..............#",
+"#......##########...####.....#..............#",
+"#......######................#..............#",
+"#...............##..####.....#####.......####",
+"#...............##....##....................#",
+"#...............###...##....................#",
+"#...............####..##..............B.....#",
+"#...............####........................#",
+"#.........##########..##....................#",
+"######.................#....................#",
+"#....#.................#....................#",
+"#..A...................#....................#",
+"###....................#....................#",
+"#......................#....................#",
+"#......................#...................C#",
+"#..........................................C#",
+"#############################################"
 ];
-
-const MAP_W = MAP_GRID[0].length * TILE;
-const MAP_H = MAP_GRID.length * TILE;
-
-function findTile(ch){
-  for(let y=0;y<MAP_GRID.length;y++){
-    for(let x=0;x<MAP_GRID[y].length;x++){
-      if(MAP_GRID[y][x]===ch){
-        return {x: x*TILE + TILE/2, y: y*TILE + TILE/2};
-      }
-    }
-  }
-  return null;
-}
-
-// --- paredes y coberturas ---
-const walls = [];
-const covers = [];
-for(let y=0;y<MAP_GRID.length;y++){
-  for(let x=0;x<MAP_GRID[y].length;x++){
-    const c = MAP_GRID[y][x];
-    if(c === "#") walls.push({x:x*TILE,y:y*TILE,w:TILE,h:TILE});
-    else if(c === "X") covers.push({x:x*TILE+6,y:y*TILE+6,w:TILE-12,h:TILE-12,hp:3});
-  }
-}
-
-// --- posiciones clave ---
-const spawnT = findTile('T') || {x: TILE*2, y: TILE*2};
-const spawnCT = findTile('C') || {x: MAP_W - TILE*3, y: MAP_H - TILE*3};
-const siteApos = findTile('A') || {x: MAP_W - TILE*6, y: MAP_H - TILE*9};
-const siteBpos = findTile('B') || {x: MAP_W - TILE*5, y: MAP_H - TILE*6};
+const MAP_W=MAP_GRID[0].length*TILE,MAP_H=MAP_GRID.length*TILE;
+function findTile(ch){for(let y=0;y<MAP_GRID.length;y++)for(let x=0;x<MAP_GRID[y].length;x++)if(MAP_GRID[y][x]===ch)return{x:x*TILE+TILE/2,y:y*TILE+TILE/2};return null;}
+const walls=[];for(let y=0;y<MAP_GRID.length;y++)for(let x=0;x<MAP_GRID[y].length;x++)if(MAP_GRID[y][x]==="#")walls.push({x:x*TILE,y:y*TILE,w:TILE,h:TILE});
+const spawnT=findTile("T"),spawnCT=findTile("C"),siteApos=findTile("A"),siteBpos=findTile("B");
 
 // --- entidades ---
-class Entity {
+class Entity{
   constructor(x,y,team,name,color){
-    this.x = x; this.y = y;
-    this.size = 10;
-    this.team = team;
-    this.name = name || '';
-    this.color = color || (team==='T' ? '#ff6666' : '#66d1ff');
-    this.hp = 100;
-    this.alive = true;
-    this.speed = team==='T'?1.4:1.2;
-    this.hasBomb = false;
-    this.state = 'idle';
-    this.target = null;
+    this.x=x;this.y=y;this.team=team;this.name=name;
+    this.color=color|| (team==="T"?"#ff6666":"#66d1ff");
+    this.size=10;this.hp=100;this.alive=true;this.speed=team==="T"?1.4:1.2;
   }
   draw(ctx){
-    if(!this.alive) return;
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
-    ctx.fill();
-    if(this.hasBomb){
-      ctx.fillStyle = "yellow";
-      ctx.beginPath();
-      ctx.arc(this.x,this.y-14,4,0,Math.PI*2);
-      ctx.fill();
-    }
-    ctx.fillStyle = "#fff";
-    ctx.font = "11px Arial";
-    ctx.textAlign = "center";
+    if(!this.alive)return;
+    ctx.fillStyle=this.color;
+    ctx.beginPath();ctx.arc(this.x,this.y,this.size,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle="#fff";ctx.font="11px Arial";ctx.textAlign="center";
     ctx.fillText(this.name,this.x,this.y+20);
   }
   moveTowards(tx,ty,spd){
-    const dx = tx - this.x, dy = ty - this.y;
-    const d = Math.hypot(dx,dy)||1;
-    const nx = this.x+(dx/d)*spd;
-    const ny = this.y+(dy/d)*spd;
-    if(!collidesAt(nx,this.y,this.size)) this.x=nx;
-    if(!collidesAt(this.x,ny,this.size)) this.y=ny;
+    const dx=tx-this.x,dy=ty-this.y,d=Math.hypot(dx,dy)||1;
+    const nx=this.x+(dx/d)*spd,ny=this.y+(dy/d)*spd;
+    if(!collidesAt(nx,this.y,this.size))this.x=nx;
+    if(!collidesAt(this.x,ny,this.size))this.y=ny;
   }
 }
 
-// Jugador y equipos
-const player = new Entity(spawnCT.x, spawnCT.y, 'CT', 'Tú', '#3fe8d0');
-player.speed = 3.2;
-const allies = [];
-const enemies = [];
-
-// 4 CT aliados
-for(let i=0;i<4;i++){
-  allies.push(new Entity(spawnCT.x + (Math.random()*100-50), spawnCT.y + (Math.random()*100-50),
-    'CT', ['Alpha','Bravo','Charlie','Delta'][i], '#66d1ff'));
-}
-
-// 5 Terroristas, el primero lleva la bomba
-for(let i=0;i<5;i++){
-  const e = new Entity(spawnT.x + Math.random()*100 - 40, spawnT.y + Math.random()*60 - 20,
-    'T','T-'+(i+1),'#ff8a7a');
-  if(i===0) e.hasBomb = true;
-  enemies.push(e);
-}
-
-let bomb = {x:0,y:0,planted:false,timer:0,site:null};
+// --- jugador y bots ---
+const player=new Entity(spawnCT.x,spawnCT.y,"CT","Tú","#3fe8d0");
+player.speed=3.2;
+const allies=[],enemies=[];
+["Alpha","Bravo","Charlie","Delta"].forEach((n,i)=>allies.push(new Entity(spawnCT.x+(i*20),spawnCT.y+(i*10),"CT",n)));
+for(let i=0;i<5;i++)enemies.push(new Entity(spawnT.x+Math.random()*100-50,spawnT.y+Math.random()*50-25,"T","T-"+(i+1)));
 
 // --- input ---
-const keys={};
-addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true;if(e.key==='Escape')paused=!paused;});
-addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+const keys={},mouse={x:0,y:0,down:false};
+addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true;if(e.key==="Escape")paused=!paused;});
+addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
+canvas.addEventListener("mousemove",e=>{const r=canvas.getBoundingClientRect();mouse.x=e.clientX-r.left;mouse.y=e.clientY-r.top;});
+canvas.addEventListener("mousedown",()=>{mouse.down=true;shoot();});
+canvas.addEventListener("mouseup",()=>mouse.down=false);
 
-// --- colisiones ---
-function rectIntersects(ax,ay,aw,ah,bx,by,bw,bh){
-  return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by;
+// --- disparos ---
+const bullets=[];
+function shoot(){
+  if(!player.alive)return;
+  const angle=Math.atan2(mouse.y-H/2,mouse.x-W/2);
+  bullets.push({x:player.x,y:player.y,dx:Math.cos(angle)*8,dy:Math.sin(angle)*8,team:player.team});
 }
-function collidesAt(px,py,r){
-  for(const w of walls)
-    if(rectIntersects(w.x,w.y,w.w,w.h,px-r,py-r,r*2,r*2)) return true;
-  return false;
-}
-
-// --- cámara ---
-let camX=0, camY=0;
-function updateCamera(){
-  camX = player.x - W/2;
-  camY = player.y - H/2;
-  camX = Math.max(0,Math.min(camX,MAP_W-W));
-  camY = Math.max(0,Math.min(camY,MAP_H-H));
-}
-
-// --- IA ---
-function updateAI(bot){
-  if(!bot.alive) return;
-  if(bot.team==='T'){
-    if(!bomb.planted){
-      if(!bot.target){
-        // el que lleva la bomba elige site A o B
-        bot.target = bot.hasBomb ? (Math.random()<0.5?siteApos:siteBpos) : siteBpos;
+function updateBullets(){
+  for(let i=bullets.length-1;i>=0;i--){
+    const b=bullets[i];
+    b.x+=b.dx;b.y+=b.dy;
+    if(b.x<0||b.y<0||b.x>MAP_W||b.y>MAP_H){bullets.splice(i,1);continue;}
+    if(collidesAt(b.x,b.y,3)){bullets.splice(i,1);continue;}
+    const targets=[...allies,...enemies,player];
+    for(const t of targets){
+      if(!t.alive||t.team===b.team)continue;
+      if(Math.hypot(b.x-t.x,b.y-t.y)<t.size){
+        t.hp-=50;
+        if(t.hp<=0)t.alive=false;
+        bullets.splice(i,1);
+        break;
       }
-      bot.moveTowards(bot.target.x,bot.target.y,bot.speed);
-      if(bot.hasBomb){
-        const dist = Math.hypot(bot.x - bot.target.x, bot.y - bot.target.y);
-        if(dist<40){
-          bomb = {x:bot.x, y:bot.y, planted:true, timer:600, site:bot.target===siteApos?'A':'B'};
-          bot.hasBomb=false;
-          console.log("💣 Bomba plantada en", bomb.site);
-        }
-      }
-    }
-  }else if(bot.team==='CT' && bomb.planted){
-    // CTs van hacia la bomba
-    bot.moveTowards(bomb.x,bomb.y,bot.speed);
-    const dist = Math.hypot(bot.x - bomb.x, bot.y - bomb.y);
-    if(dist<30){
-      bomb.planted=false;
-      bomb.timer=0;
-      console.log("🧰 Bomba desactivada por",bot.name);
     }
   }
 }
 
-// --- render mapa ---
+// --- colisiones ---
+function rectIntersects(ax,ay,aw,ah,bx,by,bw,bh){return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by;}
+function collidesAt(px,py,r){for(const w of walls)if(rectIntersects(w.x,w.y,w.w,w.h,px-r,py-r,r*2,r*2))return true;return false;}
+
+// --- cámara ---
+let camX=0,camY=0;
+function updateCamera(){camX=player.x-W/2;camY=player.y-H/2;camX=Math.max(0,Math.min(camX,MAP_W-W));camY=Math.max(0,Math.min(camY,MAP_H-H));}
+
+// --- IA simple ---
+function updateAI(bot){
+  if(!bot.alive)return;
+  if(bot.team==="T"){
+    const target=siteBpos;
+    bot.moveTowards(target.x,target.y,bot.speed);
+  }else{
+    const enemy=enemies.find(e=>e.alive);
+    if(enemy)bot.moveTowards(enemy.x,enemy.y,bot.speed*0.8);
+  }
+}
+
+// --- render ---
 function drawMap(){
   for(let y=0;y<MAP_GRID.length;y++){
     for(let x=0;x<MAP_GRID[y].length;x++){
-      const ch = MAP_GRID[y][x];
-      const px = x*TILE, py = y*TILE;
-      if(ch==='#'){
-        ctx.fillStyle='#2f2f2f';
-        ctx.fillRect(px,py,TILE,TILE);
-      }else if(ch==='A'||ch==='B'){
-        ctx.fillStyle='#3a3a2f';
-        ctx.fillRect(px,py,TILE,TILE);
-      }else{
-        ctx.fillStyle='#272727';
-        ctx.fillRect(px,py,TILE,TILE);
-      }
+      const c=MAP_GRID[y][x],px=x*TILE,py=y*TILE;
+      ctx.fillStyle=c==="#"?"#2f2f2f":(c==="A"||c==="B"?"#3a3a2f":"#272727");
+      ctx.fillRect(px,py,TILE,TILE);
     }
-  }
-  for(const c of covers){
-    ctx.fillStyle='#555';
-    ctx.fillRect(c.x,c.y,c.w,c.h);
-  }
-  // Bomb indicator
-  if(bomb.planted){
-    ctx.fillStyle="yellow";
-    ctx.beginPath();
-    ctx.arc(bomb.x,bomb.y,10,0,Math.PI*2);
-    ctx.fill();
   }
 }
 
-// --- bucle principal ---
+// --- loop ---
 let paused=false;
 function update(){
   if(paused){requestAnimationFrame(update);return;}
-  // movimiento jugador
   let mvx=0,mvy=0;
-  if(keys['w'])mvy-=player.speed;
-  if(keys['s'])mvy+=player.speed;
-  if(keys['a'])mvx-=player.speed;
-  if(keys['d'])mvx+=player.speed;
+  if(keys["w"])mvy-=player.speed;
+  if(keys["s"])mvy+=player.speed;
+  if(keys["a"])mvx-=player.speed;
+  if(keys["d"])mvx+=player.speed;
   if(mvx&&mvy){mvx*=Math.SQRT1_2;mvy*=Math.SQRT1_2;}
   const nx=player.x+mvx,ny=player.y+mvy;
   if(!collidesAt(nx,player.y,player.size))player.x=nx;
   if(!collidesAt(player.x,ny,player.size))player.y=ny;
-
-  // bots
   for(const a of allies)updateAI(a);
   for(const e of enemies)updateAI(e);
-
-  if(bomb.planted){
-    bomb.timer--;
-    if(bomb.timer<=0){
-      bomb.planted=false;
-      console.log("💥 Bomba explotó!");
-    }
-  }
-
+  updateBullets();
   updateCamera();
   draw();
   requestAnimationFrame(update);
 }
 
-// --- dibujar ---
 function draw(){
-  ctx.fillStyle='#0b0f14';
+  ctx.fillStyle="#0b0f14";
   ctx.fillRect(0,0,W,H);
   ctx.save();
   ctx.translate(-camX,-camY);
   drawMap();
+  for(const b of bullets){ctx.fillStyle="yellow";ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill();}
   for(const e of enemies)e.draw(ctx);
   for(const a of allies)a.draw(ctx);
   player.draw(ctx);
   ctx.restore();
-
-  // HUD
-  if(bomb.planted){
-    hud.innerHTML=`<b>💣 Bomba plantada en ${bomb.site}</b><br>Tiempo: ${(bomb.timer/60).toFixed(1)}s`;
-  }else{
-    hud.innerHTML=`<b>CSGO 2D</b><br>HP: ${player.hp} | CT vivos: ${allies.length} | T vivos: ${enemies.length}`;
-  }
+  hud.innerHTML=`<b>CSGO 2D</b><br>HP:${player.hp} | Enemigos:${enemies.filter(e=>e.alive).length} | Balas:${bullets.length}`;
 }
 
 hud.textContent="Mapa listo.";
