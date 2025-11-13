@@ -17,179 +17,196 @@
 <div id="tips">WASD mover • Click disparar • Esc pausar</div>
 
 <script>
-// --- canvas ---
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
-const hud=document.getElementById("hud");
-let W=innerWidth,H=innerHeight;
-function resize(){W=canvas.width=innerWidth;H=canvas.height=innerHeight;}
-addEventListener("resize",resize);resize();
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const hud = document.getElementById('hud');
+let W = innerWidth, H = innerHeight;
+function resize(){ W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
+addEventListener('resize', resize); resize();
 
-// --- mapa ---
-const TILE=48;
-const MAP_GRID=[
-"#############################################",
-"#T............#####..........#..............#",
-"#T..................#........#..............#",
-"###########...#.....#####....#..............#",
-"#.............#.........#....#..............#",
-"#......#####..#.........#...................#",
-"#......####...#######.........##............#",
-"#......###.........#########.......###......#",
-"#......####............#.....#..............#",
-"#......######..........#.....#..............#",
-"#......##########...####.....#..............#",
-"#......######................#..............#",
-"#...............##..####.....#####.......####",
-"#...............##....##....................#",
-"#...............###...##....................#",
-"#...............####..##..............B.....#",
-"#...............####........................#",
-"#.........##########..##....................#",
-"######.................#....................#",
-"#....#.................#....................#",
-"#..A...................#....................#",
-"###....................#....................#",
-"#......................#....................#",
-"#......................#...................C#",
-"#..........................................C#",
-"#############################################"
+const TILE = 48;
+const MAP_GRID = [
+  "#############################################",
+  "#T............#####..........#..............#",
+  "#T..................#........#..............#",
+  "###########...#.....#####....#..............#",
+  "#.............#.........#....#..............#",
+  "#......#####..#.........#...................#",
+  "#......####...#######.........##............#",
+  "#......###.........#########.......###......#",
+  "#......####............#.....#..............#",
+  "#......######..........#.....#..............#",
+  "#......##########...####.....#..............#",
+  "#......######................#..............#",
+  "#...............##..####.....#####.......####",
+  "#...............##....##....................#",
+  "#...............###...##....................#",
+  "#...............####..##..............B.....#",
+  "#...............####........................#",
+  "#.........##########..##....................#",
+  "######.................#....................#",
+  "#....#.................#....................#",
+  "#..A...................#....................#",
+  "###....................#....................#",
+  "#......................#....................#",
+  "#......................#...................C#",
+  "#..........................................C#",
+  "#############################################"
 ];
-const MAP_W=MAP_GRID[0].length*TILE,MAP_H=MAP_GRID.length*TILE;
-function findTile(ch){for(let y=0;y<MAP_GRID.length;y++)for(let x=0;x<MAP_GRID[y].length;x++)if(MAP_GRID[y][x]===ch)return{x:x*TILE+TILE/2,y:y*TILE+TILE/2};return null;}
-const walls=[];for(let y=0;y<MAP_GRID.length;y++)for(let x=0;x<MAP_GRID[y].length;x++)if(MAP_GRID[y][x]==="#")walls.push({x:x*TILE,y:y*TILE,w:TILE,h:TILE});
-const spawnT=findTile("T"),spawnCT=findTile("C"),siteApos=findTile("A"),siteBpos=findTile("B");
 
-// --- entidades ---
-class Entity{
+const MAP_W = MAP_GRID[0].length * TILE;
+const MAP_H = MAP_GRID.length * TILE;
+
+function findTile(ch){
+  for(let y=0;y<MAP_GRID.length;y++)
+    for(let x=0;x<MAP_GRID[y].length;x++)
+      if(MAP_GRID[y][x]===ch)
+        return {x:x*TILE+TILE/2,y:y*TILE+TILE/2};
+  return null;
+}
+
+const walls = [];
+for(let y=0;y<MAP_GRID.length;y++)
+  for(let x=0;x<MAP_GRID[y].length;x++)
+    if(MAP_GRID[y][x]==="#")
+      walls.push({x:x*TILE,y:y*TILE,w:TILE,h:TILE});
+
+const spawnT = findTile('T');
+const spawnCT = findTile('C');
+const siteApos = findTile('A');
+const siteBpos = findTile('B');
+
+class Entity {
   constructor(x,y,team,name,color){
-    this.x=x;this.y=y;this.team=team;this.name=name;
-    this.color=color|| (team==="T"?"#ff6666":"#66d1ff");
-    this.size=10;this.hp=100;this.alive=true;this.speed=team==="T"?1.4:1.2;
+    this.x=x; this.y=y;
+    this.size=10;
+    this.team=team;
+    this.name=name;
+    this.color=color;
+    this.hp=100;
+    this.alive=true;
+    this.speed=team==='T'?1.4:1.2;
+    this.hasBomb=false;
   }
   draw(ctx){
-    if(!this.alive)return;
+    if(!this.alive) return;
     ctx.fillStyle=this.color;
-    ctx.beginPath();ctx.arc(this.x,this.y,this.size,0,Math.PI*2);ctx.fill();
-    ctx.fillStyle="#fff";ctx.font="11px Arial";ctx.textAlign="center";
+    ctx.beginPath();
+    ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle="#fff";
+    ctx.font="10px Arial";
+    ctx.textAlign="center";
     ctx.fillText(this.name,this.x,this.y+20);
   }
-  moveTowards(tx,ty,spd){
-    const dx=tx-this.x,dy=ty-this.y,d=Math.hypot(dx,dy)||1;
-    const nx=this.x+(dx/d)*spd,ny=this.y+(dy/d)*spd;
-    if(!collidesAt(nx,this.y,this.size))this.x=nx;
-    if(!collidesAt(this.x,ny,this.size))this.y=ny;
-  }
 }
 
-// --- jugador y bots ---
-const player=new Entity(spawnCT.x,spawnCT.y,"CT","Tú","#3fe8d0");
-player.speed=3.2;
-const allies=[],enemies=[];
-["Alpha","Bravo","Charlie","Delta"].forEach((n,i)=>allies.push(new Entity(spawnCT.x+(i*20),spawnCT.y+(i*10),"CT",n)));
-for(let i=0;i<5;i++)enemies.push(new Entity(spawnT.x+Math.random()*100-50,spawnT.y+Math.random()*50-25,"T","T-"+(i+1)));
+const player = new Entity(spawnCT.x,spawnCT.y,'CT','Tú','#3fe8d0');
+player.speed = 3;
+const allies=[], enemies=[];
+for(let i=0;i<4;i++)allies.push(new Entity(spawnCT.x+Math.random()*60-30,spawnCT.y+Math.random()*60-30,'CT',['Alpha','Bravo','Charlie','Delta'][i],'#66d1ff'));
+for(let i=0;i<5;i++){
+  const e=new Entity(spawnT.x+Math.random()*60-30,spawnT.y+Math.random()*60-30,'T','T-'+(i+1),'#ff8a7a');
+  if(i===0)e.hasBomb=true;
+  enemies.push(e);
+}
 
-// --- input ---
-const keys={},mouse={x:0,y:0,down:false};
-addEventListener("keydown",e=>{keys[e.key.toLowerCase()]=true;if(e.key==="Escape")paused=!paused;});
-addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
-canvas.addEventListener("mousemove",e=>{const r=canvas.getBoundingClientRect();mouse.x=e.clientX-r.left;mouse.y=e.clientY-r.top;});
-canvas.addEventListener("mousedown",()=>{mouse.down=true;shoot();});
-canvas.addEventListener("mouseup",()=>mouse.down=false);
-
-// --- disparos ---
 const bullets=[];
+let mouseX=0,mouseY=0;
+addEventListener('mousemove',e=>{
+  const rect=canvas.getBoundingClientRect();
+  mouseX=e.clientX-rect.left;
+  mouseY=e.clientY-rect.top;
+});
+addEventListener('mousedown',e=>{
+  shoot();
+});
+
 function shoot(){
   if(!player.alive)return;
-  const angle=Math.atan2(mouse.y-H/2,mouse.x-W/2);
-  bullets.push({x:player.x,y:player.y,dx:Math.cos(angle)*8,dy:Math.sin(angle)*8,team:player.team});
-}
-function updateBullets(){
-  for(let i=bullets.length-1;i>=0;i--){
-    const b=bullets[i];
-    b.x+=b.dx;b.y+=b.dy;
-    if(b.x<0||b.y<0||b.x>MAP_W||b.y>MAP_H){bullets.splice(i,1);continue;}
-    if(collidesAt(b.x,b.y,3)){bullets.splice(i,1);continue;}
-    const targets=[...allies,...enemies,player];
-    for(const t of targets){
-      if(!t.alive||t.team===b.team)continue;
-      if(Math.hypot(b.x-t.x,b.y-t.y)<t.size){
-        t.hp-=50;
-        if(t.hp<=0)t.alive=false;
-        bullets.splice(i,1);
-        break;
-      }
-    }
-  }
+  const worldMouseX = mouseX + camX;
+  const worldMouseY = mouseY + camY;
+  const dx = worldMouseX - player.x;
+  const dy = worldMouseY - player.y;
+  const len = Math.hypot(dx,dy);
+  const dirX = dx/len;
+  const dirY = dy/len;
+  bullets.push({x:player.x,y:player.y,vx:dirX*8,vy:dirY*8,life:90,team:'CT'});
 }
 
-// --- colisiones ---
-function rectIntersects(ax,ay,aw,ah,bx,by,bw,bh){return ax<bx+bw&&ax+aw>bx&&ay<by+bh&&ay+ah>by;}
-function collidesAt(px,py,r){for(const w of walls)if(rectIntersects(w.x,w.y,w.w,w.h,px-r,py-r,r*2,r*2))return true;return false;}
+function collidesAt(px,py,r){
+  for(const w of walls)
+    if(px+r>w.x && px-r<w.x+w.w && py+r>w.y && py-r<w.y+w.h)
+      return true;
+  return false;
+}
 
-// --- cámara ---
 let camX=0,camY=0;
-function updateCamera(){camX=player.x-W/2;camY=player.y-H/2;camX=Math.max(0,Math.min(camX,MAP_W-W));camY=Math.max(0,Math.min(camY,MAP_H-H));}
-
-// --- IA simple ---
-function updateAI(bot){
-  if(!bot.alive)return;
-  if(bot.team==="T"){
-    const target=siteBpos;
-    bot.moveTowards(target.x,target.y,bot.speed);
-  }else{
-    const enemy=enemies.find(e=>e.alive);
-    if(enemy)bot.moveTowards(enemy.x,enemy.y,bot.speed*0.8);
-  }
+function updateCamera(){
+  camX = player.x - W/2;
+  camY = player.y - H/2;
+  camX = Math.max(0,Math.min(camX,MAP_W-W));
+  camY = Math.max(0,Math.min(camY,MAP_H-H));
 }
 
-// --- render ---
-function drawMap(){
-  for(let y=0;y<MAP_GRID.length;y++){
-    for(let x=0;x<MAP_GRID[y].length;x++){
-      const c=MAP_GRID[y][x],px=x*TILE,py=y*TILE;
-      ctx.fillStyle=c==="#"?"#2f2f2f":(c==="A"||c==="B"?"#3a3a2f":"#272727");
-      ctx.fillRect(px,py,TILE,TILE);
-    }
-  }
-}
+const keys={};
+addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
+addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 
-// --- loop ---
-let paused=false;
 function update(){
-  if(paused){requestAnimationFrame(update);return;}
   let mvx=0,mvy=0;
-  if(keys["w"])mvy-=player.speed;
-  if(keys["s"])mvy+=player.speed;
-  if(keys["a"])mvx-=player.speed;
-  if(keys["d"])mvx+=player.speed;
+  if(keys['w'])mvy-=player.speed;
+  if(keys['s'])mvy+=player.speed;
+  if(keys['a'])mvx-=player.speed;
+  if(keys['d'])mvx+=player.speed;
   if(mvx&&mvy){mvx*=Math.SQRT1_2;mvy*=Math.SQRT1_2;}
   const nx=player.x+mvx,ny=player.y+mvy;
   if(!collidesAt(nx,player.y,player.size))player.x=nx;
   if(!collidesAt(player.x,ny,player.size))player.y=ny;
-  for(const a of allies)updateAI(a);
-  for(const e of enemies)updateAI(e);
-  updateBullets();
+
+  for(const b of bullets){
+    b.x+=b.vx; b.y+=b.vy; b.life--;
+    for(const e of enemies){
+      if(e.alive && Math.hypot(e.x-b.x,e.y-b.y)<e.size){
+        e.hp-=34;
+        b.life=0;
+        if(e.hp<=0)e.alive=false;
+      }
+    }
+  }
+  for(let i=bullets.length-1;i>=0;i--){
+    if(bullets[i].life<=0)bullets.splice(i,1);
+  }
+
   updateCamera();
   draw();
   requestAnimationFrame(update);
 }
 
 function draw(){
-  ctx.fillStyle="#0b0f14";
+  ctx.fillStyle='#111';
   ctx.fillRect(0,0,W,H);
   ctx.save();
   ctx.translate(-camX,-camY);
-  drawMap();
-  for(const b of bullets){ctx.fillStyle="yellow";ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill();}
+  for(let y=0;y<MAP_GRID.length;y++){
+    for(let x=0;x<MAP_GRID[y].length;x++){
+      const c=MAP_GRID[y][x];
+      ctx.fillStyle=c==="#"?"#333":(c==="A"||c==="B"?"#3a3a2f":"#1e1e1e");
+      ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+    }
+  }
   for(const e of enemies)e.draw(ctx);
   for(const a of allies)a.draw(ctx);
   player.draw(ctx);
+  for(const b of bullets){
+    ctx.fillStyle='yellow';
+    ctx.beginPath();
+    ctx.arc(b.x,b.y,3,0,Math.PI*2);
+    ctx.fill();
+  }
   ctx.restore();
-  hud.innerHTML=`<b>CSGO 2D</b><br>HP:${player.hp} | Enemigos:${enemies.filter(e=>e.alive).length} | Balas:${bullets.length}`;
 }
 
-hud.textContent="Mapa listo.";
 requestAnimationFrame(update);
 </script>
 </body>
