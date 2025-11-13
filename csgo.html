@@ -15,7 +15,6 @@
 <canvas id="game"></canvas>
 <div id="hud">Cargando mapa...</div>
 <div id="tips">WASD mover • Click disparar • Esc pausar</div>
-
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -24,6 +23,7 @@ let W = innerWidth, H = innerHeight;
 function resize(){ W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
 addEventListener('resize', resize); resize();
 
+// ===== MAPA BASE =====
 const TILE = 48;
 const MAP_GRID = [
   "#############################################",
@@ -57,6 +57,7 @@ const MAP_GRID = [
 const MAP_W = MAP_GRID[0].length * TILE;
 const MAP_H = MAP_GRID.length * TILE;
 
+// ===== FUNCIONES AUXILIARES =====
 function findTile(ch){
   for(let y=0;y<MAP_GRID.length;y++)
     for(let x=0;x<MAP_GRID[y].length;x++)
@@ -71,11 +72,24 @@ for(let y=0;y<MAP_GRID.length;y++)
     if(MAP_GRID[y][x]==="#")
       walls.push({x:x*TILE,y:y*TILE,w:TILE,h:TILE});
 
-const spawnT = findTile('T');
-const spawnCT = findTile('C');
-const siteApos = findTile('A');
-const siteBpos = findTile('B');
+function collidesAt(px,py,r){
+  for(const w of walls)
+    if(px+r>w.x && px-r<w.x+w.w && py+r>w.y && py-r<w.y+w.h)
+      return true;
+  return false;
+}
 
+function canSee(a,b){
+  const steps = Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/16);
+  for(let i=1;i<steps;i++){
+    const x=a.x+(b.x-a.x)*i/steps;
+    const y=a.y+(b.y-a.y)*i/steps;
+    if(collidesAt(x,y,4)) return false;
+  }
+  return true;
+}
+
+// ===== ENTIDADES =====
 class Entity {
   constructor(x,y,team,name,color){
     this.x=x; this.y=y;
@@ -87,9 +101,12 @@ class Entity {
     this.alive=true;
     this.speed=team==='T'?1.4:1.2;
     this.hasBomb=false;
+    this.state='idle';
+    this.target=null;
+    this.cooldown=0;
   }
   draw(ctx){
-    if(!this.alive) return;
+    if(!this.alive)return;
     ctx.fillStyle=this.color;
     ctx.beginPath();
     ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
@@ -99,12 +116,28 @@ class Entity {
     ctx.textAlign="center";
     ctx.fillText(this.name,this.x,this.y+20);
   }
+  moveTowards(tx,ty,speed){
+    const dx=tx-this.x,dy=ty-this.y;
+    const dist=Math.hypot(dx,dy);
+    if(dist<1)return;
+    const nx=this.x+(dx/dist)*speed;
+    const ny=this.y+(dy/dist)*speed;
+    if(!collidesAt(nx,this.y,this.size))this.x=nx;
+    if(!collidesAt(this.x,ny,this.size))this.y=ny;
+  }
 }
 
-const player = new Entity(spawnCT.x,spawnCT.y,'CT','Tú','#3fe8d0');
-player.speed = 3;
+const spawnT=findTile('T');
+const spawnCT=findTile('C');
+const siteApos=findTile('A');
+const siteBpos=findTile('B');
+
+const player=new Entity(spawnCT.x,spawnCT.y,'CT','Tú','#3fe8d0');
+player.speed=3;
+
 const allies=[], enemies=[];
-for(let i=0;i<4;i++)allies.push(new Entity(spawnCT.x+Math.random()*60-30,spawnCT.y+Math.random()*60-30,'CT',['Alpha','Bravo','Charlie','Delta'][i],'#66d1ff'));
+for(let i=0;i<4;i++)
+  allies.push(new Entity(spawnCT.x+Math.random()*60-30,spawnCT.y+Math.random()*60-30,'CT',['Alpha','Bravo','Charlie','Delta'][i],'#66d1ff'));
 for(let i=0;i<5;i++){
   const e=new Entity(spawnT.x+Math.random()*60-30,spawnT.y+Math.random()*60-30,'T','T-'+(i+1),'#ff8a7a');
   if(i===0)e.hasBomb=true;
@@ -112,47 +145,101 @@ for(let i=0;i<5;i++){
 }
 
 const bullets=[];
-let mouseX=0,mouseY=0;
+const bomb={planted:false,x:0,y:0,timer:0,site:null};
+
+// ===== INPUT / CÁMARA =====
+let mouseX=0,mouseY=0,camX=0,camY=0;
 addEventListener('mousemove',e=>{
   const rect=canvas.getBoundingClientRect();
   mouseX=e.clientX-rect.left;
   mouseY=e.clientY-rect.top;
 });
-addEventListener('mousedown',e=>{
-  shoot();
-});
+addEventListener('mousedown',()=>shoot());
+function updateCamera(){
+  camX=player.x-W/2;
+  camY=player.y-H/2;
+  camX=Math.max(0,Math.min(camX,MAP_W-W));
+  camY=Math.max(0,Math.min(camY,MAP_H-H));
+}
 
 function shoot(){
   if(!player.alive)return;
-  const worldMouseX = mouseX + camX;
-  const worldMouseY = mouseY + camY;
-  const dx = worldMouseX - player.x;
-  const dy = worldMouseY - player.y;
-  const len = Math.hypot(dx,dy);
-  const dirX = dx/len;
-  const dirY = dy/len;
-  bullets.push({x:player.x,y:player.y,vx:dirX*8,vy:dirY*8,life:90,team:'CT'});
+  const worldMouseX=mouseX+camX;
+  const worldMouseY=mouseY+camY;
+  const dx=worldMouseX-player.x,dy=worldMouseY-player.y;
+  const len=Math.hypot(dx,dy);
+  const dirX=dx/len,dirY=dy/len;
+  bullets.push({x:player.x,y:player.y,vx:dirX*8,vy:dirY*8,life:80,team:player.team});
 }
 
-function collidesAt(px,py,r){
-  for(const w of walls)
-    if(px+r>w.x && px-r<w.x+w.w && py+r>w.y && py-r<w.y+w.h)
-      return true;
-  return false;
+// ===== IA =====
+function updateAI(bot){
+  if(!bot.alive)return;
+
+  const enemiesList = bot.team==='T' ? [...allies,player] : enemies;
+  const visible = enemiesList.filter(e=>e.alive && canSee(bot,e));
+
+  // Disparo si ve enemigo
+  if(visible.length>0){
+    const target = visible[0];
+    if(bot.cooldown<=0){
+      const dx=target.x-bot.x,dy=target.y-bot.y;
+      const len=Math.hypot(dx,dy);
+      const dirX=dx/len,dirY=dy/len;
+      bullets.push({x:bot.x,y:bot.y,vx:dirX*8,vy:dirY*8,life:80,team:bot.team});
+      bot.cooldown=30;
+    }
+  }else{
+    // Movimiento
+    if(bot.team==='T'){
+      if(!bot.target){
+        bot.target = bot.hasBomb ? (Math.random()<0.5?siteApos:siteBpos) : siteBpos;
+      }
+      bot.moveTowards(bot.target.x,bot.target.y,bot.speed);
+      if(bot.hasBomb && Math.hypot(bot.x-bot.target.x,bot.y-bot.target.y)<40){
+        bomb.planted=true;
+        bomb.x=bot.x; bomb.y=bot.y; bomb.timer=600; bomb.site=bot.target===siteApos?'A':'B';
+        bot.hasBomb=false;
+      }
+    }else if(bot.team==='CT'){
+      if(bomb.planted){
+        bot.moveTowards(bomb.x,bomb.y,bot.speed);
+        if(Math.hypot(bot.x-bomb.x,bot.y-bomb.y)<30){
+          bomb.planted=false;
+          bomb.timer=0;
+        }
+      }else{
+        const site = Math.random()<0.5?siteApos:siteBpos;
+        bot.moveTowards(site.x,site.y,bot.speed*0.5);
+      }
+    }
+  }
+
+  if(bot.cooldown>0)bot.cooldown--;
 }
 
-let camX=0,camY=0;
-function updateCamera(){
-  camX = player.x - W/2;
-  camY = player.y - H/2;
-  camX = Math.max(0,Math.min(camX,MAP_W-W));
-  camY = Math.max(0,Math.min(camY,MAP_H-H));
+// ===== BALAS =====
+function updateBullets(){
+  for(const b of bullets){
+    b.x+=b.vx; b.y+=b.vy; b.life--;
+    for(const arr of [allies,enemies,[player]]){
+      for(const e of arr){
+        if(e.alive && e.team!==b.team && Math.hypot(e.x-b.x,e.y-b.y)<e.size){
+          e.hp-=34; b.life=0;
+          if(e.hp<=0)e.alive=false;
+        }
+      }
+    }
+  }
+  for(let i=bullets.length-1;i>=0;i--) if(bullets[i].life<=0) bullets.splice(i,1);
 }
 
+// ===== INPUT =====
 const keys={};
 addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
 addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
 
+// ===== UPDATE / DRAW =====
 function update(){
   let mvx=0,mvy=0;
   if(keys['w'])mvy-=player.speed;
@@ -164,18 +251,16 @@ function update(){
   if(!collidesAt(nx,player.y,player.size))player.x=nx;
   if(!collidesAt(player.x,ny,player.size))player.y=ny;
 
-  for(const b of bullets){
-    b.x+=b.vx; b.y+=b.vy; b.life--;
-    for(const e of enemies){
-      if(e.alive && Math.hypot(e.x-b.x,e.y-b.y)<e.size){
-        e.hp-=34;
-        b.life=0;
-        if(e.hp<=0)e.alive=false;
-      }
+  for(const a of allies)updateAI(a);
+  for(const e of enemies)updateAI(e);
+  updateBullets();
+
+  if(bomb.planted){
+    bomb.timer--;
+    if(bomb.timer<=0){
+      bomb.planted=false;
+      console.log("💥 Bomba explotó");
     }
-  }
-  for(let i=bullets.length-1;i>=0;i--){
-    if(bullets[i].life<=0)bullets.splice(i,1);
   }
 
   updateCamera();
@@ -184,10 +269,11 @@ function update(){
 }
 
 function draw(){
-  ctx.fillStyle='#111';
+  ctx.fillStyle='#0b0f14';
   ctx.fillRect(0,0,W,H);
   ctx.save();
   ctx.translate(-camX,-camY);
+
   for(let y=0;y<MAP_GRID.length;y++){
     for(let x=0;x<MAP_GRID[y].length;x++){
       const c=MAP_GRID[y][x];
@@ -195,16 +281,30 @@ function draw(){
       ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
     }
   }
+
+  if(bomb.planted){
+    ctx.fillStyle="yellow";
+    ctx.beginPath();
+    ctx.arc(bomb.x,bomb.y,10,0,Math.PI*2);
+    ctx.fill();
+  }
+
   for(const e of enemies)e.draw(ctx);
   for(const a of allies)a.draw(ctx);
   player.draw(ctx);
+
   for(const b of bullets){
-    ctx.fillStyle='yellow';
+    ctx.fillStyle='orange';
     ctx.beginPath();
     ctx.arc(b.x,b.y,3,0,Math.PI*2);
     ctx.fill();
   }
+
   ctx.restore();
+
+  hud.innerHTML = bomb.planted ? 
+    `💣 Bomba plantada en ${bomb.site} — ${(bomb.timer/60).toFixed(1)}s` :
+    `HP: ${player.hp} | CT vivos: ${allies.filter(a=>a.alive).length+1} | T vivos: ${enemies.filter(e=>e.alive).length}`;
 }
 
 requestAnimationFrame(update);
