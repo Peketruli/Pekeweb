@@ -113,171 +113,234 @@
 
  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// ======================================================
-//  CONFIGURACIÓN SUPABASE
-// ======================================================
-const SUPABASE_URL = "https://TU_PROYECTO.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+// -----------------------------------------------------
+// 1️⃣ CONFIG SUPABASE
+// -----------------------------------------------------
+const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// ✔️ Lo ponemos en number porque Supabase devuelve números
+const currentUserId = Number(localStorage.getItem("currentUser"));
 
-// ======================================================
-//  ELEMENTOS DEL DOM
-// ======================================================
-const contactsDiv = document.getElementById("contacts");
-const chatDiv = document.getElementById("chat");
-const messagesDiv = document.getElementById("messages");
-const messageInput = document.getElementById("messageInput");
-const sendBtn = document.getElementById("sendBtn");
+let currentChatId = null;
+let messageChannel = null;
 
-let currentUser = null;
-let selectedUser = null;
+// DOM
+const recentList   = document.getElementById("chats-list");
+const allUsersList = document.getElementById("contacts-list");
+const chatBox      = document.getElementById("messages");
+const messageInput = document.getElementById("message-input");
 
-// ======================================================
-//  INICIO DE SESIÓN AUTOMÁTICO (SOLO PARA TESTEO)
-// ======================================================
-async function autoLogin() {
-    const email = localStorage.getItem("email");
-    const password = localStorage.getItem("password");
 
-    if (!email || !password) {
-        alert("No hay datos guardados. Debes iniciar sesión primero.");
-        return;
+// -----------------------------------------------------
+// 2️⃣ CARGAR USUARIOS
+// -----------------------------------------------------
+async function loadUsers() {
+  const { data: users, error } = await supabase
+    .from("usuarios")
+    .select("id, username");
+
+  if (error) {
+    alert("Error cargando usuarios");
+    return;
+  }
+
+  // Filtrar: todos excepto yo
+  const filteredUsers = users.filter(u => u.id !== currentUserId);
+
+  // Cargar últimas conversaciones
+  const { data: recentMessages } = await supabase
+    .from("new_messages")
+    .select("chat_id, created_at")
+    .order("created_at", { ascending: false });
+
+  const recentChats = [];
+  if (recentMessages) {
+    for (const msg of recentMessages) {
+      if (!recentChats.includes(msg.chat_id)) recentChats.push(msg.chat_id);
     }
+  }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password
-    });
+  // 💬 CHATS RECIENTES
+  recentList.innerHTML = "";
+  for (const chatId of recentChats) {
 
-    if (error) {
-        console.error("Error al iniciar sesión:", error);
-        return;
-    }
+    const { data: members } = await supabase
+      .from("new_chat_members")
+      .select("user_id")
+      .eq("chat_id", chatId);
 
-    currentUser = data.user;
-    loadContacts();
-    listenRealtime();
+    if (!members) continue;
+
+    const other = members.find(m => m.user_id !== currentUserId);
+    if (!other) continue;
+
+    const profile = filteredUsers.find(u => u.id === other.user_id);
+    if (!profile) continue;
+
+    const li = document.createElement("li");
+    li.textContent = profile.username;
+    li.onclick = () => openChat(chatId, profile);
+    recentList.appendChild(li);
+  }
+
+  // 📒 LISTA DE USUARIOS
+  allUsersList.innerHTML = "";
+  filteredUsers.forEach(user => {
+    const li = document.createElement("li");
+    li.textContent = user.username;
+    li.onclick = () => openOrCreatePrivateChat(user.id, user.username);
+    allUsersList.appendChild(li);
+  });
 }
 
-autoLogin();
 
-// ======================================================
-//  CARGAR LISTA DE CONTACTOS
-// ======================================================
-async function loadContacts() {
-    const { data: users, error } = await supabase
-        .from("users")
-        .select("id, username");
 
-    if (error) {
-        console.error("Error al cargar usuarios:", error);
-        return;
+// -----------------------------------------------------
+// 3️⃣ CREAR O ABRIR CHAT PRIVADO
+// -----------------------------------------------------
+async function openOrCreatePrivateChat(otherUserId, username) {
+
+  const { data: chats } = await supabase
+    .from("new_chats")
+    .select("id")
+    .eq("type", "private");
+
+  if (chats) {
+    for (const chat of chats) {
+
+      const { data: members } = await supabase
+        .from("new_chat_members")
+        .select("user_id")
+        .eq("chat_id", chat.id);
+
+      const hasMe = members.some(m => m.user_id === currentUserId);
+      const hasOther = members.some(m => m.user_id === otherUserId);
+
+      if (hasMe && hasOther) {
+        return openChat(chat.id, { username });
+      }
     }
+  }
 
-    contactsDiv.innerHTML = "";
+  // Crear chat nuevo
+  const { data: newChat } = await supabase
+    .from("new_chats")
+    .insert({ type: "private" })
+    .select()
+    .single();
 
-    users.forEach(user => {
-        if (user.id === currentUser.id) return; // no mostrarte a ti mismo
+  await supabase.from("new_chat_members").insert([
+    { chat_id: newChat.id, user_id: currentUserId },
+    { chat_id: newChat.id, user_id: otherUserId }
+  ]);
 
-        const btn = document.createElement("button");
-        btn.className = "contact";
-        btn.textContent = user.username;
-
-        btn.onclick = () => {
-            selectedUser = user;
-            messagesDiv.innerHTML = "";
-            loadMessages();
-        };
-
-        contactsDiv.appendChild(btn);
-    });
+  openChat(newChat.id, { username });
 }
 
-// ======================================================
-//  CARGAR MENSAJES DEL CHAT PRIVADO
-// ======================================================
-async function loadMessages() {
-    if (!selectedUser) return;
 
-    const { data, error } = await supabase
-        .from("messages")
-        .select("*")
-        .or(`and(sender_id.eq.${currentUser.id},receiver_id.eq.${selectedUser.id}),and(sender_id.eq.${selectedUser.id},receiver_id.eq.${currentUser.id})`)
-        .order("created_at", { ascending: true });
 
-    if (error) {
-        console.error("Error cargando mensajes:", error);
-        return;
-    }
+// -----------------------------------------------------
+// 4️⃣ ABRIR CHAT
+// -----------------------------------------------------
+async function openChat(chatId, user) {
+  currentChatId = chatId;
 
-    messagesDiv.innerHTML = "";
-    data.forEach(addMessageToUI);
+  chatBox.innerHTML = `<h3>Chat con ${user.username}</h3>`;
+
+  await loadMessages(chatId);
+  subscribeToChat(chatId);
+
+  messageInput.onkeydown = e => {
+    if (e.key === "Enter") sendMessage(chatId);
+  };
 }
 
-// ======================================================
-//  ENVIAR MENSAJE
-// ======================================================
-async function sendMessage() {
-    const text = messageInput.value.trim();
-    if (!text || !selectedUser) return;
 
-    const { error } = await supabase.from("messages").insert({
-        sender_id: currentUser.id,
-        receiver_id: selectedUser.id,
-        content: text
-    });
 
-    if (error) {
-        console.error("Error enviando mensaje:", error);
-        return;
-    }
+// -----------------------------------------------------
+// 5️⃣ SUSCRIPCIÓN REALTIME
+// -----------------------------------------------------
+function subscribeToChat(chatId) {
+  if (messageChannel) supabase.removeChannel(messageChannel);
 
-    messageInput.value = "";
+  messageChannel = supabase
+    .channel(`chat_${chatId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "new_messages",
+        filter: `chat_id=eq.${chatId}`
+      },
+      payload => {
+        const msg = payload.new;
+
+        const div = document.createElement("div");
+        div.className =
+          "message " +
+          (msg.sender_id === currentUserId ? "my-message" : "other-message");
+
+        div.textContent = msg.content;
+        chatBox.appendChild(div);
+
+        chatBox.scrollTop = chatBox.scrollHeight;
+      }
+    )
+    .subscribe();
 }
 
-sendBtn.onclick = sendMessage;
 
-// ======================================================
-//  MOSTRAR MENSAJES EN PANTALLA
-// ======================================================
-function addMessageToUI(msg) {
+
+// -----------------------------------------------------
+// 6️⃣ ENVIAR MENSAJE
+// -----------------------------------------------------
+async function sendMessage(chatId) {
+  const content = messageInput.value.trim();
+  if (!content) return;
+
+  await supabase.from("new_messages").insert({
+    chat_id: chatId,
+    sender_id: currentUserId,
+    content
+  });
+
+  messageInput.value = "";
+}
+
+
+
+// -----------------------------------------------------
+// 7️⃣ CARGAR MENSAJES
+// -----------------------------------------------------
+async function loadMessages(chatId) {
+  const { data: messages } = await supabase
+    .from("new_messages")
+    .select("*")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true });
+
+  messages.forEach(msg => {
     const div = document.createElement("div");
-    div.className = msg.sender_id === currentUser.id ? "msg me" : "msg other";
+    div.className =
+      "message " +
+      (msg.sender_id === currentUserId ? "my-message" : "other-message");
+
     div.textContent = msg.content;
-    messagesDiv.appendChild(div);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    chatBox.appendChild(div);
+  });
+
+  chatBox.scrollTop = chatBox.scrollHeight;
 }
 
-// ======================================================
-//  SUPABASE REALTIME — MENSAJES EN TIEMPO REAL
-// ======================================================
-function listenRealtime() {
-    supabase.channel("realtime-messages")
-        .on(
-            "postgres_changes",
-            {
-                event: "INSERT",
-                schema: "public",
-                table: "messages"
-            },
-            payload => {
-                const msg = payload.new;
 
-                // SOLO mostrar mensajes que son para este chat
-                const me = currentUser.id;
-                const other = selectedUser?.id;
 
-                const isForMe = msg.receiver_id === me && msg.sender_id === other;
-                const isFromMe = msg.sender_id === me && msg.receiver_id === other;
-
-                if (isForMe || isFromMe) {
-                    addMessageToUI(msg);
-                }
-            }
-        )
-        .subscribe();
-}
+// -----------------------------------------------------
+// 8️⃣ INICIO
+// -----------------------------------------------------
+loadUsers();
 </script>
 </body>
 </html>
