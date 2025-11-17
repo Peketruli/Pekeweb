@@ -130,7 +130,7 @@ console.log("Sesión iniciada como:", currentUser);
 // 2️⃣ CONFIG SUPABASE
 // =====================================
 const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // Reemplaza con tu clave real
+const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI"; // reemplaza con tu clave
 const supabase = supabase.createClient(supabaseUrl, supabaseKey);
 
 // =====================================
@@ -141,7 +141,6 @@ const socket = new WebSocket("ws://localhost:8080");
 socket.onopen = () => {
   console.log("🟢 Conectado al servidor");
 
-  // Mandamos login al servidor
   socket.send(JSON.stringify({
     type: "login",
     userId: currentUser.id,
@@ -166,7 +165,6 @@ async function loadUsers() {
   }
 
   const filteredUsers = users.filter(u => u.id !== currentUser.id);
-
   renderUserList(filteredUsers);
 }
 
@@ -175,18 +173,19 @@ async function loadUsers() {
 // =====================================
 let selectedUser = null;
 function renderUserList(users) {
-  const container = document.getElementById("userList");
+  const container = document.getElementById("contacts-list");
   container.innerHTML = "";
 
   users.forEach(user => {
-    const btn = document.createElement("button");
-    btn.className = "contact";
+    const btn = document.createElement("div");
+    btn.className = "contact-item";
     btn.textContent = user.username;
 
     btn.onclick = () => {
       selectedUser = user;
-      document.getElementById("chatTitle").textContent = "Chat con " + user.username;
+      document.getElementById("chat-title").textContent = "Chat con " + user.username;
       document.getElementById("messages").innerHTML = "";
+      loadChatMessages(user); // cargar mensajes previos
     };
 
     container.appendChild(btn);
@@ -194,7 +193,28 @@ function renderUserList(users) {
 }
 
 // =====================================
-// 6️⃣ RECIBIR MENSAJES WS (SOLO PARA MÍ)
+// 6️⃣ CARGAR MENSAJES DE UN CHAT
+// =====================================
+async function loadChatMessages(user) {
+  // Aquí asumimos chat_id = combinación de ambos usuarios para simplificar
+  const chatId = [currentUser.id, user.id].sort().join("_");
+
+  const { data: messages } = await supabase
+    .from("new_messages")
+    .select("*")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true });
+
+  const box = document.getElementById("messages");
+  box.innerHTML = "";
+
+  messages.forEach(msg => {
+    addMessageToChat(msg.sender_id, msg.content, msg.sender_id === currentUser.id);
+  });
+}
+
+// =====================================
+// 7️⃣ RECIBIR MENSAJES WS (SOLO PARA MÍ)
 // =====================================
 socket.onmessage = (event) => {
   const msg = JSON.parse(event.data);
@@ -212,16 +232,18 @@ socket.onmessage = (event) => {
 };
 
 // =====================================
-// 7️⃣ ENVIAR MENSAJE PRIVADO
+// 8️⃣ ENVIAR MENSAJE PRIVADO
 // =====================================
 function sendMessage() {
-  const input = document.getElementById("msgInput");
+  const input = document.getElementById("message-input");
   const text = input.value.trim();
   if (!text || !selectedUser) return;
 
+  const chatId = [currentUser.id, selectedUser.id].sort().join("_");
+
   // Guardar en Supabase
   supabase.from("new_messages").insert({
-    chat_id: crypto.randomUUID(), // o tu lógica de chat existente
+    chat_id: chatId,
     sender_id: currentUser.id,
     receiver_id: selectedUser.id,
     content: text
@@ -235,33 +257,32 @@ function sendMessage() {
     text
   }));
 
-  // Mostrar en mi chat
   addMessageToChat(currentUser.id, text, true);
   input.value = "";
 }
 
 // =====================================
-// 8️⃣ MOSTRAR MENSAJES EN PANTALLA
+// 9️⃣ MOSTRAR MENSAJES EN PANTALLA
 // =====================================
 function addMessageToChat(from, text, isMine) {
   const box = document.getElementById("messages");
   const div = document.createElement("div");
-  div.className = isMine ? "msg mine" : "msg other";
+  div.className = isMine ? "my-message" : "other-message";
   div.textContent = text;
   box.appendChild(div);
   box.scrollTop = box.scrollHeight;
 }
 
 // =====================================
-// 9️⃣ EVENTOS BOTÓN ENVIAR
+// 🔟 EVENTOS BOTÓN ENVIAR
 // =====================================
-document.getElementById("sendBtn").onclick = sendMessage;
-document.getElementById("msgInput").addEventListener("keypress", (e) => {
+document.getElementById("send").onclick = sendMessage;
+document.getElementById("message-input").addEventListener("keypress", (e) => {
   if (e.key === "Enter") sendMessage();
 });
 
 // =====================================
-//  🔟 INICIAR
+// 1️⃣1️⃣ INICIAR
 // =====================================
 loadUsers();
 </script>
