@@ -187,26 +187,20 @@ const typingIndicator = document.getElementById("typing-indicator");
 /* --------------------------------------------------
   FUNCIONES AUXILIARES
 -------------------------------------------------- */
-async function appendMessage(msg){
-  // Crear div para el mensaje
+function appendMessage(msg){
   const div = document.createElement("div");
-  
-  // Diferenciar si es tu mensaje o de otro
   const isMine = msg.sender_id === currentUserId;
   div.className = "message " + (isMine ? "my-message" : "other-message");
 
   if(!isMine){
-    // Mostrar nombre del remitente encima del mensaje
-    const { data: user } = await supabase.from("usuarios").select("username").eq("id", msg.sender_id).single();
     const nameDiv = document.createElement("div");
     nameDiv.style.fontSize = "12px";
     nameDiv.style.fontWeight = "600";
     nameDiv.style.marginBottom = "4px";
-    nameDiv.textContent = user.username;
+    nameDiv.textContent = usersMap[msg.sender_id] || "Desconocido";
     div.appendChild(nameDiv);
   }
 
-  // Contenido del mensaje
   const textDiv = document.createElement("div");
   textDiv.textContent = msg.content;
   div.appendChild(textDiv);
@@ -307,11 +301,37 @@ function subscribeToChat(chatId){
 /* --------------------------------------------------
   CARGAR MENSAJES
 -------------------------------------------------- */
+// Cargar mensajes históricos
 async function loadMessages(chatId){
-  const { data: messages } = await supabase.from("new_messages").select("*").eq("chat_id",chatId).order("created_at",{ascending:true});
-  messages.forEach(appendMessage);
-  chatBox.scrollTop = chatBox.scrollHeight;
+  const { data: messages } = await supabase
+    .from("new_messages")
+    .select("*")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true });
+
+  chatBox.innerHTML = "";
+  messages.forEach(msg => appendMessage(msg));
 }
+
+// Suscribirse a realtime
+function subscribeToChat(chatId){
+  if(messageChannel) supabase.removeChannel(messageChannel);
+
+  messageChannel = supabase
+    .channel(`chat_${chatId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "new_messages",
+        filter: `chat_id=eq.${chatId}`
+      },
+      payload => appendMessage(payload.new)
+    )
+    .subscribe();
+}
+
 
 /* --------------------------------------------------
   ENVIAR MENSAJE
