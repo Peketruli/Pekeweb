@@ -122,27 +122,20 @@ const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-// ID del usuario actual desde localStorage
 const currentUserId = localStorage.getItem("userId");
 
-// Contenedores del DOM
-const recentList = document.getElementById("chats-list");   // CHATS
-const allUsersList = document.getElementById("contacts-list"); // CONTACTOS
-const chatBox = document.getElementById("messages");        // MENSAJES
+const recentList   = document.getElementById("chats-list");
+const allUsersList = document.getElementById("contacts-list");
+const chatBox      = document.getElementById("messages");
 const messageInput = document.getElementById("message-input");
 
-// Guardará qué chat está abierto
 let currentChatId = null;
-
-// Canal Realtime
 let messageChannel = null;
 
 // ==============================
 // CARGAR USUARIOS
 // ==============================
-
 async function loadUsers() {
-  // 1. Cargar todos los usuarios desde tu tabla real
   const { data: users, error } = await supabase
     .from("usuarios")
     .select("id, username");
@@ -152,10 +145,8 @@ async function loadUsers() {
     return;
   }
 
-  // 2. Evitar que tú mismo salgas en la lista
   const filteredUsers = users.filter(u => u.id !== currentUserId);
 
-  // 3. Cargar el historial de chats recientes
   const { data: recentMessages } = await supabase
     .from("new_messages")
     .select("chat_id, created_at")
@@ -170,7 +161,7 @@ async function loadUsers() {
     });
   }
 
-  // 4. Mostrar usuarios recientes
+  // CHATS RECIENTES
   recentList.innerHTML = "";
   for (const chatId of recentChats) {
     const { data: members } = await supabase
@@ -192,7 +183,7 @@ async function loadUsers() {
     recentList.appendChild(li);
   }
 
-  // 5. Mostrar TODOS los usuarios
+  // TODOS LOS CONTACTOS
   allUsersList.innerHTML = "";
   filteredUsers.forEach(user => {
     const li = document.createElement("li");
@@ -205,9 +196,7 @@ async function loadUsers() {
 // ==============================
 // CREAR O ABRIR CHAT PRIVADO
 // ==============================
-
 async function openOrCreatePrivateChat(otherUserId, username) {
-  // Buscar chat existente entre los 2
   const { data: chats } = await supabase
     .from("new_chats")
     .select("id")
@@ -231,7 +220,6 @@ async function openOrCreatePrivateChat(otherUserId, username) {
     }
   }
 
-  // Crear chat nuevo si no existía
   const { data: newChat, error } = await supabase
     .from("new_chats")
     .insert({ type: "private" })
@@ -254,14 +242,13 @@ async function openOrCreatePrivateChat(otherUserId, username) {
 // ==============================
 // ABRIR CHAT
 // ==============================
-
 async function openChat(chatId, user) {
   currentChatId = chatId;
 
   chatBox.innerHTML = `<h3>Chat con ${user.username}</h3>`;
 
-  loadMessages(chatId);
-  subscribeToChat(chatId); // ✅ ESCUCHAR MENSAJES EN TIEMPO REAL
+  await loadMessages(chatId);
+  subscribeToChat(chatId);
 
   messageInput.onkeydown = e => {
     if (e.key === "Enter") sendMessage(chatId);
@@ -269,16 +256,13 @@ async function openChat(chatId, user) {
 }
 
 // ==============================
-// ESCUCHAR MENSAJES EN TIEMPO REAL
+// REALTIME
 // ==============================
-
 function subscribeToChat(chatId) {
-  // Si ya había un canal, lo cerramos
   if (messageChannel) {
     supabase.removeChannel(messageChannel);
   }
 
-  // Crear canal realtime
   messageChannel = supabase
     .channel(`chat_${chatId}`)
     .on(
@@ -293,9 +277,8 @@ function subscribeToChat(chatId) {
         const msg = payload.new;
 
         const div = document.createElement("div");
-        div.className = (msg.sender_id === currentUserId)
-          ? "my-message"
-          : "their-message";
+        div.className = "message " + 
+          (msg.sender_id === currentUserId ? "my-message" : "other-message");
 
         div.textContent = msg.content;
         chatBox.appendChild(div);
@@ -309,7 +292,6 @@ function subscribeToChat(chatId) {
 // ==============================
 // ENVIAR MENSAJE
 // ==============================
-
 async function sendMessage(chatId) {
   const content = messageInput.value.trim();
   if (!content) return;
@@ -321,15 +303,12 @@ async function sendMessage(chatId) {
   });
 
   messageInput.value = "";
-
-  loadMessages(chatId); // refresca por si acaso
-  loadUsers(); // actualiza los recientes
+  // 👇 NO recargamos mensajes → Realtime se encarga
 }
 
 // ==============================
 // CARGAR MENSAJES
 // ==============================
-
 async function loadMessages(chatId) {
   const { data: messages } = await supabase
     .from("new_messages")
@@ -341,7 +320,9 @@ async function loadMessages(chatId) {
 
   messages.forEach(msg => {
     const div = document.createElement("div");
-    div.className = (msg.sender_id === currentUserId) ? "my-message" : "their-message";
+    div.className = "message " +
+      (msg.sender_id === currentUserId ? "my-message" : "other-message");
+
     div.textContent = msg.content;
     chatBox.appendChild(div);
   });
@@ -352,7 +333,6 @@ async function loadMessages(chatId) {
 // ==============================
 // INICIAR TODO
 // ==============================
-
 loadUsers();
 </script>
 </body>
