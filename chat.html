@@ -114,234 +114,137 @@
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-// -----------------------------------------------------
-// 1️⃣ CONFIG SUPABASE
-// -----------------------------------------------------
-const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+// =====================================
+// 1. LOGIN AUTOMÁTICO POR DISPOSITIVO
+// =====================================
+let currentUser = JSON.parse(localStorage.getItem("currentUser"));
 
-// ⚠️ Todavía leyendo del localStorage (hasta que lo cambiemos)
-const currentUserId = localStorage.getItem("currentUser");
+if (!currentUser) {
+  currentUser = {
+    id: crypto.randomUUID(),
+    name: "Usuario-" + Math.floor(Math.random() * 9999)
+  };
+  localStorage.setItem("currentUser", JSON.stringify(currentUser));
+}
 
-// ELEMENTOS DOM
-const recentList   = document.getElementById("chats-list");
-const allUsersList = document.getElementById("contacts-list");
-const chatBox      = document.getElementById("messages");
-const messageInput = document.getElementById("message-input");
+console.log("Sesión iniciada como:", currentUser);
 
-let currentChatId = null;
-let messageChannel = null;
 
-// ==============================
-// CARGAR USUARIOS
-// ==============================
-async function loadUsers() {
-  const { data: users, error } = await supabase
-    .from("usuarios")
-    .select("id, username");
+// =====================================
+// 2. CONEXIÓN WEBSOCKET
+// =====================================
+const socket = new WebSocket("ws://localhost:8080");
 
-  if (error) {
-    alert("Error cargando usuarios");
+socket.onopen = () => {
+  console.log("🟢 Conectado al servidor");
+
+  // Mandamos login al servidor
+  socket.send(JSON.stringify({
+    type: "login",
+    userId: currentUser.id,
+    name: currentUser.name
+  }));
+};
+
+socket.onclose = () => console.log("🔴 Desconectado del servidor");
+
+socket.onerror = err => console.error("⚠ Error WS:", err);
+
+
+// ===================================================
+// 3. RECIBIR MENSAJES (SOLO LOS QUE SON PARA MÍ)
+// ===================================================
+socket.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+
+  // Nuevo usuario conectado → actualizar lista
+  if (msg.type === "user_list") {
+    renderUserList(msg.users);
     return;
   }
 
-  // ✔️ ARREGLADO: antes ponías "currentUser" (variable inexistente)
-  const filteredUsers = users.filter(u => u.id !== currentUserId);
-
-  const { data: recentMessages } = await supabase
-    .from("new_messages")
-    .select("chat_id, created_at")
-    .order("created_at", { ascending: false });
-
-  const recentChats = [];
-  if (recentMessages) {
-    recentMessages.forEach(msg => {
-      if (!recentChats.includes(msg.chat_id)) {
-        recentChats.push(msg.chat_id);
-      }
-    });
-  }
-
-  // CHATS RECIENTES
-  recentList.innerHTML = "";
-  for (const chatId of recentChats) {
-    const { data: members } = await supabase
-      .from("new_chat_members")
-      .select("user_id")
-      .eq("chat_id", chatId);
-
-    if (!members) continue;
-
-    // ✔️ ARREGLADO: antes `currentUser`, ahora `currentUserId`
-    const other = members.find(m => m.user_id !== currentUserId);
-    if (!other) continue;
-
-    // ✔️ ARREGLADO: antes usabas ".user", ahora es ".user_id"
-    const profile = filteredUsers.find(u => u.id === other.user_id);
-    if (!profile) continue;
-
-    const li = document.createElement("li");
-    li.textContent = profile.username;
-    li.onclick = () => openChat(chatId, profile);
-    recentList.appendChild(li);
-  }
-
-  // CONTACTOS
-  allUsersList.innerHTML = "";
-  filteredUsers.forEach(user => {
-    const li = document.createElement("li");
-    li.textContent = user.username;
-
-    // ✔️ ARREGLADO: el parámetro se llama "otherUserId"
-    li.onclick = () => openOrCreatePrivateChat(user.id, user.username);
-
-    allUsersList.appendChild(li);
-  });
-}
-
-// ==============================
-// CREAR O ABRIR CHAT PRIVADO
-// ==============================
-async function openOrCreatePrivateChat(otherUserId, username) {
-  const { data: chats } = await supabase
-    .from("new_chats")
-    .select("id")
-    .eq("type", "private");
-
-  if (chats) {
-    for (const chat of chats) {
-      const { data: members } = await supabase
-        .from("new_chat_members")
-        .select("user_id")
-        .eq("chat_id", chat.id);
-
-      if (!members) continue;
-
-      const hasMe    = members.some(m => m.user_id === currentUserId);
-      const hasOther = members.some(m => m.user_id === otherUserId);
-
-      if (hasMe && hasOther) {
-        return openChat(chat.id, { username });
-      }
+  // Recibir mensaje privado
+  if (msg.type === "private_message") {
+    if (msg.to === currentUser.id) {
+      addMessageToChat(msg.from, msg.text, false);
     }
   }
+};
 
-  const { data: newChat, error } = await supabase
-    .from("new_chats")
-    .insert({ type: "private" })
-    .select()
-    .single();
 
-  if (error) {
-    alert("Error creando chat privado");
-    return;
-  }
+// =====================================
+// 4. LISTA DE USUARIOS
+// =====================================
+let selectedUser = null;
 
-  await supabase.from("new_chat_members").insert([
-    { chat_id: newChat.id, user_id: currentUserId },
-    { chat_id: newChat.id, user_id: otherUserId }
-  ]);
+function renderUserList(users) {
+  const container = document.getElementById("userList");
+  container.innerHTML = "";
 
-  openChat(newChat.id, { username });
+  users
+    .filter(u => u.id !== currentUser.id) // No mostrarte a ti mismo
+    .forEach(user => {
+      const btn = document.createElement("button");
+      btn.className = "contact";
+      btn.textContent = user.name;
+
+      btn.onclick = () => {
+        selectedUser = user;
+        document.getElementById("chatTitle").textContent = "Chat con " + user.name;
+        document.getElementById("messages").innerHTML = "";
+      };
+
+      container.appendChild(btn);
+    });
 }
 
-// ==============================
-// ABRIR CHAT
-// ==============================
-async function openChat(chatId, user) {
-  currentChatId = chatId;
 
-  chatBox.innerHTML = `<h3>Chat con ${user.username}</h3>`;
+// =====================================
+// 5. ENVIAR MENSAJE PRIVADO
+// =====================================
+function sendMessage() {
+  const input = document.getElementById("msgInput");
+  const text = input.value.trim();
 
-  await loadMessages(chatId);
-  subscribeToChat(chatId);
+  if (!text || !selectedUser) return;
 
-  messageInput.onkeydown = e => {
-    if (e.key === "Enter") sendMessage(chatId);
-  };
+  // Enviar al servidor
+  socket.send(JSON.stringify({
+    type: "private_message",
+    from: currentUser.id,
+    to: selectedUser.id,
+    text
+  }));
+
+  // Mostrar en mi chat
+  addMessageToChat(currentUser.id, text, true);
+
+  input.value = "";
 }
 
-// ==============================
-// REALTIME
-// ==============================
-function subscribeToChat(chatId) {
-  if (messageChannel) {
-    supabase.removeChannel(messageChannel);
-  }
 
-  messageChannel = supabase
-    .channel(`chat_${chatId}`)
-    .on(
-      "postgres_changes",
-      {
-        event: "INSERT",
-        schema: "public",
-        table: "new_messages",
-        filter: `chat_id=eq.${chatId}`
-      },
-      payload => {
-        const msg = payload.new;
+// =====================================
+// 6. MOSTRAR MENSAJES EN PANTALLA
+// =====================================
+function addMessageToChat(from, text, isMine) {
+  const box = document.getElementById("messages");
 
-        const div = document.createElement("div");
-        div.className =
-          "message " +
-          (msg.sender_id === currentUserId ? "my-message" : "other-message");
+  const div = document.createElement("div");
+  div.className = isMine ? "msg mine" : "msg other";
+  div.textContent = text;
 
-        div.textContent = msg.content;
-        chatBox.appendChild(div);
-
-        chatBox.scrollTop = chatBox.scrollHeight;
-      }
-    )
-    .subscribe();
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
 }
 
-// ==============================
-// ENVIAR MENSAJE
-// ==============================
-async function sendMessage(chatId) {
-  const content = messageInput.value.trim();
-  if (!content) return;
 
-  await supabase.from("new_messages").insert({
-    chat_id: chatId,
-    sender_id: currentUserId,
-    content
-  });
-
-  messageInput.value = "";
-}
-
-// ==============================
-// CARGAR MENSAJES
-// ==============================
-async function loadMessages(chatId) {
-  const { data: messages } = await supabase
-    .from("new_messages")
-    .select("*")
-    .eq("chat_id", chatId)
-    .order("created_at", { ascending: true });
-
-  chatBox.innerHTML = "";
-
-  messages.forEach(msg => {
-    const div = document.createElement("div");
-    div.className =
-      "message " +
-      (msg.sender_id === currentUserId ? "my-message" : "other-message");
-
-    div.textContent = msg.content;
-    chatBox.appendChild(div);
-  });
-
-  chatBox.scrollTop = chatBox.scrollHeight;
-}
-
-// ==============================
-// INICIAR TODO
-// ==============================
-loadUsers();
+// =====================================
+// 7. EVENTOS BOTÓN ENVIAR
+// =====================================
+document.getElementById("sendBtn").onclick = sendMessage;
+document.getElementById("msgInput").addEventListener("keypress", (e) => {
+  if (e.key === "Enter") sendMessage();
+});
 </script>
 </body>
 </html>
