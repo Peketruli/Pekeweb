@@ -113,7 +113,6 @@
 
   <!-- Supabase -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
 <script>
 // -----------------------------------------------------
 // 1️⃣ CONFIG SUPABASE
@@ -122,8 +121,10 @@ const supabaseUrl = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
+// ⚠️ Todavía leyendo del localStorage (hasta que lo cambiemos)
 const currentUserId = localStorage.getItem("currentUser");
 
+// ELEMENTOS DOM
 const recentList   = document.getElementById("chats-list");
 const allUsersList = document.getElementById("contacts-list");
 const chatBox      = document.getElementById("messages");
@@ -145,7 +146,8 @@ async function loadUsers() {
     return;
   }
 
-  const filteredUsers = users.filter(u => u.id !== currentUser);
+  // ✔️ ARREGLADO: antes ponías "currentUser" (variable inexistente)
+  const filteredUsers = users.filter(u => u.id !== currentUserId);
 
   const { data: recentMessages } = await supabase
     .from("new_messages")
@@ -171,10 +173,12 @@ async function loadUsers() {
 
     if (!members) continue;
 
-    const otherUser = members.find(m => m.user_id !== currentUser);
-    if (!otherUser) continue;
+    // ✔️ ARREGLADO: antes `currentUser`, ahora `currentUserId`
+    const other = members.find(m => m.user_id !== currentUserId);
+    if (!other) continue;
 
-    const profile = filteredUsers.find(u => u.id === otherUser.user);
+    // ✔️ ARREGLADO: antes usabas ".user", ahora es ".user_id"
+    const profile = filteredUsers.find(u => u.id === other.user_id);
     if (!profile) continue;
 
     const li = document.createElement("li");
@@ -183,12 +187,15 @@ async function loadUsers() {
     recentList.appendChild(li);
   }
 
-  // TODOS LOS CONTACTOS
+  // CONTACTOS
   allUsersList.innerHTML = "";
   filteredUsers.forEach(user => {
     const li = document.createElement("li");
     li.textContent = user.username;
+
+    // ✔️ ARREGLADO: el parámetro se llama "otherUserId"
     li.onclick = () => openOrCreatePrivateChat(user.id, user.username);
+
     allUsersList.appendChild(li);
   });
 }
@@ -196,7 +203,7 @@ async function loadUsers() {
 // ==============================
 // CREAR O ABRIR CHAT PRIVADO
 // ==============================
-async function openOrCreatePrivateChat(otherUserid, username) {
+async function openOrCreatePrivateChat(otherUserId, username) {
   const { data: chats } = await supabase
     .from("new_chats")
     .select("id")
@@ -211,8 +218,8 @@ async function openOrCreatePrivateChat(otherUserid, username) {
 
       if (!members) continue;
 
-      const hasMe = members.some(m => m.user_id === currentUser);
-      const hasOther = members.some(m => m.user_id === otherUserid);
+      const hasMe    = members.some(m => m.user_id === currentUserId);
+      const hasOther = members.some(m => m.user_id === otherUserId);
 
       if (hasMe && hasOther) {
         return openChat(chat.id, { username });
@@ -232,8 +239,8 @@ async function openOrCreatePrivateChat(otherUserid, username) {
   }
 
   await supabase.from("new_chat_members").insert([
-    { chat_id: newChat.id, user_id: currentUser },
-    { chat_id: newChat.id, user_id: otherUserid }
+    { chat_id: newChat.id, user_id: currentUserId },
+    { chat_id: newChat.id, user_id: otherUserId }
   ]);
 
   openChat(newChat.id, { username });
@@ -277,7 +284,8 @@ function subscribeToChat(chatId) {
         const msg = payload.new;
 
         const div = document.createElement("div");
-        div.className = "message " + 
+        div.className =
+          "message " +
           (msg.sender_id === currentUserId ? "my-message" : "other-message");
 
         div.textContent = msg.content;
@@ -298,12 +306,11 @@ async function sendMessage(chatId) {
 
   await supabase.from("new_messages").insert({
     chat_id: chatId,
-    sender_id: currentUser,
+    sender_id: currentUserId,
     content
   });
 
   messageInput.value = "";
-  // 👇 NO recargamos mensajes → Realtime se encarga
 }
 
 // ==============================
@@ -320,8 +327,9 @@ async function loadMessages(chatId) {
 
   messages.forEach(msg => {
     const div = document.createElement("div");
-    div.className = "message " +
-      (msg.sender_id === currentUser ? "my-message" : "other-message");
+    div.className =
+      "message " +
+      (msg.sender_id === currentUserId ? "my-message" : "other-message");
 
     div.textContent = msg.content;
     chatBox.appendChild(div);
