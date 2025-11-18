@@ -98,25 +98,6 @@
       <button id="send">Enviar</button>
     </div>
   </main>
-
-  <!-- MODAL CREAR GRUPO -->
-  <div id="groupModal" style="position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);display:none;align-items:center;justify-content:center;z-index:50;">
-    <div style="background:#fff;width:360px;padding:20px;border-radius:12px;color:#111;max-height:80%;overflow:auto;">
-      <h3 style="margin-top:0;margin-bottom:10px;">Crear grupo</h3>
-
-      <label>Nombre del grupo</label>
-      <input id="group-name" placeholder="Mi grupo" style="width:100%;padding:8px;border-radius:8px;border:1px solid #ccc;margin:6px 0 14px 0;" />
-
-      <h4 style="margin:6px 0 6px 0;">Selecciona usuarios</h4>
-      <div id="group-users" style="border:1px solid #ccc;border-radius:8px;padding:10px;max-height:200px;overflow:auto;"></div>
-
-      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;">
-        <button id="group-cancel" style="padding:8px 12px;border:none;border-radius:8px;background:#ccc;cursor:pointer;">Cancelar</button>
-        <button id="group-create" style="padding:8px 12px;border:none;border-radius:8px;background:#25d366;color:#fff;cursor:pointer;">Crear</button>
-      </div>
-    </div>
-  </div>
-
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -159,70 +140,114 @@ async function ensureLocalUser(){
 function el(tag, props = {}, ...children){ const d = document.createElement(tag); for(const k in props) d[k] = props[k]; for(const c of children) if(typeof c==='string') d.appendChild(document.createTextNode(c)); else d.appendChild(c); return d; }
 function timeShort(dateStr){ const d = dateStr ? new Date(dateStr) : new Date(); return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
 
-// ======= GROUP MODAL LOGIC =======
-const groupModal = document.getElementById('groupModal');
-const groupUsersContainer = document.getElementById('group-users');
-const groupNameInput = document.getElementById('group-name');
-const groupCancelBtn = document.getElementById('group-cancel');
-const groupCreateBtn = document.getElementById('group-create');
-const btnCreateGroup = document.getElementById('btn-create-group');
-
-// Open modal and populate users
-btnCreateGroup.addEventListener('click', async () => {
-  // ensure usersMap loaded
-  if(Object.keys(usersMap).length <= 1){
-    await loadUsers();
-  }
-
-  groupUsersContainer.innerHTML = '';
-
-  // Add checkbox for each user except current
-  for(const [id, username] of Object.entries(usersMap)){
-    if(id === currentUser.id) continue;
-    const idSafe = id.replace(/[^a-zA-Z0-9_-]/g, '_');
-    const row = el('div', {},
-      el('label', {},
-        el('input', { type: 'checkbox', id: 'g_user_' + idSafe, value: id }),
-        ' ', username
-      )
-    );
-    groupUsersContainer.appendChild(row);
-  }
-
-  groupNameInput.value = '';
-  groupModal.style.display = 'flex';
-});
-
-groupCancelBtn.addEventListener('click', () => {
-  groupModal.style.display = 'none';
-});
-
-// Create group
-groupCreateBtn.addEventListener('click', async () => {
-  const name = groupNameInput.value.trim();
-  if(!name){ alert('Pon un nombre para el grupo'); return; }
-
-  // collect selected user ids
-  const selected = Array.from(groupUsersContainer.querySelectorAll('input[type=checkbox]:checked')).map(i=>i.value);
-  if(selected.length === 0){ if(!confirm('Crear grupo sin miembros adicionales?')) return; }
-
-  // include current user as member
-  const members = Array.from(new Set([ currentUser.id, ...selected ]));
-
-  // create group chat
-  const { data: newChat, error: chatErr } = await supabase.from('new_chats').insert({ type: 'group', name }).select().single();
-  if(chatErr){ alert('Error creando grupo: ' + chatErr.message); return; }
-
-  // insert members
-  const rows = members.map(uid => ({ chat_id: newChat.id, user_id: uid }));
-  const { error: membersErr } = await supabase.from('new_chat_members').insert(rows);
-  if(membersErr){ alert('Error agregando miembros: ' + membersErr.message); return; }
-
-  // close modal, refresh chats and open
-  groupModal.style.display = 'none';
+// Load users and render contacts + recent chats
+async function loadUsers(){
+  const { data: users, error } = await supabase.from('usuarios').select('id, username');
+  if(error){ console.error('loadUsers', error); contactsListEl.innerHTML = '<li class="small-muted">Error cargando contactos</li>'; return; }
+  users.forEach(u => usersMap[u.id] = u.username);
+  renderContacts(users);
   await loadRecentChats();
-  openChat(newChat.id, { id: null, username: name });
-});
+}
+
+function renderContacts(users){
+  contactsListEl.innerHTML = '';
+  const others = users.filter(u => u.id !== currentUser.id);
+  if(others.length===0){ contactsListEl.innerHTML = '<li class="small-muted">No hay otros usuarios</li>'; return; }
+  others.forEach(u => {
+    const li = el('li', { className: 'contact-item' }, el('div', { className: 'meta' }, el('div', {}, u.username), el('div', { className: 'small-muted' }, u.id)) );
+    li.onclick = () => openOrCreatePrivateChat(u.id, u.username);
+    contactsListEl.appendChild(li);
+  });
+}
+
+async function loadRecentChats(){
+  const { data: recentMessages } = await supabase.from('new_messages').select('chat_id, created_at').order('created_at', { ascending: false });
+  const unique = [];
+  if(recentMessages){ for(const m of recentMessages) if(!unique.includes(m.chat_id)) unique.push(m.chat_id); }
+  chatsListEl.innerHTML = '';
+  for(const chatId of unique){
+    const { data: members } = await supabase.from('new_chat_members').select('user_id').eq('chat_id', chatId);
+    if(!members) continue;
+    const other = members.find(x => x.user_id !== currentUser.id);
+    if(!other) continue;
+    const username = usersMap[other.user_id] || other.user_id;
+    const li = el('li', { className: 'chat-item' }, el('div', { className: 'meta' }, el('div', {}, username), el('div', { className: 'small-muted' }, chatId)) );
+    li.onclick = () => openChat(chatId, { id: other.user_id, username });
+    chatsListEl.appendChild(li);
+  }
+  if(unique.length===0) chatsListEl.innerHTML = '<li class="small-muted">Aún no hay chats</li>';
+}
+
+async function openOrCreatePrivateChat(otherId, otherUsername){
+  const { data: chats } = await supabase.from('new_chats').select('id').eq('type','private');
+  if(chats){
+    for(const c of chats){
+      const { data: members } = await supabase.from('new_chat_members').select('user_id').eq('chat_id', c.id);
+      if(!members) continue;
+      const hasMe = members.some(m => m.user_id === currentUser.id);
+      const hasOther = members.some(m => m.user_id === otherId);
+      if(hasMe && hasOther) return openChat(c.id, { id: otherId, username: otherUsername });
+    }
+  }
+  const { data: newChat, error } = await supabase.from('new_chats').insert({ type: 'private' }).select().single();
+  if(error){ alert('Error creando chat: '+ error.message); return; }
+  await supabase.from('new_chat_members').insert([ { chat_id: newChat.id, user_id: currentUser.id }, { chat_id: newChat.id, user_id: otherId } ]);
+  openChat(newChat.id, { id: otherId, username: otherUsername });
+}
+
+async function openChat(chatId, otherUser){
+  currentChatId = chatId;
+  chatTitleEl.textContent = otherUser.username;
+  messagesEl.innerHTML = '<div class="small-muted">Cargando mensajes...</div>';
+  await loadMessages(chatId);
+  subscribeToChat(chatId);
+}
+
+async function loadMessages(chatId){
+  const { data: msgs, error } = await supabase.from('new_messages').select('*').eq('chat_id', chatId).order('created_at', { ascending: true });
+  if(error){ console.error('loadMessages', error); messagesEl.innerHTML = '<div class="small-muted">No se pudieron cargar mensajes</div>'; return; }
+  messagesEl.innerHTML = '';
+  msgs.forEach(m => renderMessage(m));
+}
+
+function renderMessage(msg){
+  const isMine = msg.sender_id === currentUser.id;
+  const row = el('div', { className: 'msg-row' });
+  const box = el('div', { className: 'msg ' + (isMine ? 'mine' : 'other') });
+  if(!isMine){ const name = usersMap[msg.sender_id] || msg.sender_id; box.appendChild(el('div', { className: 'sender-name' }, name)); }
+  box.appendChild(el('div', {}, msg.content));
+  box.appendChild(el('div', { className: 'msg-time' }, timeShort(msg.created_at)));
+  row.appendChild(box);
+  messagesEl.appendChild(row);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function subscribeToChat(chatId){
+  if(realtimeChannel) supabase.removeChannel(realtimeChannel);
+  realtimeChannel = supabase.channel(`chat_${chatId}`).on('postgres_changes',{ event:'INSERT', schema:'public', table:'new_messages', filter:`chat_id=eq.${chatId}` }, payload => renderMessage(payload.new)).subscribe();
+}
+
+async function sendMessage(){
+  const content = messageInput.value.trim();
+  if(!content || !currentChatId) return;
+  const { error } = await supabase.from('new_messages').insert({ chat_id: currentChatId, sender_id: currentUser.id, content });
+  if(error){ alert('Error enviando mensaje: '+error.message); return; }
+  messageInput.value = '';
+}
+
+sendBtn.addEventListener('click', sendMessage);
+messageInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ e.preventDefault(); sendMessage(); } });
+searchInput.addEventListener('input',(e)=>{ const q=e.target.value.toLowerCase(); const lis=contactsListEl.querySelectorAll('li'); lis.forEach(li=>{ const txt=li.textContent.toLowerCase(); li.style.display = txt.includes(q) ? '' : 'none'; }); });
+
+(async function init(){
+  await ensureLocalUser();
+  profileNameEl.textContent = currentUser.username;
+  profileIdEl.textContent = currentUser.id;
+  profileAvatarEl.textContent = currentUser.username.charAt(0).toUpperCase();
+  await loadUsers();
+})();
+
+function timeShort(dateStr){ const d = dateStr ? new Date(dateStr) : new Date(); return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
 
 </script>
 </body>
