@@ -52,7 +52,6 @@
   <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 
   <script>
-  function(){
     // ---------- Setup ----------
     const wrap = document.getElementById('wrap');
     const scene = new THREE.Scene();
@@ -356,31 +355,6 @@ const blackjackZone = new THREE.Box3().setFromCenterAndSize(
       document.getElementById('ui-close2').addEventListener('click', closeUI);
     }
 
-
-function openBlackjackUI() {
-  activeUI='blackjack';
-  overlay.style.display='flex';
-  uiBox.innerHTML=`
-    <h3 style="margin:0 0 8px 0;color:#fff">Blackjack</h3>
-    <div style="margin-bottom:6px;color:#ddd">Saldo: <strong id="bj-balance">${balance}</strong></div>
-    <div style="margin-bottom:6px;color:#ddd">Apuesta: <input id="bj-bet" type="number" min="1" value="10" style="width:80px"/></div>
-    <div style="margin-bottom:6px;color:#ddd" id="bj-hand"></div>
-    <div style="margin-bottom:6px;color:#ddd" id="bj-dealer"></div>
-    <div style="text-align:right">
-      <button class="btn" id="bj-start">Empezar</button>
-      <button class="btn" id="bj-hit">Pedir</button>
-      <button class="btn" id="bj-stand">Plantarse</button>
-      <button class="btn" id="bj-close">Cerrar</button>
-    </div>
-  `;
-  document.getElementById('bj-start').addEventListener('click', startBlackjack);
-  document.getElementById('bj-hit').addEventListener('click', blackjackHit);
-  document.getElementById('bj-stand').addEventListener('click', blackjackStand);
-  document.getElementById('bj-close').addEventListener('click', closeUI);
-}
-
-
-
     function closeUI(){ activeUI=null; overlay.style.display='none'; uiBox.innerHTML=''; }
     window.addEventListener('keydown', (e)=>{ if((e.key==='e' || e.key==='E') && !activeUI){ if(nearZone==='ruleta') openRuletaUI(); else if(nearZone==='slot') openSlotUI(); else if (nearZone==='blackjack') openBlackjackUI(); } if(e.key==='Escape' && activeUI) closeUI(); });
 
@@ -527,81 +501,153 @@ function openBlackjackUI() {
 
   })();
 
-    function createDeck() {
-  const suits = ['♠','♥','♦','♣'];
-  const values = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  const deck = [];
-  for(const s of suits){
-    for(const v of values){
-      deck.push({suit:s, value:v});
+    // === VARIABLES DE ESTADO DEL JUEGO ===
+let deck = [];
+let playerHand = [];
+let dealerHand = [];
+let blackjackPanelVisible = false;
+
+// === CREAR MAZO ===
+function createDeck() {
+    const suits = ["C", "D", "H", "S"];
+    const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+
+    let newDeck = [];
+    for (let s of suits) {
+        for (let v of values) {
+            newDeck.push({ value: v, suit: s });
+        }
     }
-  }
-  // barajar
-  for(let i=deck.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [deck[i],deck[j]]=[deck[j],deck[i]];
-  }
-  return deck;
-}
-    function handValue(hand){
-  let total=0, aces=0;
-  for(const c of hand){
-    if(['J','Q','K'].includes(c.value)) total+=10;
-    else if(c.value==='A'){ total+=11; aces+=1; }
-    else total+=parseInt(c.value);
-  }
-  while(total>21 && aces>0){ total-=10; aces--; }
-  return total;
+
+    // barajar
+    for (let i = newDeck.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]];
+    }
+
+    return newDeck;
 }
 
-function updateBlackjackUI(){
-  document.getElementById('bj-hand').textContent = 'Tus cartas: ' + blackjackState.playerHand.map(c=>c.value+c.suit).join(' ');
-  document.getElementById('bj-dealer').textContent = 'Dealer: ' + blackjackState.dealerHand.map(c=>c.value+c.suit).join(' ');
-  document.getElementById('bj-balance').textContent = balance;
+// === CALCULAR VALOR DE MANO ===
+function calculateHandValue(hand) {
+    let total = 0;
+    let aces = 0;
+
+    for (let card of hand) {
+        if (card.value === "A") {
+            aces++;
+            total += 11;
+        } else if (["J", "Q", "K"].includes(card.value)) {
+            total += 10;
+        } else {
+            total += parseInt(card.value);
+        }
+    }
+
+    // ajustar ases
+    while (total > 21 && aces > 0) {
+        total -= 10;
+        aces--;
+    }
+
+    return total;
 }
 
-function startBlackjack(){
-  const bet = parseInt(document.getElementById('bj-bet').value);
-  if(isNaN(bet) || bet>balance || bet<=0) return alert('Apuesta inválida');
-  blackjackState.bet=bet;
-  balance-=bet;
-  blackjackState.deck=createDeck();
-  blackjackState.playerHand=[blackjackState.deck.pop(), blackjackState.deck.pop()];
-  blackjackState.dealerHand=[blackjackState.deck.pop()];
-  blackjackState.inGame=true;
-  updateHUD();
-  updateBlackjackUI();
+// === PINTAR CARTAS EN EL PANEL ===
+function renderBlackjackUI() {
+    const panel = document.getElementById("blackjack-panel");
+    if (!panel) return;
+
+    panel.innerHTML = `
+        <h2>Blackjack</h2>
+
+        <div class="bj-section">
+            <h3>Crupier (${calculateHandValue(dealerHand)})</h3>
+            <div class="cards">
+                ${dealerHand.map(c => `<span class="card">${c.value}${c.suit}</span>`).join("")}
+            </div>
+        </div>
+
+        <div class="bj-section">
+            <h3>Jugador (${calculateHandValue(playerHand)})</h3>
+            <div class="cards">
+                ${playerHand.map(c => `<span class="card">${c.value}${c.suit}</span>`).join("")}
+            </div>
+        </div>
+
+        <div class="bj-buttons">
+            <button id="btnHit">Pedir carta</button>
+            <button id="btnStand">Plantarse</button>
+            <button id="btnRestart">Reiniciar</button>
+        </div>
+    `;
+
+    // Activar eventos
+    document.getElementById("btnHit").onclick = hitCard;
+    document.getElementById("btnStand").onclick = stand;
+    document.getElementById("btnRestart").onclick = startBlackjackGame;
 }
 
-function blackjackHit(){
-  if(!blackjackState.inGame) return;
-  blackjackState.playerHand.push(blackjackState.deck.pop());
-  const val = handValue(blackjackState.playerHand);
-  updateBlackjackUI();
-  if(val>21){ appendLog('Blackjack: Te pasaste!'); blackjackState.inGame=false; }
+// === DAR CARTA AL JUGADOR ===
+function hitCard() {
+    playerHand.push(deck.pop());
+    renderBlackjackUI();
+
+    if (calculateHandValue(playerHand) > 21) {
+        setTimeout(() => {
+            alert("Te pasaste. Pierdes.");
+            startBlackjackGame();
+        }, 200);
+    }
 }
 
-function blackjackStand(){
-  if(!blackjackState.inGame) return;
-  while(handValue(blackjackState.dealerHand)<17){
-    blackjackState.dealerHand.push(blackjackState.deck.pop());
-  }
-  const playerTotal = handValue(blackjackState.playerHand);
-  const dealerTotal = handValue(blackjackState.dealerHand);
-  if(playerTotal>21) appendLog('Blackjack: Perdiste!');
-  else if(dealerTotal>21 || playerTotal>dealerTotal){
-    balance += blackjackState.bet*2;
-    appendLog('Blackjack: Ganaste!');
-  } else if(playerTotal===dealerTotal){
-    balance += blackjackState.bet;
-    appendLog('Blackjack: Empate');
-  } else appendLog('Blackjack: Perdiste!');
-  blackjackState.inGame=false;
-  updateHUD();
-  updateBlackjackUI();
+// === PLANTARSE ===
+function stand() {
+    // turno del dealer
+    while (calculateHandValue(dealerHand) < 17) {
+        dealerHand.push(deck.pop());
+    }
+
+    renderBlackjackUI();
+
+    const player = calculateHandValue(playerHand);
+    const dealer = calculateHandValue(dealerHand);
+
+    let msg = "";
+
+    if (dealer > 21) msg = "El crupier se pasó, ¡ganas!";
+    else if (player > dealer) msg = "¡Ganaste!";
+    else if (player < dealer) msg = "Perdiste.";
+    else msg = "Empate.";
+
+    setTimeout(() => {
+        alert(msg);
+        startBlackjackGame();
+    }, 300);
 }
 
+// === INICIAR PARTIDA ===
+function startBlackjackGame() {
+    deck = createDeck();
+    playerHand = [deck.pop(), deck.pop()];
+    dealerHand = [deck.pop(), deck.pop()];
 
+    renderBlackjackUI();
+}
+
+// === MOSTRAR LA UI DE BLACKJACK ===
+function openBlackjackUI() {
+    const panel = document.getElementById("blackjack-panel");
+    if (!panel) {
+        console.error("❌ Falta el div con id='blackjack-panel'");
+        return;
+    }
+
+    blackjackPanelVisible = true;
+    panel.style.display = "block";
+
+    startBlackjackGame();
+}
   </script>
 </body>
 </html>
