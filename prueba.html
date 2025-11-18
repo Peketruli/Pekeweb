@@ -426,14 +426,28 @@ const blackjackZone = new THREE.Box3().setFromCenterAndSize(
     }
 
     // ---------- Minimap ----------
-    const minimap = document.getElementById('minimap');
-    const mmC = document.createElement('canvas'); mmC.width = mmC.height = 120; minimap.appendChild(mmC);
-    const mm = mmC.getContext('2d');
-    function drawMinimap(){ mm.fillStyle='#041018'; mm.fillRect(0,0,120,120); const scale=2; const px=60 + playerPos.x/scale, pz=60 + playerPos.z/scale; mm.fillStyle='#1d7cf0'; mm.beginPath(); mm.arc(px,pz,4,0,Math.PI*2); mm.fill(); mm.fillStyle='#a2d9c8'; mm.fillRect(60-6,60-6,12,12); mm.fillStyle='#f0c050'; mm.fillRect(60 + 14/scale -4, 60 + (-6)/scale -6,8,12); }
+const minimap = document.getElementById('minimap');
+const mmC = document.createElement('canvas');
+mmC.width = 120;
+mmC.height = 120;
+minimap.appendChild(mmC);
 
+const mmCtx = mmC.getContext("2d");
+
+function updateMinimap(){
+    mmCtx.fillStyle = "black";
+    mmCtx.fillRect(0,0,120,120);
+
+    // jugador (punto blanco)
+    const px = playerPos.x;
+    const pz = playerPos.z;
+
+    mmCtx.fillStyle = "white";
+    mmCtx.fillRect(60 + px * 2, 60 + pz * 2, 4, 4);
+}
     // ---------- Animation loop ----------
     const clock = new THREE.Clock();
-    (function animate(){
+    function animate(){
       requestAnimationFrame(animate);
       const dt = clock.getDelta();
 
@@ -483,6 +497,7 @@ const blackjackZone = new THREE.Box3().setFromCenterAndSize(
       }
 
       // render
+      updateMinimap();
       drawMinimap();
       renderer.render(scene, camera);
     })();
@@ -500,153 +515,132 @@ const blackjackZone = new THREE.Box3().setFromCenterAndSize(
     window.__casino = { playerPos, camera, scene, pockets };
 
   })();
-
-    // === VARIABLES DE ESTADO DEL JUEGO ===
-let deck = [];
-let playerHand = [];
-let dealerHand = [];
-let blackjackPanelVisible = false;
-
-// === CREAR MAZO ===
-function createDeck() {
-    const suits = ["C", "D", "H", "S"];
-    const values = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
-
-    let newDeck = [];
-    for (let s of suits) {
-        for (let v of values) {
-            newDeck.push({ value: v, suit: s });
+// ---------- Blackjack ----------
+function createDeck(){
+    const deck = [];
+    const values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
+    const suits = ["♠","♥","♦","♣"];
+    for(const v of values){
+        for(const s of suits){
+            deck.push({v, s});
         }
     }
-
-    // barajar
-    for (let i = newDeck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [newDeck[i], newDeck[j]] = [newDeck[j], newDeck[i]];
-    }
-
-    return newDeck;
+    return deck.sort(()=>Math.random()-0.5);
 }
 
-// === CALCULAR VALOR DE MANO ===
-function calculateHandValue(hand) {
-    let total = 0;
-    let aces = 0;
+function cardValue(c){
+    if(c.v === "A") return 11;
+    if(["J","Q","K"].includes(c.v)) return 10;
+    return parseInt(c.v);
+}
 
-    for (let card of hand) {
-        if (card.value === "A") {
-            aces++;
-            total += 11;
-        } else if (["J", "Q", "K"].includes(card.value)) {
-            total += 10;
-        } else {
-            total += parseInt(card.value);
-        }
-    }
-
-    // ajustar ases
-    while (total > 21 && aces > 0) {
+function handValue(hand){
+    let total = hand.reduce((t,c)=>t+cardValue(c),0);
+    let aces = hand.filter(c=>c.v==="A").length;
+    while(total>21 && aces>0){
         total -= 10;
         aces--;
     }
-
     return total;
 }
 
-// === PINTAR CARTAS EN EL PANEL ===
-function renderBlackjackUI() {
-    const panel = document.getElementById("blackjack-panel");
-    if (!panel) return;
+function openBlackjackUI(){
+    activeUI='blackjack';
+    overlay.style.display='flex';
 
-    panel.innerHTML = `
-        <h2>Blackjack</h2>
+    uiBox.innerHTML = `
+    <h3 style="margin:0 0 10px 0;color:#fff">Blackjack</h3>
+    <div style="color:#ddd;margin-bottom:8px">Saldo: <strong>${balance}</strong></div>
 
-        <div class="bj-section">
-            <h3>Crupier (${calculateHandValue(dealerHand)})</h3>
-            <div class="cards">
-                ${dealerHand.map(c => `<span class="card">${c.value}${c.suit}</span>`).join("")}
-            </div>
-        </div>
+    <div id="bj-area" style="color:#fff; min-height:120px; margin-bottom:10px;">
+      Pulsa "Repartir" para comenzar.
+    </div>
 
-        <div class="bj-section">
-            <h3>Jugador (${calculateHandValue(playerHand)})</h3>
-            <div class="cards">
-                ${playerHand.map(c => `<span class="card">${c.value}${c.suit}</span>`).join("")}
-            </div>
-        </div>
+    <div style="text-align:right">
+      <button class="btn" id="bj-deal">Repartir (10)</button>
+      <button class="btn" id="bj-hit">Pedir</button>
+      <button class="btn" id="bj-stand">Plantarse</button>
+      <button class="btn" id="bj-close">Cerrar</button>
+    </div>`;
 
-        <div class="bj-buttons">
-            <button id="btnHit">Pedir carta</button>
-            <button id="btnStand">Plantarse</button>
-            <button id="btnRestart">Reiniciar</button>
-        </div>
+    document.getElementById("bj-hit").disabled = true;
+    document.getElementById("bj-stand").disabled = true;
+
+    document.getElementById("bj-deal").onclick = startBlackjack;
+    document.getElementById("bj-hit").onclick = bjHit;
+    document.getElementById("bj-stand").onclick = bjStand;
+    document.getElementById("bj-close").onclick = closeUI;
+}
+
+function renderBJ(){
+    const p = blackjackState.playerHand.map(c=>c.v+c.s).join(" ");
+    const d = blackjackState.dealerHand.map(c=>c.v+c.s).join(" ");
+
+    document.getElementById("bj-area").innerHTML = `
+      <div>Crupier: ${d} (${handValue(blackjackState.dealerHand)})</div>
+      <div>Jugador: ${p} (${handValue(blackjackState.playerHand)})</div>
     `;
-
-    // Activar eventos
-    document.getElementById("btnHit").onclick = hitCard;
-    document.getElementById("btnStand").onclick = stand;
-    document.getElementById("btnRestart").onclick = startBlackjackGame;
 }
 
-// === DAR CARTA AL JUGADOR ===
-function hitCard() {
-    playerHand.push(deck.pop());
-    renderBlackjackUI();
+function startBlackjack(){
+    if(balance < 10) return alert("Saldo insuficiente.");
+    balance -= 10;
+    updateHUD();
 
-    if (calculateHandValue(playerHand) > 21) {
-        setTimeout(() => {
-            alert("Te pasaste. Pierdes.");
-            startBlackjackGame();
-        }, 200);
+    blackjackState.deck = createDeck();
+    blackjackState.playerHand = [blackjackState.deck.pop(), blackjackState.deck.pop()];
+    blackjackState.dealerHand = [blackjackState.deck.pop(), blackjackState.deck.pop()];
+    blackjackState.inGame = true;
+
+    document.getElementById("bj-hit").disabled = false;
+    document.getElementById("bj-stand").disabled = false;
+
+    renderBJ();
+}
+
+function bjHit(){
+    if(!blackjackState.inGame) return;
+
+    blackjackState.playerHand.push(blackjackState.deck.pop());
+    renderBJ();
+
+    if(handValue(blackjackState.playerHand) > 21){
+        blackjackState.inGame = false;
+        appendLog("Blackjack: pierdes.");
+        document.getElementById("bj-hit").disabled = true;
+        document.getElementById("bj-stand").disabled = true;
     }
 }
 
-// === PLANTARSE ===
-function stand() {
-    // turno del dealer
-    while (calculateHandValue(dealerHand) < 17) {
-        dealerHand.push(deck.pop());
+function bjStand(){
+    if(!blackjackState.inGame) return;
+
+    while(handValue(blackjackState.dealerHand) < 17){
+        blackjackState.dealerHand.push(blackjackState.deck.pop());
     }
 
-    renderBlackjackUI();
-
-    const player = calculateHandValue(playerHand);
-    const dealer = calculateHandValue(dealerHand);
+    const p = handValue(blackjackState.playerHand);
+    const d = handValue(blackjackState.dealerHand);
 
     let msg = "";
-
-    if (dealer > 21) msg = "El crupier se pasó, ¡ganas!";
-    else if (player > dealer) msg = "¡Ganaste!";
-    else if (player < dealer) msg = "Perdiste.";
-    else msg = "Empate.";
-
-    setTimeout(() => {
-        alert(msg);
-        startBlackjackGame();
-    }, 300);
-}
-
-// === INICIAR PARTIDA ===
-function startBlackjackGame() {
-    deck = createDeck();
-    playerHand = [deck.pop(), deck.pop()];
-    dealerHand = [deck.pop(), deck.pop()];
-
-    renderBlackjackUI();
-}
-
-// === MOSTRAR LA UI DE BLACKJACK ===
-function openBlackjackUI() {
-    const panel = document.getElementById("blackjack-panel");
-    if (!panel) {
-        console.error("❌ Falta el div con id='blackjack-panel'");
-        return;
+    if(d > 21 || p > d){
+        balance += 20;
+        msg = "Blackjack: ganas!";
+    } else if(p < d){
+        msg = "Blackjack: pierdes.";
+    } else {
+        balance += 10;
+        msg = "Blackjack: empate.";
     }
 
-    blackjackPanelVisible = true;
-    panel.style.display = "block";
+    appendLog(msg);
+    updateHUD();
 
-    startBlackjackGame();
+    blackjackState.inGame = false;
+    renderBJ();
+
+    document.getElementById("bj-hit").disabled = true;
+    document.getElementById("bj-stand").disabled = true;
 }
   </script>
 </body>
