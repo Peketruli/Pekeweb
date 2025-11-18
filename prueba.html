@@ -52,6 +52,7 @@
   <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 
   <script>
+  (function(){
     // ---------- Setup ----------
     const wrap = document.getElementById('wrap');
     const scene = new THREE.Scene();
@@ -80,78 +81,66 @@
     const rug = new THREE.Mesh(new THREE.CircleGeometry(14,32), new THREE.MeshStandardMaterial({color:0x183430}));
     rug.rotation.x = -Math.PI/2; rug.position.y = 0.01; scene.add(rug);
 
-   // ---------- TABLE + RUEDA ----------
-const table = new THREE.Group();
-table.position.set(0,0,0);
+    // ---------- TABLE + RUETA ----------
+    const table = new THREE.Group();
+    table.position.set(0,0,0);
 
-// table top slightly lower so the wheel is visible above it
-const tableTop = new THREE.Mesh(
-  new THREE.CylinderGeometry(8.5,8.5,0.9,36),
-  new THREE.MeshStandardMaterial({color:0x214f3d})
-);
-tableTop.position.y = -3;
-table.add(tableTop);
+    // table top slightly lower so the wheel is visible above it
+    const tableTop = new THREE.Mesh(new THREE.CylinderGeometry(8.5,8.5,0.9,36), new THREE.MeshStandardMaterial({color:0x214f3d}));
+    tableTop.position.y = -3; table.add(tableTop);
+    const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.2,1.2,12), new THREE.MeshStandardMaterial({color:0x163826}));
+    pedestal.position.y = 0; table.add(pedestal);
 
-const pedestal = new THREE.Mesh(
-  new THREE.CylinderGeometry(2.2,2.2,1.2,12),
-  new THREE.MeshStandardMaterial({color:0x163826})
-);
-pedestal.position.y = 0;
-table.add(pedestal);
+    // wheel geometry and texture (top face horizontal)
+    const wheelRadius = 6;
+    // FULL EUROPEAN ORDER (37 pockets)
+    const pockets = [
+      0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,
+      10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26
+    ];
+    const pocketCount = pockets.length; // 37
+    const anglePerPocket = (Math.PI*2) / pocketCount;
 
-// wheel geometry and texture
-const wheelRadius = 6;
-const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
-const pocketCount = pockets.length;
-const anglePerPocket = (Math.PI*2) / pocketCount;
+    function createWheelCanvas(size=2048){
+      const c = document.createElement('canvas'); c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#072b22'; ctx.fillRect(0,0,size,size);
+      const cx = size/2, cy = size/2, r = size*0.45;
+      for(let i=0;i<pocketCount;i++){
+        const a0 = i * (Math.PI*2/pocketCount) - Math.PI/2;
+        const a1 = (i+1) * (Math.PI*2/pocketCount) - Math.PI/2;
+        ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a0,a1); ctx.closePath();
+        ctx.fillStyle = (pockets[i]===0) ? '#1b8b41' : ((i % 2 === 0) ? '#b71c1c' : '#000');
+        ctx.fill();
+        // number
+        const mid = a0 + (a1-a0)/2;
+        ctx.save(); ctx.translate(cx + Math.cos(mid)*(r*0.66), cy + Math.sin(mid)*(r*0.66));
+        ctx.rotate(mid + Math.PI/2); ctx.fillStyle = '#fff'; ctx.font = `${Math.floor(size*0.04)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+        ctx.fillText(pockets[i], 0, 0); ctx.restore();
+      }
+      ctx.beginPath(); ctx.fillStyle = '#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
+      return c;
+    }
 
-function createWheelCanvas(size=2048){
-  const c = document.createElement('canvas'); c.width = c.height = size;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#072b22'; ctx.fillRect(0,0,size,size);
-  const cx = size/2, cy = size/2, r = size*0.45;
-  for(let i=0;i<pocketCount;i++){
-    const a0 = i*anglePerPocket - Math.PI/2;
-    const a1 = (i+1)*anglePerPocket - Math.PI/2;
-    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a0,a1); ctx.closePath();
-    ctx.fillStyle = (pockets[i]===0)?'#1b8b41':((i%2===0)?'#b71c1c':'#000');
-    ctx.fill();
-    const mid = a0 + (a1-a0)/2;
-    ctx.save(); ctx.translate(cx+Math.cos(mid)*(r*0.66), cy+Math.sin(mid)*(r*0.66));
-    ctx.rotate(mid+Math.PI/2); ctx.fillStyle='#fff'; ctx.font=`${Math.floor(size*0.04)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(pockets[i],0,0); ctx.restore();
-  }
-  ctx.beginPath(); ctx.fillStyle='#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
-  return c;
-}
+    const wheelTex = new THREE.CanvasTexture(createWheelCanvas(2048));
+    wheelTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const wheelMesh = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius, wheelRadius, 1.4, 128), new THREE.MeshStandardMaterial({map:wheelTex}));
+    // cylinder axis Y -> top face horizontal
+    // place the wheel so it sits slightly above the table top
+    wheelMesh.position.y = 0.7; table.add(wheelMesh);
 
-const wheelTex = new THREE.CanvasTexture(createWheelCanvas(2048));
-wheelTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-const wheelMesh = new THREE.Mesh(
-  new THREE.CylinderGeometry(wheelRadius,wheelRadius,1.4,128),
-  new THREE.MeshStandardMaterial({map:wheelTex})
-);
-wheelMesh.position.y = 0.1;
-table.add(wheelMesh);
+    // rim
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(wheelRadius+0.6,0.45,12,128), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
+    rim.rotation.x = Math.PI/2; rim.position.y = 0.30; table.add(rim);
 
-// rim
-const rim = new THREE.Mesh(
-  new THREE.TorusGeometry(wheelRadius+0.6,0.45,12,128),
-  new THREE.MeshStandardMaterial({color:0x6b3b1b})
-);
-rim.rotation.x = Math.PI/2;
-rim.position.y = 0.3;
-table.add(rim);
-
-// ---------- FIX: add table (with ruleta) to scene ----------
-scene.add(table);
-
-// ---------- BALL ----------
+   // --- BALL (reemplazar bloque completo de la bola) ---
 const ball = new THREE.Mesh(
-  new THREE.SphereGeometry(0.20,16,16),
+  new THREE.SphereGeometry(0.20, 16, 16),
   new THREE.MeshStandardMaterial({color:0xffffff, metalness:0.8, roughness:0.2})
 );
-ball.position.set(wheelRadius-0.6,0.55,0);
+
+// La bola NO se mete dentro de "table". La ponemos en escena directamente:
+ball.position.set(wheelRadius - 0.6, 0.55, 0);
 scene.add(ball);
 
 
@@ -166,56 +155,27 @@ scene.add(ball);
     for(let i=0;i<6;i++){ const a=(i/6)*Math.PI*2; makeChair(Math.cos(a)*10, Math.sin(a)*10); }
 
     // ---------- Slot machine (kept simple) ----------
-    const slotGroup = new THREE.Group(); slotGroup.position.set(14,-3,-6);
-    const slotBody = new THREE.Mesh(new THREE.BoxGeometry(2,3,1), new THREE.MeshStandardMaterial({color:0x8a0f05,metalness:0.12,roughness:0.36}));
+    const slotGroup = new THREE.Group(); slotGroup.position.set(14,0,-6);
+    const slotBody = new THREE.Mesh(new THREE.BoxGeometry(5.2,8.4,3.2), new THREE.MeshStandardMaterial({color:0x8a0f05,metalness:0.12,roughness:0.36}));
     slotBody.position.y=4.2; slotGroup.add(slotBody);
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(1,1,0.4), new THREE.MeshStandardMaterial({color:0x050506}));
-    panel.position.set(14,-1,-5.8); scene.add(panel);
-   
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(4.4,3.2,0.4), new THREE.MeshStandardMaterial({color:0x050506}));
+    panel.position.set(14,5.2,-4.9); scene.add(panel);
     // reels (canvas textures)
-const reelCanvases = []; 
-const reelTexes = []; 
-const reelPlanes = [];
-const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
-
-for(let i=0; i<3; i++){
-  const c=document.createElement('canvas'); 
-  c.width=128; 
-  c.height=192;
-
-  const ctx=c.getContext('2d'); 
-  ctx.fillStyle='#070707'; 
-  ctx.fillRect(0,0,c.width,c.height);
-
-  ctx.fillStyle='#fff';
-  ctx.font='48px sans-serif';          // ⬅ más pequeño
-  ctx.textAlign='center'; 
-  ctx.textBaseline='middle';
-  ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)], c.width/2, c.height/2);
-
-  reelCanvases.push(c);
-
-  const t=new THREE.CanvasTexture(c); 
-  reelTexes.push(t);
-
-  // ⬇ reels reducidos de 1.0x1.5 a 0.55x0.85
-  const p=new THREE.Mesh(
-    new THREE.PlaneGeometry(0.55, 0.85),
-    new THREE.MeshBasicMaterial({map:t})
-  );
-
-  // ⬇ centrados y ajustados para tamaño arcade
-  p.position.set(
-    14 + (i-1)*0.65,   // separación reducida
-    1.3,               // altura reducida
-    -5.48                 // sacado un poco hacia la cámara para verse bien
-  );
-
-  scene.add(p);
-  reelPlanes.push(p);
-}
-  scene.add(slotGroup);
-
+    const reelCanvases = []; const reelTexes = []; const reelPlanes = [];
+    const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
+    for(let i=0;i<3;i++){
+      const c=document.createElement('canvas'); c.width=128; c.height=192;
+      const ctx=c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,c.width,c.height);
+      ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)], c.width/2, c.height/2);
+      reelCanvases.push(c);
+      const t=new THREE.CanvasTexture(c); reelTexes.push(t);
+      const p=new THREE.Mesh(new THREE.PlaneGeometry(1.0,1.5), new THREE.MeshBasicMaterial({map:t}));
+      p.position.set(14 + (i-1)*1.1, 5.2, -4.7); scene.add(p); reelPlanes.push(p);
+    }
+    const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,2.6,8), new THREE.MeshStandardMaterial({color:0x8b5a2b}));
+    lever.position.set(16.6,5,-6); lever.rotation.z=Math.PI/8; scene.add(lever);
+    scene.add(slotGroup);
 
     // ---------- Colliders (NO MESH, Box3-only) ----------
     // Use Box3 instances for collisions, don't add any visible mesh to scene
@@ -274,7 +234,7 @@ for(let i=0; i<3; i++){
       const eye = playerPos.clone(); eye.y = camera.position.clone();
       if(ruletaZone.containsPoint(eye)){ nearZone='ruleta'; prompt.style.display='block'; prompt.textContent='[E] Interactuar: Ruleta'; return; }
       if(slotZone.containsPoint(eye)){ nearZone='slot'; prompt.style.display='block'; prompt.textContent='[E] Interactuar: Tragaperras'; return; }
-       nearZone=null; prompt.style.display='none';
+      nearZone=null; prompt.style.display='none';
     }
 
     const overlay = document.getElementById('overlay'), uiBox = document.getElementById('ui-box'); let activeUI=null;
@@ -287,8 +247,6 @@ for(let i=0; i<3; i++){
       // We'll compute winner at finalize phase based on current rotation & ballAngle
     };
     const slotState = {credits:0};
-   
-
 
     function openRuletaUI(){
       activeUI='ruleta'; overlay.style.display='flex';
@@ -389,28 +347,14 @@ for(let i=0; i<3; i++){
     }
 
     // ---------- Minimap ----------
-const minimap = document.getElementById('minimap');
-const mmC = document.createElement('canvas');
-mmC.width = 120;
-mmC.height = 120;
-minimap.appendChild(mmC);
+    const minimap = document.getElementById('minimap');
+    const mmC = document.createElement('canvas'); mmC.width = mmC.height = 120; minimap.appendChild(mmC);
+    const mm = mmC.getContext('2d');
+    function drawMinimap(){ mm.fillStyle='#041018'; mm.fillRect(0,0,120,120); const scale=2; const px=60 + playerPos.x/scale, pz=60 + playerPos.z/scale; mm.fillStyle='#1d7cf0'; mm.beginPath(); mm.arc(px,pz,4,0,Math.PI*2); mm.fill(); mm.fillStyle='#a2d9c8'; mm.fillRect(60-6,60-6,12,12); mm.fillStyle='#f0c050'; mm.fillRect(60 + 14/scale -4, 60 + (-6)/scale -6,8,12); }
 
-const mmCtx = mmC.getContext("2d");
-
-function updateMinimap(){
-    mmCtx.fillStyle = "black";
-    mmCtx.fillRect(0,0,120,120);
-
-    // jugador (punto blanco)
-    const px = playerPos.x;
-    const pz = playerPos.z;
-
-    mmCtx.fillStyle = "white";
-    mmCtx.fillRect(60 + px * 2, 60 + pz * 2, 4, 4);
-}
     // ---------- Animation loop ----------
     const clock = new THREE.Clock();
-    function animate(){
+    (function animate(){
       requestAnimationFrame(animate);
       const dt = clock.getDelta();
 
@@ -460,7 +404,6 @@ function updateMinimap(){
       }
 
       // render
-      updateMinimap();
       drawMinimap();
       renderer.render(scene, camera);
     })();
