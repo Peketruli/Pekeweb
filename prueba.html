@@ -169,14 +169,9 @@ const ballMesh = new THREE.Mesh(
   new THREE.SphereGeometry(0.22,16,16),
   new THREE.MeshStandardMaterial({color:0xffffff})
 );
-ballMesh.position.set(0,1.2, wheelRadius - 0.8);
 scene.add(ballMesh);
 
 let spinning = false;
-let wheelSpeed = 0;
-let ballSpeed = 0;
-let wheelAngle = 0;
-let ballAngle = 0;
 
 // ==================== RULETA — UI ====================
 function openRouletteUI(){
@@ -195,7 +190,6 @@ function openRouletteUI(){
 function spinRoulette() {
     if (spinning) return;
 
-    // --- Lógica de Apuesta y Comprobación (Sin cambios) ---
     const nums = document.getElementById("rouletteInput").value
         .split(",")
         .map(n => parseInt(n.trim()))
@@ -214,104 +208,71 @@ function spinRoulette() {
 
     spinning = true;
 
-    // --- CÁLCULO DEL ÁNGULO DE PARADA OBJETIVO ---
-
-    // Elegir número ganador
     const chosen = pockets[Math.floor(Math.random() * pockets.length)];
     const pocketIndex = pockets.indexOf(chosen);
-
-    // Ángulo necesario para rotar el número ganador hasta la posición de aterrizaje (eje Z positivo).
     const requiredStopAngle = pocketIndex * anglePerPocket;
 
-    // Variables para un giro realista
     const totalRevolutions = 10;
     const baseRotation = Math.PI * 2 * totalRevolutions;
-
-    // Pequeña variación para que no siempre caiga en el centro exacto de la casilla
     const finalAlignmentOffset = (Math.random() - 0.5) * anglePerPocket * 0.8;
-
-    // Ángulo final de la RUEDA (total de rotación desde el inicio)
     const finalWheelRotation = baseRotation - requiredStopAngle + finalAlignmentOffset;
 
-    // --- VARIABLES DE ANIMACIÓN ---
+    let wheelAngle = 0;
+    let remainingRotation = finalWheelRotation;
+
+    // Bola
+    const initialOuterRadius = wheelRadius - 0.2;
+    const finalInnerRadius = 1.8;
+    const fallRevolutions = 3;
+    const ballRestingHeight = 0.35;
+    const ballRollingHeight = 1.2;
+    let ballAngle = Math.random() * Math.PI * 2;
     let wheelSpeed = 8;
     let ballSpeed = 30;
-    let wheelAngle = 0; // Rastrea la rotación actual.
-    let remainingRotation = finalWheelRotation; // Distancia angular restante.
 
-    // ✅ CORRECCIÓN 1: Radio inicial de la bola (en la pista exterior).
-    const initialOuterRadius = wheelRadius - 0.2; // ~3.8
-    let ballRadius = initialOuterRadius;
-
-    // ✅ CORRECCIÓN 2: Radio final de la bola (en la pista interior).
-    const finalInnerRadius = 1.8; 
-    const fallRevolutions = 3; // Cuántas vueltas antes de detenerse empieza a caer.
-    const ballRestingHeight = 0.3 + 0.05; // Altura de la mesa (0.3) + un pequeño ajuste.
-    const ballRollingHeight = 1.2; // Altura de la pista exterior.
-    
-    let ballAngle = Math.random() * Math.PI * 2;
-
-    // --- INTERVALO DE GIRO ---
     const spinInterval = setInterval(() => {
         const dt = 0.016;
 
-        // 1. CÁLCULO DE FRENADO (RUEDA)
+        // Rueda
         if (remainingRotation > 0) {
-            const brakeFactor = remainingRotation / (Math.PI * 2 * totalRevolutions); 
-            // La velocidad disminuye suavemente (usamos Math.sqrt para un frenado más orgánico)
+            const brakeFactor = remainingRotation / (Math.PI * 2 * totalRevolutions);
             wheelSpeed = Math.max(0, 8 * Math.sqrt(brakeFactor)); 
         } else {
             wheelSpeed = 0; 
         }
 
-        // 2. GIRO DE RUEDA
         const rotationDelta = wheelSpeed * dt;
         if (remainingRotation > 0) {
             wheelAngle += rotationDelta;
             remainingRotation -= rotationDelta;
-
-            if (remainingRotation < 0) {
-                wheelAngle += remainingRotation;
-                remainingRotation = 0;
-            }
+            if (remainingRotation < 0) wheelAngle += remainingRotation;
         }
-        // ✅ La rotación de la rueda ahora funciona correctamente gracias a la corrección global.
-        wheelMesh.rotation.y = wheelAngle; 
+        wheelMesh.rotation.y = wheelAngle;
 
-        // 3. GIRO Y CAÍDA DE LA BOLA
-        ballSpeed *= 0.99; // Frenado de la bola (ligeramente más lento)
+        // Bola
+        ballSpeed *= 0.99;
         ballAngle += ballSpeed * dt;
 
-        // ✅ CORRECCIÓN 3: Lógica de caída y radio
         if (remainingRotation < Math.PI * 2 * fallRevolutions) { 
-            // Interpolación del radio y la altura a medida que la ruleta frena.
             const fallProgress = 1 - (remainingRotation / (Math.PI * 2 * fallRevolutions));
-            ballRadius = THREE.MathUtils.lerp(initialOuterRadius, finalInnerRadius, fallProgress);
+            const ballRadius = THREE.MathUtils.lerp(initialOuterRadius, finalInnerRadius, fallProgress);
             ballMesh.position.y = THREE.MathUtils.lerp(ballRollingHeight, ballRestingHeight, fallProgress);
+            ballMesh.position.x = Math.cos(ballAngle) * ballRadius;
+            ballMesh.position.z = Math.sin(ballAngle) * ballRadius;
         } else {
-             ballMesh.position.y = ballRollingHeight;
+            ballMesh.position.y = ballRollingHeight;
+            ballMesh.position.x = Math.cos(ballAngle) * initialOuterRadius;
+            ballMesh.position.z = Math.sin(ballAngle) * initialOuterRadius;
         }
-        
-        // Posicionamiento de la bola
-        ballMesh.position.x = Math.cos(ballAngle) * ballRadius;
-        ballMesh.position.z = Math.sin(ballAngle) * ballRadius;
 
-
-        // 4. DETECCIÓN DE PARADA
+        // Fin
         if (remainingRotation <= 0) {
             clearInterval(spinInterval);
             spinning = false;
-
-            // Fija la rotación de la RUEDA al ángulo exacto de parada
             wheelMesh.rotation.y = finalWheelRotation;
-            
-            // ✅ CORRECCIÓN 4: Fija la BOLA en la posición final (sobre el número ganador).
-            // La ruleta se ha detenido para que el número ganador esté en el eje Z positivo (ángulo 0).
-            ballMesh.position.set(
-                0, // X: 0 (Centro)
-                ballRestingHeight, // Altura final (sobre la mesa)
-                finalInnerRadius // Z: Radio interior donde se detiene
-            );
+
+            // Bola en número ganador
+            ballMesh.position.set(0, ballRestingHeight, finalInnerRadius);
 
             addLog(`Ruleta salió ${chosen}`);
 
@@ -319,9 +280,7 @@ function spinRoulette() {
                 const win = bet * 35;
                 balance += win;
                 addLog(`Ganaste $${win}!`);
-            } else {
-                 addLog(`Ruleta: Perdiste. El número ganador fue ${chosen}.`);
-            }
+            } else addLog(`Ruleta: Perdiste. El número ganador fue ${chosen}.`);
 
             updateHUD();
         }
@@ -329,7 +288,7 @@ function spinRoulette() {
     }, 16);
 }
 
-// ==================== BLACKJACK (igual que tu código) ====================
+// ==================== BLACKJACK ====================
 let bjPlayerCards=[], bjDealerCards=[], bjCurrentBet=0;
 function resetBlackjack(){ bjPlayerCards=[]; bjDealerCards=[]; }
 function getCard(){ 
@@ -388,7 +347,7 @@ function doubleBlackjack(){
   if(handValue(bjPlayerCards)<=21) standBlackjack();
 }
 
-// ==================== TRAGAPERRAS (igual que tu código) ====================
+// ==================== TRAGAPERRAS ====================
 const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
 const reelCanvases=[], reelTexes=[];
 
@@ -553,14 +512,7 @@ function animate(ts){
   camera.position.y=1.7;
   camera.rotation.set(pitch,yaw,0,'YXZ');
 
-  if(spinning){
-    wheelAngle += wheelSpeed * dt;
-    ballAngle  += ballSpeed  * dt;
-
-    wheelMesh.rotation.y = wheelAngle;
-    ballMesh.position.x = Math.cos(ballAngle) * (wheelRadius - 0.3);
-    ballMesh.position.z = Math.sin(ballAngle) * (wheelRadius - 0.3);
-  }
+  // ✅ Eliminamos animación de ruleta aquí, ya se controla dentro de spinRoulette()
 
   renderer.render(scene,camera);
 }
