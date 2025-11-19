@@ -208,71 +208,78 @@ function spinRoulette() {
 
     spinning = true;
 
+    // Elegir número ganador
     const chosen = pockets[Math.floor(Math.random() * pockets.length)];
     const pocketIndex = pockets.indexOf(chosen);
+
+    // Ángulo necesario para que el número ganador esté en eje Z positivo
     const requiredStopAngle = pocketIndex * anglePerPocket;
 
+    // Giro total de la rueda (varias vueltas)
     const totalRevolutions = 10;
     const baseRotation = Math.PI * 2 * totalRevolutions;
+
+    // Pequeña variación para que no siempre caiga en el centro exacto
     const finalAlignmentOffset = (Math.random() - 0.5) * anglePerPocket * 0.8;
+
     const finalWheelRotation = baseRotation - requiredStopAngle + finalAlignmentOffset;
 
+    let wheelSpeed = 8;
+    let ballSpeed = 30;
     let wheelAngle = 0;
     let remainingRotation = finalWheelRotation;
 
-    // Bola
-    const initialOuterRadius = wheelRadius - 0.2;
-    const finalInnerRadius = 1.8;
-    const fallRevolutions = 3;
-    const ballRestingHeight = 0.35;
-    const ballRollingHeight = 1.2;
+    // Radio de la bola (constante, no baja al centro)
+    const ballRadius = wheelRadius - 0.3; // mantiene la bola en la pista exterior
+    const ballHeight = 1.2; // altura fija de la bola
+
     let ballAngle = Math.random() * Math.PI * 2;
-    let wheelSpeed = 8;
-    let ballSpeed = 30;
 
     const spinInterval = setInterval(() => {
         const dt = 0.016;
 
-        // Rueda
+        // Frenado de la rueda
         if (remainingRotation > 0) {
             const brakeFactor = remainingRotation / (Math.PI * 2 * totalRevolutions);
-            wheelSpeed = Math.max(0, 8 * Math.sqrt(brakeFactor)); 
+            wheelSpeed = Math.max(0, 8 * Math.sqrt(brakeFactor));
         } else {
-            wheelSpeed = 0; 
+            wheelSpeed = 0;
         }
 
+        // Rotación de la rueda
         const rotationDelta = wheelSpeed * dt;
         if (remainingRotation > 0) {
             wheelAngle += rotationDelta;
             remainingRotation -= rotationDelta;
-            if (remainingRotation < 0) wheelAngle += remainingRotation;
+            if (remainingRotation < 0) {
+                wheelAngle += remainingRotation;
+                remainingRotation = 0;
+            }
         }
         wheelMesh.rotation.y = wheelAngle;
 
-        // Bola
-        ballSpeed *= 0.99;
+        // Rotación de la bola
+        ballSpeed *= 0.99; // frena suavemente
         ballAngle += ballSpeed * dt;
 
-        if (remainingRotation < Math.PI * 2 * fallRevolutions) { 
-            const fallProgress = 1 - (remainingRotation / (Math.PI * 2 * fallRevolutions));
-            const ballRadius = THREE.MathUtils.lerp(initialOuterRadius, finalInnerRadius, fallProgress);
-            ballMesh.position.y = THREE.MathUtils.lerp(ballRollingHeight, ballRestingHeight, fallProgress);
-            ballMesh.position.x = Math.cos(ballAngle) * ballRadius;
-            ballMesh.position.z = Math.sin(ballAngle) * ballRadius;
-        } else {
-            ballMesh.position.y = ballRollingHeight;
-            ballMesh.position.x = Math.cos(ballAngle) * initialOuterRadius;
-            ballMesh.position.z = Math.sin(ballAngle) * initialOuterRadius;
-        }
+        // Posicionamiento de la bola en radio constante y altura fija
+        ballMesh.position.x = Math.cos(ballAngle) * ballRadius;
+        ballMesh.position.z = Math.sin(ballAngle) * ballRadius;
+        ballMesh.position.y = ballHeight;
 
-        // Fin
+        // Detención de la ruleta
         if (remainingRotation <= 0) {
             clearInterval(spinInterval);
             spinning = false;
+
+            // Fijar rotación final exacta
             wheelMesh.rotation.y = finalWheelRotation;
 
-            // Bola en número ganador
-            ballMesh.position.set(0, ballRestingHeight, finalInnerRadius);
+            // Fijar bola sobre el número ganador
+            const finalAngle = -requiredStopAngle + finalAlignmentOffset;
+            ballMesh.position.x = Math.cos(finalAngle) * ballRadius;
+            ballMesh.position.z = Math.sin(finalAngle) * ballRadius;
+            ballMesh.position.y = ballHeight;
 
             addLog(`Ruleta salió ${chosen}`);
 
@@ -280,11 +287,12 @@ function spinRoulette() {
                 const win = bet * 35;
                 balance += win;
                 addLog(`Ganaste $${win}!`);
-            } else addLog(`Ruleta: Perdiste. El número ganador fue ${chosen}.`);
+            } else {
+                addLog(`Ruleta: Perdiste. El número ganador fue ${chosen}.`);
+            }
 
             updateHUD();
         }
-
     }, 16);
 }
 
