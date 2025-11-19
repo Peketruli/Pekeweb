@@ -45,7 +45,7 @@ canvas{display:block}
 </div>
 
 <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
-<script>
+  <script>
 // ==================== ESCENA Y CÁMARA ====================
 const wrap = document.getElementById('wrap');
 const scene = new THREE.Scene();
@@ -78,14 +78,12 @@ wall(50,10,2,0,5,-25); wall(50,10,2,0,5,25); wall(2,10,50,-25,5,0); wall(2,10,50
 // ==================== OBJETOS ====================
 // Ruleta
 const wheelRadius = 4;
-const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,
-                 23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
 const anglePerPocket = (Math.PI*2)/pockets.length;
 
 function createWheelCanvas(size=512){
   const c=document.createElement('canvas'); c.width=c.height=size;
-  const ctx=c.getContext('2d');
-  const cx=size/2, cy=size/2, r=size*0.45*size/512;
+  const ctx=c.getContext('2d'); const cx=size/2, cy=size/2, r=size*0.45;
   ctx.fillStyle='#072b22'; ctx.fillRect(0,0,size,size);
   for(let i=0;i<pockets.length;i++){
     const a0=i*anglePerPocket-Math.PI/2;
@@ -100,7 +98,6 @@ function createWheelCanvas(size=512){
   ctx.beginPath(); ctx.fillStyle='#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
   return c;
 }
-
 const wheelTex=new THREE.CanvasTexture(createWheelCanvas());
 const wheelMesh=new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius,wheelRadius,1.4,64), new THREE.MeshStandardMaterial({map:wheelTex}));
 wheelMesh.position.set(0,0.7,0); scene.add(wheelMesh);
@@ -114,14 +111,16 @@ const slotBody=new THREE.Mesh(new THREE.BoxGeometry(2,4,1.5), new THREE.MeshStan
 slotBody.position.set(10,2,-5); scene.add(slotBody);
 
 const symbols=['🍒','⭐','7','🍋','🔔','🍉'];
-const reelCanvases=[], reelTexes=[];
+const reelCanvases=[], reelTexes=[], reelPlanes=[];
 for(let i=0;i<3;i++){
   const c=document.createElement('canvas'); c.width=128;c.height=192;
   const ctx=c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,c.width,c.height);
   ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)],c.width/2,c.height/2);
-  reelCanvases.push(c);
-  reelTexes.push(new THREE.CanvasTexture(c));
+  reelCanvases.push(c); 
+  const tex=new THREE.CanvasTexture(c); reelTexes.push(tex);
+  const plane=new THREE.Mesh(new THREE.PlaneGeometry(1,1.5), new THREE.MeshBasicMaterial({map:tex}));
+  plane.position.set(10+(i-1)*1.1,3,-4.25); scene.add(plane); reelPlanes.push(plane);
 }
 
 // ==================== ZONAS DE INTERACCIÓN ====================
@@ -158,7 +157,6 @@ const panelContent=document.getElementById("panel-content");
 const prompt=document.getElementById("prompt");
 
 let currentZone=null;
-
 function detectZones(){
   currentZone=null;
   for(const z of zones){
@@ -173,29 +171,62 @@ document.addEventListener("keydown",e=>{
   if(e.key==='Escape') panel.style.display='none';
 });
 
-// ==================== PANEL JUEGOS ====================
-function openBlackjackUI(){
-  panelTitle.textContent='Blackjack';
-  panelContent.innerHTML=`<div class="card">A♠</div><div class="card">9♦</div><button class="btn" onclick="playBlackjack()">Jugar Mano</button>`;
-  panel.style.display='block';
-}
-function openSlotsUI(){
-  panelTitle.textContent='Tragaperras';
-  panelContent.innerHTML=`<button class="btn" onclick="spinSlots()">Girar</button>`;
-  panel.style.display='block';
-}
-function openRouletteUI(){
-  panelTitle.textContent='Ruleta';
-  panelContent.innerHTML=`<button class="btn" onclick="spinRoulette()">Girar Ruleta</button>`;
-  panel.style.display='block';
-}
-function closePanel(){ panel.style.display='none'; }
-
 // ==================== LOG ====================
 function addLog(msg){ const log=document.getElementById("log"); const div=document.createElement("div"); div.className='log-entry'; div.textContent=msg; log.prepend(div); }
 
-// ==================== FUNCIONES DE JUEGO ====================
-function playBlackjack(){ addLog(Math.random()<0.5?'Blackjack: Ganaste!':'Blackjack: Perdiste!'); }
+// ==================== BLACKJACK REAL ====================
+let blackjackDeck=[], playerHand=[], dealerHand=[], blackjackActive=false;
+
+function createDeck(){
+  const suits=['♠','♥','♦','♣'], ranks=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const deck=[];
+  for(const s of suits) for(const r of ranks) deck.push(r+s);
+  return shuffle(deck);
+}
+function shuffle(array){ for(let i=array.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [array[i],array[j]]=[array[j],array[i]]; } return array; }
+function cardValue(card){ const r=card.slice(0,-1); if(r==='A') return 11; if(['J','Q','K'].includes(r)) return 10; return parseInt(r); }
+function handValue(hand){ let total=0, aces=0; for(const c of hand){ total+=cardValue(c); if(c.slice(0,-1)==='A') aces++; } while(total>21 && aces>0){ total-=10; aces--; } return total; }
+
+function openBlackjackUI(){
+  blackjackDeck=createDeck(); playerHand=[]; dealerHand=[]; blackjackActive=true;
+  playerHand.push(blackjackDeck.pop()); playerHand.push(blackjackDeck.pop());
+  dealerHand.push(blackjackDeck.pop());
+  renderBlackjackUI();
+  panel.style.display='block';
+}
+
+function renderBlackjackUI(){
+  panelTitle.textContent='Blackjack';
+  const playerCards = playerHand.map(c=>`<span class="card">${c}</span>`).join(' ');
+  const dealerCards = dealerHand.map(c=>`<span class="card">${c}</span>`).join(' ');
+  panelContent.innerHTML=`
+    <div>Dealer: ${dealerCards} (${handValue(dealerHand)})</div>
+    <div>Tus cartas: ${playerCards} (${handValue(playerHand)})</div>
+    <button class="btn" onclick="hitBlackjack()">Pedir</button>
+    <button class="btn" onclick="standBlackjack()">Plantarse</button>
+  `;
+}
+
+function hitBlackjack(){
+  if(!blackjackActive) return;
+  playerHand.push(blackjackDeck.pop());
+  if(handValue(playerHand)>21){ addLog('Blackjack: Te pasaste! Perdiste.'); blackjackActive=false; }
+  renderBlackjackUI();
+}
+
+function standBlackjack(){
+  if(!blackjackActive) return;
+  while(handValue(dealerHand)<17){ dealerHand.push(blackjackDeck.pop()); }
+  const pScore=handValue(playerHand), dScore=handValue(dealerHand);
+  if(dScore>21 || pScore>dScore) addLog('Blackjack: Ganaste!');
+  else if(pScore===dScore) addLog('Blackjack: Empate.');
+  else addLog('Blackjack: Perdiste!');
+  blackjackActive=false;
+  renderBlackjackUI();
+}
+
+// ==================== SLOTS ====================
+function openSlotsUI(){ panelTitle.textContent='Tragaperras'; panelContent.innerHTML=`<button class="btn" onclick="spinSlots()">Girar</button>`; panel.style.display='block'; }
 function spinSlots(){
   for(let i=0;i<3;i++){
     const sym=symbols[Math.floor(Math.random()*symbols.length)];
@@ -205,11 +236,12 @@ function spinSlots(){
   }
   addLog('Tragaperras girada!');
 }
+
+// ==================== RULETA ====================
+function openRouletteUI(){ panelTitle.textContent='Ruleta'; panelContent.innerHTML=`<button class="btn" onclick="spinRoulette()">Girar Ruleta</button>`; panel.style.display='block'; }
 function spinRoulette(){
-  const chosen=Math.floor(Math.random()*pockets.length);
-  const number=pockets[chosen];
-  const start=wheelMesh.rotation.y;
-  const spins=4; const end=start+spins*2*Math.PI+chosen*anglePerPocket;
+  const chosen=Math.floor(Math.random()*pockets.length); const number=pockets[chosen];
+  const start=wheelMesh.rotation.y; const spins=5; const end=start+spins*2*Math.PI+chosen*anglePerPocket;
   const startTime=performance.now(); const duration=2000;
   function animateSpin(t){
     const p=(t-startTime)/duration;
@@ -235,6 +267,6 @@ requestAnimationFrame(animate);
 
 // ==================== RESIZE ====================
 window.addEventListener("resize",()=>{ camera.aspect=wrap.clientWidth/wrap.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(wrap.clientWidth,wrap.clientHeight); });
-</script>
+    </script>
 </body>
 </html>
