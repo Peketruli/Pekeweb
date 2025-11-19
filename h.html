@@ -296,14 +296,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   const dropdownMenu = document.getElementById("dropdownMenu");
   const adminPanel = document.getElementById("adminPanel");
   const timerAdmin = document.getElementById("timer-admin");
-  const timerBox = document.getElementById("global-timer"); // Asegúrate de tener <div id="global-timer"></div> en tu HTML
+  const timerBox = document.getElementById("global-timer"); // <div id="global-timer"></div>
 
   let sendingPetition = false;
   let sendingReport = false;
   let currentUser = null;
+  let countdownInterval = null;
 
   // -------------------------
-  //  Función para cargar info usuario
+  // Cargar info usuario
   // -------------------------
   async function loadUserInfo() {
     try {
@@ -332,7 +333,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (nameEl) nameEl.textContent = currentUser.username;
       if (logoEl) logoEl.src = currentUser.logo || "logoDefault.png";
 
-      // Mostrar panel admin solo a Peketruli
       if (currentUser.username === "Peketruli") {
         if (adminPanel) adminPanel.style.display = "block";
         if (timerAdmin) timerAdmin.style.display = "block";
@@ -350,7 +350,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   // -------------------------
-  //  Carga peticiones y reportes
+  // Peticiones y reportes
   // -------------------------
   async function loadAdminData() {
     if (!adminPanel) return;
@@ -377,9 +377,7 @@ document.addEventListener("DOMContentLoaded", async () => {
           tbodyP.appendChild(tr);
         });
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
 
     try {
       const { data: reportes, error: errR } = await supabase
@@ -399,36 +397,9 @@ document.addEventListener("DOMContentLoaded", async () => {
           tbodyR.appendChild(tr);
         });
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   }
 
-  // -------------------------
-  // Dropdown menú y logout
-  // -------------------------
-  if (userInfo && dropdownMenu) {
-    userInfo.addEventListener("click", (e) => {
-      e.stopPropagation();
-      dropdownMenu.style.display = dropdownMenu.style.display === "block" ? "none" : "block";
-    });
-
-    document.addEventListener("click", (e) => {
-      if (!userInfo.contains(e.target) && !dropdownMenu.contains(e.target)) {
-        dropdownMenu.style.display = "none";
-      }
-    });
-  }
-
-  window.logout = async function() {
-    try { await supabase.auth.signOut(); } catch {}
-    localStorage.removeItem("currentUser");
-    window.location.href = "l.html";
-  };
-
-  // -------------------------
-  // Peticiones y reportes
-  // -------------------------
   const petBtn = document.getElementById("enviarPeticionBtn");
   if (petBtn) petBtn.addEventListener("click", async () => {
     if (sendingPetition) return;
@@ -469,44 +440,50 @@ document.addEventListener("DOMContentLoaded", async () => {
   });
 
   // -------------------------
-  // Temporizador global
+  // Temporizador global con texto
   // -------------------------
-  let countdownInterval = null;
-
   async function loadTimer() {
     if (!timerBox) return;
-    const { data, error } = await supabase.from("event_timer").select("end_time").single();
+    const { data, error } = await supabase.from("event_timer").select("*").single();
     if (error || !data) {
       timerBox.textContent = "No hay temporizador activo.";
       return;
     }
-    startCountdown(new Date(data.end_time).getTime());
+    startCountdown(new Date(data.end_time).getTime(), data.texto || "");
   }
 
   async function saveTimer() {
-    const input = document.getElementById("timer-input").value;
-    if (!input) return alert("Selecciona fecha y hora.");
-    const endDate = new Date(input);
-    const { error } = await supabase.from("event_timer").upsert({ id: 1, end_time: endDate.toISOString() });
+    const dateInput = document.getElementById("timer-input").value;
+    const textInput = document.getElementById("timer-text").value || "";
+    if (!dateInput) return alert("Selecciona fecha y hora.");
+    const endDate = new Date(dateInput);
+
+    const { error } = await supabase.from("event_timer").upsert({
+      id: 1,
+      end_time: endDate.toISOString(),
+      texto: textInput
+    });
+
     if (error) return alert("Error al guardar temporizador.");
-    startCountdown(endDate.getTime());
-    alert("✅ Temporizador guardado.");
+    startCountdown(endDate.getTime(), textInput);
+    alert("✅ Temporizador guardado y activado.");
   }
 
-  function startCountdown(endTimestamp) {
+  function startCountdown(endTimestamp, texto = "") {
     if (!timerBox) return;
     if (countdownInterval) clearInterval(countdownInterval);
+
     countdownInterval = setInterval(() => {
       const diff = endTimestamp - Date.now();
       if (diff <= 0) {
-        timerBox.textContent = "⏳ ¡Tiempo agotado! ⏳";
+        timerBox.innerHTML = `⏳ ¡Tiempo agotado! ⏳<br>${texto}`;
         clearInterval(countdownInterval);
         return;
       }
       const h = Math.floor(diff / 1000 / 60 / 60);
       const m = Math.floor((diff / 1000 / 60) % 60);
       const s = Math.floor((diff / 1000) % 60);
-      timerBox.textContent = `⏱ Tiempo restante: ${h}h ${m}m ${s}s`;
+      timerBox.innerHTML = `⏱ Tiempo restante: ${h}h ${m}m ${s}s<br>${texto}`;
     }, 1000);
   }
 
@@ -514,14 +491,15 @@ document.addEventListener("DOMContentLoaded", async () => {
   const saveTimerBtn = document.getElementById("saveTimerBtn");
   if (saveTimerBtn) saveTimerBtn.addEventListener("click", saveTimer);
 
+  // -------------------------
   // Escapar HTML
+  // -------------------------
   function escapeHtml(text) {
     if (!text) return "";
     return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
                        .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
   }
 
-  // Cargar datos al iniciar
   await loadUserInfo();
   await loadTimer();
 });
