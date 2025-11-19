@@ -157,28 +157,86 @@ for(let i=0;i<3;i++){
 }
 alert("B: Mitad del código ejecutada");
 
-// ==================== ZONAS DE INTERACCIÓN ====================
-  alert("C5");
-
+// ===== ZONAS DE INTERACCIÓN (versión robusta) =====
 const zones = [
   {x:0,z:0,label:'Ruleta',action:openRouletteUI, mesh: wheelMesh},
   {x:-10,z:-5,label:'Blackjack',action:openBlackjackUI, mesh: bjTable},
   {x:10,z:-5,label:'Tragaperras',action:openSlotsUI, mesh: slotBody}
 ];
+
 let currentZone = null;
+
+// Guardamos colores/escala originales para restaurar
+for (const z of zones) {
+  if (z.mesh) {
+    z._origScale = z.mesh.scale.clone();
+    const mat = z.mesh.material;
+    if (mat) {
+      // Si el material tiene 'emissive', conservamos su valor original
+      if (mat.emissive !== undefined) z._origEmissive = mat.emissive.clone();
+      if (mat.emissiveIntensity !== undefined) z._origEmissiveIntensity = mat.emissiveIntensity;
+    }
+  }
+}
 
 function detectZones(){
   currentZone = null;
   for(const z of zones){
-    const dx = playerPos.x - z.x, dz = playerPos.z - z.z;
-    if(Math.sqrt(dx*dx+dz*dz)<3){
-      currentZone=z; prompt.style.display='block'; prompt.textContent='[E] '+z.label;
-      z.mesh.material.emissive = new THREE.Color(0xffc800);
-      z.mesh.material.emissiveIntensity = 0.6;
-    } else { z.mesh.material.emissiveIntensity = 0; }
+    try {
+      if (!z || !z.mesh) continue; // skip si no hay mesh definido (seguridad)
+      const dx = playerPos.x - z.x, dz = playerPos.z - z.z;
+      const inside = Math.sqrt(dx*dx+dz*dz) < 3;
+
+      if (inside) {
+        currentZone = z;
+        prompt.style.display = 'block';
+        prompt.textContent = '[E] ' + z.label;
+
+        // Intentamos usar emissive si está disponible
+        const mat = z.mesh.material;
+        if (mat) {
+          if (mat.emissive !== undefined) {
+            // setEmissive con .set para no reasignar el objeto material (más seguro)
+            if (!z._highlighting) {
+              mat.emissive.set(0xffc800);
+              if (mat.emissiveIntensity !== undefined) mat.emissiveIntensity = 0.6;
+              z._highlighting = true;
+            }
+          } else {
+            // Fallback: si no hay emissive, escalamos un poco para resaltar
+            if (!z._highlighting) {
+              z.mesh.scale.set(z._origScale.x * 1.03, z._origScale.y * 1.03, z._origScale.z * 1.03);
+              z._highlighting = true;
+            }
+          }
+        }
+      } else {
+        // Restaurar estado original si estaba resaltado
+        const mat = z.mesh.material;
+        if (mat && z._highlighting) {
+          if (mat.emissive !== undefined && z._origEmissive) {
+            mat.emissive.copy(z._origEmissive);
+            if (mat.emissiveIntensity !== undefined && z._origEmissiveIntensity !== undefined) {
+              mat.emissiveIntensity = z._origEmissiveIntensity;
+            }
+          } else {
+            // restaurar escala
+            if (z._origScale) z.mesh.scale.copy(z._origScale);
+          }
+          z._highlighting = false;
+        }
+      }
+    } catch (err) {
+      // Si algo falla aquí, no rompemos todo: lo logueamos y seguimos
+      // Si no tienes consola accesible, lo añadimos al HUD
+      addLog(`Error detectZones(): ${err.message}`);
+      // no throw;
+    }
   }
+
   if(!currentZone) prompt.style.display='none';
 }
+
 alert("C4");
 
 // ==================== MOVIMIENTO ====================
