@@ -295,11 +295,63 @@ document.addEventListener("DOMContentLoaded", async () => {
   const userInfo = document.getElementById("userInfo");
   const dropdownMenu = document.getElementById("dropdownMenu");
   const adminPanel = document.getElementById("adminPanel");
+  const timerAdmin = document.getElementById("timer-admin");
+  const timerBox = document.getElementById("global-timer"); // Asegúrate de tener <div id="global-timer"></div> en tu HTML
 
   let sendingPetition = false;
   let sendingReport = false;
+  let currentUser = null;
 
-  // Carga y pinta peticiones/reportes en el panel admin
+  // -------------------------
+  //  Función para cargar info usuario
+  // -------------------------
+  async function loadUserInfo() {
+    try {
+      const { data: { session } = {} } = await supabase.auth.getSession();
+      if (session?.user) {
+        currentUser = {
+          username: session.user.user_metadata?.username || session.user.email,
+          email: session.user.email,
+          logo: session.user.user_metadata?.logo || "logoDefault.png"
+        };
+        localStorage.setItem("currentUser", JSON.stringify(currentUser));
+      } else {
+        try { currentUser = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch {}
+      }
+    } catch (e) {
+      console.warn("No se pudo obtener session de supabase:", e);
+      try { currentUser = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch {}
+    }
+
+    // Mostrar info usuario
+    if (currentUser) {
+      if (userInfo) userInfo.style.display = "flex";
+      if (authContainer) authContainer.style.display = "none";
+      const nameEl = document.getElementById("userName");
+      const logoEl = document.getElementById("userLogo");
+      if (nameEl) nameEl.textContent = currentUser.username;
+      if (logoEl) logoEl.src = currentUser.logo || "logoDefault.png";
+
+      // Mostrar panel admin solo a Peketruli
+      if (currentUser.username === "Peketruli") {
+        if (adminPanel) adminPanel.style.display = "block";
+        if (timerAdmin) timerAdmin.style.display = "block";
+        await loadAdminData();
+      } else {
+        if (adminPanel) adminPanel.style.display = "none";
+        if (timerAdmin) timerAdmin.style.display = "none";
+      }
+    } else {
+      if (userInfo) userInfo.style.display = "none";
+      if (authContainer) authContainer.style.display = "flex";
+      if (adminPanel) adminPanel.style.display = "none";
+      if (timerAdmin) timerAdmin.style.display = "none";
+    }
+  }
+
+  // -------------------------
+  //  Carga peticiones y reportes
+  // -------------------------
   async function loadAdminData() {
     if (!adminPanel) return;
     const tbodyP = document.querySelector("#peticionesTable tbody");
@@ -314,7 +366,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         .order("id", { ascending: false });
 
       if (errP) {
-        console.error("Error cargando peticiones:", errP);
         tbodyP.innerHTML = `<tr><td colspan="4" style="color:red;">Error cargando peticiones</td></tr>`;
       } else if (!peticiones || peticiones.length === 0) {
         tbodyP.innerHTML = `<tr><td colspan="4">No hay peticiones</td></tr>`;
@@ -327,8 +378,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
       }
     } catch (e) {
-      console.error("Excepción al cargar peticiones:", e);
-      if (tbodyP) tbodyP.innerHTML = `<tr><td colspan="4" style="color:red;">Error interno</td></tr>`;
+      console.error(e);
     }
 
     try {
@@ -338,7 +388,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         .order("id", { ascending: false });
 
       if (errR) {
-        console.error("Error cargando reportes:", errR);
         tbodyR.innerHTML = `<tr><td colspan="5" style="color:red;">Error cargando reportes</td></tr>`;
       } else if (!reportes || reportes.length === 0) {
         tbodyR.innerHTML = `<tr><td colspan="5">No hay reportes</td></tr>`;
@@ -351,57 +400,13 @@ document.addEventListener("DOMContentLoaded", async () => {
         });
       }
     } catch (e) {
-      console.error("Excepción al cargar reportes:", e);
-      if (tbodyR) tbodyR.innerHTML = `<tr><td colspan="5" style="color:red;">Error interno</td></tr>`;
+      console.error(e);
     }
   }
 
-  // Carga info de usuario y muestra panel admin si es Peketruli
-  async function loadUserInfo() {
-    let user = null;
-    try {
-      const { data: { session } = {} } = await supabase.auth.getSession();
-      if (session?.user) {
-        user = {
-          username: session.user.user_metadata?.username || session.user.email,
-          email: session.user.email,
-          logo: session.user.user_metadata?.logo || "logoDefault.png"
-        };
-        localStorage.setItem("currentUser", JSON.stringify(user));
-      } else {
-        try { user = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch {}
-      }
-    } catch (e) {
-      console.warn("No se pudo obtener session de supabase:", e);
-      try { user = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch {}
-    }
-
-    if (user) {
-      if (userInfo) userInfo.style.display = "flex";
-      if (authContainer) authContainer.style.display = "none";
-      const nameEl = document.getElementById("userName");
-      const logoEl = document.getElementById("userLogo");
-      if (nameEl) nameEl.textContent = user.username;
-      if (logoEl) logoEl.src = user.logo || "logoDefault.png";
-
-      if (user.username === "Peketruli") {
-        if (adminPanel) {
-          adminPanel.style.display = "block";
-          await loadAdminData();
-        }
-      } else {
-        if (adminPanel) adminPanel.style.display = "none";
-      }
-    } else {
-      if (userInfo) userInfo.style.display = "none";
-      if (authContainer) authContainer.style.display = "flex";
-      if (adminPanel) adminPanel.style.display = "none";
-    }
-  }
-
-  await loadUserInfo();
-
-  // Dropdown menú usuario
+  // -------------------------
+  // Dropdown menú y logout
+  // -------------------------
   if (userInfo && dropdownMenu) {
     userInfo.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -415,179 +420,111 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
   }
 
-  // Logout
   window.logout = async function() {
-    try { await supabase.auth.signOut(); } catch (e) { console.warn("signOut error", e); }
+    try { await supabase.auth.signOut(); } catch {}
     localStorage.removeItem("currentUser");
     window.location.href = "l.html";
   };
 
-  // Enviar petición
+  // -------------------------
+  // Peticiones y reportes
+  // -------------------------
   const petBtn = document.getElementById("enviarPeticionBtn");
-  if (petBtn) {
-    petBtn.addEventListener("click", async function () {
-      if (sendingPetition) return;
-      const contenido = (document.getElementById("peticionInput")?.value || "").trim();
-      if (!contenido) return alert("Escribe algo antes de enviar.");
+  if (petBtn) petBtn.addEventListener("click", async () => {
+    if (sendingPetition) return;
+    const contenido = (document.getElementById("peticionInput")?.value || "").trim();
+    if (!contenido) return alert("Escribe algo antes de enviar.");
+    sendingPetition = true;
+    petBtn.disabled = true;
+    try {
+      const created_at = new Date().toISOString();
+      const { error } = await supabase.from("peticiones").insert([{ usuario: currentUser.username, contenido, created_at }]);
+      if (error) alert("Error al enviar petición.");
+      else document.getElementById("peticionInput").value = "";
+      await loadAdminData();
+    } finally {
+      sendingPetition = false;
+      petBtn.disabled = false;
+    }
+  });
 
-      sendingPetition = true;
-      petBtn.disabled = true;
-
-      try {
-        const user = JSON.parse(localStorage.getItem("currentUser") || "null") || { username: "Anónimo" };
-        const created_at = new Date().toISOString();
-
-        const { error } = await supabase
-          .from("peticiones")
-          .insert([{ usuario: user.username, contenido, created_at }]);
-
-        if (error) {
-          console.error("Error insert peticion:", error);
-          alert("Error al enviar: " + (error.message || JSON.stringify(error)));
-        } else {
-          const input = document.getElementById("peticionInput");
-          if (input) input.value = "";
-          alert("✅ ¡Petición enviada!");
-          await loadAdminData();
-        }
-      } catch (e) {
-        console.error("Excepción al enviar peticion:", e);
-        alert("Error al enviar la petición.");
-      } finally {
-        sendingPetition = false;
-        petBtn.disabled = false;
-      }
-    });
-  }
-
-  // Enviar reporte
   const repBtn = document.getElementById("enviarReporteBtn");
-  if (repBtn) {
-    repBtn.addEventListener("click", async function () {
-      if (sendingReport) return;
-      const descripcion = (document.getElementById("reporteInput")?.value || "").trim();
-      if (!descripcion) return alert("Describe el reporte antes de enviar.");
+  if (repBtn) repBtn.addEventListener("click", async () => {
+    if (sendingReport) return;
+    const descripcion = (document.getElementById("reporteInput")?.value || "").trim();
+    if (!descripcion) return alert("Describe el reporte antes de enviar.");
+    sendingReport = true;
+    repBtn.disabled = true;
+    try {
+      const tipo = document.getElementById("tipoReporte")?.value || "otro";
+      const created_at = new Date().toISOString();
+      const { error } = await supabase.from("reportes").insert([{ usuario: currentUser.username, tipo, descripcion, created_at }]);
+      if (error) alert("Error al enviar reporte.");
+      else document.getElementById("reporteInput").value = "";
+      await loadAdminData();
+    } finally {
+      sendingReport = false;
+      repBtn.disabled = false;
+    }
+  });
 
-      sendingReport = true;
-      repBtn.disabled = true;
+  // -------------------------
+  // Temporizador global
+  // -------------------------
+  let countdownInterval = null;
 
-      try {
-        const tipo = document.getElementById("tipoReporte")?.value || "otro";
-        const user = JSON.parse(localStorage.getItem("currentUser") || "null") || { username: "Anónimo" };
-        const created_at = new Date().toISOString();
-
-        const { error } = await supabase
-          .from("reportes")
-          .insert([{ usuario: user.username, tipo, descripcion, created_at }]);
-
-        if (error) {
-          console.error("Error insert reporte:", error);
-          alert("Error al enviar: " + (error.message || JSON.stringify(error)));
-        } else {
-          const input = document.getElementById("reporteInput");
-          if (input) input.value = "";
-          alert("✅ ¡Reporte enviado!");
-          await loadAdminData();
-        }
-      } catch (e) {
-        console.error("Excepción al enviar reporte:", e);
-        alert("Error al enviar el reporte.");
-      } finally {
-        sendingReport = false;
-        repBtn.disabled = false;
-      }
-    });
-  }
-
-  // Utilidad: escape simple para mostrar texto de usuarios en tablas
-  function escapeHtml(text) {
-    if (text === null || text === undefined) return "";
-    return String(text)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-});
-
-  // ------------------------------
-//  🔔 TEMPORIZADOR GLOBAL
-// ------------------------------
-
-const timerBox = document.getElementById("global-timer");
-const timerAdmin = document.getElementById("timer-admin");
-
-// Mostrar panel admin solo si el usuario actual es Peketruli
-if (userName === "Peketruli") {
-    timerAdmin.style.display = "block";
-}
-
-// Cargar temporizador al entrar
-async function loadTimer() {
-    const { data, error } = await supabase
-        .from("event_timer")
-        .select("end_time")
-        .single();
-
+  async function loadTimer() {
+    if (!timerBox) return;
+    const { data, error } = await supabase.from("event_timer").select("end_time").single();
     if (error || !data) {
-        timerBox.textContent = "No hay temporizador activo.";
-        return;
+      timerBox.textContent = "No hay temporizador activo.";
+      return;
     }
-
     startCountdown(new Date(data.end_time).getTime());
-}
+  }
 
-// Guardar temporizador (solo admin)
-async function saveTimer() {
+  async function saveTimer() {
     const input = document.getElementById("timer-input").value;
-    if (!input) return alert("Selecciona una fecha y hora.");
-
+    if (!input) return alert("Selecciona fecha y hora.");
     const endDate = new Date(input);
-
-    // Guarda o reemplaza la fila
-    const { error } = await supabase
-        .from("event_timer")
-        .upsert({ id: 1, end_time: endDate.toISOString() });
-
-    if (error) {
-        alert("Error al guardar temporizador.");
-        return;
-    }
-
-    alert("Temporizador actualizado.");
+    const { error } = await supabase.from("event_timer").upsert({ id: 1, end_time: endDate.toISOString() });
+    if (error) return alert("Error al guardar temporizador.");
     startCountdown(endDate.getTime());
-}
+    alert("✅ Temporizador guardado.");
+  }
 
-// Iniciar cuenta atrás
-let countdownInterval = null;
-
-function startCountdown(endTimestamp) {
+  function startCountdown(endTimestamp) {
+    if (!timerBox) return;
     if (countdownInterval) clearInterval(countdownInterval);
-
     countdownInterval = setInterval(() => {
-        const now = Date.now();
-        const diff = endTimestamp - now;
-
-        if (diff <= 0) {
-            timerBox.textContent = "⏳ Temporizador ⏳";
-            clearInterval(countdownInterval);
-            return;
-        }
-
-        const hours = Math.floor(diff / 1000 / 60 / 60);
-        const minutes = Math.floor((diff / 1000 / 60) % 60);
-        const seconds = Math.floor((diff / 1000) % 60);
-
-        timerBox.textContent = 
-            `⏳ Tiempo restante: ${hours}h ${minutes}m ${seconds}s`;
-
+      const diff = endTimestamp - Date.now();
+      if (diff <= 0) {
+        timerBox.textContent = "⏳ ¡Tiempo agotado! ⏳";
+        clearInterval(countdownInterval);
+        return;
+      }
+      const h = Math.floor(diff / 1000 / 60 / 60);
+      const m = Math.floor((diff / 1000 / 60) % 60);
+      const s = Math.floor((diff / 1000) % 60);
+      timerBox.textContent = `⏱ Tiempo restante: ${h}h ${m}m ${s}s`;
     }, 1000);
-}
+  }
 
-// Cargar el temporizador al abrir la web
-loadTimer();
+  // Botón guardar temporizador
+  const saveTimerBtn = document.getElementById("saveTimerBtn");
+  if (saveTimerBtn) saveTimerBtn.addEventListener("click", saveTimer);
 
+  // Escapar HTML
+  function escapeHtml(text) {
+    if (!text) return "";
+    return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
+                       .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
+  }
+
+  // Cargar datos al iniciar
+  await loadUserInfo();
+  await loadTimer();
+});
 </script>
 </body>
 </html>
