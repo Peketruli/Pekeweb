@@ -66,7 +66,8 @@
 
   <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 
-  <script>// ==================== SETUP GENERAL ====================
+<script>
+// ==================== SETUP GENERAL ====================
 const wrap = document.getElementById('wrap');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x041018);
@@ -242,72 +243,37 @@ for(let i=0;i<3;i++){
   reelPlanes.push(p);
 }
 
-// ==================== ZONAS DE INTERACCIÓN ======================
-// ahora AGANDADAS y con zona para la ruleta
-const ruletaZone = new THREE.Box3().setFromCenterAndSize(
-  new THREE.Vector3(0,0.7,0),
-  new THREE.Vector3(16,6,16)
-);
-
-const slotZone = new THREE.Box3().setFromCenterAndSize(
-  new THREE.Vector3(14,3,-6),
-  new THREE.Vector3(7,7,6)
-);
-
-const bjZone = new THREE.Box3().setFromCenterAndSize(
-  new THREE.Vector3(-14,1,-6),
-  new THREE.Vector3(15,6,8)
-);
-
-// ==================== MOVIMIENTO + COLISIONES ====================
-const keys = {
-  w:false, a:false, s:false, d:false,
-  ArrowLeft:false, ArrowRight:false, ArrowUp:false, ArrowDown:false
-};
+// ==================== MOVIMIENTO FPS ====================
+const keys = { w:false,a:false,s:false,d:false,
+               ArrowLeft:false,ArrowRight:false,ArrowUp:false,ArrowDown:false };
 
 const speed = 5.2;
+window.addEventListener("keydown", e=>{ if(e.key in keys) keys[e.key]=true });
+window.addEventListener("keyup", e=>{ if(e.key in keys) keys[e.key]=false });
 
-window.addEventListener("keydown", e=>{
-  if(e.key in keys) keys[e.key] = true;
-});
-window.addEventListener("keyup", e=>{
-  if(e.key in keys) keys[e.key] = false;
-});
-
-// Movimiento FPS
 function computeDelta(dt){
-  // Rotación con flechas
-  const rotSpeed = 1.4 * dt;
+  const rotSpeed = 1.4*dt;
   if(keys.ArrowLeft) yaw += rotSpeed;
   if(keys.ArrowRight) yaw -= rotSpeed;
-  if(keys.ArrowUp) pitch += rotSpeed * 0.5;
-  if(keys.ArrowDown) pitch -= rotSpeed * 0.5;
+  if(keys.ArrowUp) pitch += rotSpeed*0.5;
+  if(keys.ArrowDown) pitch -= rotSpeed*0.5;
 
-  // Limitar pitch
   pitch = Math.max(-1.2, Math.min(1.2, pitch));
 
-  const e=new THREE.Euler(pitch, yaw, 0, "YXZ");
+  const e=new THREE.Euler(pitch, yaw,0,"YXZ");
   const q=new THREE.Quaternion().setFromEuler(e);
 
-  const forward=new THREE.Vector3(0,0,-1).applyQuaternion(q);
-  forward.y=0; forward.normalize();
+  const forward=new THREE.Vector3(0,0,-1).applyQuaternion(q); forward.y=0; forward.normalize();
+  const right=new THREE.Vector3(1,0,0).applyQuaternion(q); right.y=0; right.normalize();
 
-  const right=new THREE.Vector3(1,0,0).applyQuaternion(q);
-  right.y=0; right.normalize();
-
-  let mf=0, mr=0;
-  if(keys.w) mf+=1;
-  if(keys.s) mf-=1;
-  if(keys.a) mr-=1;
-  if(keys.d) mr+=1;
-
-  const len=Math.hypot(mf,mr);
-  if(len>0){ mf/=len; mr/=len; }
+  let mf=0,mr=0;
+  if(keys.w) mf+=1; if(keys.s) mf-=1;
+  if(keys.a) mr-=1; if(keys.d) mr+=1;
+  const len=Math.hypot(mf,mr); if(len>0){mf/=len;mr/=len;}
 
   const delta=new THREE.Vector3();
-  delta.addScaledVector(forward, mf*speed*dt);
-  delta.addScaledVector(right, mr*speed*dt);
-
+  delta.addScaledVector(forward,mf*speed*dt);
+  delta.addScaledVector(right,mr*speed*dt);
   return delta;
 }
 
@@ -318,294 +284,96 @@ function checkCollision(pos){
   return false;
 }
 
-// ==================== HUD / INTERACCIÓN ====================
-const prompt = document.getElementById("prompt");
-let nearZone = null;
-
-function detectZones(){
-  const eye = playerPos.clone();
-  eye.y = camera.position.y;
-
-  if(ruletaZone.containsPoint(eye)){
-    nearZone = "ruleta";
-    prompt.style.display = "block";
-    prompt.textContent = "[E] Ruleta";
-    return;
-  }
-  if(slotZone.containsPoint(eye)){
-    nearZone = "slot";
-    prompt.style.display = "block";
-    prompt.textContent = "[E] Tragaperras";
-    return;
-  }
-  if(bjZone.containsPoint(eye)){
-    nearZone = "blackjack";
-    prompt.style.display = "block";
-    prompt.textContent = "[E] Blackjack";
-    return;
-  }
-
-  nearZone = null;
-  prompt.style.display = "none";
-}
-
-window.addEventListener("keydown", e=>{
-  if(e.key==="e" && nearZone){
-    alert("Interacción con: " + nearZone + " (UI todavía no implementada)");
-  }
-});
-
-    // ==========================
-// CONTROLES DE CÁMARA
-// ==========================
-document.addEventListener("keydown", (e) => {
-    const rotSpeed = 0.03;
-    if (e.key === "ArrowLeft") camera.rotation.y += rotSpeed;
-    if (e.key === "ArrowRight") camera.rotation.y -= rotSpeed;
-});
-
-
-// ==========================
-// ZONAS DE INTERACCIÓN
-// ==========================
-
-// FORMATO:
-// { x, z, radius, label, action }
-
+// ==================== INTERACCIÓN ====================
 const interactionZones = [
-    {
-        label: "Blackjack",
-        x: 5,
-        z: -4,
-        radius: 2.8, // AUMENTADO
-        action: openBlackjackUI
-    },
-    {
-        label: "Tragaperras",
-        x: -4,
-        z: 0,
-        radius: 3.2, // AUMENTADO
-        action: openSlotsUI
-    },
-    {
-        label: "Ruleta",
-        x: 5,
-        z: 4,
-        radius: 3.5, // AÑADIDA
-        action: openRouletteUI
-    }
+    { label:"Blackjack", x:-14, z:-6, radius:3, action:()=>openBlackjackUI() },
+    { label:"Tragaperras", x:14, z:-6, radius:3, action:()=>openSlotsUI() },
+    { label:"Ruleta", x:0, z:0, radius:7, action:()=>openRouletteUI() }
 ];
 
-
-// ==========================
-// DETECTAR ZONA ACTIVA
-// ==========================
 let currentZone = null;
 
-function checkInteractionZones() {
+function checkInteractionZones(){
     currentZone = null;
-
-    for (const zone of interactionZones) {
-        const dx = camera.position.x - zone.x;
-        const dz = camera.position.z - zone.z;
-        const dist = Math.sqrt(dx * dx + dz * dz);
-
-        if (dist < zone.radius) {
-            currentZone = zone;
-            showInteractionTooltip(zone.label);
+    for(const z of interactionZones){
+        const dx = camera.position.x - z.x;
+        const dz = camera.position.z - z.z;
+        const dist = Math.sqrt(dx*dx+dz*dz);
+        if(dist<z.radius){
+            currentZone = z;
+            document.getElementById("prompt").textContent=`[E] ${z.label}`;
+            document.getElementById("prompt").style.display="block";
             return;
         }
     }
-
-    hideInteractionTooltip();
+    document.getElementById("prompt").style.display="none";
 }
 
-function showInteractionTooltip(name) {
-    const t = document.getElementById("interaction-tip");
-    t.textContent = `Pulsa E para interactuar con ${name}`;
-    t.style.display = "block";
-}
-
-function hideInteractionTooltip() {
-    const t = document.getElementById("interaction-tip");
-    t.style.display = "none";
-}
-
-
-// ==========================
-// INTERACCIÓN (E)
-// ==========================
-document.addEventListener("keydown", (e) => {
-    if (e.key.toLowerCase() === "e" && currentZone) {
+document.addEventListener("keydown",(e)=>{
+    if(e.key.toLowerCase()==="e" && currentZone){
         currentZone.action();
     }
 });
 
+// ==================== FUNCIONES DE JUEGO ====================
+function openBlackjackUI(){ document.getElementById("blackjack-ui").style.display="block"; }
+function openSlotsUI(){ document.getElementById("slots-ui").style.display="block"; }
+function openRouletteUI(){ document.getElementById("roulette-ui").style.display="block"; }
 
-// ==========================
-// COLISIONES SIMPLES
-// ==========================
+function playBlackjack(){ alert(Math.random()<0.5?"Blackjack: Ganaste!":"Blackjack: Perdiste!"); }
 
-const colliders = [
-    { x: 5, z: -4, radius: 2 },   // Blackjack
-    { x: -4, z: 0, radius: 2 },   // Tragaperras
-    { x: 5, z: 4, radius: 2 },    // Ruleta
-];
-
-function preventWalkingThroughMachines() {
-    const speed = 0.15;
-
-    let intendedX = camera.position.x;
-    let intendedZ = camera.position.z;
-
-    // Movimiento (WASD)
-    document.addEventListener("keydown", (e) => {
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-
-        if (e.key === "w") {
-            intendedX += dir.x * speed;
-            intendedZ += dir.z * speed;
-        }
-        if (e.key === "s") {
-            intendedX -= dir.x * speed;
-            intendedZ -= dir.z * speed;
-        }
-        if (e.key === "a") {
-            intendedX += dir.z * speed;
-            intendedZ -= dir.x * speed;
-        }
-        if (e.key === "d") {
-            intendedX -= dir.z * speed;
-            intendedZ += dir.x * speed;
-        }
-
-        // Comprobar colisiones
-        for (const c of colliders) {
-            const dx = intendedX - c.x;
-            const dz = intendedZ - c.z;
-            const dist = Math.sqrt(dx * dx + dz * dz);
-
-            if (dist < c.radius) {
-                return; // BLOQUEA movimiento
-            }
-        }
-
-        // Si no hay colisiones: actualizar posición
-        camera.position.x = intendedX;
-        camera.position.z = intendedZ;
-    });
-}
-
-preventWalkingThroughMachines();
-
-
-// ==========================
-// FUNCIONES DE JUEGO
-// ==========================
-
-function openBlackjackUI() {
-    document.getElementById("blackjack-ui").style.display = "block";
-}
-
-function openSlotsUI() {
-    document.getElementById("slots-ui").style.display = "block";
-}
-
-function openRouletteUI() {
-    document.getElementById("roulette-ui").style.display = "block";
-}
-
-    function playBlackjack() {
-    const result = Math.random() < 0.5 ? "Ganaste!" : "Perdiste!";
-    alert(`Blackjack: ${result}`);
-}
-
-    function spinSlots() {
-    for(let i=0; i<3; i++){
-        const symbol = symbols[Math.floor(Math.random()*symbols.length)];
-        const ctx = reelCanvases[i].getContext("2d");
-
-        // Limpiar y dibujar nuevo símbolo
-        ctx.fillStyle='#070707';
-        ctx.fillRect(0,0,reelCanvases[i].width,reelCanvases[i].height);
-        ctx.fillStyle='#fff';
-        ctx.font='64px sans-serif';
-        ctx.textAlign='center';
-        ctx.textBaseline='middle';
-        ctx.fillText(symbol, reelCanvases[i].width/2, reelCanvases[i].height/2);
-
-        reelTexes[i].needsUpdate = true;
+function spinSlots(){
+    for(let i=0;i<3;i++){
+        const symbol=symbols[Math.floor(Math.random()*symbols.length)];
+        const ctx=reelCanvases[i].getContext("2d");
+        ctx.fillStyle="#070707"; ctx.fillRect(0,0,reelCanvases[i].width,reelCanvases[i].height);
+        ctx.fillStyle="#fff"; ctx.font="64px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
+        ctx.fillText(symbol,reelCanvases[i].width/2,reelCanvases[i].height/2);
+        reelTexes[i].needsUpdate=true;
     }
-
-    // Comprobar si hay premio (si los 3 coinciden)
-    const s0 = reelCanvases[0].getContext("2d").canvas.toDataURL();
-    const s1 = reelCanvases[1].getContext("2d").canvas.toDataURL();
-    const s2 = reelCanvases[2].getContext("2d").canvas.toDataURL();
-
-    // Muy básico: solo notificación
     alert("Tragaperras girada!");
 }
 
-    function spinRoulette() {
-    // Elegir número aleatorio
-    const chosenIndex = Math.floor(Math.random() * pockets.length);
-    const chosenNumber = pockets[chosenIndex];
-
-    // Animar la ruleta (simplificado)
-    let startRotation = wheelMesh.rotation.y;
-    const spins = 5; // vueltas completas
-    const endRotation = startRotation + spins * Math.PI*2 + chosenIndex * anglePerPocket;
-
-    const duration = 2000; // 2 segundos
-    const startTime = performance.now();
-
-    function animateSpin(now) {
-        const t = (now - startTime)/duration;
-        if(t < 1){
-            const ease = 1 - Math.pow(1-t,3); // easing cubic out
-            wheelMesh.rotation.y = startRotation + (endRotation-startRotation)*ease;
-            requestAnimationFrame(animateSpin);
-        } else {
-            wheelMesh.rotation.y = endRotation;
-            alert(`Ruleta: salió el ${chosenNumber}`);
-        }
+function spinRoulette(){
+    const chosenIndex=Math.floor(Math.random()*pockets.length);
+    const chosenNumber=pockets[chosenIndex];
+    const startRotation = wheelMesh.rotation.y;
+    const endRotation = startRotation + 5*Math.PI*2 + chosenIndex*anglePerPocket;
+    const duration=2000; const startTime=performance.now();
+    function animateSpin(now){
+        const t=(now-startTime)/duration;
+        if(t<1){ const ease=1-Math.pow(1-t,3); wheelMesh.rotation.y=startRotation+(endRotation-startRotation)*ease; requestAnimationFrame(animateSpin); }
+        else { wheelMesh.rotation.y=endRotation; alert(`Ruleta: salió el ${chosenNumber}`); }
     }
     requestAnimationFrame(animateSpin);
 }
 
 // ==================== ANIMACIÓN ====================
-let lastTime = 0;
-
+let lastTime=0;
 function animate(ts){
-  requestAnimationFrame(animate);
-  const dt = (ts - lastTime) * 0.001;
-  lastTime = ts;
+    requestAnimationFrame(animate);
+    const dt=(ts-lastTime)*0.001; lastTime=ts;
 
-  detectZones();
+    checkInteractionZones();
 
-  const delta = computeDelta(dt);
-  const next = playerPos.clone().add(delta);
+    const delta=computeDelta(dt);
+    const next=playerPos.clone().add(delta);
+    if(!checkCollision(next)) playerPos.copy(next);
 
-  if(!checkCollision(next)){
-    playerPos.copy(next);
-  }
+    camera.position.copy(playerPos);
+    camera.position.y=1.7;
+    camera.rotation.set(pitch,yaw,0,"YXZ");
 
-  camera.position.copy(playerPos);
-  camera.position.y = 1.7;
-  camera.rotation.set(pitch, yaw, 0, "YXZ");
-
-  renderer.render(scene, camera);
+    renderer.render(scene,camera);
 }
-
 requestAnimationFrame(animate);
 
 // Responsive
-window.addEventListener("resize", ()=>{
-  camera.aspect = wrap.clientWidth / wrap.clientHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+window.addEventListener("resize",()=>{
+    camera.aspect=wrap.clientWidth/wrap.clientHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(wrap.clientWidth,wrap.clientHeight);
 });
-  </script>
+</script>
 </body>
 </html>
