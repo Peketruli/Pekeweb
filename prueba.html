@@ -59,12 +59,13 @@ wrap.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(72, wrap.clientWidth/wrap.clientHeight, 0.1, 1000);
 camera.position.set(0,1.7,12);
+camera.lookAt(0,0.7,0); // Mira al centro del casino
 
 let playerPos = new THREE.Vector3(0,0,12);
 let yaw = 0, pitch = 0;
 
 // LUCES
-scene.add(new THREE.AmbientLight(0xffffff,0.35));
+scene.add(new THREE.AmbientLight(0xffffff,0.5));
 const dir = new THREE.DirectionalLight(0xffffff,0.9);
 dir.position.set(8,20,10); scene.add(dir);
 const bulb = new THREE.PointLight(0xfff3d6,0.9,200); bulb.position.set(0,20,0); scene.add(bulb);
@@ -126,53 +127,55 @@ for(let i=0;i<3;i++){
   p.position.set(14+(i-1)*1.1,4,-5.1); scene.add(p); reelPlanes.push(p);
 }
 
-// ZONAS DE INTERACCIÓN
+// ==================== ZONAS DE INTERACCIÓN ====================
 const zones = [
   {x:-14,z:-6,label:"Blackjack",action:openBlackjackUI},
   {x:14,z:-6,label:"Tragaperras",action:openSlotsUI},
-  {x:0,z:0,label:"Ruleta",action:openRouletteUI} // Ajusta posición
+  {x:0,z:0,label:"Ruleta",action:openRouletteUI}
 ];
 
 const colliders=[
   {x:-14,z:-6,radius:3},{x:14,z:-6,radius:3},{x:0,z:0,radius:6}
 ];
 
+// ==================== CONTROLES ====================
 const keys={w:false,a:false,s:false,d:false,ArrowLeft:false,ArrowRight:false,ArrowUp:false,ArrowDown:false};
 const speed=5.2;
 window.addEventListener("keydown",e=>{ if(e.key in keys) keys[e.key]=true; });
 window.addEventListener("keyup",e=>{ if(e.key in keys) keys[e.key]=false; });
 
-// ==========================
-// PANEL DE INTERACCIÓN
-// ==========================
+// ==================== PANEL DE INTERACCIÓN ====================
 const panel=document.getElementById("interaction-panel");
 const panelTitle=document.getElementById("panel-title");
 const panelContent=document.getElementById("panel-content");
+
 function openBlackjackUI(){
   panelTitle.textContent="Blackjack";
   panelContent.innerHTML=`<div class="bj-cards">Tus cartas: <span class="card">A♠</span> <span class="card">9♦</span></div>
   <button class="btn" onclick="playBlackjack()">Jugar Mano</button>`;
   panel.style.display="block";
 }
+
 function openSlotsUI(){
   panelTitle.textContent="Tragaperras";
   panelContent.innerHTML=`<button class="btn" onclick="spinSlots()">Girar</button>`;
   panel.style.display="block";
 }
+
 function openRouletteUI(){
   panelTitle.textContent="Ruleta";
   panelContent.innerHTML=`<button class="btn" onclick="spinRoulette()">Girar Ruleta</button>`;
   panel.style.display="block";
 }
+
 function closePanel(){ panel.style.display="none"; }
 
-// ==========================
-// JUEGOS
-// ==========================
+// ==================== JUEGOS ====================
 function playBlackjack(){
   const win=Math.random()<0.5;
   addLog(`Blackjack: ${win?"Ganaste!":"Perdiste!"}`);
 }
+
 function spinSlots(){
   for(let i=0;i<3;i++){
     const sym=symbols[Math.floor(Math.random()*symbols.length)];
@@ -184,25 +187,31 @@ function spinSlots(){
   }
   addLog("Tragaperras girada!");
 }
+
 function spinRoulette(){
   const chosenIndex=Math.floor(Math.random()*pockets.length);
   const chosenNumber=pockets[chosenIndex];
   const startRotation=wheelMesh.rotation.y;
-  const spins=5; const endRotation=startRotation+spins*Math.PI*2+chosenIndex*anglePerPocket;
+  const spins=5; 
+  const endRotation=startRotation+spins*Math.PI*2+chosenIndex*anglePerPocket;
   const duration=2000; const startTime=performance.now();
   function animateSpin(now){
     const t=(now-startTime)/duration;
-    if(t<1){ const ease=1-Math.pow(1-t,3); wheelMesh.rotation.y=startRotation+(endRotation-startRotation)*ease;
+    if(t<1){ 
+      const ease=1-Math.pow(1-t,3); 
+      wheelMesh.rotation.y=startRotation+(endRotation-startRotation)*ease;
       requestAnimationFrame(animateSpin);
-    }else{ wheelMesh.rotation.y=endRotation; addLog(`Ruleta: salió el ${chosenNumber}`); }
+    } else { 
+      wheelMesh.rotation.y=endRotation; 
+      addLog(`Ruleta: salió el ${chosenNumber}`); 
+    }
   }
   requestAnimationFrame(animateSpin);
 }
+
 function addLog(msg){ const log=document.getElementById("log"); const div=document.createElement("div"); div.textContent=msg; div.className="log-entry"; log.prepend(div); }
 
-// ==========================
-// MOVIMIENTO Y COLISIONES
-// ==========================
+// ==================== MOVIMIENTO ====================
 function computeDelta(dt){
   const rotSpeed=1.4*dt;
   if(keys.ArrowLeft) yaw+=rotSpeed; if(keys.ArrowRight) yaw-=rotSpeed;
@@ -217,6 +226,7 @@ function computeDelta(dt){
   const delta=new THREE.Vector3(); delta.addScaledVector(forward,mf*speed*dt); delta.addScaledVector(right,mr*speed*dt);
   return delta;
 }
+
 function checkCollision(pos){
   for(const c of colliders){
     const dx=pos.x-c.x, dz=pos.z-c.z, dist=Math.sqrt(dx*dx+dz*dz);
@@ -225,9 +235,7 @@ function checkCollision(pos){
   return false;
 }
 
-// ==========================
-// DETECTAR ZONAS DE INTERACCIÓN
-// ==========================
+// ==================== ZONAS ====================
 let currentZone=null;
 function detectZones(){
   currentZone=null; let eye=playerPos.clone(); eye.y=camera.position.y;
@@ -237,6 +245,7 @@ function detectZones(){
   }
   prompt.style.display="none";
 }
+
 document.addEventListener("keydown",(e)=>{
   if(e.key.toLowerCase()==="e" && currentZone) currentZone.action();
   if(e.key==="Escape") closePanel();
@@ -255,7 +264,7 @@ function animate(ts){
 }
 requestAnimationFrame(animate);
 
-// Responsive
+// ==================== RESPONSIVE ====================
 window.addEventListener("resize",()=>{ camera.aspect=wrap.clientWidth/wrap.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(wrap.clientWidth,wrap.clientHeight); });
 </script>
 </body>
