@@ -199,13 +199,22 @@ for(let i=0;i<40;i++){
     <p class="lead" style="margin-top:6px;">Un lugar para el alumnado — ¡ahora con espíritu de Navidad! 🎅✨</p>
   </div>
   
-  <div id="global-timer" style="font-size:20px; margin-top:5px; font-weight:bold;"></div>
+<div id="global-timer" style="margin-top:20px; padding:15px; background:#222; color:#fff; border-radius:10px; font-size:16px;"></div>
 
 <!-- Solo visible para Peketruli -->
-<div id="timer-admin" style="margin-top:15px; display:none;">
-  <input type="datetime-local" id="timer-input">
-  <input type="text" id="timer-text" placeholder="Describe para qué es el temporizador">
-  <button onclick="saveTimer()">Guardar temporizador global</button>
+<div id="timer-admin" style="margin-top:15px; display:none; padding:15px; background:#111; border-radius:10px;">
+  <h3 style="color:#8f8;">⏱ Crear Temporizador Global</h3>
+  <label>Horas:</label>
+  <input type="number" id="timer-hours" min="0" value="0" style="width:50px;">
+  <label>Minutos:</label>
+  <input type="number" id="timer-minutes" min="0" max="59" value="0" style="width:50px;">
+  <label>Segundos:</label>
+  <input type="number" id="timer-seconds" min="0" max="59" value="0" style="width:50px;">
+  <br><br>
+  <label>Texto explicativo:</label><br>
+  <input type="text" id="timer-text" placeholder="Para qué es el temporizador" style="width:100%; padding:5px; margin-top:5px;">
+  <br><br>
+  <button id="publishTimerBtn" style="padding:8px 15px; cursor:pointer;">📢 Publicar</button>
 </div>
 
   <div class="card">
@@ -440,68 +449,69 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-  // -------------------------
-  // Temporizador global con texto
-  // -------------------------
+document.addEventListener("DOMContentLoaded", async () => {
+  const currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
+  const timerAdmin = document.getElementById("timer-admin");
+  const timerBox = document.getElementById("global-timer");
+  let countdownInterval = null;
+
+  // Mostrar panel solo a Peketruli
+  if (currentUser?.username === "Peketruli") {
+    timerAdmin.style.display = "block";
+  }
+
+  // Cargar temporizador activo desde Supabase
   async function loadTimer() {
-    if (!timerBox) return;
     const { data, error } = await supabase.from("event_timer").select("*").single();
-    if (error || !data) {
+    if (!data || error) {
       timerBox.textContent = "No hay temporizador activo.";
       return;
     }
     startCountdown(new Date(data.end_time).getTime(), data.texto || "");
   }
 
-  async function saveTimer() {
-    const dateInput = document.getElementById("timer-input").value;
-    const textInput = document.getElementById("timer-text").value || "";
-    if (!dateInput) return alert("Selecciona fecha y hora.");
-    const endDate = new Date(dateInput);
+  // Publicar temporizador
+  document.getElementById("publishTimerBtn").addEventListener("click", async () => {
+    const h = parseInt(document.getElementById("timer-hours").value) || 0;
+    const m = parseInt(document.getElementById("timer-minutes").value) || 0;
+    const s = parseInt(document.getElementById("timer-seconds").value) || 0;
+    const texto = document.getElementById("timer-text").value.trim();
 
+    const totalMs = (h*3600 + m*60 + s) * 1000;
+    if (totalMs <= 0) return alert("Introduce al menos un valor de duración.");
+
+    const endTime = new Date(Date.now() + totalMs);
+
+    // Guardar en Supabase
     const { error } = await supabase.from("event_timer").upsert({
       id: 1,
-      end_time: endDate.toISOString(),
-      texto: textInput
+      end_time: endTime.toISOString(),
+      texto
     });
 
-    if (error) return alert("Error al guardar temporizador.");
-    startCountdown(endDate.getTime(), textInput);
-    alert("✅ Temporizador guardado y activado.");
-  }
+    if (error) return alert("Error al guardar el temporizador.");
 
-  function startCountdown(endTimestamp, texto = "") {
-    if (!timerBox) return;
+    startCountdown(endTime.getTime(), texto);
+    alert("✅ Temporizador publicado y activo para todos.");
+  });
+
+  // Iniciar cuenta atrás
+  function startCountdown(endTimestamp, texto="") {
     if (countdownInterval) clearInterval(countdownInterval);
-
     countdownInterval = setInterval(() => {
       const diff = endTimestamp - Date.now();
       if (diff <= 0) {
-        timerBox.innerHTML = `⏳ ¡Tiempo agotado! ⏳<br>${texto}`;
+        timerBox.innerHTML = `⏳ ¡Tiempo agotado!<br>${texto}`;
         clearInterval(countdownInterval);
         return;
       }
-      const h = Math.floor(diff / 1000 / 60 / 60);
-      const m = Math.floor((diff / 1000 / 60) % 60);
-      const s = Math.floor((diff / 1000) % 60);
-      timerBox.innerHTML = `⏱ Tiempo restante: ${h}h ${m}m ${s}s<br>${texto}`;
+      const hours = Math.floor(diff / 1000 / 60 / 60);
+      const minutes = Math.floor((diff / 1000 / 60) % 60);
+      const seconds = Math.floor((diff / 1000) % 60);
+      timerBox.innerHTML = `⏱ Tiempo restante: ${hours}h ${minutes}m ${seconds}s<br>${texto}`;
     }, 1000);
   }
 
-  // Botón guardar temporizador
-  const saveTimerBtn = document.getElementById("saveTimerBtn");
-  if (saveTimerBtn) saveTimerBtn.addEventListener("click", saveTimer);
-
-  // -------------------------
-  // Escapar HTML
-  // -------------------------
-  function escapeHtml(text) {
-    if (!text) return "";
-    return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;")
-                       .replaceAll('"', "&quot;").replaceAll("'", "&#039;");
-  }
-
-  await loadUserInfo();
   await loadTimer();
 });
 </script>
