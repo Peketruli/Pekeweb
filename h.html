@@ -306,7 +306,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   const dropdownMenu = document.getElementById("dropdownMenu");
   const adminPanel = document.getElementById("adminPanel");
   const timerAdmin = document.getElementById("timer-admin");
-  const timerBox = document.getElementById("global-timer"); // <div id="global-timer"></div>
+  const timerBox = document.getElementById("global-timer");
 
   let sendingPetition = false;
   let sendingReport = false;
@@ -327,11 +327,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         };
         localStorage.setItem("currentUser", JSON.stringify(currentUser));
       } else {
-        try { currentUser = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch {}
+        currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
       }
     } catch (e) {
       console.warn("No se pudo obtener session de supabase:", e);
-      try { currentUser = JSON.parse(localStorage.getItem("currentUser") || "null"); } catch {}
+      currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
     }
 
     // Mostrar info usuario
@@ -375,18 +375,14 @@ document.addEventListener("DOMContentLoaded", async () => {
         .select("*")
         .order("id", { ascending: false });
 
-      if (errP) {
-        tbodyP.innerHTML = `<tr><td colspan="4" style="color:red;">Error cargando peticiones</td></tr>`;
-      } else if (!peticiones || peticiones.length === 0) {
-        tbodyP.innerHTML = `<tr><td colspan="4">No hay peticiones</td></tr>`;
-      } else {
-        peticiones.forEach(p => {
-          const fecha = p.created_at ? new Date(p.created_at).toLocaleString() : "Sin fecha";
-          const tr = document.createElement("tr");
-          tr.innerHTML = `<td>${p.id}</td><td>${escapeHtml(p.usuario)}</td><td>${escapeHtml(p.contenido)}</td><td>${fecha}</td>`;
-          tbodyP.appendChild(tr);
-        });
-      }
+      if (errP) tbodyP.innerHTML = `<tr><td colspan="4" style="color:red;">Error cargando peticiones</td></tr>`;
+      else if (!peticiones || peticiones.length === 0) tbodyP.innerHTML = `<tr><td colspan="4">No hay peticiones</td></tr>`;
+      else peticiones.forEach(p => {
+        const fecha = p.created_at ? new Date(p.created_at).toLocaleString() : "Sin fecha";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${p.id}</td><td>${escapeHtml(p.usuario)}</td><td>${escapeHtml(p.contenido)}</td><td>${fecha}</td>`;
+        tbodyP.appendChild(tr);
+      });
     } catch (e) { console.error(e); }
 
     try {
@@ -395,21 +391,20 @@ document.addEventListener("DOMContentLoaded", async () => {
         .select("*")
         .order("id", { ascending: false });
 
-      if (errR) {
-        tbodyR.innerHTML = `<tr><td colspan="5" style="color:red;">Error cargando reportes</td></tr>`;
-      } else if (!reportes || reportes.length === 0) {
-        tbodyR.innerHTML = `<tr><td colspan="5">No hay reportes</td></tr>`;
-      } else {
-        reportes.forEach(r => {
-          const fecha = r.created_at ? new Date(r.created_at).toLocaleString() : "Sin fecha";
-          const tr = document.createElement("tr");
-          tr.innerHTML = `<td>${r.id}</td><td>${escapeHtml(r.usuario)}</td><td>${escapeHtml(r.tipo)}</td><td>${escapeHtml(r.descripcion)}</td><td>${fecha}</td>`;
-          tbodyR.appendChild(tr);
-        });
-      }
+      if (errR) tbodyR.innerHTML = `<tr><td colspan="5" style="color:red;">Error cargando reportes</td></tr>`;
+      else if (!reportes || reportes.length === 0) tbodyR.innerHTML = `<tr><td colspan="5">No hay reportes</td></tr>`;
+      else reportes.forEach(r => {
+        const fecha = r.created_at ? new Date(r.created_at).toLocaleString() : "Sin fecha";
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${r.id}</td><td>${escapeHtml(r.usuario)}</td><td>${escapeHtml(r.tipo)}</td><td>${escapeHtml(r.descripcion)}</td><td>${fecha}</td>`;
+        tbodyR.appendChild(tr);
+      });
     } catch (e) { console.error(e); }
   }
 
+  // -------------------------
+  // Peticiones / reportes botones
+  // -------------------------
   const petBtn = document.getElementById("enviarPeticionBtn");
   if (petBtn) petBtn.addEventListener("click", async () => {
     if (sendingPetition) return;
@@ -420,8 +415,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     try {
       const created_at = new Date().toISOString();
       const { error } = await supabase.from("peticiones").insert([{ usuario: currentUser.username, contenido, created_at }]);
-      if (error) alert("Error al enviar petición.");
-      else document.getElementById("peticionInput").value = "";
+      if (!error) document.getElementById("peticionInput").value = "";
       await loadAdminData();
     } finally {
       sendingPetition = false;
@@ -440,8 +434,7 @@ document.addEventListener("DOMContentLoaded", async () => {
       const tipo = document.getElementById("tipoReporte")?.value || "otro";
       const created_at = new Date().toISOString();
       const { error } = await supabase.from("reportes").insert([{ usuario: currentUser.username, tipo, descripcion, created_at }]);
-      if (error) alert("Error al enviar reporte.");
-      else document.getElementById("reporteInput").value = "";
+      if (!error) document.getElementById("reporteInput").value = "";
       await loadAdminData();
     } finally {
       sendingReport = false;
@@ -449,18 +442,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     }
   });
 
-document.addEventListener("DOMContentLoaded", async () => {
-  const currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
-  const timerAdmin = document.getElementById("timer-admin");
-  const timerBox = document.getElementById("global-timer");
-  let countdownInterval = null;
-
-  // Mostrar panel solo a Peketruli
-  if (currentUser?.username === "Peketruli") {
-    timerAdmin.style.display = "block";
-  }
-
-  // Cargar temporizador activo desde Supabase
+  // -------------------------
+  // Temporizador global
+  // -------------------------
   async function loadTimer() {
     const { data, error } = await supabase.from("event_timer").select("*").single();
     if (!data || error) {
@@ -470,19 +454,16 @@ document.addEventListener("DOMContentLoaded", async () => {
     startCountdown(new Date(data.end_time).getTime(), data.texto || "");
   }
 
-  // Publicar temporizador
-  document.getElementById("publishTimerBtn").addEventListener("click", async () => {
+  document.getElementById("publishTimerBtn")?.addEventListener("click", async () => {
+    if (!currentUser || currentUser.username !== "Peketruli") return;
     const h = parseInt(document.getElementById("timer-hours").value) || 0;
     const m = parseInt(document.getElementById("timer-minutes").value) || 0;
     const s = parseInt(document.getElementById("timer-seconds").value) || 0;
     const texto = document.getElementById("timer-text").value.trim();
-
     const totalMs = (h*3600 + m*60 + s) * 1000;
     if (totalMs <= 0) return alert("Introduce al menos un valor de duración.");
-
     const endTime = new Date(Date.now() + totalMs);
 
-    // Guardar en Supabase
     const { error } = await supabase.from("event_timer").upsert({
       id: 1,
       end_time: endTime.toISOString(),
@@ -490,12 +471,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     });
 
     if (error) return alert("Error al guardar el temporizador.");
-
     startCountdown(endTime.getTime(), texto);
     alert("✅ Temporizador publicado y activo para todos.");
   });
 
-  // Iniciar cuenta atrás
   function startCountdown(endTimestamp, texto="") {
     if (countdownInterval) clearInterval(countdownInterval);
     countdownInterval = setInterval(() => {
@@ -512,6 +491,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     }, 1000);
   }
 
+  // -------------------------
+  // Utilidad
+  // -------------------------
+  function escapeHtml(text) {
+    if (!text) return "";
+    return String(text)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  await loadUserInfo();
   await loadTimer();
 });
 </script>
