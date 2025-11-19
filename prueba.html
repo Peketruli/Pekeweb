@@ -1,329 +1,523 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Casino — Peke</title>
-<link rel="stylesheet" href="styles.css" />
+<meta charset="utf-8" />
+<title>Casino 3D — Ruleta, Slots y Blackjack</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-  body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #0b0b0b;
-    color: white;
-    text-align: center;
-}
-
-.hidden {
-    display: none;
-}
-
-#menu {
-    margin-top: 60px;
-}
-
-button {
-    padding: 12px 24px;
-    margin: 12px;
-    border: none;
-    font-size: 18px;
-    cursor: pointer;
-    border-radius: 10px;
-    background: #ffbd00;
-    color: #000;
-    font-weight: bold;
-}
-
-button:hover {
-    background: #ffde59;
-}
-
-.game-panel {
-    margin-top: 30px;
-}
-
-.back {
-    background: #ff4444;
-}
-
-.cards {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-    margin-top: 10px;
-}
-
-.card {
-    padding: 12px;
-    background: white;
-    color: black;
-    border-radius: 6px;
-    font-size: 20px;
-    font-weight: bold;
-}
-
-/* TRAGAPERRAS */
-#slot-box {
-    margin: 20px auto;
-    display: flex;
-    justify-content: center;
-    gap: 20px;
-    background: #222;
-    width: 340px;
-    padding: 20px;
-    border-radius: 12px;
-    border: 5px solid #ffbd00;
-}
-
-.slot {
-    width: 80px;
-    height: 80px;
-    background: black;
-    border-radius: 10px;
-    font-size: 50px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-/* RULETA */
-#ruleta-wheel {
-    width: 200px;
-    height: 200px;
-    border: 10px solid #ffbd00;
-    border-radius: 50%;
-    margin: 20px auto;
-    background: conic-gradient(
-        red 0deg 60deg,
-        black 60deg 120deg,
-        red 120deg 180deg,
-        black 180deg 240deg,
-        red 240deg 300deg,
-        black 300deg 360deg
-    );
-}
-
+  html,body{height:100%;margin:0;background:#030612;color:#fff;font-family:Inter,Arial,Helvetica, sans-serif;overflow:hidden}
+  #wrap{position:relative;height:100vh;overflow:hidden}
+  canvas{display:block}
+  .hud{position:absolute;right:12px;top:12px;z-index:40;max-width:380px}
+  .panel{background:rgba(0,0,0,0.56);padding:10px;border-radius:10px;margin-bottom:10px}
+  .info-row{display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:13px}
+  #prompt{position:absolute;left:50%;transform:translateX(-50%);bottom:92px;background:rgba(0,0,0,0.7);padding:8px 12px;border-radius:8px;display:none;z-index:45}
+  #overlay{position:absolute;left:0;top:0;right:0;bottom:0;display:none;align-items:center;justify-content:center;z-index:60}
+  #overlay .ui{background:rgba(8,10,12,0.96);padding:14px;border-radius:10px;width:420px;box-shadow:0 10px 40px rgba(0,0,0,0.7);color:#ddd;max-height:80vh;overflow:auto}
+  .btn{background:#d95d00;color:white;padding:8px 10px;border-radius:8px;border:none;cursor:pointer}
+  footer{position:absolute;left:12px;bottom:12px;color:#bbb;font-size:13px}
+  #minimap{position:absolute;left:12px;top:12px;width:120px;height:120px;background:rgba(255,255,255,0.02);border-radius:8px;z-index:30}
+  .small{font-size:12px;color:#bbb}
+  /* Blackjack UI small tweaks */
+  .bj-cards{display:flex;gap:8px;margin-top:8px}
+  .card{background:#111;padding:6px 8px;border-radius:6px;border:1px solid #333}
 </style>
 </head>
 <body>
+  <div id="wrap">
+    <div id="minimap"></div>
 
-    <div id="menu">
-        <h1>PekeCasino</h1>
-        <button onclick="openBlackjack()">Blackjack</button>
-        <button onclick="openRuleta()">Ruleta</button>
-        <button onclick="openSlots()">Tragaperras</button>
-    </div>
-
-    <!-- █████████ BLACKJACK █████████ -->
-    <div id="blackjack" class="hidden game-panel">
-        <h2>Blackjack</h2>
-
-        <div id="bj-status"></div>
-
-        <div class="bj-row">
-            <div>
-                <h3>Dealer</h3>
-                <div id="dealer-cards" class="cards"></div>
-            </div>
-
-            <div>
-                <h3>Jugador</h3>
-                <div id="player-cards" class="cards"></div>
-            </div>
+    <div class="hud">
+      <div class="panel">
+        <h3>Casino 3D</h3>
+        <div class="info-row"><span>Saldo</span><strong id="balance">1000</strong></div>
+        <div class="info-row"><span>Apuesta</span><strong id="bet">0</strong></div>
+        <div style="font-size:13px;margin-top:6px">
+          Controles: <strong>W A S D</strong> moverse · <strong>Flechas</strong> girar cámara · <strong>E</strong> interactuar
         </div>
-
-        <div class="bj-buttons">
-            <button onclick="bjHit()">Pedir carta</button>
-            <button onclick="bjStand()">Plantarse</button>
-            <button onclick="bjRestart()">Nuevo juego</button>
-        </div>
-
-        <button class="back" onclick="backToMenu()">Volver</button>
+      </div>
+      <div class="panel">
+        <h4>Interactúa</h4>
+        <div id="interact-info" style="font-size:13px">Acércate y pulsa <strong>E</strong> (o usa UI).</div>
+      </div>
+      <div class="panel">
+        <h4>Historial</h4>
+        <div id="log" style="max-height:120px;overflow:auto;font-size:12px;background:rgba(255,255,255,0.02);padding:6px;border-radius:6px"></div>
+      </div>
     </div>
 
-    <!-- █████████ RULETA █████████ -->
-    <div id="ruleta" class="hidden game-panel">
-        <h2>Ruleta</h2>
-        <div id="ruleta-wheel"></div>
-        <button onclick="spinRuleta()">Girar</button>
-        <p id="ruleta-result"></p>
-        <button class="back" onclick="backToMenu()">Volver</button>
-    </div>
+    <div id="prompt">[E] Interactuar</div>
+    <div id="overlay"><div class="ui" id="ui-box"></div></div>
 
-    <!-- █████████ TRAGAPERRAS █████████ -->
-    <div id="slots" class="hidden game-panel">
-        <h2>Tragaperras Arcade</h2>
+    <footer>Primera persona · Ruleta europea (0–36) · Tragaperras · Blackjack</footer>
+  </div>
 
-        <div id="slot-box">
-            <div class="slot" id="s1">🍒</div>
-            <div class="slot" id="s2">🍋</div>
-            <div class="slot" id="s3">⭐</div>
-        </div>
+  <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 
-        <button onclick="spinSlots()">Girar</button>
-        <p id="slot-msg"></p>
-        <button class="back" onclick="backToMenu()">Volver</button>
-    </div>
-
-<script src="script.js"></script>
   <script>
-    // ========== CAMBIO DE PANTALLAS ==========
-function hideAll() {
-    document.querySelectorAll(".game-panel").forEach(p => p.classList.add("hidden"));
-    document.getElementById("menu").classList.add("hidden");
+/* ---------- GLOBAL 3D SETUP ---------- */
+const wrap = document.getElementById('wrap');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x041018);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+wrap.appendChild(renderer.domElement);
+
+const camera = new THREE.PerspectiveCamera(72, wrap.clientWidth / wrap.clientHeight, 0.1, 1000);
+camera.position.set(0, 1.7, 12);
+const playerPos = new THREE.Vector3(0,0,12);
+let yaw = 0, pitch = 0;
+
+/* Lights */
+scene.add(new THREE.AmbientLight(0xffffff,0.35));
+const dirLight = new THREE.DirectionalLight(0xffffff,0.9); dirLight.position.set(8,20,10); scene.add(dirLight);
+const bulb = new THREE.PointLight(0xfff3d6,0.9,200); bulb.position.set(0,20,0); scene.add(bulb);
+
+/* Floor & walls */
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(200,200), new THREE.MeshStandardMaterial({color:0x091217,roughness:0.95}));
+floor.rotation.x = -Math.PI/2; floor.position.y = 0; scene.add(floor);
+
+function wall(w,h,d,x,y,z,rotY){
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color:0x071018}));
+  m.position.set(x,y,z);
+  if(rotY) m.rotation.y = rotY;
+  scene.add(m);
+  return m;
+}
+wall(50,10,2,0,5,-40); wall(2,10,50,-24,5,0); wall(2,10,50,24,5,0); wall(50,10,2,0,5,40);
+const rug = new THREE.Mesh(new THREE.CircleGeometry(14,32), new THREE.MeshStandardMaterial({color:0x183430}));
+rug.rotation.x = -Math.PI/2; rug.position.y = 0.01; scene.add(rug);
+
+/* ---------- TABLES & MACHINES ---------- */
+/* Ruleta (centrada en 0,0) */
+const tableGroup = new THREE.Group();
+scene.add(tableGroup);
+
+/* Wheel params */
+const wheelRadius = 6;
+const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+const pocketCount = pockets.length;
+const anglePerPocket = (Math.PI*2)/pocketCount;
+
+/* Wheel canvas texture */
+function createWheelCanvas(size=1024){
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#072b22'; ctx.fillRect(0,0,size,size);
+  const cx = size/2, cy = size/2, r = size*0.45;
+  for(let i=0;i<pocketCount;i++){
+    const a0 = i*anglePerPocket - Math.PI/2;
+    const a1 = (i+1)*anglePerPocket - Math.PI/2;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a0,a1); ctx.closePath();
+    ctx.fillStyle = (pockets[i]===0)?'#1b8b41':((i%2===0)?'#b71c1c':'#000');
+    ctx.fill();
+    const mid = a0 + (a1-a0)/2;
+    ctx.save(); ctx.translate(cx + Math.cos(mid)*(r*0.66), cy + Math.sin(mid)*(r*0.66));
+    ctx.rotate(mid + Math.PI/2); ctx.fillStyle = '#fff'; ctx.font = `${Math.floor(size*0.04)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(pockets[i],0,0);
+    ctx.restore();
+  }
+  ctx.beginPath(); ctx.fillStyle = '#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
+  return c;
 }
 
-function backToMenu() {
-    hideAll();
-    document.getElementById("menu").classList.remove("hidden");
+const wheelTex = new THREE.CanvasTexture(createWheelCanvas(1024));
+wheelTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+const wheelMesh = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius, wheelRadius, 1.4, 128), new THREE.MeshStandardMaterial({map:wheelTex}));
+wheelMesh.position.y = 0.7; scene.add(wheelMesh);
+
+/* Rim and small decor */
+const rim = new THREE.Mesh(new THREE.TorusGeometry(wheelRadius+0.6,0.45,12,128), new THREE.MeshStandardMaterial({color:0x6b3b1b}));
+rim.rotation.x = Math.PI/2; rim.position.y = 0.3; scene.add(rim);
+
+/* Ball */
+const ball = new THREE.Mesh(new THREE.SphereGeometry(0.2,16,16), new THREE.MeshStandardMaterial({color:0xffffff,metalness:0.8,roughness:0.2}));
+ball.position.set(wheelRadius-0.6,0.55,0); scene.add(ball);
+
+/* ---------- Slot (arcade box) ---------- */
+const slotGroup = new THREE.Group(); slotGroup.position.set(14,0,-6);
+const slotBody = new THREE.Mesh(new THREE.BoxGeometry(3,6,2), new THREE.MeshStandardMaterial({color:0x8a0f05,metalness:0.08,roughness:0.36}));
+slotBody.position.y = 3; slotGroup.add(slotBody);
+const slotPanel = new THREE.Mesh(new THREE.BoxGeometry(2.8,3,0.4), new THREE.MeshBasicMaterial({color:0x050506}));
+slotPanel.position.set(14,4,-5.1); scene.add(slotPanel);
+
+const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
+const reelCanvases = [], reelTexes = [], reelPlanes = [];
+for(let i=0;i<3;i++){
+  const c=document.createElement('canvas'); c.width=128; c.height=192;
+  const ctx=c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,c.width,c.height);
+  ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)], c.width/2, c.height/2);
+  reelCanvases.push(c);
+  const t=new THREE.CanvasTexture(c); reelTexes.push(t);
+  const p=new THREE.Mesh(new THREE.PlaneGeometry(1,1.5), new THREE.MeshBasicMaterial({map:t}));
+  p.position.set(14 + (i-1)*1.1, 4, -4.8); scene.add(p); reelPlanes.push(p);
+}
+const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,2.6,8), new THREE.MeshStandardMaterial({color:0x8b5a2b}));
+lever.position.set(16.1,4,-6); lever.rotation.z = Math.PI/8; scene.add(lever);
+scene.add(slotGroup);
+
+/* ---------- Blackjack table ---------- */
+const bjGroup = new THREE.Group(); bjGroup.position.set(-14,0,-6);
+const bjTable = new THREE.Mesh(new THREE.BoxGeometry(12,0.8,5), new THREE.MeshStandardMaterial({color:0x1b4f2a}));
+bjTable.position.y = 0.4; bjGroup.add(bjTable);
+scene.add(bjGroup);
+
+/* ---------- Colliders & zones ---------- */
+const colliders = [];
+// placeholder collider for wheel/table area (not a mesh)
+colliders.push(new THREE.Box3(new THREE.Vector3(4,0,4), new THREE.Vector3(-4,0,-4)));
+
+const ruletaZone = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(0,0,0), new THREE.Vector3(12,3,12));
+const slotZone   = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(14,3.5,-6), new THREE.Vector3(6,6,4));
+const bjZone     = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(-14,1,-6), new THREE.Vector3(12,3,5));
+
+/* ---------- Movement & camera control ---------- */
+const keys = {w:false,a:false,s:false,d:false,ArrowLeft:false,ArrowRight:false,ArrowUp:false,ArrowDown:false};
+const speed = 5.6;
+window.addEventListener('keydown', (e)=>{ const k=e.key; if(k in keys) keys[k]=true; if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(k)) e.preventDefault(); });
+window.addEventListener('keyup', (e)=>{ const k=e.key; if(k in keys) keys[k]=false; });
+
+function computeDelta(dt){
+  const e = new THREE.Euler(pitch, yaw, 0, 'YXZ');
+  const q = new THREE.Quaternion().setFromEuler(e);
+  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(q); forward.y=0; forward.normalize();
+  const right = new THREE.Vector3(1,0,0).applyQuaternion(q); right.y=0; right.normalize();
+  let mf=0, mr=0; if(keys.w) mf+=1; if(keys.s) mf-=1; if(keys.a) mr-=1; if(keys.d) mr+=1;
+  const len=Math.hypot(mf,mr); if(len>0){ mf/=len; mr/=len; }
+  const delta = new THREE.Vector3(); delta.addScaledVector(forward, mf*speed*dt); delta.addScaledVector(right, mr*speed*dt);
+  return delta;
 }
 
-// ========== ABRIR JUEGOS ==========
-function openBlackjack() {
-    hideAll();
-    document.getElementById("blackjack").classList.remove("hidden");
-    bjRestart();
+function checkCollision(pos){
+  const r=0.45;
+  for(const b of colliders){
+    const expanded = b.clone().expandByScalar(r);
+    if(expanded.containsPoint(pos)) return true;
+  }
+  if(Math.abs(pos.x)>48 || Math.abs(pos.z)>48) return true;
+  return false;
 }
 
-function openRuleta() {
-    hideAll();
-    document.getElementById("ruleta").classList.remove("hidden");
+/* ---------- HUD / state ---------- */
+const balanceEl = document.getElementById('balance'), betEl = document.getElementById('bet'), logEl = document.getElementById('log');
+let balance = 1000, currentBet = 0;
+function updateHUD(){ balanceEl.textContent = balance.toFixed(0); betEl.textContent = currentBet.toFixed(0); }
+function appendLog(t){ const d = new Date(); const el = document.createElement('div'); el.textContent = `[${d.toLocaleTimeString()}] ${t}`; logEl.prepend(el); }
+
+/* ---------- UI / zone detection ---------- */
+const overlay = document.getElementById('overlay'), uiBox = document.getElementById('ui-box');
+const prompt = document.getElementById('prompt');
+let nearZone = null;
+function detectZones(){
+  const eye = playerPos.clone(); eye.y = camera.position.y;
+  if(ruletaZone.containsPoint(eye)){ nearZone='ruleta'; prompt.style.display='block'; prompt.textContent='[E] Interactuar: Ruleta'; return; }
+  if(slotZone.containsPoint(eye)){ nearZone='slot'; prompt.style.display='block'; prompt.textContent='[E] Interactuar: Tragaperras'; return; }
+  if(bjZone.containsPoint(eye)){ nearZone='blackjack'; prompt.style.display='block'; prompt.textContent='[E] Interactuar: Blackjack'; return; }
+  nearZone = null; prompt.style.display='none';
 }
 
-function openSlots() {
-    hideAll();
-    document.getElementById("slots").classList.remove("hidden");
+/* ---------- Ruleta state & logic ---------- */
+const ruletaState = { bets: [], spinning: false, wheelVel: 0, ballVel: 0, ballAngle: Math.random()*Math.PI*2 };
+
+function openRuletaUI(){
+  overlay.style.display='flex'; uiBox.innerHTML = `
+    <h3 style="margin:0 0 8px 0;color:#fff">Ruleta</h3>
+    <div style="margin-bottom:8px;color:#ddd">Saldo: <strong id="ui-balance">${balance}</strong></div>
+    <div style="margin-bottom:8px;color:#ddd">Índice (0-36): <input id="ui-num" type="number" min="0" max="36" value="0" style="width:80px"/> Monto: <input id="ui-amt" type="number" min="1" value="5" style="width:100px"/></div>
+    <div style="text-align:right;margin-top:8px"><button class="btn" id="ui-place">Colocar</button> <button class="btn" id="ui-spin">Girar</button> <button class="btn" id="ui-close">Cerrar</button></div>
+  `;
+  document.getElementById('ui-place').addEventListener('click', ()=>{
+    const idx = parseInt(document.getElementById('ui-num').value||0);
+    const amt = parseInt(document.getElementById('ui-amt').value||1);
+    if(isNaN(idx) || idx<0 || idx>36) return alert('Índice inválido (0-36)');
+    if(amt<=0 || amt>balance) return alert('Monto inválido o saldo insuficiente');
+    balance -= amt; currentBet += amt; ruletaState.bets.push({idx, amt}); updateHUD(); appendLog(`Apuesta ${amt} índice ${idx} (ruleta)`); document.getElementById('ui-balance').textContent = balance;
+  });
+  document.getElementById('ui-spin').addEventListener('click', ()=>{
+    if(ruletaState.spinning) return alert('La ruleta ya está girando');
+    if(ruletaState.bets.length===0) return alert('Sin apuestas');
+    startRuletaSpin();
+    closeUI();
+  });
+  document.getElementById('ui-close').addEventListener('click', closeUI);
 }
 
-
-
-// ████████████████████████████████████████
-//              BLACKJACK
-// ████████████████████████████████████████
-
-let deck, player, dealer;
-
-function createDeck() {
-    let d = [];
-    let values = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
-    let suits = ["♠","♥","♦","♣"];
-
-    for (let v of values)
-        for (let s of suits)
-            d.push({value:v, suit:s});
-
-    return d.sort(() => Math.random() - 0.5);
+function startRuletaSpin(){
+  ruletaState.spinning = true;
+  ruletaState.wheelVel = 6 + Math.random()*4;   // angular speed rad/s scaled for visible spin
+  ruletaState.ballVel  = 20 + Math.random()*10; // ball speed
+  appendLog('Ruleta: girando...');
 }
 
-function cardValue(c){
-    if (c.value === "A") return 11;
-    if (["J","Q","K"].includes(c.value)) return 10;
-    return parseInt(c.value);
+function updateRuleta(dt){
+  if(!ruletaState.spinning) return;
+  // integrate
+  wheelMesh.rotation.y += ruletaState.wheelVel * dt;
+  ruletaState.wheelVel *= Math.max(0.995, 1 - 0.15*dt); // decay
+  ruletaState.ballAngle += ruletaState.ballVel * dt;
+  ruletaState.ballVel *= Math.max(0.99, 1 - 0.5*dt);
+
+  const r = wheelRadius - 0.6;
+  ball.position.set(Math.cos(ruletaState.ballAngle)*r, 0.45, Math.sin(ruletaState.ballAngle)*r);
+
+  // finalize when slow
+  if(Math.abs(ruletaState.wheelVel) < 0.02 && Math.abs(ruletaState.ballVel) < 0.06){
+    // small timeout to simulate bounce
+    ruletaState.spinning = false;
+    setTimeout(finalizeRuleta, 600);
+  }
 }
 
-function calculateHand(hand){
-    let total = hand.reduce((a,c)=>a + cardValue(c),0);
-    let aces = hand.filter(c => c.value === "A").length;
-
-    while(total > 21 && aces > 0){
-        total -= 10;
-        aces--;
-    }
-    return total;
+function finalizeRuleta(){
+  const totalRot = wheelMesh.rotation.y;
+  let localAngle = (ruletaState.ballAngle - totalRot) % (Math.PI*2);
+  if(localAngle < 0) localAngle += Math.PI*2;
+  let norm = (localAngle + Math.PI/2) % (Math.PI*2);
+  const idx = Math.floor(norm / anglePerPocket) % pocketCount;
+  const resultNumber = pockets[idx];
+  appendLog(`Ruleta resultado: ${resultNumber}`);
+  let payout = 0;
+  ruletaState.bets.forEach(b => {
+    if(b.idx === resultNumber) payout += b.amt * 36; // single-number payout
+  });
+  if(payout > 0){ balance += payout; appendLog(`Has ganado ${payout} en la ruleta!`); } else appendLog('Sin premio en la ruleta.');
+  ruletaState.bets = []; currentBet = 0; updateHUD();
+  // snap ball visually to sector
+  const winningSectorAngle = idx * anglePerPocket - Math.PI/2;
+  const worldAngle = totalRot + winningSectorAngle;
+  ball.position.set(Math.cos(worldAngle)*(wheelRadius-0.6), 0.45, Math.sin(worldAngle)*(wheelRadius-0.6));
+  // small visual settle
+  wheelMesh.rotation.y = totalRot;
 }
 
-function renderCards() {
-    const p = document.getElementById("player-cards");
-    const d = document.getElementById("dealer-cards");
-    p.innerHTML = "";
-    d.innerHTML = "";
+/* ---------- Slot logic ---------- */
+const slotState = { credits: 0 };
+function openSlotUI(){
+  overlay.style.display='flex';
+  uiBox.innerHTML = `
+    <h3 style="margin:0 0 8px 0;color:#fff">Tragaperras</h3>
+    <div style="margin-bottom:8px;color:#ddd">Saldo: <strong id="ui-balance2">${balance}</strong></div>
+    <div style="margin-bottom:8px;color:#ddd">Créditos: <strong id="ui-credits">${slotState.credits}</strong></div>
+    <div style="text-align:right;margin-top:8px"><button class="btn" id="ui-insert">Insertar (1)</button> <button class="btn" id="ui-play">Jugar</button> <button class="btn" id="ui-close2">Cerrar</button></div>
+  `;
+  document.getElementById('ui-insert').addEventListener('click', ()=>{
+    if(balance<1) return alert('Saldo insuficiente');
+    balance -= 1; slotState.credits += 1; updateHUD(); appendLog('Ficha insertada (slot)');
+    document.getElementById('ui-balance2').textContent = balance;
+    document.getElementById('ui-credits').textContent = slotState.credits;
+  });
+  document.getElementById('ui-play').addEventListener('click', ()=>{
+    if(slotState.credits <= 0) return alert('Inserta fichas primero');
+    slotState.credits--; playSlot();
+    document.getElementById('ui-credits').textContent = slotState.credits;
+  });
+  document.getElementById('ui-close2').addEventListener('click', closeUI);
+}
 
-    player.forEach(c => {
-        p.innerHTML += `<div class="card">${c.value}${c.suit}</div>`;
-    });
+function playSlot(){
+  // animate lever quickly
+  const start = lever.rotation.z;
+  lever.rotation.z = start + 0.6;
+  setTimeout(()=> lever.rotation.z = start, 180);
 
-    dealer.forEach(c => {
-        d.innerHTML += `<div class="card">${c.value}${c.suit}</div>`;
-    });
+  // update reels canvases
+  const resultSymbols = [];
+  for(let i=0;i<3;i++){
+    const s = symbols[Math.floor(Math.random()*symbols.length)];
+    resultSymbols.push(s);
+    const c = reelCanvases[i], ctx = c.getContext('2d');
+    ctx.fillStyle='#070707'; ctx.fillRect(0,0,c.width,c.height);
+    ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(s, c.width/2, c.height/2);
+    reelTexes[i].needsUpdate = true;
+  }
+
+  appendLog(`Tragaperras: ${resultSymbols.join(' | ')}`);
+  let payout = 0;
+  if(resultSymbols[0] === resultSymbols[1] && resultSymbols[1] === resultSymbols[2]) payout = 50;
+  else if(resultSymbols[0] === resultSymbols[1] || resultSymbols[1] === resultSymbols[2] || resultSymbols[0] === resultSymbols[2]) payout = 5;
+  if(payout>0){ balance += payout; appendLog(`Tragaperras: ganas ${payout}`); updateHUD(); } else appendLog('Tragaperras: sin premio');
+}
+
+/* ---------- Blackjack logic & UI ---------- */
+const bjState = { deck: [], playerCards: [], dealerCards: [], bet: 0, inPlay: false };
+
+function createDeck(){
+  const suits = ['♠','♥','♦','♣'];
+  const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const d = [];
+  for(const s of suits) for(const r of ranks) d.push({suit:s, rank:r});
+  // shuffle
+  for(let i=d.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [d[i], d[j]]=[d[j], d[i]]; }
+  return d;
+}
+function cardValue(card){ if(card.rank==='A') return 11; if(['J','Q','K'].includes(card.rank)) return 10; return parseInt(card.rank); }
+function handValue(hand){
+  let total=0, aces=0;
+  for(const c of hand){ total += cardValue(c); if(c.rank==='A') aces++; }
+  while(total>21 && aces>0){ total -= 10; aces--; }
+  return total;
+}
+
+function openBlackjackUI(){
+  overlay.style.display='flex';
+  bjState.deck = createDeck(); bjState.playerCards = []; bjState.dealerCards = []; bjState.bet=0; bjState.inPlay=false;
+  uiBox.innerHTML = `
+    <h3 style="margin:0 0 8px 0;color:#fff">Blackjack</h3>
+    <div style="margin-bottom:8px;color:#ddd">Saldo: <strong id="bj-balance">${balance}</strong></div>
+    <div style="margin-bottom:8px;color:#ddd">Apuesta: <input id="bj-bet" type="number" value="10" min="1" max="${balance}" style="width:100px"/></div>
+    <div id="bj-area" style="color:#fff;min-height:120px">Pulsa <strong>Repartir</strong> para empezar.</div>
+    <div style="text-align:right;margin-top:8px"><button class="btn" id="bj-start">Repartir</button> <button class="btn" id="bj-hit">Pedir</button> <button class="btn" id="bj-stand">Plantarse</button> <button class="btn" id="bj-close">Cerrar</button></div>
+  `;
+  document.getElementById('bj-start').addEventListener('click', bjStart);
+  document.getElementById('bj-hit').addEventListener('click', bjHit);
+  document.getElementById('bj-stand').addEventListener('click', bjStand);
+  document.getElementById('bj-close').addEventListener('click', closeUI);
+  setBJButtons(false);
+}
+
+function setBJButtons(enabled){
+  const hit = document.getElementById('bj-hit'), stand = document.getElementById('bj-stand');
+  if(hit) hit.disabled = !enabled;
+  if(stand) stand.disabled = !enabled;
+}
+
+function bjStart(){
+  const bInput = document.getElementById('bj-bet');
+  const bet = parseInt(bInput.value || 0);
+  if(isNaN(bet) || bet <= 0) return alert('Apuesta inválida');
+  if(bet > balance) return alert('Saldo insuficiente');
+  balance -= bet; bjState.bet = bet; updateHUD();
+  bjState.deck = createDeck();
+  bjState.playerCards = [bjState.deck.pop(), bjState.deck.pop()];
+  bjState.dealerCards = [bjState.deck.pop(), bjState.deck.pop()];
+  bjState.inPlay = true;
+  renderBJUI();
+  appendLog(`Blackjack: partida iniciada (apuesta ${bet})`);
+  setBJButtons(true);
+  const bjBal = document.getElementById('bj-balance'); if(bjBal) bjBal.textContent = balance;
+}
+
+function renderBJUI(){
+  const area = document.getElementById('bj-area');
+  if(!area) return;
+  const ph = bjState.playerCards.map(c=>`<span class="card">${c.rank}${c.suit}</span>`).join('');
+  const dh = bjState.dealerCards.map(c=>`<span class="card">${c.rank}${c.suit}</span>`).join('');
+  area.innerHTML = `<div class="small">Dealer (${handValue(bjState.dealerCards)}):</div><div class="bj-cards">${dh}</div>
+                    <div style="margin-top:8px" class="small">Jugador (${handValue(bjState.playerCards)}):</div><div class="bj-cards">${ph}</div>`;
 }
 
 function bjHit(){
-    player.push(deck.pop());
-    renderCards();
-    checkBlackjack();
+  if(!bjState.inPlay) return;
+  bjState.playerCards.push(bjState.deck.pop());
+  renderBJUI();
+  if(handValue(bjState.playerCards) > 21){
+    appendLog('Blackjack: Te pasaste!');
+    endBJ(false);
+  }
 }
 
 function bjStand(){
-    while(calculateHand(dealer) < 17){
-        dealer.push(deck.pop());
-    }
-    endBlackjack();
+  if(!bjState.inPlay) return;
+  // dealer plays
+  while(handValue(bjState.dealerCards) < 17) bjState.dealerCards.push(bjState.deck.pop());
+  const p = handValue(bjState.playerCards), d = handValue(bjState.dealerCards);
+  let msg = '';
+  if(d > 21 || p > d){
+    balance += bjState.bet * 2;
+    msg = `Ganaste ${bjState.bet * 2 - 0} (incluye recuperar apuesta)`;
+    appendLog('Blackjack: Ganaste!');
+  } else if(p === d){
+    balance += bjState.bet;
+    msg = 'Empate (te devuelven la apuesta)';
+    appendLog('Blackjack: Empate');
+  } else {
+    msg = 'Perdiste';
+    appendLog('Blackjack: Perdiste');
+  }
+  updateHUD();
+  renderBJUI();
+  endBJ();
 }
 
-function bjRestart(){
-    deck = createDeck();
-    player = [deck.pop(), deck.pop()];
-    dealer = [deck.pop(), deck.pop()];
-    document.getElementById("bj-status").innerText = "";
-    renderCards();
-    checkBlackjack();
+function endBJ(reset=true){
+  bjState.inPlay = false;
+  setBJButtons(false);
+  // leave UI visible so player sees cards; they can close
 }
 
-function checkBlackjack(){
-    let p = calculateHand(player);
-    if(p > 21){
-        document.getElementById("bj-status").innerText = "Te pasaste. Pierdes.";
-    }
+/* ---------- UI helpers ---------- */
+function closeUI(){ overlay.style.display='none'; uiBox.innerHTML=''; }
+
+/* ---------- Input: open specific UIs with E ---------- */
+window.addEventListener('keydown', (e)=>{
+  if(e.key === 'e' || e.key === 'E'){
+    if(nearZone === 'ruleta') openRuletaUI();
+    else if(nearZone === 'slot') openSlotUI();
+    else if(nearZone === 'blackjack') openBlackjackUI();
+  }
+  // camera rotation with arrows
+  if(e.key === 'ArrowLeft') yaw += 0.06;
+  if(e.key === 'ArrowRight') yaw -= 0.06;
+  if(e.key === 'ArrowUp') pitch = Math.max(-Math.PI/6, pitch + 0.03);
+  if(e.key === 'ArrowDown') pitch = Math.min(Math.PI/6, pitch - 0.03);
+});
+
+/* ---------- Minimap ---------- */
+const minimap = document.getElementById('minimap');
+const mmC = document.createElement('canvas'); mmC.width = mmC.height = 120; minimap.appendChild(mmC);
+const mm = mmC.getContext('2d');
+function drawMinimap(){
+  mm.fillStyle = '#041018'; mm.fillRect(0,0,120,120);
+  const scale = 2;
+  const px = 60 + playerPos.x/scale, pz = 60 + playerPos.z/scale;
+  mm.fillStyle = '#1d7cf0'; mm.beginPath(); mm.arc(px,pz,4,0,Math.PI*2); mm.fill();
+  mm.fillStyle = '#a2d9c8'; mm.fillRect(60-6,60-6,12,12);
 }
 
-function endBlackjack(){
-    let p = calculateHand(player);
-    let d = calculateHand(dealer);
+/* ---------- MAIN LOOP ---------- */
+let lastTime = performance.now();
+function animate(now){
+  requestAnimationFrame(animate);
+  const dt = Math.min(0.05, (now - lastTime) * 0.001); lastTime = now;
 
-    let status = "";
+  // Movement
+  const delta = computeDelta(dt);
+  const nextPos = playerPos.clone().add(delta);
+  if(!checkCollision(nextPos)){
+    playerPos.copy(nextPos);
+    camera.position.set(playerPos.x, playerPos.y + 1.7, playerPos.z);
+  }
 
-    if(d > 21) status = "El dealer se pasó. ¡Ganas!";
-    else if (p > d) status = "¡Has ganado!";
-    else if (p < d) status = "Has perdido...";
-    else status = "Empate.";
+  // detect zones
+  detectZones();
 
-    document.getElementById("bj-status").innerText = status;
+  // update ruleta animation
+  updateRuleta(dt);
+
+  // idle wheel micro rotation
+  if(!ruletaState.spinning) wheelMesh.rotation.y += Math.sin(now*0.0005)*0.0006;
+
+  // draw minimap
+  drawMinimap();
+
+  renderer.render(scene, camera);
 }
+requestAnimationFrame(animate);
 
+/* ---------- Resize ---------- */
+window.addEventListener('resize', ()=>{
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+  camera.aspect = wrap.clientWidth/wrap.clientHeight;
+  camera.updateProjectionMatrix();
+});
 
-
-// ████████████████████████████████████████
-//                  RULETA
-// ████████████████████████████████████████
-
-function spinRuleta(){
-    let n = Math.floor(Math.random()*37);
-    document.getElementById("ruleta-result").innerText =
-        "Ha salido: " + n;
-}
-
-
-
-// ████████████████████████████████████████
-//                TRAGAPERRAS
-// ████████████████████████████████████████
-
-const symbols = ["🍒","🍋","⭐","🔔","7️⃣","🍉"];
-
-function spinSlots(){
-    let s1 = symbols[Math.floor(Math.random()*symbols.length)];
-    let s2 = symbols[Math.floor(Math.random()*symbols.length)];
-    let s3 = symbols[Math.floor(Math.random()*symbols.length)];
-
-    document.getElementById("s1").textContent = s1;
-    document.getElementById("s2").textContent = s2;
-    document.getElementById("s3").textContent = s3;
-
-    if(s1 === s2 && s2 === s3)
-        document.getElementById("slot-msg").innerText = "¡JACKPOT!";
-    else
-        document.getElementById("slot-msg").innerText = "Sigue intentando...";
-}
+/* ---------- Init HUD ---------- */
+updateHUD(); appendLog('Casino 3D listo — muévete con WASD, mira con flechas, pulsa E para interactuar.');
   </script>
 </body>
 </html>
