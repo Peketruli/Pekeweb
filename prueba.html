@@ -47,8 +47,6 @@ canvas{display:block}
 
 <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 <script>
-alert("A: Script cargado correctamente");
-
 // ==================== CONFIGURACIÓN GENERAL ====================
 const wrap = document.getElementById('wrap');
 const balanceEl = document.getElementById('balance');
@@ -59,208 +57,355 @@ const panel = document.getElementById('interaction-panel');
 const panelTitle = document.getElementById('panel-title');
 const panelContent = document.getElementById('panel-content');
 
-let balance = 1000;
+let balance = 1000; 
 let currentBet = 0;
 let playerPos = new THREE.Vector3(0,0,15);
 let yaw = 0, pitch = 0;
 
 function updateHUD(){ balanceEl.textContent=balance; betEl.textContent=currentBet; }
-function addLog(msg){ const div=document.createElement('div'); div.className='log-entry'; div.textContent=msg; logEl.prepend(div); }
+function addLog(msg){ 
+  const div=document.createElement('div'); 
+  div.className='log-entry'; 
+  div.textContent=msg; 
+  logEl.prepend(div); 
+}
 updateHUD();
 
 // ==================== ESCENA THREE ====================
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x041018);
-
 const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(wrap.clientWidth, wrap.clientHeight);
-renderer.shadowMap.enabled = true;
 wrap.appendChild(renderer.domElement);
 
 const camera = new THREE.PerspectiveCamera(72, wrap.clientWidth/wrap.clientHeight, 0.1, 1000);
 camera.position.set(0,1.7,15);
 
 // luces
-scene.add(new THREE.AmbientLight(0xffffff,0.4));
+scene.add(new THREE.AmbientLight(0xffffff,0.6));
 const dirLight = new THREE.DirectionalLight(0xffffff,0.8);
-dirLight.position.set(10,20,10);
-dirLight.castShadow = true;
-dirLight.shadow.mapSize.width = 1024;
-dirLight.shadow.mapSize.height = 1024;
+dirLight.position.set(10,20,10); 
 scene.add(dirLight);
 
 // suelo y paredes
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(50,50), new THREE.MeshStandardMaterial({color:0x091217, roughness:0.9}));
-floor.rotation.x=-Math.PI/2;
-floor.receiveShadow = true;
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(50,50), new THREE.MeshStandardMaterial({color:0x091217, roughness:0.95}));
+floor.rotation.x=-Math.PI/2; 
 scene.add(floor);
 
-function wall(w,h,d,x,y,z,rotY){
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color:0x071018}));
-  m.position.set(x,y,z);
-  if(rotY)m.rotation.y=rotY;
-  m.castShadow = true;
-  m.receiveShadow = true;
+function wall(w,h,d,x,y,z,rotY){ 
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color:0x071018})); 
+  m.position.set(x,y,z); 
+  if(rotY)m.rotation.y=rotY; 
   scene.add(m);
 }
-wall(50,10,2,0,5,-25); wall(50,10,2,0,5,25); wall(2,10,50,-25,5,0); wall(2,10,50,25,5,0);
 
-// ==================== OBJETOS ====================
-// Ruleta
+wall(50,10,2,0,5,-25);
+wall(50,10,2,0,5,25);
+wall(2,10,50,-25,5,0);
+wall(2,10,50,25,5,0);
+
+// ==================== RULETA 3D ====================
 const wheelRadius = 4;
 const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
-const anglePerPocket = (Math.PI*2)/pockets.length;
+const anglePerPocket = (Math.PI*2) / pockets.length;
 
+// Creación textura de rueda
 function createWheelCanvas(size=512){
-  const c = document.createElement('canvas'); c.width=c.height=size;
-  const ctx = c.getContext('2d'); const cx=size/2, cy=size/2, r=size*0.45;
-  ctx.fillStyle='#072b22'; ctx.fillRect(0,0,size,size);
+  const c=document.createElement('canvas'); 
+  c.width=c.height=size;
+  const ctx=c.getContext('2d'); 
+  const cx=size/2, cy=size/2, r=size*0.45;
+
+  ctx.fillStyle='#072b22';
+  ctx.fillRect(0,0,size,size);
+
   for(let i=0;i<pockets.length;i++){
-    const a0=i*anglePerPocket-Math.PI/2, a1=(i+1)*anglePerPocket-Math.PI/2;
-    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a0,a1); ctx.closePath();
-    ctx.fillStyle=(pockets[i]===0)?'#1b8b41':((i%2===0)?'#b71c1c':'#000'); ctx.fill();
-    const mid=a0+(a1-a0)/2; ctx.save();
-    ctx.translate(cx+Math.cos(mid)*r*0.66,cy+Math.sin(mid)*r*0.66);
-    ctx.rotate(mid+Math.PI/2); ctx.fillStyle='#fff'; ctx.font=`${Math.floor(size*0.04)}px sans-serif`;
-    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(pockets[i],0,0); ctx.restore();
+    const a0=i*anglePerPocket-Math.PI/2;
+    const a1=(i+1)*anglePerPocket-Math.PI/2;
+
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,r,a0,a1);
+    ctx.closePath();
+
+    ctx.fillStyle = 
+      pockets[i] === 0 ? "#1b8b41" : 
+      (i % 2 === 0 ? "#b71c1c" : "#000");
+
+    ctx.fill();
+
+    ctx.save();
+    const mid = a0 + (a1-a0)/2;
+    ctx.translate(cx + Math.cos(mid)*r*0.66, cy + Math.sin(mid)*r*0.66);
+    ctx.rotate(mid+Math.PI/2);
+    ctx.fillStyle="#fff";
+    ctx.font = `${Math.floor(size*0.04)}px sans-serif`;
+    ctx.textAlign="center";
+    ctx.textBaseline="middle";
+    ctx.fillText(pockets[i],0,0);
+    ctx.restore();
   }
-  ctx.beginPath(); ctx.fillStyle='#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
+
+  ctx.beginPath();
+  ctx.fillStyle="#111";
+  ctx.arc(cx,cy,r*0.45,0,Math.PI*2);
+  ctx.fill();
+
   return c;
 }
 
-const wheelTex = new THREE.CanvasTexture(createWheelCanvas());
-const wheelMesh = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius,wheelRadius,1.4,64), new THREE.MeshStandardMaterial({map:wheelTex}));
+const wheelTexture = new THREE.CanvasTexture(createWheelCanvas());
+const wheelMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(wheelRadius,wheelRadius,1.4,64),
+  new THREE.MeshStandardMaterial({ map: wheelTexture })
+);
 wheelMesh.position.set(0,0.7,0);
-wheelMesh.castShadow = true;
+wheelMesh.rotation.x = Math.PI/2;
 scene.add(wheelMesh);
 
-// Blackjack
-const bjTable = new THREE.Mesh(new THREE.BoxGeometry(6,0.8,3), new THREE.MeshStandardMaterial({color:0x1b4f2a}));
-bjTable.position.set(-10,0.4,-5);
-bjTable.castShadow=true; bjTable.receiveShadow=true;
-scene.add(bjTable);
+// bola de ruleta
+const ballMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.22,16,16),
+  new THREE.MeshStandardMaterial({color:0xffffff})
+);
+ballMesh.position.set(0,1.5, wheelRadius - 0.3);
+scene.add(ballMesh);
 
-// Slots
-const slotBody = new THREE.Mesh(new THREE.BoxGeometry(2,4,1.5), new THREE.MeshStandardMaterial({color:0x8a0f05}));
-slotBody.position.set(10,2,-5);
-slotBody.castShadow=true; slotBody.receiveShadow=true;
-scene.add(slotBody);
-const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
-const reelCanvases = [], reelTexes = [];
-for(let i=0;i<3;i++){
-  const c = document.createElement('canvas'); c.width=128; c.height=192;
-  const ctx = c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,c.width,c.height);
-  ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)],64,96);
-  reelCanvases.push(c); reelTexes.push(new THREE.CanvasTexture(c));
+let spinning = false;
+let wheelSpeed = 0;
+let ballSpeed = 0;
+let wheelAngle = 0;
+let ballAngle = 0;
+
+// ==================== RULETA — UI ====================
+function openRouletteUI(){
+  const html = `
+    <label>Apuesta (números separados por coma):</label><br>
+    <input type="text" id="rouletteInput" placeholder="0,7,14" style="width:90%"><br><br>
+    <label>$ A apostar:</label><br>
+    <input type="number" id="rouletteBet" value="10"><br><br>
+    <button class="btn" onclick="spinRoulette()">Girar Ruleta</button>
+  `;
+  panelTitle.textContent='Ruleta';
+  panelContent.innerHTML = html;
+  panel.style.display = 'block';
 }
-alert("B: medio perfecto")
-// Aseguramos que las referencias existen o son null
-const safeWheel   = (typeof wheelMesh !== "undefined" ? wheelMesh : null);
-const safeBJ      = (typeof bjTable   !== "undefined" ? bjTable   : null);
-const safeSlots   = (typeof slotBody  !== "undefined" ? slotBody  : null);
 
-const zones = [
-  {x:0,   z:0,   label:'Ruleta',     action:openRouletteUI, mesh: safeWheel},
-  {x:-10, z:-5,  label:'Blackjack',  action:openBlackjackUI, mesh: safeBJ},
-  {x:10,  z:-5,  label:'Tragaperras',action:openSlotsUI,     mesh: safeSlots}
+function spinRoulette(){
+  if(spinning) return;
+
+  const nums = document.getElementById("rouletteInput").value
+    .split(",")
+    .map(n => parseInt(n.trim()))
+    .filter(n => !isNaN(n));
+
+  const bet = parseInt(document.getElementById("rouletteBet").value);
+
+  if(balance < bet){
+    addLog("Ruleta: saldo insuficiente");
+    return;
+  }
+
+  panel.style.display = "none";
+
+  balance -= bet;
+  updateHUD();
+
+  spinning = true;
+
+  wheelSpeed = 7;      // velocidad inicial
+  ballSpeed  = -12;    // bola sentido contrario
+  wheelAngle = 0;
+  ballAngle  = Math.random() * Math.PI * 2;
+
+  setTimeout(()=>{
+
+    let interval = setInterval(()=>{
+
+      wheelSpeed *= 0.995;
+      ballSpeed  *= 0.997;
+
+      if(wheelSpeed < 0.15){
+        clearInterval(interval);
+        spinning = false;
+
+        const normalized = ((wheelAngle % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
+        const index = Math.floor(normalized / anglePerPocket);
+        const chosen = pockets[pockets.length - 1 - index];
+
+        addLog(`Ruleta salió ${chosen}`);
+
+        if(nums.includes(chosen)){
+          const win = bet * 35;
+          balance += win;
+          addLog(`Ganaste $${win}!`);
+        }
+
+        updateHUD();
+
+      }
+    }, 16);
+
+  }, 300);
+}
+
+// ==================== BLACKJACK (igual que tu código) ====================
+let bjPlayerCards=[], bjDealerCards=[], bjCurrentBet=0;
+function resetBlackjack(){ bjPlayerCards=[]; bjDealerCards=[]; }
+function getCard(){ 
+  const suits=['♠','♥','♦','♣'], ranks=['A','2','3','4','5','6','7','8','9','10','J','Q','K']; 
+  return ranks[Math.floor(Math.random()*ranks.length)]+suits[Math.floor(Math.random()*suits.length)]; 
+}
+function handValue(cards){
+  let sum=0, aces=0;
+  for(const c of cards){
+    const rank=c.slice(0,-1);
+    if(rank==='A'){ sum+=11; aces++; }
+    else if(['J','Q','K'].includes(rank)) sum+=10;
+    else sum+=parseInt(rank);
+  }
+  while(sum>21 && aces>0){ sum-=10; aces--; }
+  return sum;
+}
+function openBlackjackUI(){
+  if(balance<10){ addLog('Necesitas al menos 10$ para apostar'); return; }
+  bjCurrentBet = 10;
+  balance -= bjCurrentBet; updateHUD();
+  resetBlackjack();
+  bjPlayerCards.push(getCard(), getCard());
+  bjDealerCards.push(getCard(), getCard());
+  renderBlackjackPanel();
+  panel.style.display='block';
+}
+function renderBlackjackPanel(){
+  let html = `Tus cartas: ${bjPlayerCards.map(c=>'<span class="card">'+c+'</span>').join(' ')} (Total: ${handValue(bjPlayerCards)})<br>`;
+  html += `Dealer: <span class="card">${bjDealerCards[0]}</span> ??<br>`;
+  html += `<button class="btn" onclick="hitBlackjack()">Pedir</button>`;
+  html += `<button class="btn" onclick="standBlackjack()">Plantarse</button>`;
+  html += `<button class="btn" onclick="doubleBlackjack()">Doblar</button>`;
+  panelContent.innerHTML = html;
+}
+function hitBlackjack(){
+  bjPlayerCards.push(getCard());
+  const total = handValue(bjPlayerCards);
+  if(total>21){ addLog(`Blackjack: Perdiste con ${total}`); panel.style.display='none'; } 
+  else renderBlackjackPanel();
+}
+function standBlackjack(){
+  let dealerTotal = handValue(bjDealerCards);
+  while(dealerTotal<17){ bjDealerCards.push(getCard()); dealerTotal=handValue(bjDealerCards); }
+  const playerTotal = handValue(bjPlayerCards);
+  if(playerTotal>21){ addLog('Blackjack: Perdiste!'); }
+  else if(dealerTotal>21 || playerTotal>dealerTotal){ balance+=bjCurrentBet*2; addLog('Blackjack: Ganaste!'); }
+  else if(playerTotal===dealerTotal){ balance+=bjCurrentBet; addLog('Blackjack: Empate'); }
+  else{ addLog('Blackjack: Perdiste!'); }
+  updateHUD(); panel.style.display='none';
+}
+function doubleBlackjack(){
+  if(balance<bjCurrentBet){ addLog('No tienes suficiente para doblar'); return; }
+  balance -= bjCurrentBet; bjCurrentBet*=2; updateHUD();
+  hitBlackjack();
+  if(handValue(bjPlayerCards)<=21) standBlackjack();
+}
+
+// ==================== TRAGAPERRAS (igual que tu código) ====================
+const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
+const reelCanvases=[], reelTexes=[];
+
+for(let i=0;i<3;i++){
+  const c=document.createElement('canvas'); 
+  c.width=128; 
+  c.height=192;
+  const ctx=c.getContext('2d'); 
+  ctx.fillStyle='#070707'; 
+  ctx.fillRect(0,0,128,192);
+  ctx.fillStyle='#fff'; 
+  ctx.font='64px sans-serif'; 
+  ctx.textAlign='center'; 
+  ctx.textBaseline='middle';
+  ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)],64,96);
+
+  reelCanvases.push(c); 
+  reelTexes.push(new THREE.CanvasTexture(c));
+}
+
+const slotBody = new THREE.Mesh(
+  new THREE.BoxGeometry(2,4,1.5),
+  new THREE.MeshStandardMaterial({color:0x8a0f05})
+);
+slotBody.position.set(10,2,-5);
+scene.add(slotBody);
+
+function openSlotsUI(){
+  const html = `
+    <label>$ A apostar:</label><br>
+    <input type="number" id="slotBet" value="10"><br><br>
+    <button class="btn" onclick="spinSlots()">Girar</button>
+  `;
+  panelTitle.textContent='Tragaperras'; 
+  panelContent.innerHTML=html; 
+  panel.style.display='block';
+}
+
+function spinSlots(){
+  const amt = parseInt(document.getElementById('slotBet').value);
+  if(balance<amt){ addLog('No tienes suficiente saldo'); return; }
+  balance-=amt; 
+  updateHUD(); 
+  panel.style.display='none';
+
+  const results = [];
+  for(let i=0;i<3;i++){
+    const sym = symbols[Math.floor(Math.random()*symbols.length)];
+    const ctx = reelCanvases[i].getContext('2d');
+    ctx.fillStyle='#070707';
+    ctx.fillRect(0,0,128,192);
+    ctx.fillStyle='#fff';
+    ctx.font='64px sans-serif';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.fillText(sym,64,96);
+    reelTexes[i].needsUpdate = true;
+    results.push(sym);
+  }
+
+  const counts={};
+  results.forEach(s=>counts[s]=(counts[s]||0)+1);
+
+  let win=0;
+  if(Object.values(counts).includes(3)) win=amt*5;
+  else if(Object.values(counts).includes(2)) win=amt*2;
+
+  if(win>0){ 
+    balance+=win; 
+    addLog(`Tragaperras: ganaste $${win}!`); 
+  } else addLog('Tragaperras: perdiste');
+
+  updateHUD();
+}
+
+// ==================== ZONAS DE INTERACCIÓN ====================
+const zones=[
+  {x:0,z:0,label:'Ruleta',action:openRouletteUI},
+  {x:-10,z:-5,label:'Blackjack',action:openBlackjackUI},
+  {x:10,z:-5,label:'Tragaperras',action:openSlotsUI}
 ];
 
 let currentZone = null;
-
-// Guardamos estados originales SOLO si el mesh existe
-for (const z of zones) {
-  if (!z.mesh) continue;
-
-  // Escala original
-  try {
-    z._origScale = z.mesh.scale ? z.mesh.scale.clone() : null;
-  } catch(e){ z._origScale = null; }
-
-  // Material original
-  try {
-    const m = z.mesh.material;
-    if (m && m.emissive) {
-      z._origEmissive = m.emissive.clone();
-      z._origEmissiveIntensity = m.emissiveIntensity ?? 0;
-    }
-  } catch(e){}
-}
-
 function detectZones(){
   currentZone = null;
-
   for(const z of zones){
-    try{
-
-      // Objetos inexistentes → saltamos sin error
-      if (!z.mesh) continue;
-
-      const dx = playerPos.x - z.x;
-      const dz = playerPos.z - z.z;
-      const inside = Math.sqrt(dx*dx + dz*dz) < 3;
-
-      if (inside) {
-        currentZone = z;
-        prompt.style.display = 'block';
-        prompt.textContent = '[E] ' + z.label;
-
-        const m = z.mesh.material;
-
-        // Si el material permite "emissive", lo usamos
-        if (m && m.emissive) {
-          if (!z._highlighting) {
-            m.emissive.set(0xffc800);
-            if (typeof m.emissiveIntensity === "number") {
-              m.emissiveIntensity = 0.6;
-            }
-            z._highlighting = true;
-          }
-
-        } else {
-          // Si no tiene emissive, hacemos fallback: un poquito más grande
-          if (z._origScale && !z._highlighting) {
-            z.mesh.scale.set(
-              z._origScale.x * 1.05,
-              z._origScale.y * 1.05,
-              z._origScale.z * 1.05
-            );
-            z._highlighting = true;
-          }
-        }
-
-      } else {
-        // Cuando sale de la zona, restauramos
-        if (z._highlighting) {
-          const m = z.mesh.material;
-
-          if (m && m.emissive && z._origEmissive) {
-            m.emissive.copy(z._origEmissive);
-            if (typeof m.emissiveIntensity === "number") {
-              m.emissiveIntensity = z._origEmissiveIntensity ?? 0;
-            }
-          }
-
-          if (z._origScale) {
-            z.mesh.scale.copy(z._origScale);
-          }
-
-          z._highlighting = false;
-        }
-      }
-
-    } catch(err){
-      // Si algo falla aquí, NO se rompe nada
-      addLog("Error en detectZones(): " + err.message);
+    const dx = playerPos.x - z.x, dz = playerPos.z - z.z;
+    if(Math.sqrt(dx*dx+dz*dz) < 3){
+      currentZone = z;
+      prompt.style.display = 'block';
+      prompt.textContent = '[E] ' + z.label;
+      return;
     }
   }
-
-  if (!currentZone) prompt.style.display = 'none';
+  prompt.style.display='none';
 }
-
-alert("C4");   // <-- Esta alerta ya va a funcionar
-
 
 // ==================== MOVIMIENTO ====================
 const keys={w:false,a:false,s:false,d:false,ArrowLeft:false,ArrowRight:false,ArrowUp:false,ArrowDown:false};
@@ -268,22 +413,42 @@ window.addEventListener("keydown",e=>{ if(e.key in keys) keys[e.key]=true; });
 window.addEventListener("keyup",e=>{ if(e.key in keys) keys[e.key]=false; });
 
 const speed=5;
+
 function computeDelta(dt){
   const rotSpeed=1.5*dt;
-  if(keys.ArrowLeft) yaw+=rotSpeed; if(keys.ArrowRight) yaw-=rotSpeed;
-  if(keys.ArrowUp) pitch+=rotSpeed*0.5; if(keys.ArrowDown) pitch-=rotSpeed*0.5;
+
+  if(keys.ArrowLeft) yaw+=rotSpeed; 
+  if(keys.ArrowRight) yaw-=rotSpeed;
+  if(keys.ArrowUp) pitch+=rotSpeed*0.5; 
+  if(keys.ArrowDown) pitch-=rotSpeed*0.5;
+
   pitch=Math.max(-1.2,Math.min(1.2,pitch));
-  const e=new THREE.Euler(pitch,yaw,0,'YXZ'); const q=new THREE.Quaternion().setFromEuler(e);
-  const forward=new THREE.Vector3(0,0,-1).applyQuaternion(q); forward.y=0; forward.normalize();
-  const right=new THREE.Vector3(1,0,0).applyQuaternion(q); right.y=0; right.normalize();
-  let mf=0,mr=0; if(keys.w) mf+=1; if(keys.s) mf-=1; if(keys.a) mr-=1; if(keys.d) mr+=1;
-  const len=Math.hypot(mf,mr); if(len>0){ mf/=len; mr/=len; }
-  const delta=new THREE.Vector3(); delta.addScaledVector(forward,mf*speed*dt); delta.addScaledVector(right,mr*speed*dt);
+
+  const e=new THREE.Euler(pitch,yaw,0,'YXZ');
+  const q=new THREE.Quaternion().setFromEuler(e);
+
+  const forward=new THREE.Vector3(0,0,-1).applyQuaternion(q);
+  forward.y=0; forward.normalize();
+
+  const right=new THREE.Vector3(1,0,0).applyQuaternion(q);
+  right.y=0; right.normalize();
+
+  let mf=0,mr=0;
+  if(keys.w) mf+=1;
+  if(keys.s) mf-=1;
+  if(keys.a) mr-=1;
+  if(keys.d) mr+=1;
+
+  const len=Math.hypot(mf,mr);
+  if(len>0){ mf/=len; mr/=len; }
+
+  const delta=new THREE.Vector3();
+  delta.addScaledVector(forward,mf*speed*dt);
+  delta.addScaledVector(right,mr*speed*dt);
   return delta;
 }
-alert("C3");
 
-// ==================== PANEL DE JUEGO ====================
+// ==================== PANEL ====================
 document.addEventListener("keydown",(e)=>{
   if(e.key.toLowerCase()==='e' && currentZone) currentZone.action();
   if(e.key==='Escape') panel.style.display='none';
@@ -293,62 +458,41 @@ function closePanel(){ panel.style.display='none'; }
 
 // ==================== ANIMACIÓN ====================
 let lastTime=0;
-let wheelSpinTime=0, wheelTargetAngle=0, wheelSpinning=false;
+
 function animate(ts){
   requestAnimationFrame(animate);
-  const dt=(ts-lastTime)*0.001; lastTime=ts;
+
+  const dt=(ts-lastTime)*0.001; 
+  lastTime=ts;
 
   detectZones();
-  const delta=computeDelta(dt); playerPos.add(delta);
-  camera.position.copy(playerPos); camera.position.y=1.7; camera.rotation.set(pitch,yaw,0,'YXZ');
 
-  // Ruleta animada
-  if(wheelSpinning){
-    const diff = wheelTargetAngle - wheelMesh.rotation.y;
-    wheelMesh.rotation.y += diff * 0.05;
-    if(Math.abs(diff)<0.01) wheelSpinning=false;
+  const delta=computeDelta(dt);
+  playerPos.add(delta);
+
+  camera.position.copy(playerPos);
+  camera.position.y=1.7;
+  camera.rotation.set(pitch,yaw,0,'YXZ');
+
+  if(spinning){
+    wheelAngle += wheelSpeed * dt;
+    ballAngle  += ballSpeed  * dt;
+
+    wheelMesh.rotation.z = wheelAngle;
+    ballMesh.position.x = Math.cos(ballAngle) * (wheelRadius - 0.3);
+    ballMesh.position.z = Math.sin(ballAngle) * (wheelRadius - 0.3);
   }
 
   renderer.render(scene,camera);
 }
 requestAnimationFrame(animate);
 
-window.addEventListener("resize",()=>{ camera.aspect=wrap.clientWidth/wrap.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(wrap.clientWidth,wrap.clientHeight); });
-alert("C2");
-
-// ==================== FUNCIONES DE RULETA CON ANIMACIÓN ====================
-function openRouletteUI(){
-  const html = `<label>Apuesta (ej: 0,7,14):</label><br><input type="text" id="rouletteInput" style="width:80%"><br>
-  <label>$ A apostar:</label> <input type="number" id="rouletteBet" value="10"><br>
-  <button class="btn" onclick="spinRoulette()">Girar Ruleta</button>`;
-  panelTitle.textContent='Ruleta'; panelContent.innerHTML=html; panel.style.display='block';
-}
-
-function spinRoulette(){
-  const nums = document.getElementById('rouletteInput').value.split(',').map(x=>parseInt(x.trim())).filter(x=>!isNaN(x));
-  const amt = parseInt(document.getElementById('rouletteBet').value);
-  if(balance<amt){ addLog('No tienes suficiente saldo'); return; }
-  balance-=amt; updateHUD(); panel.style.display='none';
-
-  // Animación de giro
-  const chosen = pockets[Math.floor(Math.random()*pockets.length)];
-  wheelTargetAngle = -chosen*anglePerPocket;
-  wheelSpinning = true;
-alert("C1");
-
-  setTimeout(()=>{
-    addLog(`Ruleta salió ${chosen}`);
-    if(nums.includes(chosen)){ const win = amt*35; balance+=win; addLog(`Ganaste $${win}!`); }
-    updateHUD();
-  },2000);
-}
-alert("C0");
-
-// ==================== AQUÍ PUEDO AGREGAR BLACKJACK Y SLOTS MEJORADOS ====================
-// Por espacio no incluyo la lógica detallada de Blackjack y Slots animadas, 
-// pero la base de animación de ruleta ya está lista para ampliar con efectos visuales y UI mejoradas.
-alert("C: Final del script alcanzado");
-
+// ==================== RESIZE ====================
+window.addEventListener("resize",()=>{
+  camera.aspect = wrap.clientWidth / wrap.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+});
 </script>
 </body>
 </html>
