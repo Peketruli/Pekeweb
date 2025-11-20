@@ -2,39 +2,26 @@
 <html lang="es">
 <head>
 <meta charset="utf-8" />
-<title>Casino 3D — Mejorado</title>
+<title>Casino 3D — Básico</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-html,body{height:100%;margin:0;background:#030612;color:#fff;font-family:Arial,Helvetica,sans-serif;overflow:hidden}
-#wrap{position:relative;height:100vh;overflow:hidden}
-canvas{display:block}
-
-.hud{position:absolute;right:12px;top:12px;z-index:40;max-width:380px}
-.panel{background:rgba(0,0,0,0.7);padding:12px;border-radius:10px;margin-bottom:10px}
-.info-row{display:flex;justify-content:space-between;align-items:center;margin:6px 0;font-size:13px}
-#prompt{position:absolute;left:50%;transform:translateX(-50%);bottom:92px;background:rgba(0,0,0,0.7);padding:8px 12px;border-radius:8px;display:none;z-index:45}
-#interaction-panel{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:420px;background:rgba(8,10,12,0.96);border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,0.7);color:#ddd;padding:16px;z-index:50;display:none}
-#interaction-panel h3{margin-top:0;}
-.btn{background:#d95d00;color:white;padding:8px 10px;border-radius:8px;border:none;cursor:pointer;margin-top:8px}
-.card{display:inline-block;background:#111;padding:6px 8px;border-radius:6px;border:1px solid #333;margin-right:4px}
-.log-entry{margin:2px 0;font-size:12px}
-#minimap{position:absolute;left:12px;top:12px;width:120px;height:120px;background:rgba(255,255,255,0.02);border-radius:8px;z-index:30}
-.highlight{box-shadow:0 0 15px 5px rgba(255,200,0,0.6);}
+html, body {height:100%; margin:0; background:#030612; color:#fff; font-family:Arial, Helvetica, sans-serif; overflow:hidden;}
+#wrap {position:relative; width:100%; height:100vh;}
+canvas {display:block;}
+.hud {position:absolute; top:12px; right:12px; max-width:300px; z-index:10;}
+.panel {background:rgba(0,0,0,0.7); padding:10px; border-radius:8px; margin-bottom:10px;}
+.info-row {display:flex; justify-content:space-between; margin:4px 0;}
+#prompt {position:absolute; bottom:80px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.7); padding:6px 10px; border-radius:6px; display:none; z-index:20;}
+#interaction-panel {position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:350px; background:rgba(8,10,12,0.95); padding:16px; border-radius:10px; display:none; z-index:30;}
+.btn {background:#d95d00; color:white; padding:6px 10px; border:none; border-radius:6px; cursor:pointer; margin-top:6px;}
 </style>
 </head>
 <body>
 <div id="wrap">
-  <div id="minimap"></div>
   <div class="hud">
     <div class="panel">
-      <h3>Casino 3D Mejorado</h3>
       <div class="info-row"><span>Saldo</span><strong id="balance">1000</strong></div>
       <div class="info-row"><span>Apuesta</span><strong id="bet">0</strong></div>
-      <div style="font-size:13px;margin-top:6px">Controles: <strong>W A S D</strong> moverse · <strong>Flechas</strong> girar cámara · <strong>E</strong> interactuar</div>
-    </div>
-    <div class="panel">
-      <h4>Historial</h4>
-      <div id="log" style="max-height:120px;overflow:auto;font-size:12px;background:rgba(255,255,255,0.02);padding:6px;border-radius:6px"></div>
     </div>
   </div>
   <div id="prompt">[E] Interactuar</div>
@@ -47,8 +34,7 @@ canvas{display:block}
 
 <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 <script>
-  alert("A")
-// ==================== CONFIGURACIÓN GENERAL ====================
+// ==================== CONFIG ====================
 const wrap = document.getElementById('wrap');
 const balanceEl = document.getElementById('balance');
 const betEl = document.getElementById('bet');
@@ -60,602 +46,155 @@ const panelContent = document.getElementById('panel-content');
 
 let balance = 1000;
 let currentBet = 0;
-let playerPos = new THREE.Vector3(0,0,15);
-let yaw = 0, pitch = 0;
 
-function updateHUD(){ balanceEl.textContent = balance; betEl.textContent = currentBet; }
-function addLog(msg){
-  const d = document.createElement('div'); d.className='log-entry'; d.textContent = msg;
-  logEl.prepend(d);
+function updateHUD(){
+  balanceEl.textContent = balance;
+  betEl.textContent = currentBet;
 }
+
+function addLog(msg){
+  console.log(msg); // por ahora log simple
+}
+
 updateHUD();
 
-// ==================== ESCENA THREE (mantener igual que antes) ====================
+// ==================== THREE SCENE ====================
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x041018);
+const camera = new THREE.PerspectiveCamera(75, wrap.clientWidth/wrap.clientHeight, 0.1, 1000);
+camera.position.set(0,1.7,10);
+
 const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 wrap.appendChild(renderer.domElement);
 
-const camera = new THREE.PerspectiveCamera(72, wrap.clientWidth / wrap.clientHeight, 0.1, 1000);
-camera.position.set(0,1.7,15);
+// luces
 scene.add(new THREE.AmbientLight(0xffffff,0.6));
 const dirLight = new THREE.DirectionalLight(0xffffff,0.8);
-dirLight.position.set(10,20,10); scene.add(dirLight);
+dirLight.position.set(10,20,10);
+scene.add(dirLight);
 
-// suelo y paredes (igual)
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(50,50), new THREE.MeshStandardMaterial({color:0x091217, roughness:0.95}));
-floor.rotation.x = -Math.PI/2; scene.add(floor);
-function wall(w,h,d,x,y,z,rotY){ const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d), new THREE.MeshStandardMaterial({color:0x071018})); m.position.set(x,y,z); if(rotY)m.rotation.y=rotY; scene.add(m); }
-wall(50,10,2,0,5,-25); wall(50,10,2,0,5,25); wall(2,10,50,-25,5,0); wall(2,10,50,25,5,0);
+// suelo
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(50,50),
+  new THREE.MeshStandardMaterial({color:0x091217})
+);
+floor.rotation.x = -Math.PI/2;
+scene.add(floor);
 
-// ==================== RUEDA (dejamos como está por ahora) ====================
-const wheelRadius = 4;
-const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
-const anglePerPocket = (Math.PI*2) / pockets.length;
-function createWheelCanvas(size=512){
-  const c=document.createElement('canvas'); c.width=c.height=size;
-  const ctx=c.getContext('2d'); const cx=size/2, cy=size/2, r=size*0.45;
-  ctx.fillStyle='#072b22'; ctx.fillRect(0,0,size,size);
-  for(let i=0;i<pockets.length;i++){
-    const a0=i*anglePerPocket-Math.PI/2, a1=(i+1)*anglePerPocket-Math.PI/2;
-    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a0,a1); ctx.closePath();
-    ctx.fillStyle=(pockets[i]===0)?'#1b8b41':((i%2===0)?'#b71c1c':'#000'); ctx.fill();
-    const mid=a0+(a1-a0)/2; ctx.save();
-    ctx.translate(cx+Math.cos(mid)*r*0.66,cy+Math.sin(mid)*r*0.66);
-    ctx.rotate(mid+Math.PI/2); ctx.fillStyle='#fff'; ctx.font=`${Math.floor(size*0.04)}px sans-serif`;
-    ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(pockets[i],0,0); ctx.restore();
-  }
-  ctx.beginPath(); ctx.fillStyle='#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
-  return c;
+// paredes simples
+function addWall(x,y,z,w,h,d){
+  const wall = new THREE.Mesh(
+    new THREE.BoxGeometry(w,h,d),
+    new THREE.MeshStandardMaterial({color:0x071018})
+  );
+  wall.position.set(x,y,z);
+  scene.add(wall);
 }
-const wheelTexture = new THREE.CanvasTexture(createWheelCanvas());
-const wheelMesh = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius,wheelRadius,1.4,64), new THREE.MeshStandardMaterial({ map: wheelTexture }));
-wheelMesh.position.set(0,0.3,0); wheelMesh.rotation.x = 2*Math.PI; scene.add(wheelMesh);
+addWall(0,5,-25,50,10,2);
+addWall(0,5,25,50,10,2);
+addWall(-25,5,0,2,10,50);
+addWall(25,5,0,2,10,50);
 
-// bola (si la usas)
-const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.22,16,16), new THREE.MeshStandardMaterial({color:0xffffff}));
-ballMesh.position.set(0,1.2,wheelRadius-0.3); scene.add(ballMesh);
+// ==================== PLAYER ====================
+let playerPos = new THREE.Vector3(0,0,10);
+let yaw = 0, pitch = 0;
 
-// ==================== TRAGAPERRAS MEJORADA ====================
-// Configuración de símbolos con pesos (mayor peso = más frecuente)
-const slotSymbols = [
-  {k:'🍒', weight:30, payout3:50, payout2:5},
-  {k:'⭐', weight:20, payout3:40, payout2:4},
-  {k:'7',  weight:8,  payout3:200, payout2:10},
-  {k:'🍋', weight:22, payout3:30, payout2:3},
-  {k:'🔔', weight:12, payout3:80, payout2:6},
-  {k:'🍉', weight:8, payout3:60, payout2:5}
-];
-// expandir array de símbolos según peso para elegir aleatorio
-const reelStrip = [];
-slotSymbols.forEach(s => { for(let i=0;i<s.weight;i++) reelStrip.push(s.k); });
-
-// canvases para símbolos (ya tenías algo similar)
-const reelCanvases = [], reelTexes = [];
-for(let i=0;i<3;i++){
-  const c=document.createElement('canvas'); c.width=128; c.height=192;
-  const ctx=c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,128,192);
-  ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(reelStrip[Math.floor(Math.random()*reelStrip.length)],64,96);
-  reelCanvases.push(c); reelTexes.push(new THREE.CanvasTexture(c));
-}
-
-// Si quieres mostrar físicamente los tex en la máquina, tu mesh de slots debería usar esos textures.
-// (en tu escena anterior tenías slotBody; aquí no lo toco)
-
-let slotSpinning = false;
-// Reel state: index (integer pos in strip) and offset float for smooth animation
-const reels = [
-  {pos: Math.floor(Math.random()*reelStrip.length), offset:0, velocity:0},
-  {pos: Math.floor(Math.random()*reelStrip.length), offset:0, velocity:0},
-  {pos: Math.floor(Math.random()*reelStrip.length), offset:0, velocity:0}
-];
- alert("B")
-function openSlotsUI(){
-  const html = `
-    <label>$ A apostar:</label><br>
-    <input id="slotBet" type="number" value="10" style="width:70px"><br><br>
-    <div style="display:flex;gap:6px;align-items:center;">
-      <button class="btn" onclick="startSlots()">Girar (rápido)</button>
-      <button class="btn" onclick="startSlots(true)">Girar (lento)</button>
-    </div>
-    <div style="margin-top:10px;font-size:12px;color:#ccc">Pago 3 iguales: variable por símbolo. 2 iguales paga menos.</div>
-  `;
-  panelTitle.textContent='Tragaperras';
-  panelContent.innerHTML = html;
-  panel.style.display = 'block';
-}
-
-function drawReelTexture(reelIndex, centerSymbol){
-  // dibuja el símbolo centerSymbol en la textura (simple)
-  const c = reelCanvases[reelIndex];
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = '#070707';
-  ctx.fillRect(0,0,c.width,c.height);
-  ctx.fillStyle = '#fff';
-  ctx.font = '64px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(centerSymbol, c.width/2, c.height/2);
-  reelTexes[reelIndex].needsUpdate = true;
-}
-
-function startSlots(slow=false){
-  if(slotSpinning) return;
-  const amt = parseInt(document.getElementById('slotBet').value);
-  if(isNaN(amt) || amt <= 0){ addLog('Tragaperras: apuesta inválida'); return; }
-  if(balance < amt){ addLog('Tragaperras: saldo insuficiente'); return; }
-
-  panel.style.display = 'none';
-  balance -= amt; updateHUD();
-  slotSpinning = true;
-
-  // asignamos velocidades iniciales y tiempos de parada
-  for(let i=0;i<3;i++){
-    reels[i].velocity = (slow ? 60 : 140) + Math.random()*30 + i*20;
-    reels[i].offset = 0;
-  }
-
-  // tiempos de parada en ms (cada rodillo para después del anterior)
-  const stopDelays = [1000 + Math.random()*300, 1400 + Math.random()*300, 1800 + Math.random()*400];
-
-  const start = performance.now();
-  const stopTimes = stopDelays.map(d => start + d);
-
-  function step(now){
-    const dt = 16/1000; // fijo para estabilidad
-    // actualizar cada reel
-    for(let i=0;i<3;i++){
-      // si ya pasó stop time, ralentizamos bruscamente
-      if(now >= stopTimes[i]){
-        // deceleración
-        reels[i].velocity *= 0.92;
-        // si velocidad baja mucho, fijamos a 0 y alineamos
-        if(reels[i].velocity < 20){
-          // snap to nearest index
-          reels[i].pos = Math.floor(reels[i].pos + reels[i].offset) % reelStrip.length;
-          if(reels[i].pos < 0) reels[i].pos += reelStrip.length;
-          reels[i].offset = 0;
-          reels[i].velocity = 0;
-        }
-      }
-      // mientras gira, avanzamos offset por velocidad
-      if(reels[i].velocity > 0){
-        reels[i].offset += reels[i].velocity * dt / 60; // scaling
-        // mover pos cuando offset >=1
-        while(reels[i].offset >= 1){
-          reels[i].pos = (reels[i].pos + 1) % reelStrip.length;
-          reels[i].offset -= 1;
-        }
-      }
-      // dibujar símbolo central según pos
-      const centerIndex = (reels[i].pos + Math.floor(reelStrip.length/2)) % reelStrip.length;
-      drawReelTexture(i, reelStrip[centerIndex]);
-    }
-
-    // actualizar visuales físicos si los usas (por ejemplo mapas en mesas)
-    // reelTexes[*].needsUpdate ya se hace por drawReelTexture
-alert("C")
-    // comprobar si todos parados
-    const allStopped = reels.every(r => r.velocity === 0);
-    if(!allStopped){
-      requestAnimationFrame(step);
-    } else {
-      slotSpinning = false;
-      // obtener los símbolos de la línea central
-      const centers = reels.map(r => {
-        const idx = (r.pos + Math.floor(reelStrip.length/2)) % reelStrip.length;
-        return reelStrip[idx];
-      });
-      evaluateSlotResult(centers, amt);
-    }
-  }
-  requestAnimationFrame(step);
-}
-
-function evaluateSlotResult(centers, bet){
-  // contar coincidencias
-  const counts = {};
-  centers.forEach(s => counts[s] = (counts[s] || 0) + 1);
-  // buscar símbolo con mayor pago 3 iguales
-  let payout = 0;
-  // encontrar symbol metadata
-  const meta = symbol => slotSymbols.find(x => x.k === symbol);
-  // 3 iguales
-  if(centers[0] === centers[1] && centers[1] === centers[2]){
-    const m = meta(centers[0]);
-    payout = (m && m.payout3) ? m.payout3 * bet : 10 * bet;
-    addLog(`Tragaperras: ${centers.join(' ')} → ¡3 iguales! Ganaste $${payout}`);
-  } else if(centers[0] === centers[1] || centers[1] === centers[2] || centers[0] === centers[2]){
-    // 2 iguales (pago menor)
-    // encontrar cuál se repite
-    let repeated = centers[0];
-    if(centers[0] !== centers[1]) repeated = centers[1];
-    const m = meta(repeated);
-    payout = (m && m.payout2) ? m.payout2 * bet : 1 * bet;
-    addLog(`Tragaperras: ${centers.join(' ')} → 2 iguales. Ganaste $${payout}`);
-  } else {
-    addLog(`Tragaperras: ${centers.join(' ')} → perdiste`);
-  }
-
-  if(payout > 0){ balance += payout; updateHUD(); }
-}
-
-// ==================== BLACKJACK MEJORADO (6 decks shoe, split, double, insurance) ====================
-function createShoe(decks = 6){
-  const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  const suits = ['♠','♥','♦','♣'];
-  const shoe = [];
-  for(let d=0; d<decks; d++){
-    for(const r of ranks) for(const s of suits) shoe.push(r + s);
-  }
-  // shuffle (Fisher–Yates)
-  for(let i=shoe.length-1;i>0;i--){
-    const j = Math.floor(Math.random()*(i+1));
-    [shoe[i], shoe[j]] = [shoe[j], shoe[i]];
-  }
-  return shoe;
-}
-let shoe = createShoe();
-function drawFromShoe(){ if(shoe.length < 52) shoe = shoe.concat(createShoe()); return shoe.pop(); }
-
-function cardValue(card){
-  const rank = card.slice(0, -1);
-  if(rank === 'A') return 11;
-  if(['J','Q','K'].includes(rank)) return 10;
-  return parseInt(rank);
-}
-  alert("D")
-function handValue(cards){
-  let sum = 0, aces = 0;
-  for(const c of cards){ const v = cardValue(c); sum += v; if(c.startsWith('A')) aces++; }
-  while(sum > 21 && aces > 0){ sum -= 10; aces--; }
-  return sum;
-}
-function isBlackjack(cards){ return cards.length === 2 && handValue(cards) === 21; }
-
-let bjState = null;
-// bjState structure:
-// { bet, hands: [ { cards:[], doubled:false, finished:false } , ... ], dealer: { cards:[] }, currentHand: index, insuranceBet: 0 }
-
-function openBlackjackUI(){
-  panelTitle.textContent = 'Blackjack';
-  panelContent.innerHTML = `
-    <label>Apuesta:</label><br>
-    <input id="bjBet" type="number" value="10" style="width:80px"><br><br>
-    <button class="btn" onclick="startBlackjack()">Empezar</button>
-    <div style="margin-top:8px;font-size:12px;color:#ccc">Reglas: Dealer planta en 17 suave. Blackjack paga 3:2.</div>
-  `;
-  panel.style.display = 'block';
-}
-
-function startBlackjack(){
-  const bet = parseInt(document.getElementById('bjBet').value);
-  if(isNaN(bet) || bet <= 0){ addLog('Blackjack: apuesta inválida'); return; }
-  if(balance < bet){ addLog('Blackjack: saldo insuficiente'); return; }
-  panel.style.display = 'none';
-  balance -= bet; updateHUD();
-
-  // preparar estado
-  bjState = { bet, hands: [], dealer: { cards: [] }, currentHand: 0, insuranceBet: 0 };
-  // crear mano inicial
-  const playerHand = { cards: [], doubled:false, finished:false, isSplitHand:false, originalRank:null };
-  // deal: player, dealer, player, dealer (dealer second card face-down)
-  playerHand.cards.push(drawFromShoe());
-  bjState.dealer.cards.push(drawFromShoe());
-  playerHand.cards.push(drawFromShoe());
-  bjState.dealer.cards.push(drawFromShoe()); // hole card
-  playerHand.originalRank = playerHand.cards[0].slice(0,-1);
-  bjState.hands.push(playerHand);
-
-  // si dealer muestra As, ofrecer insurance (simple UI)
-  const dealerUp = bjState.dealer.cards[0];
-  if(dealerUp.startsWith('A')){
-    // show insurance option
-    panelTitle.textContent = 'Blackjack — Seguro?';
-    panelContent.innerHTML = `
-      <div>Dealer muestra un As. ¿Quieres seguro (mitad de tu apuesta)?</div>
-      <div style="margin-top:8px">
-        <button class="btn" onclick="takeInsurance()">Tomar seguro</button>
-        <button class="btn" onclick="declineInsurance()">No</button>
-      </div>
-    `;
-    panel.style.display = 'block';
-    return;
-  }
-
-  // otherwise continue to player turn
-  renderBlackjackMain();
-}
-
-function takeInsurance(){
-  panel.style.display = 'none';
-  const ins = Math.floor(bjState.bet / 2);
-  if(balance >= ins){
-    balance -= ins; updateHUD();
-    bjState.insuranceBet = ins;
-    addLog(`Blackjack: tomaste seguro $${ins}`);
-  } else {
-    addLog('Blackjack: no tienes para seguro');
-  }
-  renderBlackjackMain();
-}
-function declineInsurance(){ panel.style.display = 'none'; renderBlackjackMain(); }
-alert("E")
-function renderBlackjackMain(){
-  // build UI showing dealer upcard and player's hand(s)
-  const dealerUp = bjState.dealer.cards[0];
-  let html = `<div>Dealer: <span class="card">${dealerUp}</span> <span class="card">??</span></div><hr>`;
-  // player's hands
-  bjState.hands.forEach((h, idx) => {
-    html += `<div style="margin-bottom:8px"><strong>Mano ${idx+1}${idx===bjState.currentHand?' (activa)':''}</strong>: `;
-    html += h.cards.map(c=>`<span class="card">${c}</span>`).join(' ');
-    html += ` (Total: ${handValue(h.cards)})</div>`;
-  });
-
-  // options depend on current hand
-  const curr = bjState.hands[bjState.currentHand];
-  const hv = handValue(curr.cards);
-  html += `<div style="margin-top:8px">`;
-  // Hit
-  html += `<button class="btn" onclick="bjHit()">Pedir</button> `;
-  // Stand
-  html += `<button class="btn" onclick="bjStand()">Plantarse</button> `;
-  // Double (only if first two cards and enough balance)
-  if(curr.cards.length === 2 && balance >= bjState.bet){
-    html += `<button class="btn" onclick="bjDouble()">Doblar</button> `;
-  }
-  // Split (if two same rank and enough balance)
-  if(curr.cards.length === 2 && curr.cards[0].slice(0,-1) === curr.cards[1].slice(0,-1) && balance >= bjState.bet){
-    html += `<button class="btn" onclick="bjSplit()">Separar</button> `;
-  }
-  html += `</div>`;
-  panelTitle.textContent = 'Blackjack';
-  panelContent.innerHTML = html;
-  panel.style.display = 'block';
-
-  // auto-check blackjack natural for dealer if shows 10 or A? We'll check on stand or when insurance offered earlier
-  // If player already has blackjack natural, resolve immediately (unless dealer also)
-  if(curr.cards.length === 2 && isBlackjack(curr.cards)){
-    // reveal dealer, resolve after short delay
-    setTimeout(() => { resolveAfterPlayerAuto(); }, 600);
-  }
-}
-
-function resolveAfterPlayerAuto(){
-  // reveal dealer cards and resolve all hands
-  // We'll run dealer play and resolve
-  dealerPlayAndResolve();
-}
-
-function bjHit(){
-  const curr = bjState.hands[bjState.currentHand];
-  curr.cards.push(drawFromShoe());
-  // if busted, mark finished and move to next hand
-  if(handValue(curr.cards) > 21){
-    curr.finished = true;
-    addLog(`Blackjack: Mano ${bjState.currentHand+1} busted con ${handValue(curr.cards)}`);
-    advanceHandOrDealer();
-  } else {
-    renderBlackjackMain();
-  }
-}
-
-function bjStand(){
-  const curr = bjState.hands[bjState.currentHand];
-  curr.finished = true;
-  advanceHandOrDealer();
-}
-
-function bjDouble(){
-  const curr = bjState.hands[bjState.currentHand];
-  if(curr.cards.length !== 2){ addLog('No puedes doblar ahora'); return; }
-  // take extra bet equal to original bet
-  if(balance < bjState.bet){ addLog('Saldo insuficiente para doblar'); return; }
-  balance -= bjState.bet; updateHUD();
-  curr.doubled = true;
-  // draw one card and finish
-  curr.cards.push(drawFromShoe());
-  curr.finished = true;
-  addLog(`Blackjack: Mano ${bjState.currentHand+1} doblada`);
-  if(handValue(curr.cards) > 21) addLog(`Blackjack: Mano ${bjState.currentHand+1} bust con ${handValue(curr.cards)}`);
-  advanceHandOrDealer();
-}
-
-function bjSplit(){
-  const curr = bjState.hands[bjState.currentHand];
-  if(curr.cards.length !== 2) return;
-  if(balance < bjState.bet){ addLog('Saldo insuficiente para split'); return; }
-  // create new hand with second card
-  const secondCard = curr.cards.pop();
-  const newHand = { cards: [secondCard], doubled:false, finished:false, isSplitHand:true, originalRank: secondCard.slice(0,-1) };
-  // add one more card to each hand
-  curr.cards.push(drawFromShoe());
-  newHand.cards.push(drawFromShoe());
-  // charge extra bet
-  balance -= bjState.bet; updateHUD();
-  bjState.hands.splice(bjState.currentHand+1, 0, newHand);
-  addLog(`Blackjack: Split realizado, mano ${bjState.currentHand+1} y ${bjState.currentHand+2}`);
-  renderBlackjackMain();
-}
-
-function advanceHandOrDealer(){
-  // find next unfinished hand
-  let next = bjState.currentHand;
-  while(next < bjState.hands.length && bjState.hands[next].finished) next++;
-  if(next < bjState.hands.length){
-    bjState.currentHand = next;
-    renderBlackjackMain();
-  } else {
-    // all hands finished -> dealer plays
-    dealerPlayAndResolve();
-  }
-}
-alert("F")
-function dealerPlayAndResolve(){
-  panel.style.display = 'none';
-  // reveal dealer hole card then play by rules
-  // if dealer has blackjack and insurance taken earlier, pay insurance
-  const dealer = bjState.dealer;
-  // reveal hole (already in dealer.cards)
-  // check dealer blackjack
-  const dealerHasBJ = isBlackjack(dealer.cards);
-
-  // if insurance placed
-  if(bjState.insuranceBet > 0){
-    if(dealerHasBJ){
-      // insurance pays 2:1 -> recover insuranceBet*2
-      balance += bjState.insuranceBet * 2;
-      addLog(`Blackjack: Seguro ganó $${bjState.insuranceBet * 2}`);
-    } else {
-      addLog('Blackjack: Seguro perdido');
-    }
-    bjState.insuranceBet = 0;
-  }
-
-  // If dealer has blackjack, resolve immediately
-  if(dealerHasBJ){
-    addLog('Dealer tiene Blackjack!');
-    // resolve: if player's hand is blackjack -> push, else player loses
-    bjState.hands.forEach((h, idx) => {
-      const hv = handValue(h.cards);
-      const isBJ = isBlackjack(h.cards);
-      if(isBJ){
-        // push: return bet
-        balance += bjState.bet;
-        addLog(`Mano ${idx+1}: Push (Blackjack vs Blackjack)`);
-      } else {
-        addLog(`Mano ${idx+1}: Perdiste contra blackjack`);
-      }
-    });
-    updateHUD();
-    return;
-  }
-
-  // Dealer plays: draw until 17 or more; dealer hits soft 16 and stands on soft 17? We'll make dealer stand on soft 17.
-  while(true){
-    const val = handValue(dealer.cards);
-    // check soft 17: value 17 with an ace counted as 11
-    const hasAce = dealer.cards.some(c=>c.startsWith('A'));
-    const soft17 = (val === 17 && hasAce);
-    if(val < 17) {
-      dealer.cards.push(drawFromShoe());
-    } else {
-      // stand on 17 or more (including soft17 stand)
-      break;
-    }
-  }
-  const dealerTotal = handValue(dealer.cards);
-  addLog(`Dealer final: ${dealer.cards.join(' ')} (${dealerTotal})`);
-
-  // Resolve each player hand
-  bjState.hands.forEach((h, idx) => {
-    const hv = handValue(h.cards);
-    const stake = bjState.bet * (h.doubled ? 2 : 1);
-    const isBJ = isBlackjack(h.cards);
-    // Blackjack payout 3:2, but only for initial two-card blackjack and if dealer doesn't have blackjack
-    if(isBJ && !dealerHasBJ){
-      const win = Math.floor(bjState.bet * 1.5); // 3:2
-      balance += bjState.bet + win; // return bet + win
-      addLog(`Mano ${idx+1}: Blackjack! Ganaste $${win}`);
-    } else if(hv > 21){
-      addLog(`Mano ${idx+1}: Busted con ${hv}`);
-      // lose stake (already deducted)
-    } else if(dealerTotal > 21){
-      // dealer busts -> player wins
-      const win = stake * 2;
-      balance += win;
-      addLog(`Mano ${idx+1}: Dealer bust — Ganaste $${win - stake}`);
-    } else {
-      if(hv > dealerTotal){
-        // win
-        const win = stake * 2;
-        balance += win;
-        addLog(`Mano ${idx+1}: Ganaste $${win - stake}`);
-      } else if(hv === dealerTotal){
-        // push: return bet/stake
-        balance += stake;
-        addLog(`Mano ${idx+1}: Push`);
-      } else {
-        // lose
-        addLog(`Mano ${idx+1}: Perdiste`);
-      }
-    }
-  });
-
-  updateHUD();
-}
-alert("G")
-// ==================== ZONAS DE INTERACCIÓN / MOVIMIENTO / ANIMACIÓN (mantener) ====================
-const zones=[
-  {x:0,z:0,label:'Ruleta',action:openRouletteUI},
-  {x:-10,z:-5,label:'Blackjack',action:openBlackjackUI},
-  {x:10,z:-5,label:'Tragaperras',action:openSlotsUI}
+// ==================== ZONAS ====================
+const zones = [
+  {x:0,z:0,label:'Ruleta', action:()=>openPanel('Ruleta')},
+  {x:-10,z:-5,label:'Blackjack', action:()=>openPanel('Blackjack')},
+  {x:10,z:-5,label:'Tragaperras', action:()=>openPanel('Tragaperras')}
 ];
 
 let currentZone = null;
 function detectZones(){
-  if(!playerPos) return; // evita errores si playerPos no está definido
+  if(!playerPos) return;
   currentZone = null;
   for(const z of zones){
     const dx = playerPos.x - z.x;
     const dz = playerPos.z - z.z;
-    const dist = Math.sqrt(dx*dx + dz*dz);
-    if(dist < 3){
+    if(Math.sqrt(dx*dx+dz*dz) < 3){
       currentZone = z;
-      if(prompt) {
-        prompt.style.display = 'block';
-        prompt.textContent = '[E] ' + z.label;
-      }
+      prompt.style.display = 'block';
+      prompt.textContent = '[E] ' + z.label;
       return;
     }
   }
-  if(prompt) prompt.style.display = 'none';
+  prompt.style.display = 'none';
 }
-alert("H")
-// movimiento
+
+// ==================== PANEL ====================
+function openPanel(game){
+  panelTitle.textContent = game;
+  panelContent.innerHTML = `<p>Panel de ${game} (prototipo)</p>`;
+  panel.style.display = 'block';
+}
+function closePanel(){ panel.style.display = 'none'; }
+
+// ==================== CONTROLS ====================
 const keys={w:false,a:false,s:false,d:false,ArrowLeft:false,ArrowRight:false,ArrowUp:false,ArrowDown:false};
-window.addEventListener("keydown",e=>{ if(e.key in keys) keys[e.key]=true; });
-window.addEventListener("keyup",e=>{ if(e.key in keys) keys[e.key]=false; });
+window.addEventListener('keydown',e=>{ if(e.key in keys) keys[e.key]=true; });
+window.addEventListener('keyup',e=>{ if(e.key in keys) keys[e.key]=false; });
+
+// ==================== ANIMATION ====================
 const speed = 5;
 function computeDelta(dt){
   const rotSpeed = 1.5*dt;
-  if(keys.ArrowLeft) yaw += rotSpeed; if(keys.ArrowRight) yaw -= rotSpeed;
-  if(keys.ArrowUp) pitch += rotSpeed*0.5; if(keys.ArrowDown) pitch -= rotSpeed*0.5;
+  if(keys.ArrowLeft) yaw += rotSpeed;
+  if(keys.ArrowRight) yaw -= rotSpeed;
+  if(keys.ArrowUp) pitch += rotSpeed*0.5;
+  if(keys.ArrowDown) pitch -= rotSpeed*0.5;
   pitch = Math.max(-1.2, Math.min(1.2, pitch));
-  const e = new THREE.Euler(pitch, yaw, 0, 'YXZ');
+
+  const e = new THREE.Euler(pitch,yaw,0,'YXZ');
   const q = new THREE.Quaternion().setFromEuler(e);
+
   const forward = new THREE.Vector3(0,0,-1).applyQuaternion(q); forward.y=0; forward.normalize();
   const right = new THREE.Vector3(1,0,0).applyQuaternion(q); right.y=0; right.normalize();
-  let mf=0,mr=0; if(keys.w) mf+=1; if(keys.s) mf-=1; if(keys.a) mr-=1; if(keys.d) mr+=1;
-  const len = Math.hypot(mf,mr); if(len>0){ mf/=len; mr/=len; }
-  const delta = new THREE.Vector3(); delta.addScaledVector(forward, mf*speed*dt); delta.addScaledVector(right, mr*speed*dt); return delta;
+
+  let mf=0, mr=0;
+  if(keys.w) mf+=1;
+  if(keys.s) mf-=1;
+  if(keys.a) mr-=1;
+  if(keys.d) mr+=1;
+
+  const len = Math.hypot(mf,mr);
+  if(len>0){ mf/=len; mr/=len; }
+
+  const delta = new THREE.Vector3();
+  delta.addScaledVector(forward, mf*speed*dt);
+  delta.addScaledVector(right, mr*speed*dt);
+  return delta;
 }
-alert("I")
-// panel handling
-document.addEventListener("keydown",(e)=>{
+
+document.addEventListener('keydown',(e)=>{
   if(e.key.toLowerCase()==='e' && currentZone) currentZone.action();
   if(e.key==='Escape') panel.style.display='none';
 });
-function closePanel(){ panel.style.display='none'; }
-alert("J")
-// animación principal (ruleta/otros se animan en sus funciones)
+
 let lastTime = 0;
 function animate(ts){
   requestAnimationFrame(animate);
-  const dt = (ts - lastTime) * 0.001; lastTime = ts;
+  const dt = (ts-lastTime)*0.001; lastTime = ts;
+
   detectZones();
-  const delta = computeDelta(dt); playerPos.add(delta);
-  camera.position.copy(playerPos); camera.position.y = 1.7; camera.rotation.set(pitch, yaw, 0, 'YXZ');
-  renderer.render(scene, camera);
+  playerPos.add(computeDelta(dt));
+
+  camera.position.copy(playerPos);
+  camera.position.y = 1.7;
+  camera.rotation.set(pitch,yaw,0,'YXZ');
+
+  renderer.render(scene,camera);
 }
 requestAnimationFrame(animate);
-alert("K")
-// resize
-window.addEventListener("resize", ()=>{ camera.aspect = wrap.clientWidth / wrap.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(wrap.clientWidth, wrap.clientHeight); });
-alert("L")
+
+// ==================== RESIZE ====================
+window.addEventListener('resize', ()=>{
+  camera.aspect = wrap.clientWidth / wrap.clientHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
+});
 </script>
 </body>
 </html>
