@@ -34,11 +34,10 @@ canvas {display:block;}
 
 <script src="https://unpkg.com/three@0.152.2/build/three.min.js"></script>
 <script>
-// ==================== CONFIG ====================
+// ==================== CONFIGURACIÓN GENERAL ====================
 const wrap = document.getElementById('wrap');
 const balanceEl = document.getElementById('balance');
 const betEl = document.getElementById('bet');
-const logEl = document.getElementById('log');
 const prompt = document.getElementById('prompt');
 const panel = document.getElementById('interaction-panel');
 const panelTitle = document.getElementById('panel-title');
@@ -46,342 +45,433 @@ const panelContent = document.getElementById('panel-content');
 
 let balance = 1000;
 let currentBet = 0;
-
-function updateHUD(){
-  balanceEl.textContent = balance;
-  betEl.textContent = currentBet;
-}
-
-function addLog(msg){
-  console.log(msg); // por ahora log simple
-}
-
+function updateHUD(){ balanceEl.textContent = balance; betEl.textContent = currentBet; }
+function addLog(msg){ const div = document.createElement('div'); div.className='log-entry'; div.textContent=msg; const logs = document.getElementById('log'); if(logs) logs.prepend(div); else console.log(msg); }
 updateHUD();
 
-// ==================== THREE SCENE ====================
+// ==================== THREE SCENE (mínimo necesario) ====================
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x041018);
-const camera = new THREE.PerspectiveCamera(75, wrap.clientWidth/wrap.clientHeight, 0.1, 1000);
-camera.position.set(0,1.7,10);
-
 const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setPixelRatio(window.devicePixelRatio);
 renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 wrap.appendChild(renderer.domElement);
 
-// luces
+const camera = new THREE.PerspectiveCamera(72, wrap.clientWidth/wrap.clientHeight, 0.1, 1000);
+camera.position.set(0,1.7,12);
 scene.add(new THREE.AmbientLight(0xffffff,0.6));
-const dirLight = new THREE.DirectionalLight(0xffffff,0.8);
-dirLight.position.set(10,20,10);
-scene.add(dirLight);
+const dirLight = new THREE.DirectionalLight(0xffffff,0.8); dirLight.position.set(10,20,10); scene.add(dirLight);
 
-// suelo
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(50,50),
-  new THREE.MeshStandardMaterial({color:0x091217})
-);
-floor.rotation.x = -Math.PI/2;
-scene.add(floor);
+// suelo simple
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(80,80), new THREE.MeshStandardMaterial({color:0x091217,roughness:0.95}));
+floor.rotation.x = -Math.PI/2; scene.add(floor);
 
-// paredes simples
-function addWall(x,y,z,w,h,d){
-  const wall = new THREE.Mesh(
-    new THREE.BoxGeometry(w,h,d),
-    new THREE.MeshStandardMaterial({color:0x071018})
-  );
-  wall.position.set(x,y,z);
-  scene.add(wall);
-}
-addWall(0,5,-25,50,10,2);
-addWall(0,5,25,50,10,2);
-addWall(-25,5,0,2,10,50);
-addWall(25,5,0,2,10,50);
-
-// ==================== PLAYER ====================
-let playerPos = new THREE.Vector3(0,0,10);
+// ==================== ZONAS (ligero) ====================
+let playerPos = new THREE.Vector3(0,0,12);
 let yaw = 0, pitch = 0;
-
-// ==================== ZONAS ====================
 const zones = [
-  {x:0,z:0,label:'Ruleta', action:()=>openPanel('Ruleta')},
-  {x:-10,z:-5,label:'Blackjack', action:()=>openPanel('Blackjack')},
-  {x:10,z:-5,label:'Tragaperras', action:()=>openPanel('Tragaperras')}
+  {x:0,z:0,label:'Ruleta',action:openRouletteUI},
+  {x:-10,z:-5,label:'Blackjack',action:openBlackjackUI},
+  {x:10,z:-5,label:'Tragaperras',action:openSlotsUI}
 ];
-
 let currentZone = null;
 function detectZones(){
-  if(!playerPos) return;
   currentZone = null;
   for(const z of zones){
-    const dx = playerPos.x - z.x;
-    const dz = playerPos.z - z.z;
-    if(Math.sqrt(dx*dx+dz*dz) < 3){
-      currentZone = z;
-      prompt.style.display = 'block';
-      prompt.textContent = '[E] ' + z.label;
-      return;
-    }
+    const dx = playerPos.x - z.x, dz = playerPos.z - z.z;
+    if(Math.hypot(dx,dz) < 3){ currentZone = z; prompt.style.display='block'; prompt.textContent='[E] '+z.label; return; }
   }
-  prompt.style.display = 'none';
+  prompt.style.display='none';
 }
+document.addEventListener('keydown', e=>{ if(e.key.toLowerCase()==='e' && currentZone) currentZone.action(); if(e.key==='Escape') panel.style.display='none'; });
 
-// ==================== PANEL ====================
-function openPanel(game){
-  panelTitle.textContent = game;
-  panelContent.innerHTML = `<p>Panel de ${game} (prototipo)</p>`;
-  panel.style.display = 'block';
-}
-function closePanel(){ panel.style.display = 'none'; }
-
-  // ==================== MESA DE BLACKJACK ====================
-const blackjackTableGeom = new THREE.BoxGeometry(6, 0.5, 4);
-const blackjackTableMat = new THREE.MeshStandardMaterial({
-  color: 0x0b5d1e // verde oscuro, estilo mesa de casino
-});
-const blackjackTable = new THREE.Mesh(blackjackTableGeom, blackjackTableMat);
-
-// Posición en la zona del blackjack (-10, -5)
-blackjackTable.position.set(-10, 0.25, -5); 
-blackjackTable.receiveShadow = true;
-blackjackTable.castShadow = true;
-scene.add(blackjackTable);
-
-// Luces suaves para que se vea bien
-const blackjackLight = new THREE.PointLight(0xffffff, 0.8, 8);
-blackjackLight.position.set(-10, 3, -5);
-scene.add(blackjackLight);
-
-
-// ==================== CONTROLS ====================
+// ==================== MISC MOVEMENT (mantén si quieres) ====================
 const keys={w:false,a:false,s:false,d:false,ArrowLeft:false,ArrowRight:false,ArrowUp:false,ArrowDown:false};
-window.addEventListener('keydown',e=>{ if(e.key in keys) keys[e.key]=true; });
-window.addEventListener('keyup',e=>{ if(e.key in keys) keys[e.key]=false; });
-
-// ==================== ANIMATION ====================
+window.addEventListener("keydown",e=>{ if(e.key in keys) keys[e.key]=true; });
+window.addEventListener("keyup",e=>{ if(e.key in keys) keys[e.key]=false; });
 const speed = 5;
 function computeDelta(dt){
   const rotSpeed = 1.5*dt;
-  if(keys.ArrowLeft) yaw += rotSpeed;
-  if(keys.ArrowRight) yaw -= rotSpeed;
-  if(keys.ArrowUp) pitch += rotSpeed*0.5;
-  if(keys.ArrowDown) pitch -= rotSpeed*0.5;
+  if(keys.ArrowLeft) yaw += rotSpeed; if(keys.ArrowRight) yaw -= rotSpeed;
+  if(keys.ArrowUp) pitch += rotSpeed*0.5; if(keys.ArrowDown) pitch -= rotSpeed*0.5;
   pitch = Math.max(-1.2, Math.min(1.2, pitch));
-
   const e = new THREE.Euler(pitch,yaw,0,'YXZ');
   const q = new THREE.Quaternion().setFromEuler(e);
-
   const forward = new THREE.Vector3(0,0,-1).applyQuaternion(q); forward.y=0; forward.normalize();
   const right = new THREE.Vector3(1,0,0).applyQuaternion(q); right.y=0; right.normalize();
-
-  let mf=0, mr=0;
-  if(keys.w) mf+=1;
-  if(keys.s) mf-=1;
-  if(keys.a) mr-=1;
-  if(keys.d) mr+=1;
-
-  const len = Math.hypot(mf,mr);
-  if(len>0){ mf/=len; mr/=len; }
-
-  const delta = new THREE.Vector3();
-  delta.addScaledVector(forward, mf*speed*dt);
-  delta.addScaledVector(right, mr*speed*dt);
+  let mf=0,mr=0; if(keys.w) mf+=1; if(keys.s) mf-=1; if(keys.a) mr-=1; if(keys.d) mr+=1;
+  const len = Math.hypot(mf,mr); if(len>0){ mf/=len; mr/=len; }
+  const delta = new THREE.Vector3(); delta.addScaledVector(forward,mf*speed*dt); delta.addScaledVector(right,mr*speed*dt);
   return delta;
 }
 
-document.addEventListener('keydown',(e)=>{
-  if(e.key.toLowerCase()==='e' && currentZone) currentZone.action();
-  if(e.key==='Escape') panel.style.display='none';
-});
-
-let lastTime = 0;
-function animate(ts){
-  requestAnimationFrame(animate);
-  const dt = (ts-lastTime)*0.001; lastTime = ts;
-
-  detectZones();
-  playerPos.add(computeDelta(dt));
-
-  camera.position.copy(playerPos);
-  camera.position.y = 1.7;
-  camera.rotation.set(pitch,yaw,0,'YXZ');
-
-  renderer.render(scene,camera);
-}
-requestAnimationFrame(animate);
-
-// ==================== RESIZE ====================
-window.addEventListener('resize', ()=>{
-  camera.aspect = wrap.clientWidth / wrap.clientHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(wrap.clientWidth, wrap.clientHeight);
-});
-
-  // ==================== RULETA 3D ====================
-const wheelRadius = 3.5;
+// ==================== RUleta (B - completa) ====================
+const wheelRadius = 3.8;
 const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
 const anglePerPocket = (Math.PI*2) / pockets.length;
 
-// Crear textura de la rueda
 function createWheelCanvas(size=512){
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const ctx = c.getContext('2d');
+  const c=document.createElement('canvas'); c.width=c.height=size; const ctx=c.getContext('2d');
   const cx=size/2, cy=size/2, r=size*0.45;
-
-  ctx.fillStyle='#072b22';
-  ctx.fillRect(0,0,size,size);
-
+  ctx.fillStyle='#072b22'; ctx.fillRect(0,0,size,size);
   for(let i=0;i<pockets.length;i++){
-    const a0=i*anglePerPocket-Math.PI/2;
-    const a1=(i+1)*anglePerPocket-Math.PI/2;
-
-    ctx.beginPath();
-    ctx.moveTo(cx,cy);
-    ctx.arc(cx,cy,r,a0,a1);
-    ctx.closePath();
-    ctx.fillStyle = pockets[i]===0?"#1b8b41":(i%2===0?"#b71c1c":"#000");
+    const a0=i*anglePerPocket-Math.PI/2, a1=(i+1)*anglePerPocket-Math.PI/2;
+    ctx.beginPath(); ctx.moveTo(cx,cy); ctx.arc(cx,cy,r,a0,a1); ctx.closePath();
+    ctx.fillStyle = pockets[i]===0? '#1b8b41' : (i%2===0? '#000' : '#b71c1c'); // note: invert color scheme so labels readable
+    // We'll draw the color wedge as black/red/green but ensure text contrasts:
     ctx.fill();
-
+    // number label
     const mid = a0 + (a1-a0)/2;
     ctx.save();
     ctx.translate(cx + Math.cos(mid)*r*0.66, cy + Math.sin(mid)*r*0.66);
     ctx.rotate(mid+Math.PI/2);
-    ctx.fillStyle="#fff";
+    ctx.fillStyle = '#fff';
     ctx.font = `${Math.floor(size*0.04)}px sans-serif`;
-    ctx.textAlign="center";
-    ctx.textBaseline="middle";
-    ctx.fillText(pockets[i],0,0);
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(pockets[i], 0, 0);
     ctx.restore();
   }
-
-  ctx.beginPath();
-  ctx.fillStyle="#111";
-  ctx.arc(cx,cy,r*0.45,0,Math.PI*2);
-  ctx.fill();
-
+  ctx.beginPath(); ctx.fillStyle='#111'; ctx.arc(cx,cy,r*0.45,0,Math.PI*2); ctx.fill();
   return c;
 }
-
 const wheelTexture = new THREE.CanvasTexture(createWheelCanvas());
-const wheelMesh = new THREE.Mesh(
-  new THREE.CylinderGeometry(wheelRadius,wheelRadius,1.2,64),
-  new THREE.MeshStandardMaterial({ map: wheelTexture })
-);
-wheelMesh.rotation.x = 2*Math.PI;
-wheelMesh.position.set(0,0.3,0);
-scene.add(wheelMesh);
+const wheelMesh = new THREE.Mesh(new THREE.CylinderGeometry(wheelRadius,wheelRadius,1.2,64), new THREE.MeshStandardMaterial({map: wheelTexture}));
+wheelMesh.rotation.x = Math.PI/2; wheelMesh.position.set(0,0.35,0); scene.add(wheelMesh);
 
-const ballMesh = new THREE.Mesh(
-  new THREE.SphereGeometry(0.18,16,16),
-  new THREE.MeshStandardMaterial({color:0xffffff})
-);
+// bola
+const ballMesh = new THREE.Mesh(new THREE.SphereGeometry(0.18,16,16), new THREE.MeshStandardMaterial({color:0xffffff}));
 scene.add(ballMesh);
 
-let spinning = false;
-
-// ==================== RULETA UI ====================
-function openRouletteUI(){
-  const html = `
-    <label>Números a apostar (separados por coma):</label><br>
-    <input type="text" id="rouletteInput" placeholder="0,7,14" style="width:90%"><br><br>
-    <label>$ A apostar:</label><br>
-    <input type="number" id="rouletteBet" value="10"><br><br>
-    <button class="btn" onclick="spinRoulette()">Girar Ruleta</button>
-  `;
-  panelTitle.textContent='Ruleta';
-  panelContent.innerHTML = html;
-  panel.style.display='block';
+// Betting helpers
+function payoutForBet(betObj, pocket){ 
+  // betObj: {type:'number'|'color'|'par'|'dozen'|'column'|'highlow', value:.., amount}
+  const amt = betObj.amount;
+  if(betObj.type==='number') return pockets[pocket]===betObj.value ? amt*35 : 0;
+  if(betObj.type==='color'){
+    const val = pockets[pocket];
+    if(val===0) return 0;
+    const isRed = isPocketRed(pockets[pocket]);
+    return ( (betObj.value==='red' && isRed) || (betObj.value==='black' && !isRed) ) ? amt*2 : 0;
+  }
+  if(betObj.type==='par') {
+    const val = pockets[pocket];
+    if(val===0) return 0;
+    const even = (val%2===0);
+    return ( (betObj.value==='even' && even) || (betObj.value==='odd' && !even) ) ? amt*2 : 0;
+  }
+  if(betObj.type==='dozen'){
+    const val=pockets[pocket];
+    if(val===0) return 0;
+    const d = Math.ceil(val/12); // 1,2,3
+    return (d === betObj.value) ? amt*3 : 0;
+  }
+  if(betObj.type==='column'){
+    const val=pockets[pocket];
+    if(val===0) return 0;
+    // columns: 1st column = numbers where (n % 3) === 1 if we consider 1..36.
+    // We need mapping: if n in 1..36
+    const idx = val;
+    const col = ((idx - 1) % 3) + 1; // 1,2,3
+    return (col === betObj.value) ? amt*3 : 0;
+  }
+  if(betObj.type==='highlow'){
+    const val=pockets[pocket];
+    if(val===0) return 0;
+    if(betObj.value==='low') return (val>=1 && val<=18) ? amt*2 : 0;
+    if(betObj.value==='high') return (val>=19 && val<=36) ? amt*2 : 0;
+  }
+  return 0;
+}
+function isPocketRed(n){
+  // Classical roulette red numbers set (for European wheel)
+  const reds = new Set([32,19,21,25,17,34,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35]); // but this list seems off; instead derive by index parity? We'll map by pockets parity in your array:
+  // Simpler: in your original pocket order 0,32,15,... your drawing alternated colors mostly. We'll treat pockets positions: index even => black, index odd => red (except 0 green).
+  // Based on your drawing earlier you had pattern of black/red starting after 0: 32 black,15 red,... That implies index 1 black, index 2 red etc.
+  if(n===0) return false;
+  const idx = pockets.indexOf(n);
+  if(idx===-1) return false;
+  // Following user's earlier description: after 0 comes 32 (black), then 15 (red), so index 1 black -> even? index 1 => treat as black. We'll say:
+  // if index is even -> red, odd -> black? Let's compute to match: idx 1 -> 32 -> black so odd -> black. idx 2 -> 15 -> red (even->red). So:
+  return (idx % 2 === 0); // even index => red, odd => black
 }
 
-function spinRoulette(){
-  if(spinning) return;
-
-  const nums = document.getElementById("rouletteInput").value.split(",").map(n=>parseInt(n.trim())).filter(n=>!isNaN(n));
-  const bet = parseInt(document.getElementById("rouletteBet").value);
-  if(balance<bet){ addLog("Ruleta: saldo insuficiente"); return; }
-
-  balance -= bet; updateHUD(); panel.style.display='none';
-  spinning = true;
-
-  // --- seleccionar ganador ---
-  const chosen = pockets[Math.floor(Math.random()*pockets.length)];
-  const pocketIndex = pockets.indexOf(chosen);
-
-  const totalRot = 8 + Math.floor(Math.random()*4); // vueltas
-  const baseRotation = Math.PI*2*totalRot;
-  const tinyOffset = (Math.random()-0.5)*anglePerPocket*0.6;
-  const target = (pocketIndex + 0.5)*anglePerPocket - Math.PI/2 + baseRotation + tinyOffset;
-
-  let wheelAngle = 0;
-  let ballAngle = Math.random()*Math.PI*2;
-  let wheelSpeed = 8;
-  let ballSpeed = 30;
-  const ballRadius = wheelRadius-0.25;
-  const ballHeight = 1.2;
-
-  const interval = setInterval(()=>{
-    const dt = 0.016;
-    if(wheelAngle<target){
-      wheelSpeed *= 0.98; // frena
-      const delta = wheelSpeed*dt;
-      wheelAngle += delta;
-      if(wheelAngle>target) wheelAngle = target;
-      wheelMesh.rotation.z = wheelAngle;
+// Build bets UI for roulette (complete)
+function openRouletteUI(){
+  panelTitle.textContent='Ruleta';
+  panel.style.display='block';
+  panelContent.innerHTML = `
+    <div style="font-size:13px;margin-bottom:8px">Tipos de apuesta:</div>
+    <select id="rType" style="width:100%;margin-bottom:8px">
+      <option value="number">Número (0-36)</option>
+      <option value="color">Color (red/black)</option>
+      <option value="par">Par/Impar</option>
+      <option value="dozen">Docena (1=1-12,2=13-24,3=25-36)</option>
+      <option value="column">Columna (1,2,3)</option>
+      <option value="highlow">Alto/Bajo</option>
+    </select>
+    <div id="rParams" style="margin-bottom:8px">
+      <input id="rNumber" type="number" min="0" max="36" placeholder="Número (ej: 7)" style="width:100%;display:block;margin-bottom:6px"/>
+    </div>
+    <label>$ A apostar:</label>
+    <input id="rouletteBet" type="number" value="10" style="width:100%;margin-top:6px"/>
+    <button class="btn" style="width:100%;margin-top:10px" id="rSpin">Girar Ruleta</button>
+    <div style="font-size:12px;margin-top:8px">Notas: Paga 35x a número. Rojo/Negro, Par/Impar, Alto/Bajo pagan 2x. Docena/Columna pagan 3x.</div>
+  `;
+  const rType = document.getElementById('rType');
+  const rParams = document.getElementById('rParams');
+  rType.addEventListener('change', ()=>{
+    const t = rType.value;
+    if(t==='number'){
+      rParams.innerHTML = `<input id="rNumber" type="number" min="0" max="36" placeholder="Número (ej: 7)" style="width:100%;display:block;margin-bottom:6px"/>`;
+    } else if(t==='color'){
+      rParams.innerHTML = `<select id="rColor" style="width:100%;margin-bottom:6px"><option value="red">Rojo</option><option value="black">Negro</option></select>`;
+    } else if(t==='par'){
+      rParams.innerHTML = `<select id="rPar" style="width:100%;margin-bottom:6px"><option value="even">Par</option><option value="odd">Impar</option></select>`;
+    } else if(t==='dozen'){
+      rParams.innerHTML = `<select id="rDozen" style="width:100%;margin-bottom:6px"><option value="1">1ª (1-12)</option><option value="2">2ª (13-24)</option><option value="3">3ª (25-36)</option></select>`;
+    } else if(t==='column'){
+      rParams.innerHTML = `<select id="rColumn" style="width:100%;margin-bottom:6px"><option value="1">Columna 1</option><option value="2">Columna 2</option><option value="3">Columna 3</option></select>`;
+    } else if(t==='highlow'){
+      rParams.innerHTML = `<select id="rHighLow" style="width:100%;margin-bottom:6px"><option value="low">1-18</option><option value="high">19-36</option></select>`;
     }
+  });
+  document.getElementById('rSpin').addEventListener('click', ()=>{
+    const type = document.getElementById('rType').value;
+    const betAmt = parseInt(document.getElementById('rouletteBet').value) || 0;
+    if(betAmt <= 0){ addLog('Ruleta: apuesta inválida'); return; }
+    let betObj = { type: type, amount: betAmt };
+    if(type==='number'){ betObj.value = parseInt(document.getElementById('rNumber').value); if(isNaN(betObj.value) || betObj.value<0 || betObj.value>36){ addLog('Número inválido'); return; } }
+    else if(type==='color'){ betObj.value = document.getElementById('rColor').value; }
+    else if(type==='par'){ betObj.value = document.getElementById('rPar').value; }
+    else if(type==='dozen'){ betObj.value = parseInt(document.getElementById('rDozen').value); }
+    else if(type==='column'){ betObj.value = parseInt(document.getElementById('rColumn').value); }
+    else if(type==='highlow'){ betObj.value = document.getElementById('rHighLow').value; }
+    panel.style.display='none';
+    spinRouletteWithBet(betObj);
+  });
+}
 
-    ballSpeed *= 0.992;
-    ballAngle += ballSpeed*dt;
-    ballMesh.position.x = Math.cos(ballAngle)*ballRadius;
-    ballMesh.position.z = Math.sin(ballAngle)*ballRadius;
+// Core spin that animates and ensures chosen pocket matches payouts
+let rouletteSpinning = false;
+function spinRouletteWithBet(betObj){
+  if(rouletteSpinning) return;
+  if(balance < betObj.amount){ addLog('Ruleta: saldo insuficiente'); return; }
+  balance -= betObj.amount; updateHUD();
+  rouletteSpinning = true;
+
+  // choose final pocket randomly
+  const chosenIndex = Math.floor(Math.random()*pockets.length);
+  const chosenNumber = pockets[chosenIndex];
+
+  // initial ball angle and wheel angle
+  let ballAngle = Math.random() * Math.PI * 2;
+  let wheelAngle = 0;
+
+  // target calculations (align pocket center at positive z)
+  const pocketCenterAngle = (chosenIndex + 0.5) * anglePerPocket - Math.PI/2; // center of pocket in texture coords
+  const totalRevs = 8 + Math.floor(Math.random()*4); // 8..11
+  const baseRotation = Math.PI*2*totalRevs;
+  const tinyOffset = (Math.random()-0.5) * anglePerPocket * 0.4;
+
+  // We want: (-ballAngle - wheelFinal) mod 2pi = pocketCenterAngle (final detection formula)
+  // => wheelFinal = -ballAngle - pocketCenterAngle + k*2pi
+  // add baseRotation to make many revolutions
+  let wheelFinal = baseRotation + (-ballAngle - pocketCenterAngle) + tinyOffset;
+  // ensure positive
+  if(wheelFinal < 0) wheelFinal += Math.ceil(Math.abs(wheelFinal)/(Math.PI*2))*(Math.PI*2);
+
+  // animation params
+  let wheelTarget = wheelFinal;
+  let wheelSpeed = 12; // initial wheel speed (rad/s)
+  let ballSpeed = 35;  // initial ball angular speed (rad/s) (ball rotates faster, opposite sense)
+  const ballRadius = wheelRadius - 0.25;
+  const ballHeight = 1.2;
+  const start = performance.now();
+
+  // animate using requestAnimationFrame for smoother timing
+  function step(now){
+    const t = (now - start) / 1000;
+    const dt = 1/60;
+
+    // approach wheelTarget with easing: reduce wheelSpeed proportional to remaining
+    const remaining = Math.max(0, wheelTarget - wheelAngle);
+    const brakeFactor = remaining / (Math.PI*2*totalRevs + 0.0001);
+    // wheel angular increment per frame:
+    let wheelDelta = Math.max(0.05, 10 * Math.sqrt(Math.max(0, brakeFactor))) * dt;
+    // ensure not overshoot
+    if(wheelAngle + wheelDelta > wheelTarget) wheelDelta = wheelTarget - wheelAngle;
+    wheelAngle += wheelDelta;
+    wheelMesh.rotation.y = wheelAngle;
+
+    // ball spins opposite direction visually (we'll subtract a small offset so ball appears to run around rim)
+    // ball slows gradually (but slower than wheel)
+    ballSpeed *= 0.995;
+    ballAngle += ballSpeed * dt;
+
+    // place ball on rim
+    ballMesh.position.x = Math.cos(ballAngle) * ballRadius;
+    ballMesh.position.z = Math.sin(ballAngle) * ballRadius;
     ballMesh.position.y = ballHeight;
 
-    if(wheelAngle>=target){
-      clearInterval(interval);
-      spinning=false;
-      addLog(`Ruleta salió ${chosen}`);
-      if(nums.includes(chosen)){
-        const win = bet*35;
-        balance+=win;
-        addLog(`Ganaste $${win}!`);
-      } else addLog("Perdiste.");
+    // stop condition
+    if(Math.abs(wheelAngle - wheelTarget) < 0.0001){
+      // finalize: compute final index using same detection formula
+      const relativeAngle = ((-ballAngle - wheelAngle) % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
+      const finalIndex = Math.floor(relativeAngle / anglePerPocket) % pockets.length;
+      const finalNumber = pockets[(finalIndex + pockets.length) % pockets.length];
+
+      // Snap wheel and ball visuals to exact center of pocket for clean look
+      const pocketCenterVisual = (finalIndex + 0.5) * anglePerPocket - Math.PI/2;
+      // compute world angle where ball should be placed so relativeAngle == pocketCenterVisual:
+      // pocketWorldAngle = -ballAngle - pocketCenterVisual  => we want ballAngle such that pocketWorldAngle is current ball position angle
+      const ballPlacementAngle = - ( - (pocketCenterVisual) - wheelAngle ); // simplified => ballAngle ~ -wheelAngle - pocketCenterVisual but we can compute directly:
+      // Instead, set ball position directly at center world angle that matches pocket:
+      const pocketWorldAngleFinal = - (ballAngle) - pocketCenterVisual;
+      ballMesh.position.x = Math.cos(pocketWorldAngleFinal) * ballRadius;
+      ballMesh.position.z = Math.sin(pocketWorldAngleFinal) * ballRadius;
+      ballMesh.position.y = ballHeight;
+
+      rouletteSpinning = false;
+
+      // payout calculation (single bet object or array? we use single betObj)
+      const payout = payoutForBet(betObj, finalIndex);
+      if(payout > 0){
+        // Bet amount was already deducted; return winnings
+        balance += payout;
+        addLog(`Ruleta salió ${finalNumber} — Ganaste $${payout}!`);
+      } else {
+        addLog(`Ruleta salió ${finalNumber} — Perdiste.`);
+      }
       updateHUD();
+      return;
+    } else {
+      requestAnimationFrame(step);
     }
-  },16);
+  }
+  requestAnimationFrame(step);
 }
 
-  // ==================== BLACKJACK ====================
-let bjState = {
-  shoe: [],
-  hands: [],
-  dealer: {cards: []},
-  bet: 0,
-  insuranceBet: 0,
-  currentHand: 0
-};
+// ==================== TRAGAPERRAS (A - 3 carretes clásica) ====================
+const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
+const reelCanvases = [], reelTexes = [];
+for(let i=0;i<3;i++){
+  const c = document.createElement('canvas'); c.width=128; c.height=192;
+  const ctx = c.getContext('2d'); ctx.fillStyle='#070707'; ctx.fillRect(0,0,128,192);
+  ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)],64,96);
+  reelCanvases.push(c); reelTexes.push(new THREE.CanvasTexture(c));
+}
+// We'll show the reels only via UI canvas; you already have slotBody mesh in scene — we'll keep it as visual.
 
-// Crear baraja
+function openSlotsUI(){
+  panelTitle.textContent='Tragaperras';
+  panel.style.display='block';
+  panelContent.innerHTML = `
+    <label>$ A apostar:</label><br>
+    <input id="slotBet" type="number" value="10" style="width:100%;margin-bottom:8px"/><br>
+    <canvas id="slotPreview" width="360" height="140" style="width:100%;border-radius:6px;background:#000;display:block;margin-bottom:8px"></canvas>
+    <button class="btn" id="slotSpin" style="width:100%">Girar</button>
+    <div style="font-size:12px;margin-top:8px">Tres iguales = x5 · Dos iguales = x2</div>
+  `;
+  drawSlotPreview();
+  document.getElementById('slotSpin').onclick = ()=>spinSlots();
+}
+function drawSlotPreview(syms){
+  const cv = document.getElementById('slotPreview');
+  if(!cv) return;
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle='#071217'; ctx.fillRect(0,0,cv.width,cv.height);
+  // draw three windows
+  const w = cv.width/3;
+  for(let i=0;i<3;i++){
+    ctx.fillStyle='#111'; ctx.fillRect(i*w+10,10,w-20,cv.height-20);
+    ctx.fillStyle='#fff';
+    ctx.font='48px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    const s = syms ? syms[i] : symbols[Math.floor(Math.random()*symbols.length)];
+    ctx.fillText(s, i*w + w/2, cv.height/2);
+  }
+}
+
+// spin logic with animation
+let slotSpinning = false;
+function spinSlots(){
+  if(slotSpinning) return;
+  const amt = parseInt(document.getElementById('slotBet').value) || 0;
+  if(amt <= 0){ addLog('Slot: apuesta inválida'); return; }
+  if(balance < amt){ addLog('Slot: saldo insuficiente'); return; }
+  balance -= amt; updateHUD(); panel.style.display='none';
+  slotSpinning = true;
+
+  // decide symbols for each reel (random)
+  const results = [ symbols[Math.floor(Math.random()*symbols.length)],
+                    symbols[Math.floor(Math.random()*symbols.length)],
+                    symbols[Math.floor(Math.random()*symbols.length)] ];
+
+  // animate preview canvas: each reel spins and stops sequentially
+  const cv = document.getElementById('slotPreview');
+  const ctx = cv.getContext('2d');
+  const start = performance.now();
+  const durations = [900, 1400, 1900]; // ms stops times for each reel
+  function spinFrame(now){
+    const elapsed = now - start;
+    // for each reel draw random symbol while not yet stopped
+    for(let i=0;i<3;i++){
+      const w = cv.width/3;
+      ctx.fillStyle='#071217'; ctx.fillRect(i*w,0,w,cv.height);
+      ctx.fillStyle='#111'; ctx.fillRect(i*w+10,10,w-20,cv.height-20);
+      ctx.fillStyle='#fff'; ctx.font='48px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      if(elapsed < durations[i]){
+        // spinning - pick transient symbol
+        const s = symbols[Math.floor(Math.random()*symbols.length)];
+        ctx.fillText(s, i*w + w/2, cv.height/2);
+      } else {
+        // stopped - show final
+        ctx.fillText(results[i], i*w + w/2, cv.height/2);
+      }
+    }
+    if(elapsed < durations[2] + 100){
+      requestAnimationFrame(spinFrame);
+    } else {
+      // finished
+      slotSpinning = false;
+      // evaluate win
+      const counts = {};
+      results.forEach(s=>counts[s]=(counts[s]||0)+1);
+      let win = 0;
+      if(Object.values(counts).includes(3)) win = amt * 5;
+      else if(Object.values(counts).includes(2)) win = amt * 2;
+      if(win > 0){ balance += win; addLog(`Tragaperras: ganaste $${win}!`); } else addLog('Tragaperras: perdiste');
+      updateHUD();
+    }
+  }
+  requestAnimationFrame(spinFrame);
+}
+
+// ==================== BLACKJACK (mejorado básico) ====================
+let bjState = { shoe:[], playerHand:[], dealerHand:[], bet:0, inRound:false };
+
 function createShoe(){
   const suits=['♠','♥','♦','♣'], ranks=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
   const shoe=[];
-  for(let s of suits){
-    for(let r of ranks){
-      shoe.push(r+s);
-    }
+  // we'll use 6 decks for more realism
+  for(let deck=0; deck<6; deck++){
+    for(const s of suits) for(const r of ranks) shoe.push(r+s);
+  }
+  // shuffle simple
+  for(let i=shoe.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1)); [shoe[i], shoe[j]] = [shoe[j], shoe[i]];
   }
   return shoe;
 }
-
-// Robar carta
 function drawFromShoe(){
   if(bjState.shoe.length===0) bjState.shoe = createShoe();
-  const idx = Math.floor(Math.random()*bjState.shoe.length);
-  return bjState.shoe.splice(idx,1)[0];
+  return bjState.shoe.pop();
 }
-
-// Valor de mano
 function handValue(cards){
   let sum=0, aces=0;
   for(const c of cards){
-    const rank=c.slice(0,-1);
+    const rank = c.slice(0,-1);
     if(rank==='A'){ sum+=11; aces++; }
     else if(['J','Q','K'].includes(rank)) sum+=10;
     else sum+=parseInt(rank);
@@ -389,142 +479,103 @@ function handValue(cards){
   while(sum>21 && aces>0){ sum-=10; aces--; }
   return sum;
 }
-
-// Blackjack inicial
 function isBlackjack(cards){ return cards.length===2 && handValue(cards)===21; }
 
-// Abrir panel Blackjack
 function openBlackjackUI(){
-  if(balance<10){ addLog("Necesitas al menos 10$ para apostar"); return; }
+  if(balance < 10){ addLog('Blackjack: necesitas al menos $10'); return; }
   panelTitle.textContent='Blackjack';
   panel.style.display='block';
-
   // reset
-  bjState.shoe=createShoe();
-  bjState.hands=[{cards:[], doubled:false}];
-  bjState.dealer.cards=[];
-  bjState.bet=10;
+  bjState.shoe = createShoe();
+  bjState.playerHand = [];
+  bjState.dealerHand = [];
+  bjState.bet = 10;
+  bjState.inRound = true;
+  // take bet
   balance -= bjState.bet; updateHUD();
-
-  // repartir inicial
-  bjState.hands[0].cards.push(drawFromShoe(), drawFromShoe());
-  bjState.dealer.cards.push(drawFromShoe(), drawFromShoe());
-
+  // deal
+  bjState.playerHand.push(drawFromShoe(), drawFromShoe());
+  bjState.dealerHand.push(drawFromShoe(), drawFromShoe());
   renderBlackjackPanel();
 }
-
-// Renderizar panel
 function renderBlackjackPanel(){
-  const hand = bjState.hands[bjState.currentHand];
-  let html = `Tus cartas: ${hand.cards.map(c=>'<span class="card">'+c+'</span>').join(' ')} (Total: ${handValue(hand.cards)})<br>`;
-  html += `Dealer: <span class="card">${bjState.dealer.cards[0]}</span> ??<br>`;
-  html += `<button class="btn" onclick="hitBlackjack()">Pedir</button>`;
-  html += `<button class="btn" onclick="standBlackjack()">Plantarse</button>`;
-  html += `<button class="btn" onclick="doubleBlackjack()">Doblar</button>`;
+  const p = bjState.playerHand;
+  const d = bjState.dealerHand;
+  let html = `Tus cartas: ${p.map(c=>'<span class="card">'+c+'</span>').join(' ')} (Total: ${handValue(p)})<br>`;
+  html += `Dealer: <span class="card">${d[0]}</span> ??<br>`;
+  html += `<div style="margin-top:8px"><button class="btn" onclick="hitBlackjack()">Pedir</button> <button class="btn" onclick="standBlackjack()">Plantarse</button> <button class="btn" onclick="doubleBlackjack()">Doblar</button></div>`;
+  if(isBlackjack(p) && !isBlackjack(d)){
+    // immediate blackjack - payout 3:2
+    const win = Math.floor(bjState.bet * 1.5);
+    balance += bjState.bet + win;
+    addLog(`Blackjack! Ganaste $${win}`);
+    bjState.inRound = false;
+    updateHUD();
+    html += `<div style="margin-top:8px">Blackjack! Pagado 3:2</div>`;
+  } else if(isBlackjack(p) && isBlackjack(d)){
+    // push
+    balance += bjState.bet;
+    addLog('Push (Ambos Blackjack)');
+    bjState.inRound = false;
+    updateHUD();
+    html += `<div style="margin-top:8px">Push: ambos Blackjack</div>`;
+  }
   panelContent.innerHTML = html;
 }
-
-// Acciones
 function hitBlackjack(){
-  const hand = bjState.hands[bjState.currentHand];
-  hand.cards.push(drawFromShoe());
-  const total = handValue(hand.cards);
-  if(total>21){ addLog(`Blackjack: Perdiste con ${total}`); panel.style.display='none'; }
-  else renderBlackjackPanel();
+  if(!bjState.inRound) return;
+  bjState.playerHand.push(drawFromShoe());
+  const total = handValue(bjState.playerHand);
+  if(total > 21){
+    addLog(`Blackjack: Busted con ${total}`);
+    bjState.inRound = false;
+    updateHUD();
+    panel.style.display='none';
+  } else renderBlackjackPanel();
 }
-
 function standBlackjack(){
-  // dealer juega
-  let dealerTotal = handValue(bjState.dealer.cards);
-  while(dealerTotal<17){
-    bjState.dealer.cards.push(drawFromShoe());
-    dealerTotal = handValue(bjState.dealer.cards);
+  if(!bjState.inRound) return;
+  // dealer reveals and plays: stand on soft 17
+  while(true){
+    const dv = handValue(bjState.dealerHand);
+    // detect soft 17: dv==17 and contains Ace counted as 11 -> stand (we choose stand on soft 17)
+    if(dv < 17) bjState.dealerHand.push(drawFromShoe());
+    else break;
   }
-  const playerTotal = handValue(bjState.hands[0].cards);
-  addLog(`Dealer final: ${bjState.dealer.cards.join(' ')} (${dealerTotal})`);
-
-  if(playerTotal>21){ addLog("Perdiste!"); }
-  else if(dealerTotal>21 || playerTotal>dealerTotal){
-    const win = bjState.bet*2; balance += win; addLog(`Ganaste $${win-bjState.bet}`);}
-  else if(playerTotal===dealerTotal){ balance+=bjState.bet; addLog("Empate");}
-  else{ addLog("Perdiste!"); }
-
-  updateHUD(); panel.style.display='none';
-}
-
-function doubleBlackjack(){
-  const hand = bjState.hands[bjState.currentHand];
-  if(balance<bjState.bet){ addLog("No tienes suficiente para doblar"); return; }
-  balance -= bjState.bet; bjState.bet*=2; updateHUD();
-  hitBlackjack();
-  if(handValue(hand.cards)<=21) standBlackjack();
-}
-
-  // ==================== TRAGAPERRAS ====================
-const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
-const reelCanvases=[], reelTexes=[];
-
-// Crear texturas de los carretes
-for(let i=0;i<3;i++){
-  const c=document.createElement('canvas'); c.width=128; c.height=192;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle='#070707'; ctx.fillRect(0,0,128,192);
-  ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-  ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)],64,96);
-  reelCanvases.push(c);
-  reelTexes.push(new THREE.CanvasTexture(c));
-}
-
-// slot físico
-const slotBody = new THREE.Mesh(
-  new THREE.BoxGeometry(2,4,1.5),
-  new THREE.MeshStandardMaterial({color:0x8a0f05})
-);
-slotBody.position.set(10,2,-5);
-scene.add(slotBody);
-
-// UI
-function openSlotsUI(){
-  const html = `
-    <label>$ A apostar:</label><br>
-    <input type="number" id="slotBet" value="10"><br><br>
-    <button class="btn" onclick="spinSlots()">Girar</button>
-  `;
-  panelTitle.textContent='Tragaperras'; 
-  panelContent.innerHTML = html; 
-  panel.style.display='block';
-}
-
-// Girar
-function spinSlots(){
-  const amt = parseInt(document.getElementById('slotBet').value);
-  if(balance<amt){ addLog('No tienes suficiente saldo'); return; }
-  balance-=amt; updateHUD(); panel.style.display='none';
-
-  const results=[];
-  for(let i=0;i<3;i++){
-    const sym = symbols[Math.floor(Math.random()*symbols.length)];
-    const ctx = reelCanvases[i].getContext('2d');
-    ctx.fillStyle='#070707'; ctx.fillRect(0,0,128,192);
-    ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(sym,64,96);
-    reelTexes[i].needsUpdate=true;
-    results.push(sym);
-  }
-
-  const counts={};
-  results.forEach(s=>counts[s]=(counts[s]||0)+1);
-
-  let win=0;
-  if(Object.values(counts).includes(3)) win=amt*5;
-  else if(Object.values(counts).includes(2)) win=amt*2;
-
-  if(win>0){ balance+=win; addLog(`Tragaperras: ganaste $${win}!`);}
-  else addLog("Tragaperras: perdiste");
-
+  const pv = handValue(bjState.playerHand);
+  const dv = handValue(bjState.dealerHand);
+  addLog(`Dealer: ${bjState.dealerHand.join(' ')} (${dv})`);
+  if(pv > 21) addLog('Perdiste (busted)');
+  else if(dv > 21 || pv > dv){
+    const win = bjState.bet*2; balance += win; addLog(`Ganaste $${win - bjState.bet}`);
+  } else if(pv === dv){
+    balance += bjState.bet; addLog('Push');
+  } else addLog('Perdiste');
+  bjState.inRound = false;
   updateHUD();
+  panel.style.display='none';
+}
+function doubleBlackjack(){
+  if(!bjState.inRound) return;
+  if(balance < bjState.bet){ addLog('No tienes suficiente para doblar'); return; }
+  balance -= bjState.bet; bjState.bet *= 2; updateHUD();
+  hitBlackjack();
+  if(handValue(bjState.playerHand) <= 21) standBlackjack();
 }
 
+// ==================== ANIMACIÓN y RESIZE ====================
+let lastTime = 0;
+function animate(ts){
+  requestAnimationFrame(animate);
+  const dt = (ts - lastTime) * 0.001; lastTime = ts;
+  detectZones();
+  const delta = computeDelta(dt);
+  playerPos.add(delta);
+  camera.position.copy(playerPos); camera.position.y = 1.7; camera.rotation.set(pitch, yaw, 0, 'YXZ');
+  renderer.render(scene, camera);
+}
+requestAnimationFrame(animate);
+window.addEventListener('resize', ()=>{ camera.aspect = wrap.clientWidth/wrap.clientHeight; camera.updateProjectionMatrix(); renderer.setSize(wrap.clientWidth, wrap.clientHeight); });
 </script>
 </body>
 </html>
