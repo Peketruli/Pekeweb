@@ -204,124 +204,110 @@ function spinRoulette() {
 
   spinning = true;
 
-  // --- Elegir número ganador y su índice ---
+  // --- seleccionar ganador ---
   const chosen = pockets[Math.floor(Math.random() * pockets.length)];
   const pocketIndex = pockets.indexOf(chosen);
 
-  // --- Parámetros de animación ---
-  const totalRevolutions = 8 + Math.floor(Math.random()*4); // vueltas aleatorias entre 8 y 11
+  // --- parámetros de animación ---
+  const totalRevolutions = 8 + Math.floor(Math.random() * 4); // 8..11 vueltas
   const baseRotation = Math.PI * 2 * totalRevolutions;
+  const tinyOffset = (Math.random() - 0.5) * anglePerPocket * 0.6; // ligera variación
 
-  // Ángulo central de la casilla objetivo (centro del pocket)
-  const targetPocketCenter = (pocketIndex + 0.5) * anglePerPocket;
+  // Ángulo central del pocket (en coordenadas de textura)
+  // IMPORTANTE: tu canvas dibuja cada pocket con "a0 = i*anglePerPocket - Math.PI/2"
+  // eso significa que tenemos que compensar restando Math.PI/2.
+  const targetPocketCenter = (pocketIndex + 0.5) * anglePerPocket - Math.PI / 2;
 
-  // Valores iniciales de rueda/bola
-  let wheelAngle = 0;                       // ángulo acumulado de la rueda (lo iremos incrementando)
-  let remainingRotation = 0;                // se asignará abajo
-  let wheelSpeed = 8;                       // velocidad base (se modula)
-  let ballSpeed = 30;                       // rapidez angular inicial de la bola (se frena)
-  let ballAngle = Math.random() * Math.PI*2; // posición angular inicial de la bola
-  const ballRadius = wheelRadius - 0.3;     // la bola se queda en la pista exterior
-  const ballHeight = 1.2;                   // altura fija de la bola
+  // estados iniciales
+  let wheelAngle = 0;
+  let wheelSpeed = 8;
+  let ballSpeed = 30;
+  let ballAngle = Math.random() * Math.PI * 2;
+  const ballRadius = wheelRadius - 0.3;
+  const ballHeight = 1.2;
 
-  // --- CÁLCULO CRÍTICO:
-  // En tu código original el índice se calcula con:
-  //   relativeAngle = ((-ballAngle - wheelAngle) mod 2π)
-  //   index = floor(relativeAngle / anglePerPocket)
-  // Queremos forzar relativeAngle ≈ targetPocketCenter al final.
-  // Resolver para wheelAngle_final:
-  //   -ballAngle - wheelAngle_final ≡ targetPocketCenter  (mod 2π)
-  // => wheelAngle_final ≡ -ballAngle - targetPocketCenter  (mod 2π)
-  // Añadimos baseRotation para dar vueltas: wheelAngle_final = baseRotation + (-ballAngle - targetPocketCenter) + tinyOffset
-  const tinyOffset = (Math.random() - 0.5) * anglePerPocket * 0.6; // variación leve
+  // --- calcular ángulo final objetivo de la rueda de forma algebraica ---
+  // Queremos: relativeAngle = ((-ballAngle - wheelAngle_final) mod 2π) === targetPocketCenter
+  // => wheelAngle_final = -ballAngle - targetPocketCenter  (mod 2π)
   let finalWheelAngleTarget = baseRotation + (-ballAngle - targetPocketCenter) + tinyOffset;
+  // normalizar a positivo grande
+  finalWheelAngleTarget = ((finalWheelAngleTarget % (Math.PI * 2)) + (Math.PI * 2)) % (Math.PI * 2) + baseRotation;
 
-  // Normalizar a positivo (por si acaso)
-  while (finalWheelAngleTarget < 0) finalWheelAngleTarget += Math.PI*2;
+  let remainingRotation = finalWheelAngleTarget;
 
-  remainingRotation = finalWheelAngleTarget;
-
-  // --- Intervalo que anima la ruleta y la bola ---
+  // --- animación ---
   const spinInterval = setInterval(() => {
     const dt = 0.016;
 
-    // --- RUEDA: frenado progresivo según lo que quede por girar ---
+    // frenado suave en función de lo que queda por girar
     if (remainingRotation > 0) {
-      // factor de frenado suave (sqrt para sensación más realista)
       const brakeFactor = remainingRotation / (Math.PI * 2 * totalRevolutions);
-      wheelSpeed = Math.max(0.15, 9 * Math.sqrt(Math.max(0, brakeFactor))); // límite mínimo para no quedarse a 0 instant.
+      wheelSpeed = Math.max(0.12, 9 * Math.sqrt(Math.max(0, brakeFactor)));
     } else {
       wheelSpeed = 0;
     }
 
+    // aplicar rotación de rueda
     const rotationDelta = wheelSpeed * dt;
     if (remainingRotation > 0) {
       wheelAngle += rotationDelta;
       remainingRotation -= rotationDelta;
       if (remainingRotation < 0) {
-        // compensar pequeño overshoot
-        wheelAngle += remainingRotation;
+        wheelAngle += remainingRotation; // corrección de overshoot
         remainingRotation = 0;
       }
     }
     wheelMesh.rotation.y = wheelAngle;
 
-    // --- BOLA: frena más despacio que la rueda (gira en sentido contrario)
-    ballSpeed *= 0.992; // freno suave de la bola
+    // bola frena más despacio (giro en sentido contrario visual)
+    ballSpeed *= 0.992;
     ballAngle += ballSpeed * dt;
 
-    // Mantener bola en pista exterior (sin bajar al centro)
+    // bola en pista exterior (no baja al centro)
     ballMesh.position.x = Math.cos(ballAngle) * ballRadius;
     ballMesh.position.z = Math.sin(ballAngle) * ballRadius;
     ballMesh.position.y = ballHeight;
 
-    // --- FIN: cuando la rueda alcanzó la rotación objetivo ---
+    // cuando llegamos al objetivo
     if (remainingRotation <= 0) {
       clearInterval(spinInterval);
       spinning = false;
 
-      // Forzamos la rotación exacta final (más estable que dejar lo que quedó)
+      // forzamos la rotación exacta final
       wheelMesh.rotation.y = finalWheelAngleTarget;
       wheelAngle = finalWheelAngleTarget;
 
-      // Ajustamos la bola para que visualmente quede sobre el pocket
-      // Calculamos el relativeAngle que define la casilla (misma fórmula usada para leer el índice)
+      // calcular índice final usando la misma fórmula que la detección: 
+      // relative = ((-ballAngle - wheelAngle) mod 2π)
       const relativeAngle = ((-ballAngle - wheelAngle) % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
       const finalIndex = Math.floor(relativeAngle / anglePerPocket);
-      const visualChosen = pockets[finalIndex];
 
-      // Si por alguna minúscula razón el index calculado no coincide (por redondeos),
-      // acercamos la bola al centro exacto del pocket visual:
-      if (visualChosen !== chosen) {
-        // calculamos centro visual del pocket finalIndex y colocamos la bola encima
-        const pocketCenterVisual = (finalIndex + 0.5) * anglePerPocket;
-        // world angle where the pocket center is located (solve -ball - wheel = pocketCenter -> position)
-        const pocketWorldAngle = - (ballAngle) - pocketCenterVisual;
-        ballMesh.position.x = Math.cos(pocketWorldAngle) * ballRadius;
-        ballMesh.position.z = Math.sin(pocketWorldAngle) * ballRadius;
-      } else {
-        // si coincide, colocamos bola exactamente donde esté (mejora visual)
-        const pocketCenter = (finalIndex + 0.5) * anglePerPocket;
-        const pocketWorldAngle = - (ballAngle) - pocketCenter;
-        ballMesh.position.x = Math.cos(pocketWorldAngle) * ballRadius;
-        ballMesh.position.z = Math.sin(pocketWorldAngle) * ballRadius;
-      }
+      // colocar la bola exactamente sobre el centro del pocket visual (por limpieza)
+      const pocketCenterVisual = (finalIndex + 0.5) * anglePerPocket - Math.PI / 2;
+      // world angle to place the ball so that relativeAngle == pocketCenterVisual:
+      // pocketWorldAngle = -ballAngle - pocketCenterVisual  => ball position angle = pocketWorldAngle
+      const pocketWorldAngle = -ballAngle - pocketCenterVisual;
+      ballMesh.position.x = Math.cos(pocketWorldAngle) * ballRadius;
+      ballMesh.position.z = Math.sin(pocketWorldAngle) * ballRadius;
+      ballMesh.position.y = ballHeight;
 
-      // Log final y premios
-      addLog(`Ruleta salió ${pockets[finalIndex]}`);
+      // log y payout (usa pockets[finalIndex])
+      const finalPocket = pockets[((finalIndex % pockets.length) + pockets.length) % pockets.length];
+      addLog(`Ruleta salió ${finalPocket}`);
 
-      if (nums.includes(pockets[finalIndex])) {
+      if (nums.includes(finalPocket)) {
         const win = bet * 35;
         balance += win;
         addLog(`Ganaste $${win}!`);
       } else {
-        addLog(`Ruleta: Perdiste. El número ganador fue ${pockets[finalIndex]}.`);
+        addLog(`Ruleta: Perdiste. El número ganador fue ${finalPocket}.`);
       }
 
       updateHUD();
     }
   }, 16);
 }
+
 
 // ==================== BLACKJACK ====================
 let bjPlayerCards=[], bjDealerCards=[], bjCurrentBet=0;
