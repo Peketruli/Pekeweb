@@ -195,6 +195,139 @@ window.addEventListener('resize', ()=>{
   camera.updateProjectionMatrix();
   renderer.setSize(wrap.clientWidth, wrap.clientHeight);
 });
+
+  // ==================== RULETA 3D ====================
+const wheelRadius = 3.5;
+const pockets = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
+const anglePerPocket = (Math.PI*2) / pockets.length;
+
+// Crear textura de la rueda
+function createWheelCanvas(size=512){
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  const cx=size/2, cy=size/2, r=size*0.45;
+
+  ctx.fillStyle='#072b22';
+  ctx.fillRect(0,0,size,size);
+
+  for(let i=0;i<pockets.length;i++){
+    const a0=i*anglePerPocket-Math.PI/2;
+    const a1=(i+1)*anglePerPocket-Math.PI/2;
+
+    ctx.beginPath();
+    ctx.moveTo(cx,cy);
+    ctx.arc(cx,cy,r,a0,a1);
+    ctx.closePath();
+    ctx.fillStyle = pockets[i]===0?"#1b8b41":(i%2===0?"#b71c1c":"#000");
+    ctx.fill();
+
+    const mid = a0 + (a1-a0)/2;
+    ctx.save();
+    ctx.translate(cx + Math.cos(mid)*r*0.66, cy + Math.sin(mid)*r*0.66);
+    ctx.rotate(mid+Math.PI/2);
+    ctx.fillStyle="#fff";
+    ctx.font = `${Math.floor(size*0.04)}px sans-serif`;
+    ctx.textAlign="center";
+    ctx.textBaseline="middle";
+    ctx.fillText(pockets[i],0,0);
+    ctx.restore();
+  }
+
+  ctx.beginPath();
+  ctx.fillStyle="#111";
+  ctx.arc(cx,cy,r*0.45,0,Math.PI*2);
+  ctx.fill();
+
+  return c;
+}
+
+const wheelTexture = new THREE.CanvasTexture(createWheelCanvas());
+const wheelMesh = new THREE.Mesh(
+  new THREE.CylinderGeometry(wheelRadius,wheelRadius,1.2,64),
+  new THREE.MeshStandardMaterial({ map: wheelTexture })
+);
+wheelMesh.rotation.x = Math.PI/2;
+wheelMesh.position.set(0,0.3,0);
+scene.add(wheelMesh);
+
+const ballMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(0.18,16,16),
+  new THREE.MeshStandardMaterial({color:0xffffff})
+);
+scene.add(ballMesh);
+
+let spinning = false;
+
+// ==================== RULETA UI ====================
+function openRouletteUI(){
+  const html = `
+    <label>Números a apostar (separados por coma):</label><br>
+    <input type="text" id="rouletteInput" placeholder="0,7,14" style="width:90%"><br><br>
+    <label>$ A apostar:</label><br>
+    <input type="number" id="rouletteBet" value="10"><br><br>
+    <button class="btn" onclick="spinRoulette()">Girar Ruleta</button>
+  `;
+  panelTitle.textContent='Ruleta';
+  panelContent.innerHTML = html;
+  panel.style.display='block';
+}
+
+function spinRoulette(){
+  if(spinning) return;
+
+  const nums = document.getElementById("rouletteInput").value.split(",").map(n=>parseInt(n.trim())).filter(n=>!isNaN(n));
+  const bet = parseInt(document.getElementById("rouletteBet").value);
+  if(balance<bet){ addLog("Ruleta: saldo insuficiente"); return; }
+
+  balance -= bet; updateHUD(); panel.style.display='none';
+  spinning = true;
+
+  // --- seleccionar ganador ---
+  const chosen = pockets[Math.floor(Math.random()*pockets.length)];
+  const pocketIndex = pockets.indexOf(chosen);
+
+  const totalRot = 8 + Math.floor(Math.random()*4); // vueltas
+  const baseRotation = Math.PI*2*totalRot;
+  const tinyOffset = (Math.random()-0.5)*anglePerPocket*0.6;
+  const target = (pocketIndex + 0.5)*anglePerPocket - Math.PI/2 + baseRotation + tinyOffset;
+
+  let wheelAngle = 0;
+  let ballAngle = Math.random()*Math.PI*2;
+  let wheelSpeed = 8;
+  let ballSpeed = 30;
+  const ballRadius = wheelRadius-0.25;
+  const ballHeight = 1.2;
+
+  const interval = setInterval(()=>{
+    const dt = 0.016;
+    if(wheelAngle<target){
+      wheelSpeed *= 0.98; // frena
+      const delta = wheelSpeed*dt;
+      wheelAngle += delta;
+      if(wheelAngle>target) wheelAngle = target;
+      wheelMesh.rotation.z = wheelAngle;
+    }
+
+    ballSpeed *= 0.992;
+    ballAngle += ballSpeed*dt;
+    ballMesh.position.x = Math.cos(ballAngle)*ballRadius;
+    ballMesh.position.z = Math.sin(ballAngle)*ballRadius;
+    ballMesh.position.y = ballHeight;
+
+    if(wheelAngle>=target){
+      clearInterval(interval);
+      spinning=false;
+      addLog(`Ruleta salió ${chosen}`);
+      if(nums.includes(chosen)){
+        const win = bet*35;
+        balance+=win;
+        addLog(`Ganaste $${win}!`);
+      } else addLog("Perdiste.");
+      updateHUD();
+    }
+  },16);
+}
 </script>
 </body>
 </html>
