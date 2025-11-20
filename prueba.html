@@ -328,6 +328,184 @@ function spinRoulette(){
     }
   },16);
 }
+
+  // ==================== BLACKJACK ====================
+let bjState = {
+  shoe: [],
+  hands: [],
+  dealer: {cards: []},
+  bet: 0,
+  insuranceBet: 0,
+  currentHand: 0
+};
+
+// Crear baraja
+function createShoe(){
+  const suits=['♠','♥','♦','♣'], ranks=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const shoe=[];
+  for(let s of suits){
+    for(let r of ranks){
+      shoe.push(r+s);
+    }
+  }
+  return shoe;
+}
+
+// Robar carta
+function drawFromShoe(){
+  if(bjState.shoe.length===0) bjState.shoe = createShoe();
+  const idx = Math.floor(Math.random()*bjState.shoe.length);
+  return bjState.shoe.splice(idx,1)[0];
+}
+
+// Valor de mano
+function handValue(cards){
+  let sum=0, aces=0;
+  for(const c of cards){
+    const rank=c.slice(0,-1);
+    if(rank==='A'){ sum+=11; aces++; }
+    else if(['J','Q','K'].includes(rank)) sum+=10;
+    else sum+=parseInt(rank);
+  }
+  while(sum>21 && aces>0){ sum-=10; aces--; }
+  return sum;
+}
+
+// Blackjack inicial
+function isBlackjack(cards){ return cards.length===2 && handValue(cards)===21; }
+
+// Abrir panel Blackjack
+function openBlackjackUI(){
+  if(balance<10){ addLog("Necesitas al menos 10$ para apostar"); return; }
+  panelTitle.textContent='Blackjack';
+  panel.style.display='block';
+
+  // reset
+  bjState.shoe=createShoe();
+  bjState.hands=[{cards:[], doubled:false}];
+  bjState.dealer.cards=[];
+  bjState.bet=10;
+  balance -= bjState.bet; updateHUD();
+
+  // repartir inicial
+  bjState.hands[0].cards.push(drawFromShoe(), drawFromShoe());
+  bjState.dealer.cards.push(drawFromShoe(), drawFromShoe());
+
+  renderBlackjackPanel();
+}
+
+// Renderizar panel
+function renderBlackjackPanel(){
+  const hand = bjState.hands[bjState.currentHand];
+  let html = `Tus cartas: ${hand.cards.map(c=>'<span class="card">'+c+'</span>').join(' ')} (Total: ${handValue(hand.cards)})<br>`;
+  html += `Dealer: <span class="card">${bjState.dealer.cards[0]}</span> ??<br>`;
+  html += `<button class="btn" onclick="hitBlackjack()">Pedir</button>`;
+  html += `<button class="btn" onclick="standBlackjack()">Plantarse</button>`;
+  html += `<button class="btn" onclick="doubleBlackjack()">Doblar</button>`;
+  panelContent.innerHTML = html;
+}
+
+// Acciones
+function hitBlackjack(){
+  const hand = bjState.hands[bjState.currentHand];
+  hand.cards.push(drawFromShoe());
+  const total = handValue(hand.cards);
+  if(total>21){ addLog(`Blackjack: Perdiste con ${total}`); panel.style.display='none'; }
+  else renderBlackjackPanel();
+}
+
+function standBlackjack(){
+  // dealer juega
+  let dealerTotal = handValue(bjState.dealer.cards);
+  while(dealerTotal<17){
+    bjState.dealer.cards.push(drawFromShoe());
+    dealerTotal = handValue(bjState.dealer.cards);
+  }
+  const playerTotal = handValue(bjState.hands[0].cards);
+  addLog(`Dealer final: ${bjState.dealer.cards.join(' ')} (${dealerTotal})`);
+
+  if(playerTotal>21){ addLog("Perdiste!"); }
+  else if(dealerTotal>21 || playerTotal>dealerTotal){
+    const win = bjState.bet*2; balance += win; addLog(`Ganaste $${win-bjState.bet}`);}
+  else if(playerTotal===dealerTotal){ balance+=bjState.bet; addLog("Empate");}
+  else{ addLog("Perdiste!"); }
+
+  updateHUD(); panel.style.display='none';
+}
+
+function doubleBlackjack(){
+  const hand = bjState.hands[bjState.currentHand];
+  if(balance<bjState.bet){ addLog("No tienes suficiente para doblar"); return; }
+  balance -= bjState.bet; bjState.bet*=2; updateHUD();
+  hitBlackjack();
+  if(handValue(hand.cards)<=21) standBlackjack();
+}
+
+  // ==================== TRAGAPERRAS ====================
+const symbols = ['🍒','⭐','7','🍋','🔔','🍉'];
+const reelCanvases=[], reelTexes=[];
+
+// Crear texturas de los carretes
+for(let i=0;i<3;i++){
+  const c=document.createElement('canvas'); c.width=128; c.height=192;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle='#070707'; ctx.fillRect(0,0,128,192);
+  ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+  ctx.fillText(symbols[Math.floor(Math.random()*symbols.length)],64,96);
+  reelCanvases.push(c);
+  reelTexes.push(new THREE.CanvasTexture(c));
+}
+
+// slot físico
+const slotBody = new THREE.Mesh(
+  new THREE.BoxGeometry(2,4,1.5),
+  new THREE.MeshStandardMaterial({color:0x8a0f05})
+);
+slotBody.position.set(10,2,-5);
+scene.add(slotBody);
+
+// UI
+function openSlotsUI(){
+  const html = `
+    <label>$ A apostar:</label><br>
+    <input type="number" id="slotBet" value="10"><br><br>
+    <button class="btn" onclick="spinSlots()">Girar</button>
+  `;
+  panelTitle.textContent='Tragaperras'; 
+  panelContent.innerHTML = html; 
+  panel.style.display='block';
+}
+
+// Girar
+function spinSlots(){
+  const amt = parseInt(document.getElementById('slotBet').value);
+  if(balance<amt){ addLog('No tienes suficiente saldo'); return; }
+  balance-=amt; updateHUD(); panel.style.display='none';
+
+  const results=[];
+  for(let i=0;i<3;i++){
+    const sym = symbols[Math.floor(Math.random()*symbols.length)];
+    const ctx = reelCanvases[i].getContext('2d');
+    ctx.fillStyle='#070707'; ctx.fillRect(0,0,128,192);
+    ctx.fillStyle='#fff'; ctx.font='64px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(sym,64,96);
+    reelTexes[i].needsUpdate=true;
+    results.push(sym);
+  }
+
+  const counts={};
+  results.forEach(s=>counts[s]=(counts[s]||0)+1);
+
+  let win=0;
+  if(Object.values(counts).includes(3)) win=amt*5;
+  else if(Object.values(counts).includes(2)) win=amt*2;
+
+  if(win>0){ balance+=win; addLog(`Tragaperras: ganaste $${win}!`);}
+  else addLog("Tragaperras: perdiste");
+
+  updateHUD();
+}
+
 </script>
 </body>
 </html>
