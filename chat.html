@@ -150,15 +150,12 @@
 <!-- ========= SCRIPT ========= -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-/* ⭐⭐ TU JS REAL YA PEGADO AQUÍ ⭐⭐ */
-/* ⚠️ SOLO SE HA AÑADIDO LA PARTE DE GRUPOS SIN TOCAR TU LÓGICA */
-/* ------------------------------------------------------------ */
-
+// -------------------------- SUPABASE --------------------------
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// DOM
+// -------------------------- DOM --------------------------
 const profileNameEl = document.getElementById('profile-name');
 const profileIdEl = document.getElementById('profile-id');
 const profileAvatarEl = document.getElementById('profile-avatar');
@@ -171,24 +168,13 @@ const messageInput = document.getElementById('message-input');
 const sendBtn = document.getElementById('send');
 const searchInput = document.getElementById('search');
 
-// State
+// -------------------------- STATE --------------------------
 let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
 const usersMap = {};
 let currentChatId = null;
 let realtimeChannel = null;
 
-// Ensure local user exists and upsert to DB
-async function ensureLocalUser(){
-  if (currentUser && currentUser.id && currentUser.username) return;
-  const id = crypto.randomUUID();
-  const username = 'Usuario-' + Math.floor(Math.random()*9000 + 1000);
-  currentUser = { id, username };
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
-  try{
-    await supabase.from('usuarios').upsert([{ id: currentUser.id, username: currentUser.username }], { onConflict: 'id' });
-  }catch(e){console.warn('upsert user failed', e)}
-}
-
+// -------------------------- UTILIDADES --------------------------
 function el(tag, props = {}, ...children){
   const d = document.createElement(tag);
   for(const k in props) d[k] = props[k];
@@ -202,7 +188,19 @@ function timeShort(dateStr){
   return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 }
 
-// Load users
+// -------------------------- USUARIO LOCAL --------------------------
+async function ensureLocalUser(){
+  if (currentUser && currentUser.id && currentUser.username) return;
+  const id = crypto.randomUUID();
+  const username = 'Usuario-' + Math.floor(Math.random()*9000 + 1000);
+  currentUser = { id, username };
+  localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  try{
+    await supabase.from('usuarios').upsert([{ id: currentUser.id, username: currentUser.username }], { onConflict: 'id' });
+  }catch(e){console.warn('upsert user failed', e)}
+}
+
+// -------------------------- CARGAR USUARIOS --------------------------
 async function loadUsers(){
   const { data: users, error } = await supabase.from('usuarios').select('id, username');
   if(error){
@@ -233,6 +231,7 @@ function renderContacts(users){
   });
 }
 
+// -------------------------- CARGAR CHATS --------------------------
 async function loadRecentChats(){
   const { data: myChats } = await supabase.from('new_chat_members')
     .select('chat_id')
@@ -283,7 +282,7 @@ async function loadRecentChats(){
   }
 }
 
-
+// -------------------------- CHAT PRIVADO --------------------------
 async function openOrCreatePrivateChat(otherId, otherUsername){
   const { data: chats } = await supabase.from('new_chats').select('id,type');
   if(chats){
@@ -320,6 +319,7 @@ async function openOrCreatePrivateChat(otherId, otherUsername){
   openChat(newChat.id, { id: otherId, username: otherUsername });
 }
 
+// -------------------------- ABRIR CHAT --------------------------
 async function openChat(chatId, meta){
   currentChatId = chatId;
   chatTitleEl.textContent = meta.username;
@@ -329,6 +329,7 @@ async function openChat(chatId, meta){
   subscribeToChat(chatId);
 }
 
+// -------------------------- MENSAJES --------------------------
 async function loadMessages(chatId){
   const { data: msgs, error } = await supabase.from('new_messages')
     .select('*')
@@ -344,6 +345,11 @@ async function loadMessages(chatId){
   msgs.forEach(m => renderMessage(m));
 }
 
+// -------------------------- RENDER MENSAJE --------------------------
+const SETTINGS_KEY = 'pekechat_settings';
+const defaultSettings = { darkMode: false, showTimestamps: true, enableNotifications: true };
+let settings = JSON.parse(localStorage.getItem(SETTINGS_KEY) || 'null') || defaultSettings;
+
 function renderMessage(msg){
   const mine = msg.sender_id === currentUser.id;
   const row = el('div', { className: 'msg-row' });
@@ -354,27 +360,55 @@ function renderMessage(msg){
     box.appendChild(el('div', { className: 'sender-name' }, name));
   }
 
-  box.appendChild(el('div', {}, msg.content));
-  box.appendChild(el('div', { className: 'msg-time' }, timeShort(msg.created_at)));
+  // contenido multimedia
+  const content = msg.content || '';
+  if (content.startsWith('img::')) {
+    const url = content.replace('img::','');
+    const img = document.createElement('img');
+    img.src = url;
+    img.style = 'max-width:320px;border-radius:8px;display:block;margin-bottom:6px';
+    img.onload = () => { messagesEl.scrollTop = messagesEl.scrollHeight; };
+    box.appendChild(img);
+  } else if (content.startsWith('file::')) {
+    const url = content.replace('file::','');
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.innerText = url.split('/').pop();
+    a.style = 'display:inline-block;padding:8px;border-radius:6px;background:#f3f3f3;color:#000;text-decoration:none';
+    box.appendChild(a);
+  } else {
+    box.appendChild(el('div', {}, content));
+  }
+
+  if (settings.showTimestamps) {
+    box.appendChild(el('div', { className: 'msg-time' }, timeShort(msg.created_at)));
+  } else {
+    box.appendChild(el('div', { className: 'msg-time' }, ''));
+  }
 
   row.appendChild(box);
   messagesEl.appendChild(row);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  if (!mine) playIncomingSound();
 }
 
-function subscribeToChat(chatId){
-  if(realtimeChannel) supabase.removeChannel(realtimeChannel);
-
-  realtimeChannel = supabase.channel(`chat_${chatId}`)
-    .on('postgres_changes',{
-      event:'INSERT',
-      schema:'public',
-      table:'new_messages',
-      filter:`chat_id=eq.${chatId}`
-    }, payload => renderMessage(payload.new))
-    .subscribe();
+function playIncomingSound(){
+  const ctx = (window.__peke_audio_ctx = window.__peke_audio_ctx || new (window.AudioContext||window.webkitAudioContext)());
+  const o = ctx.createOscillator();
+  const g = ctx.createGain();
+  o.type = 'sine';
+  o.frequency.value = 520;
+  o.connect(g);
+  g.connect(ctx.destination);
+  g.gain.value = 0.02;
+  o.start();
+  setTimeout(()=>{ o.stop(); }, 80);
 }
 
+// -------------------------- ENVIAR MENSAJE --------------------------
 async function sendMessage(){
   const content = messageInput.value.trim();
   if(!content || !currentChatId) return;
@@ -393,6 +427,34 @@ async function sendMessage(){
   messageInput.value = "";
 }
 
+// -------------------------- SUBSCRIPCIÓN --------------------------
+function subscribeToChat(chatId){
+  if(realtimeChannel) supabase.removeChannel(realtimeChannel);
+
+  realtimeChannel = supabase.channel(`chat_${chatId}`)
+    .on('postgres_changes',{
+      event:'INSERT',
+      schema:'public',
+      table:'new_messages',
+      filter:`chat_id=eq.${chatId}`
+    }, payload => {
+      const msg = payload.new;
+      renderMessage(msg);
+
+      if (msg.sender_id !== currentUser.id) {
+        showToast((usersMap[msg.sender_id] || 'Alguien') + ': ' + (msg.content.length > 120 ? msg.content.slice(0,120)+'…' : msg.content));
+        if (settings.enableNotifications && Notification && Notification.permission === 'granted') {
+          const title = (usersMap[msg.sender_id] || 'Nuevo mensaje');
+          const body = msg.content.startsWith('img::') ? '📷 Imagen' : (msg.content.startsWith('file::') ? '📎 Archivo' : msg.content);
+          const n = new Notification(title, { body, icon: '', tag: 'pekechat' });
+          n.onclick = () => { window.focus(); };
+        }
+      }
+    })
+    .subscribe();
+}
+
+// -------------------------- EVENTOS --------------------------
 sendBtn.addEventListener('click', sendMessage);
 messageInput.addEventListener('keydown', e => {
   if(e.key === 'Enter'){
@@ -400,7 +462,6 @@ messageInput.addEventListener('keydown', e => {
     sendMessage();
   }
 });
-
 searchInput.addEventListener('input', e => {
   const q = e.target.value.toLowerCase();
   const lis = contactsListEl.querySelectorAll('li');
@@ -410,21 +471,10 @@ searchInput.addEventListener('input', e => {
   });
 });
 
-// INIT
-(async function init(){
-  await ensureLocalUser();
-  profileNameEl.textContent = currentUser.username;
-  profileIdEl.textContent = currentUser.id;
-  profileAvatarEl.textContent = currentUser.username.charAt(0).toUpperCase();
-  await loadUsers();
-})();
-
-
-// ====== CREAR GRUPOS ======
+// -------------------------- GRUPOS --------------------------
 const groupModal = document.getElementById("group-modal");
 const groupUsersList = document.getElementById("group-users-list");
 const groupNameInput = document.getElementById("group-name-input");
-
 document.getElementById("btn-create-group").onclick = openGroupModal;
 document.getElementById("cancel-group").onclick = () => groupModal.style.display = "none";
 document.getElementById("confirm-group").onclick = createGroup;
@@ -432,24 +482,19 @@ document.getElementById("confirm-group").onclick = createGroup;
 function openGroupModal(){
   groupModal.style.display = "flex";
   groupNameInput.value = "";
-
   groupUsersList.innerHTML = "";
   Object.entries(usersMap).forEach(([id, username])=>{
     if(id === currentUser.id) return;
-
     const row = document.createElement("label");
     row.style.display = "flex";
     row.style.alignItems = "center";
     row.style.gap = "8px";
     row.style.margin = "6px 0";
-
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.value = id;
-
     const span = document.createElement("span");
     span.textContent = username;
-
     row.appendChild(cb);
     row.appendChild(span);
     groupUsersList.appendChild(row);
@@ -459,43 +504,36 @@ function openGroupModal(){
 async function createGroup(){
   const name = groupNameInput.value.trim();
   if(!name) return alert("Ponle un nombre al grupo");
-
   const checkboxes = groupUsersList.querySelectorAll("input[type=checkbox]:checked");
   if(checkboxes.length === 0) return alert("Selecciona al menos un usuario");
-
   const selectedUserIds = Array.from(checkboxes).map(cb => cb.value);
 
-  // Crear chat grupo
   const { data: newChat, error } = await supabase.from("new_chats")
     .insert({ type: "group", group_name: name })
     .select()
     .single();
-
   if(error){
     alert("Error creando grupo: " + error.message);
     return;
   }
 
-  // Insertar miembros
-  const members = selectedUserIds.map(uid => ({
-    chat_id: newChat.id,
-    user_id: uid
-  }));
+  const members = selectedUserIds.map(uid => ({ chat_id: newChat.id, user_id: uid }));
   members.push({ chat_id: newChat.id, user_id: currentUser.id });
-
   await supabase.from("new_chat_members").insert(members);
 
-  // Cerrar modal
   groupModal.style.display = "none";
-
-  // Recargar lista
   await loadRecentChats();
-
-  // Abrir grupo
   openChat(newChat.id, { id: newChat.id, username: name });
 }
 
+// -------------------------- INIT --------------------------
+(async function init(){
+  await ensureLocalUser();
+  profileNameEl.textContent = currentUser.username;
+  profileIdEl.textContent = currentUser.id;
+  profileAvatarEl.textContent = currentUser.username.charAt(0).toUpperCase();
+  await loadUsers();
+})();
 </script>
-
 </body>
 </html>
