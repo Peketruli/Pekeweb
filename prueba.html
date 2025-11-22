@@ -105,8 +105,8 @@ function updateCameraRotation(dt){
   if(keys['ArrowLeft']) yaw += yawSpeed*dt;
   if(keys['ArrowRight']) yaw -= yawSpeed*dt;
 
-  if(keys['ArrowUp']) pitch -= pitchSpeed*dt; 
-  if(keys['ArrowDown']) pitch += pitchSpeed*dt; 
+  if(keys['ArrowUp']) pitch += pitchSpeed*dt; 
+  if(keys['ArrowDown']) pitch -= pitchSpeed*dt; 
 
   if(pitch>pitchLimit) pitch=pitchLimit;
   if(pitch<-pitchLimit) pitch=-pitchLimit;
@@ -149,63 +149,132 @@ function cardValue(c){ if(c.v==='A') return 11; if(['J','Q','K'].includes(c.v)) 
 function handScore(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum+=cardValue(c); } while(sum>21 && aces>0){ sum-=10; aces--; } return sum; }
 
 function renderBlackjackUI(){
-  modal.innerHTML='';
-  const el = document.createElement('div'); el.className='gameUI';
-  el.innerHTML=`
+  modal.innerHTML = '';
+  const el = document.createElement('div'); el.className = 'gameUI';
+  el.innerHTML = `
     <h2>Blackjack</h2>
     <div>Saldo: <span id='bjBal'>${balance}</span> €</div>
     <label>Apuesta: <input id='bjBet' type='number' value='10' min='1' style='width:80px'></label>
     <div id='bjTable' style='margin-top:8px'></div>
     <div style='margin-top:8px'>
       <button id='bjDeal'>Repartir</button>
-      <button id='bjDouble'>Doblar</button>
+      <button id='bjHit' disabled>Pedir</button>
+      <button id='bjStand' disabled>Plantarse</button>
+      <button id='bjDouble' disabled>Doblar</button>
+      <button id='bjSplit' disabled>Dividir</button>
       <button id='bjClose'>Cerrar</button>
     </div>
   `;
   modal.appendChild(el);
 
-  let deck=null, player=[], dealer=[], bet=0, inRound=false;
   const bjTable = el.querySelector('#bjTable');
   const bjBal = el.querySelector('#bjBal');
+  const btnHit = el.querySelector('#bjHit');
+  const btnStand = el.querySelector('#bjStand');
+  const btnDouble = el.querySelector('#bjDouble');
+  const btnSplit = el.querySelector('#bjSplit');
+
+  let deck, player=[], player2=[], dealer=[], bet=0, inRound=false, splitMode=false;
 
   function updateTable(){
-    const dealerDisplay = inRound ? dealer[0].v+dealer[0].s+' ?' : dealer.map(c=>c.v+c.s).join(' ');
-    bjTable.innerHTML = `<div>Jugador: ${player.map(c=>c.v+c.s).join(' ')} (${handScore(player)})</div>
+    let dealerDisplay = inRound ? dealer[0].v+dealer[0].s+' ?' : dealer.map(c=>c.v+c.s).join(' ');
+    let playerDisplay = player.map(c=>c.v+c.s).join(' ');
+    if(splitMode) playerDisplay += ` | ${player2.map(c=>c.v+c.s).join(' ')}`;
+    bjTable.innerHTML = `<div>Jugador: ${playerDisplay} (${handScore(player)})</div>
                          <div>Dealer: ${dealerDisplay}</div>`;
     bjBal.textContent = balance;
   }
 
-  function finish(){
-    inRound=false;
-    updateTable();
-    const p=handScore(player), d=handScore(dealer);
-    let res='Empate';
-    if(p>21) res='Pierdes';
-    else if(d>21 || p>d){ res='Ganas'; balance+=bet*2; setBal(balance);}
-    else if(p===d){ balance+=bet; setBal(balance); res='Empate';}
-    else res='Pierdes';
-    bjTable.innerHTML+=`<div style='margin-top:8px'>Resultado: ${res}</div>`;
+  function finishHand(h){
+    const score = handScore(h);
+    if(score>21) return 'Pierdes';
+    while(handScore(dealer)<17) dealer.push(deck.pop());
+    const dealerScore = handScore(dealer);
+    if(dealerScore>21) return 'Ganas';
+    if(score>dealerScore) return 'Ganas';
+    if(score===dealerScore) return 'Empate';
+    return 'Pierdes';
+  }
+
+  function endRound(){
+    btnHit.disabled = true;
+    btnStand.disabled = true;
+    btnDouble.disabled = true;
+    btnSplit.disabled = true;
+    inRound = false;
+
+    if(splitMode){
+      const res1 = finishHand(player);
+      const res2 = finishHand(player2);
+      let payout = 0;
+      if(res1==='Ganas') payout += bet*2; else if(res1==='Empate') payout += bet;
+      if(res2==='Ganas') payout += bet*2; else if(res2==='Empate') payout += bet;
+      balance += payout; setBal(balance);
+      bjTable.innerHTML += `<div>Resultado Mano 1: ${res1}</div><div>Resultado Mano 2: ${res2}</div><div>Total ganado: ${payout}€</div>`;
+    } else {
+      const res = finishHand(player);
+      if(res==='Ganas') balance += bet*2; else if(res==='Empate') balance += bet;
+      setBal(balance);
+      bjTable.innerHTML += `<div>Resultado: ${res}</div>`;
+    }
   }
 
   el.querySelector('#bjDeal').onclick = ()=>{
-    bet=Math.min(balance, Number(el.querySelector('#bjBet').value)||0);
+    bet = Math.min(balance, Number(el.querySelector('#bjBet').value)||0);
     if(bet<=0){ alert('Apuesta inválida'); return; }
-    balance-=bet; setBal(balance);
-    deck=createDeck(); player=[deck.pop(),deck.pop()]; dealer=[deck.pop(),deck.pop()]; inRound=true;
+    balance -= bet; setBal(balance);
+    deck = createDeck();
+    player = [deck.pop(), deck.pop()];
+    dealer = [deck.pop(), deck.pop()];
+    player2 = [];
+    inRound = true;
+    splitMode = false;
+
+    btnHit.disabled = false;
+    btnStand.disabled = false;
+    btnDouble.disabled = false;
+    btnSplit.disabled = (player[0].v!==player[1].v);
+
     updateTable();
   };
 
-  el.querySelector('#bjDouble').onclick = ()=>{
-    if(!inRound){ alert('No puedes doblar ahora'); return; }
-    if(balance<bet){ alert('Saldo insuficiente'); return; }
-    balance-=bet; bet*=2; setBal(balance);
+  btnHit.onclick = ()=>{
+    if(!inRound) return;
     player.push(deck.pop());
-    while(handScore(dealer)<17) dealer.push(deck.pop());
-    finish();
+    if(handScore(player)>21){
+      endRound();
+    }
+    updateTable();
+  };
+
+  btnStand.onclick = ()=>{
+    endRound();
+    updateTable();
+  };
+
+  btnDouble.onclick = ()=>{
+    if(balance<bet){ alert('Saldo insuficiente'); return; }
+    balance -= bet; bet *= 2; setBal(balance);
+    player.push(deck.pop());
+    endRound();
+    updateTable();
+  };
+
+  btnSplit.onclick = ()=>{
+    if(player[0].v!==player[1].v){ alert('No se puede dividir'); return; }
+    if(balance<bet){ alert('Saldo insuficiente'); return; }
+    balance -= bet; setBal(balance);
+    player2.push(player.pop());
+    player.push(deck.pop());
+    player2.push(deck.pop());
+    splitMode = true;
+    btnSplit.disabled = true;
+    updateTable();
   };
 
   el.querySelector('#bjClose').onclick = ()=>{ modal.style.display='none'; };
 }
+
 
 ////////////////////////////////////////////////////////////////
 // ROULETTE
