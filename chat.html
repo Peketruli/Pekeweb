@@ -234,35 +234,45 @@ function renderContacts(users){
 }
 
 async function loadRecentChats(){
+  // 1️⃣ Obtener todos los chat_ids donde estoy como miembro
+  const { data: myChats, error: e1 } = await supabase.from('new_chat_members')
+    .select('chat_id')
+    .eq('user_id', currentUser.id);
+
+  if(e1){ console.error(e1); chatsListEl.innerHTML = '<li class="small-muted">Error cargando chats</li>'; return; }
+
+  const chatIds = myChats.map(c => c.chat_id);
+  if(chatIds.length === 0){ chatsListEl.innerHTML = '<li class="small-muted">Aún no hay chats</li>'; return; }
+
+  // 2️⃣ Obtener último mensaje de cada chat mío
   const { data: msgs } = await supabase.from('new_messages')
     .select('chat_id, created_at')
+    .in('chat_id', chatIds)
     .order('created_at', { ascending: false });
 
   const unique = [];
-  if(msgs){
-    for(const m of msgs) if(!unique.includes(m.chat_id)) unique.push(m.chat_id);
-  }
+  if(msgs){ for(const m of msgs) if(!unique.includes(m.chat_id)) unique.push(m.chat_id); }
 
   chatsListEl.innerHTML = '';
 
   for(const chatId of unique){
+    // Obtener miembros de ese chat
     const { data: members } = await supabase.from('new_chat_members')
       .select('user_id')
       .eq('chat_id', chatId);
 
     if(!members) continue;
 
+    // Ver si es grupo o privado
     const other = members.find(x => x.user_id !== currentUser.id);
-
     if(!other){
-      // Es un grupo
+      // Grupo
       const { data: groupInfo } = await supabase.from("new_chats")
         .select("group_name")
         .eq("id", chatId)
         .single();
 
       const gname = groupInfo?.group_name || "Grupo";
-
       const li = el('li', { className: 'chat-item' },
         el('div', { className: 'meta' },
           el('div', {}, gname),
@@ -274,7 +284,7 @@ async function loadRecentChats(){
       continue;
     }
 
-    // Es un chat privado
+    // Chat privado
     const username = usersMap[other.user_id] || other.user_id;
     const li = el('li', { className: 'chat-item' },
       el('div', { className: 'meta' },
@@ -286,8 +296,7 @@ async function loadRecentChats(){
     chatsListEl.appendChild(li);
   }
 
-  if(unique.length===0)
-    chatsListEl.innerHTML = '<li class="small-muted">Aún no hay chats</li>';
+  if(unique.length===0) chatsListEl.innerHTML = '<li class="small-muted">Aún no hay chats</li>';
 }
 
 async function openOrCreatePrivateChat(otherId, otherUsername){
