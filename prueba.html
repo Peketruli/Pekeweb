@@ -29,56 +29,111 @@
 import * as THREE from 'https://unpkg.com/three@0.155.0/build/three.module.js';
 
 ////////////////////////////////////////////////////////////////
-// ESCENA
+// ESCENA Y CÁMARA
 ////////////////////////////////////////////////////////////////
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b0f1a);
+scene.background = new THREE.Color(0x1a1a2e);
 
 const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
 camera.position.set(0,1.6,5);
 camera.rotation.order = 'YXZ';
 
 const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth, innerHeight);
+renderer.setSize(innerWidth,innerHeight);
 document.getElementById('container').appendChild(renderer.domElement);
 
-scene.add(new THREE.HemisphereLight(0xffffff,0x222233,1));
+////////////////////////////////////////////////////////////////
+// ILUMINACIÓN
+////////////////////////////////////////////////////////////////
+const hemiLight = new THREE.HemisphereLight(0xffffff,0x444466,1.2);
+hemiLight.position.set(0,50,0);
+scene.add(hemiLight);
+
+const dirLight = new THREE.DirectionalLight(0xffffff,0.8);
+dirLight.position.set(5,10,5);
+scene.add(dirLight);
 
 ////////////////////////////////////////////////////////////////
-// SUELO
+// SUELO Y PAREDES
 ////////////////////////////////////////////////////////////////
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(20,20),
-  new THREE.MeshStandardMaterial({color:0x111826})
-);
+const floorMat = new THREE.MeshStandardMaterial({color:0x222244, roughness:0.8, metalness:0.2});
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
 floor.rotation.x = -Math.PI/2;
 scene.add(floor);
 
+const wallMat = new THREE.MeshStandardMaterial({color:0x444466, roughness:0.9});
+const backWall = new THREE.Mesh(new THREE.PlaneGeometry(30,6), wallMat);
+backWall.position.set(0,3,-15);
+scene.add(backWall);
+
+const frontWall = new THREE.Mesh(new THREE.PlaneGeometry(30,6), wallMat);
+frontWall.position.set(0,3,15);
+frontWall.rotation.y = Math.PI;
+scene.add(frontWall);
+
+const leftWall = new THREE.Mesh(new THREE.PlaneGeometry(30,6), wallMat);
+leftWall.position.set(-15,3,0);
+leftWall.rotation.y = Math.PI/2;
+scene.add(leftWall);
+
+const rightWall = new THREE.Mesh(new THREE.PlaneGeometry(30,6), wallMat);
+rightWall.position.set(15,3,0);
+rightWall.rotation.y = -Math.PI/2;
+scene.add(rightWall);
+
 ////////////////////////////////////////////////////////////////
-// INTERACTUABLES
+// MESAS
 ////////////////////////////////////////////////////////////////
 const interact = [];
 function addObject(mesh,type){ mesh.userData.type=type; interact.push(mesh); scene.add(mesh); }
 
-// Blackjack
-const bj = new THREE.Mesh(new THREE.BoxGeometry(2,0.2,1), new THREE.MeshStandardMaterial({color:0x225533}));
-bj.position.set(-4,1,0);
+function createTable(x,z,color,scaleX=2,scaleY=0.2,scaleZ=1){
+  const mat = new THREE.MeshStandardMaterial({color:color, roughness:0.5, metalness:0.3});
+  const table = new THREE.Mesh(new THREE.CylinderGeometry(scaleX/2, scaleX/2, scaleY, 32), mat);
+  table.position.set(x,scaleY/2,z);
+  return table;
+}
+
+const bj = createTable(-6,0,0x228833,2,0.4,1);
 addObject(bj,"blackjack");
 
-// Ruleta
-const ruleta = new THREE.Mesh(new THREE.CylinderGeometry(1,1,0.4,32), new THREE.MeshStandardMaterial({color:0x552222}));
-ruleta.position.set(0,1,0);
+const ruleta = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.2,1.2,0.5,64),
+  new THREE.MeshStandardMaterial({color:0x883322, roughness:0.5, metalness:0.3})
+);
+ruleta.position.set(0,0.25,0);
 addObject(ruleta,"roulette");
 
-// Slots
-const slot = new THREE.Mesh(new THREE.BoxGeometry(1,2,1), new THREE.MeshStandardMaterial({color:0x333366}));
-slot.position.set(4,1,0);
+const slot = new THREE.Mesh(
+  new THREE.BoxGeometry(1,2,1),
+  new THREE.MeshStandardMaterial({color:0x333388, roughness:0.6, metalness:0.2})
+);
+slot.position.set(6,1,0);
 addObject(slot,"slots");
 
-// NPC fichas
-const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6), new THREE.MeshStandardMaterial({color:0x666666}));
-npc.position.set(0,1,4);
+////////////////////////////////////////////////////////////////
+// NPC
+////////////////////////////////////////////////////////////////
+const npcGeo = new THREE.CapsuleGeometry(0.4,1,4,8);
+const npcMat = new THREE.MeshStandardMaterial({color:0x999999});
+const npc = new THREE.Mesh(npcGeo,npcMat);
+npc.position.set(0,1,6);
 addObject(npc,"npc");
+
+////////////////////////////////////////////////////////////////
+// PANELES DE LUZ (Opcional)
+////////////////////////////////////////////////////////////////
+function createLightPanel(x,y,z,width,height,color=0xffaa00){
+  const geo = new THREE.PlaneGeometry(width,height);
+  const mat = new THREE.MeshBasicMaterial({color:color, side:THREE.DoubleSide});
+  const panel = new THREE.Mesh(geo, mat);
+  panel.position.set(x,y,z);
+  scene.add(panel);
+}
+
+createLightPanel(-5,3,-5,2,0.5);
+createLightPanel(5,3,-5,2,0.5);
+createLightPanel(0,3,5,3,0.5);
 
 ////////////////////////////////////////////////////////////////
 // CONTROLES
@@ -92,21 +147,14 @@ const balanceEl = document.getElementById('balance');
 function setBal(v){ balance = Math.round(v); balanceEl.textContent = balance; }
 setBal(balance);
 
-////////////////////////////////////////////////////////////////
-// ROTACIÓN (yaw/pitch) - pure axes
-////////////////////////////////////////////////////////////////
-let yaw = 0;   
-let pitch = 0; 
-const yawSpeed = 1.8;   
-const pitchSpeed = 1.2; 
-const pitchLimit = Math.PI/2 - 0.05;
+let yaw=0, pitch=0;
+const yawSpeed=1.8, pitchSpeed=1.2, pitchLimit=Math.PI/2-0.05;
 
 function updateCameraRotation(dt){
   if(keys['ArrowLeft']) yaw += yawSpeed*dt;
   if(keys['ArrowRight']) yaw -= yawSpeed*dt;
-
-  if(keys['ArrowUp']) pitch += pitchSpeed*dt; 
-  if(keys['ArrowDown']) pitch -= pitchSpeed*dt; 
+  if(keys['ArrowUp']) pitch += pitchSpeed*dt;
+  if(keys['ArrowDown']) pitch -= pitchSpeed*dt;
 
   if(pitch>pitchLimit) pitch=pitchLimit;
   if(pitch<-pitchLimit) pitch=-pitchLimit;
@@ -149,9 +197,9 @@ function cardValue(c){ if(c.v==='A') return 11; if(['J','Q','K'].includes(c.v)) 
 function handScore(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum+=cardValue(c); } while(sum>21 && aces>0){ sum-=10; aces--; } return sum; }
 
 function renderBlackjackUI(){
-  modal.innerHTML = '';
-  const el = document.createElement('div'); el.className = 'gameUI';
-  el.innerHTML = `
+  modal.innerHTML='';
+  const el = document.createElement('div'); el.className='gameUI';
+  el.innerHTML=`
     <h2>Blackjack</h2>
     <div>Saldo: <span id='bjBal'>${balance}</span> €</div>
     <label>Apuesta: <input id='bjBet' type='number' value='10' min='1' style='width:80px'></label>
@@ -275,7 +323,6 @@ function renderBlackjackUI(){
   el.querySelector('#bjClose').onclick = ()=>{ modal.style.display='none'; };
 }
 
-
 ////////////////////////////////////////////////////////////////
 // ROULETTE
 ////////////////////////////////////////////////////////////////
@@ -367,7 +414,7 @@ function renderSlotsUI(){
 }
 
 ////////////////////////////////////////////////////////////////
-// OPEN UI
+// INTERACCIÓN NPC
 ////////////////////////////////////////////////////////////////
 function openUI(type){
   if(type==='blackjack'){ modal.style.display='block'; renderBlackjackUI(); }
