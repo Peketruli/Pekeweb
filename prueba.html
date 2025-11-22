@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Casino 3D — Simple</title>
+<title>Casino 3D — Mejorado</title>
 <style>
   :root{--bg:#0b0f1a;--panel:#101625;--accent:#f5b642;--muted:#9aa5b1}
   html,body{height:100%;margin:0;font-family:Arial;background:var(--bg);color:white;overflow:hidden}
@@ -60,18 +60,22 @@ scene.add(floor);
 const interact = [];
 function addObject(mesh,type){ mesh.userData.type=type; interact.push(mesh); scene.add(mesh); }
 
+// Blackjack
 const bj = new THREE.Mesh(new THREE.BoxGeometry(2,0.2,1), new THREE.MeshStandardMaterial({color:0x225533}));
 bj.position.set(-4,1,0);
 addObject(bj,"blackjack");
 
+// Ruleta
 const ruleta = new THREE.Mesh(new THREE.CylinderGeometry(1,1,0.4,32), new THREE.MeshStandardMaterial({color:0x552222}));
 ruleta.position.set(0,1,0);
 addObject(ruleta,"roulette");
 
+// Slots
 const slot = new THREE.Mesh(new THREE.BoxGeometry(1,2,1), new THREE.MeshStandardMaterial({color:0x333366}));
 slot.position.set(4,1,0);
 addObject(slot,"slots");
 
+// NPC fichas
 const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6), new THREE.MeshStandardMaterial({color:0x666666}));
 npc.position.set(0,1,4);
 addObject(npc,"npc");
@@ -89,24 +93,23 @@ function setBal(v){ balance = Math.round(v); balanceEl.textContent = balance; }
 setBal(balance);
 
 ////////////////////////////////////////////////////////////////
-// ROTACIÓN (yaw/pitch)
+// ROTACIÓN (yaw/pitch) - pure axes
 ////////////////////////////////////////////////////////////////
-let yaw = 0;
-let pitch = 0;
-const yawSpeed = 1.8;
-const pitchSpeed = 1.2;
+let yaw = 0;   
+let pitch = 0; 
+const yawSpeed = 1.8;   
+const pitchSpeed = 1.2; 
 const pitchLimit = Math.PI/2 - 0.05;
 
 function updateCameraRotation(dt){
-  if(keys['ArrowLeft']) yaw += yawSpeed * dt;
-  if(keys['ArrowRight']) yaw -= yawSpeed * dt;
+  if(keys['ArrowLeft']) yaw += yawSpeed*dt;
+  if(keys['ArrowRight']) yaw -= yawSpeed*dt;
 
-  // invertido correctamente: ArrowUp = mirar arriba
-  if(keys['ArrowUp']) pitch -= pitchSpeed * dt;
-  if(keys['ArrowDown']) pitch += pitchSpeed * dt;
+  if(keys['ArrowUp']) pitch -= pitchSpeed*dt; 
+  if(keys['ArrowDown']) pitch += pitchSpeed*dt; 
 
-  if(pitch > pitchLimit) pitch = pitchLimit;
-  if(pitch < -pitchLimit) pitch = -pitchLimit;
+  if(pitch>pitchLimit) pitch=pitchLimit;
+  if(pitch<-pitchLimit) pitch=-pitchLimit;
 
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
@@ -115,107 +118,214 @@ function updateCameraRotation(dt){
 ////////////////////////////////////////////////////////////////
 // RAYCAST PARA INTERACCIÓN
 ////////////////////////////////////////////////////////////////
-let lookingAt = null;
+let lookingAt=null;
 const ray = new THREE.Raycaster();
 function checkInteraction(){
-  ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
-  const hits = ray.intersectObjects(interact, false);
-  if(hits.length===0 || hits[0].distance > 4){ lookingAt=null; document.getElementById('npcMsg').style.display='none'; return; }
+  ray.set(camera.position,camera.getWorldDirection(new THREE.Vector3()));
+  const hits = ray.intersectObjects(interact,false);
+  if(hits.length===0 || hits[0].distance>4){ lookingAt=null; document.getElementById('npcMsg').style.display='none'; return; }
   lookingAt = hits[0].object;
-  if(lookingAt.userData.type === 'npc') document.getElementById('npcMsg').style.display='block';
+  if(lookingAt.userData.type==='npc') document.getElementById('npcMsg').style.display='block';
   else document.getElementById('npcMsg').style.display='none';
 }
 
 ////////////////////////////////////////////////////////////////
-// UI Y JUEGOS (sin cambios)
+// UI Y LÓGICA DE JUEGOS
 ////////////////////////////////////////////////////////////////
 const modal = document.getElementById('modal');
-
 function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
+////////////////////////////////////////////////////////////////
+// BLACKJACK
+////////////////////////////////////////////////////////////////
 function createDeck(){
-  const vals = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  const suits = ['♠','♥','♦','♣'];
+  const vals=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+  const suits=['♠','♥','♦','♣'];
   const d=[]; for(const s of suits) for(const v of vals) d.push({v,s});
   for(let i=d.length-1;i>0;i--){ const j=rand(0,i); [d[i],d[j]]=[d[j],d[i]]; }
   return d;
 }
 function cardValue(c){ if(c.v==='A') return 11; if(['J','Q','K'].includes(c.v)) return 10; return parseInt(c.v); }
-function handScore(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum += cardValue(c); } while(sum>21 && aces>0){ sum-=10; aces--; } return sum; }
+function handScore(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum+=cardValue(c); } while(sum>21 && aces>0){ sum-=10; aces--; } return sum; }
 
 function renderBlackjackUI(){
-  modal.innerHTML = '';
-  const containerEl = document.createElement('div'); containerEl.className='gameUI';
-  containerEl.innerHTML = `
+  modal.innerHTML='';
+  const el = document.createElement('div'); el.className='gameUI';
+  el.innerHTML=`
     <h2>Blackjack</h2>
     <div>Saldo: <span id='bjBal'>${balance}</span> €</div>
     <label>Apuesta: <input id='bjBet' type='number' value='10' min='1' style='width:80px'></label>
     <div id='bjTable' style='margin-top:8px'></div>
-    <div style='margin-top:8px'><button id='bjDeal'>Repartir</button> <button id='bjClose'>Cerrar</button></div>
+    <div style='margin-top:8px'>
+      <button id='bjDeal'>Repartir</button>
+      <button id='bjDouble'>Doblar</button>
+      <button id='bjClose'>Cerrar</button>
+    </div>
   `;
-  modal.appendChild(containerEl);
+  modal.appendChild(el);
 
   let deck=null, player=[], dealer=[], bet=0, inRound=false;
-  const bjTable = containerEl.querySelector('#bjTable');
-  const bjBal = containerEl.querySelector('#bjBal');
+  const bjTable = el.querySelector('#bjTable');
+  const bjBal = el.querySelector('#bjBal');
 
-  function updateTable(){ bjTable.innerHTML = `<div>Jugador: ${player.map(c=>c.v+c.s).join(' ')} (${handScore(player)})</div><div>Dealer: ${dealer.map(c=>c.v+c.s).join(' ')} (${inRound? '?': handScore(dealer)})</div>`; bjBal.textContent = balance; }
+  function updateTable(){
+    const dealerDisplay = inRound ? dealer[0].v+dealer[0].s+' ?' : dealer.map(c=>c.v+c.s).join(' ');
+    bjTable.innerHTML = `<div>Jugador: ${player.map(c=>c.v+c.s).join(' ')} (${handScore(player)})</div>
+                         <div>Dealer: ${dealerDisplay}</div>`;
+    bjBal.textContent = balance;
+  }
 
-  containerEl.querySelector('#bjDeal').onclick = ()=>{
-    bet = Math.min(balance, Number(containerEl.querySelector('#bjBet').value)||0);
+  function finish(){
+    inRound=false;
+    updateTable();
+    const p=handScore(player), d=handScore(dealer);
+    let res='Empate';
+    if(p>21) res='Pierdes';
+    else if(d>21 || p>d){ res='Ganas'; balance+=bet*2; setBal(balance);}
+    else if(p===d){ balance+=bet; setBal(balance); res='Empate';}
+    else res='Pierdes';
+    bjTable.innerHTML+=`<div style='margin-top:8px'>Resultado: ${res}</div>`;
+  }
+
+  el.querySelector('#bjDeal').onclick = ()=>{
+    bet=Math.min(balance, Number(el.querySelector('#bjBet').value)||0);
     if(bet<=0){ alert('Apuesta inválida'); return; }
-    balance -= bet; setBal(balance); deck = createDeck(); player=[deck.pop(), deck.pop()]; dealer=[deck.pop(), deck.pop()]; inRound=true; updateTable();
-
-    const hitBtn = document.createElement('button'); hitBtn.textContent='Pedir';
-    const standBtn = document.createElement('button'); standBtn.textContent='Plantarse';
-    bjTable.appendChild(hitBtn); bjTable.appendChild(standBtn);
-
-    hitBtn.onclick = ()=>{ player.push(deck.pop()); updateTable(); if(handScore(player)>21){ finish(); } };
-    standBtn.onclick = ()=>{ while(handScore(dealer)<17) dealer.push(deck.pop()); finish(); };
-
-    function finish(){ inRound=false; updateTable(); const p=handScore(player), d=handScore(dealer);
-      let res='Empate'; if(p>21) res='Pierdes'; else if(d>21 || p>d){ res='Ganas'; balance += bet*2; setBal(balance); } else if(p===d){ balance += bet; setBal(balance); res='Empate'; } else res='Pierdes'; bjTable.innerHTML += `<div style='margin-top:8px'>Resultado: ${res}</div>`; }
+    balance-=bet; setBal(balance);
+    deck=createDeck(); player=[deck.pop(),deck.pop()]; dealer=[deck.pop(),deck.pop()]; inRound=true;
+    updateTable();
   };
 
-  containerEl.querySelector('#bjClose').onclick = ()=>{ modal.style.display='none'; };
+  el.querySelector('#bjDouble').onclick = ()=>{
+    if(!inRound){ alert('No puedes doblar ahora'); return; }
+    if(balance<bet){ alert('Saldo insuficiente'); return; }
+    balance-=bet; bet*=2; setBal(balance);
+    player.push(deck.pop());
+    while(handScore(dealer)<17) dealer.push(deck.pop());
+    finish();
+  };
+
+  el.querySelector('#bjClose').onclick = ()=>{ modal.style.display='none'; };
 }
 
-function renderRouletteUI(){ /* igual que antes */ }
-function isRed(n){ const reds = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]); return reds.has(n); }
-function renderSlotsUI(){ /* igual que antes */ }
+////////////////////////////////////////////////////////////////
+// ROULETTE
+////////////////////////////////////////////////////////////////
+function isRed(n){ const reds=new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]); return reds.has(n); }
 
+function renderRouletteUI(){
+  modal.innerHTML='';
+  const el = document.createElement('div'); el.className='gameUI';
+  el.innerHTML=`
+    <h2>Ruleta</h2>
+    <div>Saldo: <span id='rBal'>${balance}</span> €</div>
+    <label>Apuesta: <input id='rBet' type='number' value='10' min='1' style='width:80px'></label>
+    <label>Tipo: <select id='rType'><option value='number'>Número</option><option value='color'>Color</option><option value='par'>Par/Impar</option></select></label>
+    <label id='rNumberWrap' style='display:inline-block'><input id='rNumber' type='number' min='0' max='36' value='7' style='width:80px'></label>
+    <label id='rColorWrap' style='display:none'><select id='rColor'><option value='red'>Rojo</option><option value='black'>Negro</option></select></label>
+    <div style='margin-top:8px'><button id='rSpin'>Girar</button> <button id='rClose'>Cerrar</button></div>
+    <div id='rOut' style='margin-top:8px'></div>
+  `;
+  modal.appendChild(el);
+
+  const rBal=el.querySelector('#rBal');
+  const rType=el.querySelector('#rType');
+  const rNumberWrap=el.querySelector('#rNumberWrap');
+  const rColorWrap=el.querySelector('#rColorWrap');
+  const rOut=el.querySelector('#rOut');
+
+  rType.onchange=()=>{
+    rNumberWrap.style.display=rType.value==='number'?'inline-block':'none';
+    rColorWrap.style.display=rType.value==='color'?'inline-block':'none';
+  };
+
+  el.querySelector('#rSpin').onclick=()=>{
+    const bet=Math.min(balance, Number(el.querySelector('#rBet').value)||0);
+    if(bet<=0){ alert('Apuesta inválida'); return; }
+    balance-=bet; setBal(balance); rBal.textContent=balance;
+    let result=rand(0,36); let color=isRed(result)?'red':'black'; let win=false, payout=0;
+
+    if(rType.value==='number'){ const pick=Number(el.querySelector('#rNumber').value); if(pick===result){ win=true; payout=bet*35; }}
+    else if(rType.value==='color'){ const pick=el.querySelector('#rColor').value; if(pick===color){ win=true; payout=bet*2; }}
+    else if(rType.value==='par'){ const pick=el.querySelector('#rColor').value; if(result!==0 && ((pick==='red' && result%2===1) || (pick==='black' && result%2===0))){ win=true; payout=bet*2; }}
+
+    rOut.innerHTML=`<div>Sale ${result} (${result===0?'green':color})</div>`;
+    if(win){ balance+=payout; setBal(balance); rOut.innerHTML+=`<div>¡Ganas ${payout}€!</div>`; }
+    else rOut.innerHTML+=`<div>Pierdes ${bet}€</div>`;
+  };
+
+  el.querySelector('#rClose').onclick=()=>{ modal.style.display='none'; };
+}
+
+////////////////////////////////////////////////////////////////
+// SLOTS
+////////////////////////////////////////////////////////////////
+function renderSlotsUI(){
+  modal.innerHTML='';
+  const el=document.createElement('div'); el.className='gameUI';
+  el.innerHTML=`
+    <h2>Tragaperras</h2>
+    <div>Saldo: <span id='sBal'>${balance}</span> €</div>
+    <label>Apuesta: <input id='sBet' type='number' value='5' min='1' style='width:80px'></label>
+    <div style='margin-top:8px'><div id='reels' style='font-size:40px'>• • •</div></div>
+    <div style='margin-top:8px'><button id='sSpin'>Girar</button> <button id='sClose'>Cerrar</button></div>
+    <div id='sOut' style='margin-top:8px'></div>
+  `;
+  modal.appendChild(el);
+
+  const sBal=el.querySelector('#sBal');
+  const reels=el.querySelector('#reels');
+  const sOut=el.querySelector('#sOut');
+  const symbols=['🍒','🔔','7️⃣','⭐','🍋'];
+
+  el.querySelector('#sSpin').onclick=()=>{
+    const bet=Math.min(balance, Number(el.querySelector('#sBet').value)||0);
+    if(bet<=0){ alert('Apuesta inválida'); return; }
+    balance-=bet; setBal(balance); sBal.textContent=balance; el.querySelector('#sSpin').disabled=true;
+
+    let t=0; const interval=setInterval(()=>{
+      t++;
+      const a=symbols[rand(0,4)], b=symbols[rand(0,4)], c=symbols[rand(0,4)];
+      reels.textContent=`${a} ${b} ${c}`;
+      if(t>20){ clearInterval(interval); el.querySelector('#sSpin').disabled=false;
+        if(a===b && b===c){ const win=bet*10; balance+=win; setBal(balance); sOut.innerHTML=`<div>¡Jackpot! Ganaste ${win}€</div>`; }
+        else if(a===b || b===c || a===c){ const win=bet*2; balance+=win; setBal(balance); sOut.innerHTML=`<div>Dos iguales — Ganaste ${win}€</div>`; }
+        else sOut.innerHTML=`<div>No hay coincidencias — Pierdes ${bet}€</div>`;
+      }
+    },60);
+  };
+
+  el.querySelector('#sClose').onclick=()=>{ modal.style.display='none'; };
+}
+
+////////////////////////////////////////////////////////////////
+// OPEN UI
+////////////////////////////////////////////////////////////////
 function openUI(type){
-  if(type === 'blackjack') modal.style.display = 'block', renderBlackjackUI();
-  else if(type === 'roulette') modal.style.display = 'block', renderRouletteUI();
-  else if(type === 'slots') modal.style.display = 'block', renderSlotsUI();
-  else if(type === 'npc'){ setBal(balance+100); document.getElementById('npcMsg').innerText='¡Has recogido tus fichas diarias!'; document.getElementById('npcMsg').style.display='block'; setTimeout(()=>document.getElementById('npcMsg').style.display='none',1400); }
+  if(type==='blackjack'){ modal.style.display='block'; renderBlackjackUI(); }
+  else if(type==='roulette'){ modal.style.display='block'; renderRouletteUI(); }
+  else if(type==='slots'){ modal.style.display='block'; renderSlotsUI(); }
+  else if(type==='npc'){ setBal(balance+100); 
+    document.getElementById('npcMsg').innerText='¡Has recogido tus fichas diarias!'; 
+    document.getElementById('npcMsg').style.display='block'; 
+    setTimeout(()=> document.getElementById('npcMsg').style.display='none',1400); }
 }
 
 document.addEventListener('keydown', e=>{ if(e.code==='KeyE' && lookingAt) openUI(lookingAt.userData.type); });
 document.getElementById('container').addEventListener('click', ()=>{ if(lookingAt) openUI(lookingAt.userData.type); });
 
 ////////////////////////////////////////////////////////////////
-// LOOP PRINCIPAL (con movimiento relativo a la cámara)
+// LOOP PRINCIPAL
 ////////////////////////////////////////////////////////////////
-const clock = new THREE.Clock();
+const clock=new THREE.Clock();
 function loop(){
   requestAnimationFrame(loop);
-  const dt = clock.getDelta();
+  const dt=clock.getDelta();
 
-  const speed = 3.0;
-  const direction = new THREE.Vector3();
-
-  if(keys['KeyW']) direction.z -= 1;
-  if(keys['KeyS']) direction.z += 1;
-  if(keys['KeyA']) direction.x -= 1;
-  if(keys['KeyD']) direction.x += 1;
-
-  if(direction.length()>0){
-    direction.normalize();
-    const yawMatrix = new THREE.Matrix4().makeRotationY(yaw);
-    direction.applyMatrix4(yawMatrix);
-    camera.position.addScaledVector(direction, speed*dt);
-  }
+  const speed=3.0;
+  const vx=((keys['KeyD']?1:0)-(keys['KeyA']?1:0))*speed*dt;
+  const vz=((keys['KeyS']?1:0)-(keys['KeyW']?1:0))*speed*dt;
+  camera.position.x+=vx;
+  camera.position.z+=vz;
 
   updateCameraRotation(dt);
   checkInteraction();
@@ -223,11 +333,8 @@ function loop(){
 }
 loop();
 
-////////////////////////////////////////////////////////////////
-// RESPONSIVE
-////////////////////////////////////////////////////////////////
-window.onresize = ()=>{
-  camera.aspect = innerWidth/innerHeight;
+window.onresize=()=>{
+  camera.aspect=innerWidth/innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth,innerHeight);
 };
