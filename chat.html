@@ -168,7 +168,7 @@
 <script>
 // -------------------------- SUPABASE --------------------------
 const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3NjEyNTIxfQ.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // -------------------------- DOM --------------------------
@@ -235,9 +235,22 @@ function applySettings(){
 btnSettings.onclick = () => settingsModal.style.display = 'flex';
 closeSettingsBtn.onclick = () => { settingsModal.style.display = 'none'; };
 
-toggleTimestamps.onchange = () => { settings.showTimestamps = toggleTimestamps.checked; localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); renderAllMessagesTimestamps(); };
-toggleNotifs.onchange = () => { settings.enableNotifications = toggleNotifs.checked; localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); };
-bgSelect.onchange = () => { settings.bg = bgSelect.value; localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); applySettings(); };
+toggleTimestamps.onchange = () => { 
+  settings.showTimestamps = toggleTimestamps.checked; 
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); 
+  renderAllMessagesTimestamps(); 
+};
+
+toggleNotifs.onchange = () => { 
+  settings.enableNotifications = toggleNotifs.checked; 
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); 
+};
+
+bgSelect.onchange = () => { 
+  settings.bg = bgSelect.value; 
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); 
+  applySettings(); 
+};
 
 function renderAllMessagesTimestamps(){
   const times = document.querySelectorAll('.msg-time');
@@ -256,7 +269,7 @@ async function ensureLocalUser(){
   }catch(e){console.warn('upsert user failed', e)}
 }
 
-// presence: set online true, and set false on unload
+// presence: set online true, and false on unload
 async function setPresence(online){
   try {
     await supabase.from('usuarios').upsert([
@@ -270,6 +283,7 @@ async function setPresence(online){
   } catch(e) { console.warn('presence update failed', e); }
 }
 
+window.addEventListener('beforeunload', async () => { await setPresence(false); });
 
 // -------------------------- CARGAR USUARIOS --------------------------
 async function loadUsers(){
@@ -291,7 +305,6 @@ function renderContacts(users){
     return;
   }
   others.forEach(u => {
-    const status = usersMap[u.id] && usersMap[u.id].online ? 'En línea' : (usersMap[u.id] ? ('Últ. ' + (usersMap[u.id].last_seen ? new Date(usersMap[u.id].last_seen).toLocaleString() : '—')) : '—');
     const li = el('li', { className: 'contact-item' },
       el('div', { className: 'meta' },
         el('div', {}, u.username + ' '),
@@ -304,28 +317,22 @@ function renderContacts(users){
 }
 
 // -------------------------- LISTEN FOR USER UPDATES (PRESENCE) --------------------------
-// subscribe to changes on usuarios to keep online/last_seen updated
-supabase.channel('public:usuarios').on('postgres_changes', { event: '*', schema: 'public', table: 'usuarios' }, payload => {
-  const u = payload.new || payload.old;
-  if(!u) return;
-  usersMap[u.id] = usersMap[u.id] || {};
-  usersMap[u.id].username = u.username || usersMap[u.id].username;
-  usersMap[u.id].online = u.online;
-  usersMap[u.id].last_seen = u.last_seen;
-  // re-render lists
-  loadUsers().catch(()=>{});
-}).subscribe();
+supabase.channel('public:usuarios')
+  .on('postgres_changes', { event: '*', schema: 'public', table: 'usuarios' }, payload => {
+    const u = payload.new || payload.old;
+    if(!u) return;
+    usersMap[u.id] = usersMap[u.id] || {};
+    usersMap[u.id].username = u.username || usersMap[u.id].username;
+    usersMap[u.id].online = u.online;
+    usersMap[u.id].last_seen = u.last_seen;
+    renderContacts(Object.values(usersMap));
+  }).subscribe();
 
 // -------------------------- CARGAR CHATS --------------------------
 async function loadRecentChats(){
   const { data: myChats } = await supabase.from('new_chat_members')
     .select('chat_id')
     .eq('user_id', currentUser.id);
-
-  const unreadCount = msgs.filter(m => !m.read_by.includes(currentUser.id)).length;
-if(unreadCount > 0){
-}
-
 
   const chatIds = (myChats || []).map(c => c.chat_id);
   if(chatIds.length === 0){ 
@@ -345,8 +352,7 @@ if(unreadCount > 0){
       .eq('chat_id', chat.id);
 
     if(chat.type === 'group'){
-      // show group name and members count/preview
-      const memberNames = (members || []).map(m => usersMap[m.user_id] && usersMap[m.user_id].username ? usersMap[m.user_id].username : m.user_id).slice(0,3).join(', ');
+      const memberNames = (members || []).map(m => usersMap[m.user_id] ? usersMap[m.user_id].username : m.user_id).slice(0,3).join(', ');
       const li = el('li', { className: 'chat-item' },
         el('div', { className: 'meta' },
           el('div', {}, (chat.group_name || "Grupo") + ' — ' + memberNames),
@@ -358,20 +364,16 @@ if(unreadCount > 0){
       continue;
     }
 
-    // Chat privado
     const other = (members || []).find(x => x.user_id !== currentUser.id);
     if(!other) continue;
     const username = usersMap[other.user_id] && usersMap[other.user_id].username ? usersMap[other.user_id].username : other.user_id;
-
-    const statusTxt = usersMap[other.user_id] ? formatLastSeen(usersMap[other.user_id]) : '';
-
     const li = el('li', { className: 'chat-item' },
       el('div', { className: 'meta' },
         el('div', {}, username),
-        el('div', { className: 'small-muted' }, statusTxt)
+        el('div', { className: 'small-muted' }, formatLastSeen(usersMap[other.user_id]))
       )
     );
-    li.onclick = () => openChat(chat.id, { id: other.user_id, username });
+    li.onclick = () => openChat(chat.id, { id: other.user_id, username, type:'private' });
     chatsListEl.appendChild(li);
   }
 }
@@ -386,11 +388,9 @@ async function openOrCreatePrivateChat(otherId, otherUsername){
         .select('user_id')
         .eq('chat_id', c.id);
       if(!members) continue;
-
       const hasMe = members.some(m => m.user_id === currentUser.id);
       const hasOther = members.some(m => m.user_id === otherId);
-
-      if(hasMe && hasOther) return openChat(c.id, { id: otherId, username: otherUsername });
+      if(hasMe && hasOther) return openChat(c.id, { id: otherId, username: otherUsername, type:'private' });
     }
   }
 
@@ -410,14 +410,13 @@ async function openOrCreatePrivateChat(otherId, otherUsername){
     { chat_id: newChat.id, user_id: otherId }
   ]);
 
-  openChat(newChat.id, { id: otherId, username: otherUsername });
+  openChat(newChat.id, { id: otherId, username: otherUsername, type:'private' });
 }
 
 // -------------------------- ABRIR CHAT --------------------------
 async function openChat(chatId, meta){
   currentChatId = chatId;
   if(meta.type === 'group'){
-    // load members names
     const { data: members } = await supabase.from('new_chat_members').select('user_id').eq('chat_id', chatId);
     const names = (members || []).map(m => usersMap[m.user_id] ? usersMap[m.user_id].username : m.user_id);
     chatTitleEl.textContent = (meta.username || 'Grupo') + ' — ' + names.join(', ');
@@ -458,7 +457,6 @@ function renderMessage(msg){
     box.appendChild(el('div', { className: 'sender-name' }, name));
   }
 
-  // contenido multimedia
   const content = msg.content || '';
   if (content.startsWith('img::')) {
     const url = content.replace('img::','');
@@ -531,18 +529,13 @@ fileInput.addEventListener('change', async (e) => {
   const path = `${currentUser.id}/${Date.now()}_${file.name}`;
 
   try {
-    // subir archivo al bucket
     const { data, error: upErr } = await supabase.storage.from('zona18').upload(path, file, { upsert: true });
     if(upErr){ alert('Error subiendo archivo: ' + upErr.message); return; }
 
-    // obtener URL pública correctamente
     const { data: publicUrlData } = supabase.storage.from('zona18').getPublicUrl(path);
     const publicUrl = publicUrlData.publicUrl;
 
-    // prefijo según tipo
     const prefix = file.type.startsWith('image/') ? 'img::' : 'file::';
-
-    // enviar mensaje con URL
     await sendMessage(prefix + publicUrl);
 
   } catch(err) {
@@ -551,7 +544,6 @@ fileInput.addEventListener('change', async (e) => {
 
   fileInput.value = '';
 });
-
 
 // -------------------------- SUBSCRIPCIÓN --------------------------
 function subscribeToChat(chatId){
@@ -563,9 +555,9 @@ function subscribeToChat(chatId){
       renderMessage(msg);
 
       if (msg.sender_id !== currentUser.id) {
-        showToast((usersMap[msg.sender_id] && usersMap[msg.sender_id].username ? usersMap[msg.sender_id].username : 'Alguien') + ': ' + (msg.content.length > 120 ? msg.content.slice(0,120)+'…' : msg.content));
+        showToast((usersMap[msg.sender_id]?.username || 'Alguien') + ': ' + (msg.content.length > 120 ? msg.content.slice(0,120)+'…' : msg.content));
         if (settings.enableNotifications && window.Notification && Notification.permission === 'granted') {
-          const title = (usersMap[msg.sender_id] && usersMap[msg.sender_id].username) || 'Nuevo mensaje';
+          const title = usersMap[msg.sender_id]?.username || 'Nuevo mensaje';
           const body = msg.content.startsWith('img::') ? '📷 Imagen' : (msg.content.startsWith('file::') ? '📎 Archivo' : msg.content);
           const n = new Notification(title, { body, tag: 'pekechat' });
           n.onclick = () => { window.focus(); };
@@ -575,86 +567,28 @@ function subscribeToChat(chatId){
     .subscribe();
 }
 
-// small toast
 function showToast(text){
-  console.log('toast:', text);
+  console.log('TOAST:', text);
 }
 
-// -------------------------- GRUPOS --------------------------
-const groupModal = document.getElementById("group-modal");
-const groupUsersList = document.getElementById("group-users-list");
-const groupNameInput = document.getElementById("group-name-input");
-document.getElementById("btn-create-group").onclick = openGroupModal;
-document.getElementById("cancel-group").onclick = () => groupModal.style.display = "none";
-document.getElementById("confirm-group").onclick = createGroup;
-
-function openGroupModal(){
-  groupModal.style.display = "flex";
-  groupNameInput.value = "";
-  groupUsersList.innerHTML = "";
-  Object.entries(usersMap).forEach(([id, u])=>{
-    if(id === currentUser.id) return;
-    const row = document.createElement("label");
-    row.style.display = "flex";
-    row.style.alignItems = "center";
-    row.style.gap = "8px";
-    row.style.margin = "6px 0";
-    const cb = document.createElement("input");
-    cb.type = "checkbox";
-    cb.value = id;
-    const span = document.createElement("span");
-    span.textContent = u.username || id;
-    row.appendChild(cb);
-    row.appendChild(span);
-    groupUsersList.appendChild(row);
-  });
-}
-
-async function createGroup(){
-  const name = groupNameInput.value.trim();
-  if(!name) return alert("Ponle un nombre al grupo");
-  const checkboxes = groupUsersList.querySelectorAll("input[type=checkbox]:checked");
-  if(checkboxes.length === 0) return alert("Selecciona al menos un usuario");
-  const selectedUserIds = Array.from(checkboxes).map(cb => cb.value);
-
-  const { data: newChat, error } = await supabase.from("new_chats").insert({ type: "group", group_name: name }).select().single();
-  if(error){ alert("Error creando grupo: " + error.message); return; }
-
-  const members = selectedUserIds.map(uid => ({ chat_id: newChat.id, user_id: uid }));
-  members.push({ chat_id: newChat.id, user_id: currentUser.id });
-  await supabase.from("new_chat_members").insert(members);
-
-  groupModal.style.display = "none";
-  await loadRecentChats();
-  openChat(newChat.id, { id: newChat.id, username: name, type: 'group' });
+// -------------------------- MARCAR MENSAJES LEÍDOS --------------------------
+async function markMessagesAsRead(chatId){
+  await supabase.from('new_messages').update({ read_by: [currentUser.id] }).eq('chat_id', chatId);
 }
 
 // -------------------------- INIT --------------------------
-(async function init(){
+(async () => {
   await ensureLocalUser();
   profileNameEl.textContent = currentUser.username;
   profileIdEl.textContent = currentUser.id;
-  profileAvatarEl.textContent = currentUser.username.charAt(0).toUpperCase();
-
-  // presence: set online true
-  await setPresence(true);
-
-  // request notification permission if enabled
-  if(settings.enableNotifications && window.Notification && Notification.permission !== 'granted') {
-    try{ await Notification.requestPermission(); }catch(e){}
-  }
-
   applySettings();
+  await setPresence(true);
   await loadUsers();
+
+  if (window.Notification && Notification.permission !== 'granted') {
+    Notification.requestPermission();
+  }
 })();
-
-  async function markMessagesAsRead(chatId){
-  await supabase.from('new_messages')
-    .update({ read_by: supabase.arrayAppend('read_by', currentUser.id) })
-    .eq('chat_id', chatId)
-    .not('read_by', 'cs', `{${currentUser.id}}`); // solo los que no tienen tu ID
-}
-
 </script>
 </body>
 </html>
