@@ -234,70 +234,55 @@ function renderContacts(users){
 }
 
 async function loadRecentChats(){
-  // 1️⃣ Obtener todos los chat_ids donde estoy como miembro
-  const { data: myChats, error: e1 } = await supabase.from('new_chat_members')
+  const { data: myChats } = await supabase.from('new_chat_members')
     .select('chat_id')
     .eq('user_id', currentUser.id);
 
-  if(e1){ console.error(e1); chatsListEl.innerHTML = '<li class="small-muted">Error cargando chats</li>'; return; }
-
   const chatIds = myChats.map(c => c.chat_id);
-  if(chatIds.length === 0){ chatsListEl.innerHTML = '<li class="small-muted">Aún no hay chats</li>'; return; }
+  if(chatIds.length === 0){ 
+    chatsListEl.innerHTML = '<li class="small-muted">Aún no hay chats</li>'; 
+    return; 
+  }
 
-  // 2️⃣ Obtener último mensaje de cada chat mío
-  const { data: msgs } = await supabase.from('new_messages')
-    .select('chat_id, created_at')
-    .in('chat_id', chatIds)
-    .order('created_at', { ascending: false });
-
-  const unique = [];
-  if(msgs){ for(const m of msgs) if(!unique.includes(m.chat_id)) unique.push(m.chat_id); }
+  const { data: chats } = await supabase.from('new_chats')
+    .select('*')
+    .in('id', chatIds);
 
   chatsListEl.innerHTML = '';
 
-  for(const chatId of unique){
-    // Obtener miembros de ese chat
+  for(const chat of chats){
     const { data: members } = await supabase.from('new_chat_members')
       .select('user_id')
-      .eq('chat_id', chatId);
+      .eq('chat_id', chat.id);
 
-    if(!members) continue;
-
-    // Ver si es grupo o privado
-    const other = members.find(x => x.user_id !== currentUser.id);
-    if(!other){
-      // Grupo
-      const { data: groupInfo } = await supabase.from("new_chats")
-        .select("group_name")
-        .eq("id", chatId)
-        .single();
-
-      const gname = groupInfo?.group_name || "Grupo";
+    if(chat.type === 'group'){
       const li = el('li', { className: 'chat-item' },
         el('div', { className: 'meta' },
-          el('div', {}, gname),
-          el('div', { className: 'small-muted' }, chatId)
+          el('div', {}, chat.group_name || "Grupo"),
+          el('div', { className: 'small-muted' }, chat.id)
         )
       );
-      li.onclick = () => openChat(chatId, { id: chatId, username: gname });
+      li.onclick = () => openChat(chat.id, { id: chat.id, username: chat.group_name || "Grupo" });
       chatsListEl.appendChild(li);
       continue;
     }
 
     // Chat privado
+    const other = members.find(x => x.user_id !== currentUser.id);
+    if(!other) continue;
     const username = usersMap[other.user_id] || other.user_id;
+
     const li = el('li', { className: 'chat-item' },
       el('div', { className: 'meta' },
         el('div', {}, username),
-        el('div', { className: 'small-muted' }, chatId)
+        el('div', { className: 'small-muted' }, chat.id)
       )
     );
-    li.onclick = () => openChat(chatId, { id: other.user_id, username });
+    li.onclick = () => openChat(chat.id, { id: other.user_id, username });
     chatsListEl.appendChild(li);
   }
-
-  if(unique.length===0) chatsListEl.innerHTML = '<li class="small-muted">Aún no hay chats</li>';
 }
+
 
 async function openOrCreatePrivateChat(otherId, otherUsername){
   const { data: chats } = await supabase.from('new_chats').select('id,type');
