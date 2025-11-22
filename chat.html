@@ -258,17 +258,18 @@ async function ensureLocalUser(){
 
 // presence: set online true, and set false on unload
 async function setPresence(online){
-  try{
-    await supabase.from('usuarios').upsert([{ id: currentUser.id, username: currentUser.username, online, last_seen: new Date().toISOString() }], { onConflict: 'id' });
-  }catch(e){console.warn('presence update failed', e)}
+  try {
+    await supabase.from('usuarios').upsert([
+      { 
+        id: currentUser.id, 
+        username: currentUser.username, 
+        online, 
+        last_seen: online ? usersMap[currentUser.id]?.last_seen : new Date().toISOString()
+      }
+    ], { onConflict: 'id' });
+  } catch(e) { console.warn('presence update failed', e); }
 }
 
-window.addEventListener('beforeunload', () => {
-  // try to set offline quickly
-  navigator.sendBeacon && navigator.sendBeacon(SUPABASE_URL + '/rest/v1/usuarios', JSON.stringify({ id: currentUser.id, online: false, last_seen: new Date().toISOString() }));
-  // also try an async update (may not complete)
-  setPresence(false);
-});
 
 // -------------------------- CARGAR USUARIOS --------------------------
 async function loadUsers(){
@@ -320,6 +321,11 @@ async function loadRecentChats(){
   const { data: myChats } = await supabase.from('new_chat_members')
     .select('chat_id')
     .eq('user_id', currentUser.id);
+
+  const unreadCount = msgs.filter(m => !m.read_by.includes(currentUser.id)).length;
+if(unreadCount > 0){
+}
+
 
   const chatIds = (myChats || []).map(c => c.chat_id);
   if(chatIds.length === 0){ 
@@ -421,6 +427,7 @@ async function openChat(chatId, meta){
   messagesEl.innerHTML = '<div class="small-muted">Cargando mensajes...</div>';
 
   await loadMessages(chatId);
+  await markMessagesAsRead(chatId);
   subscribeToChat(chatId);
 }
 
@@ -640,6 +647,14 @@ async function createGroup(){
   applySettings();
   await loadUsers();
 })();
+
+  async function markMessagesAsRead(chatId){
+  await supabase.from('new_messages')
+    .update({ read_by: supabase.arrayAppend('read_by', currentUser.id) })
+    .eq('chat_id', chatId)
+    .not('read_by', 'cs', `{${currentUser.id}}`); // solo los que no tienen tu ID
+}
+
 </script>
 </body>
 </html>
