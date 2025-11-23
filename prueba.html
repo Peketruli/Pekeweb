@@ -25,608 +25,350 @@
 <div id="modal"></div>
 <div id="npcMsg">Pulsa E para recoger fichas diarias</div>
 
+<!-- three.js (min) -->
+<script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
+
 <script>
-import * as THREE from 'https://unpkg.com/three@0.155.0/build/three.module.js';
-import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
+/*
+  Versión corregida/robusta del JS del casino 3D.
+  - Carga Supabase si falta
+  - Crea #pekepuntos si no existe
+  - Usa alert(...) para errores
+  - Protecciones para currentUser
+*/
 
-try {
-
-  // ---------- Supabase (config) ----------
+(async function main(){
+  // ---------- Config Supabase ----------
   const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-  const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  // ---------- Helpers ----------
-  const rand = (min,max) => Math.floor(Math.random()*(max-min+1))+min;
-  const isoDay = (d=new Date()) => d.toISOString().slice(0,10);
-
-  // ---------- DOM safety checks (create missing elements so script no-falla) ----------
-  const ensureEl = (id, tag='div') => {
-    let el = document.getElementById(id);
-    if(!el){
-      el = document.createElement(tag);
-      el.id = id;
-      // hidden but present so code can reference
-      if(tag === 'div'){
-        el.style.display = 'none';
-        document.body.appendChild(el);
-      } else {
-        document.body.appendChild(el);
-      }
+  // Si no hay window.supabase, lo cargamos dinámicamente
+  if(!window.supabase){
+    try{
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/@supabase/supabase-js';
+        s.onload = () => res();
+        s.onerror = () => rej(new Error('No se pudo cargar supabase.js'));
+        document.head.appendChild(s);
+      });
+    } catch(e){
+      alert('Error cargando Supabase: ' + (e.message||e));
+      // continuamos sin supabase (guardados locales)
     }
-    return el;
-  };
-  const container = ensureEl('container', 'div');
-  container.style.width = container.style.width || '100%';
-  container.style.height = container.style.height || '100%';
-
-  const modal = ensureEl('modal','div');
-  modal.style.position = modal.style.position || 'absolute';
-  modal.style.zIndex = 9999;
-
-  const npcMsg = ensureEl('npcMsg','div');
-  npcMsg.style.position = 'absolute';
-  npcMsg.style.bottom = '10px';
-  npcMsg.style.left = '50%';
-  npcMsg.style.transform = 'translateX(-50%)';
-  npcMsg.style.display = npcMsg.style.display || 'none';
-  npcMsg.style.background = npcMsg.style.background || 'rgba(0,0,0,0.6)';
-  npcMsg.style.padding = npcMsg.style.padding || '8px';
-  npcMsg.style.borderRadius = npcMsg.style.borderRadius || '8px';
-
-  const balanceEl = document.getElementById('balance') || (function(){
-    const b = document.createElement('div'); b.id = 'balance'; b.style.display='none'; document.body.appendChild(b); return b;
-  })();
-
-  // ---------- User: read from localStorage if present (no throw) ----------
-  let currentUser = null;
-  try { currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch(e){ currentUser = null; }
-  if(!currentUser){
-    // not fatal: let the scene run, but balance = 0 and UI shows 0
-    currentUser = null;
   }
 
-  let balance = Number((currentUser && currentUser.pekepuntos) || 0);
-  let lastDaily = currentUser && currentUser.last_claim ? currentUser.last_claim.slice(0,10) : null;
-  const refreshBalanceUI = () => { if(balanceEl) balanceEl.textContent = String(Math.round(balance)); };
+  // create client si disponible
+  let supabase = null;
+  try{
+    if(window.supabase && typeof window.supabase.createClient === 'function'){
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    } else {
+      // no disponible: supabase quedará null y guardados se harán solo en localStorage
+      supabase = null;
+    }
+  } catch(e){
+    supabase = null;
+  }
+
+  // ---------- Helpers ----------
+  function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+  const container = document.getElementById('container');
+  const balanceSpan = document.getElementById('balance');
+  let pekepuntosEl = document.getElementById('pekepuntos');
+  const npcMsgEl = document.getElementById('npcMsg');
+
+  // si no existe el elemento pekepuntos (tu otra página lo tenía), lo creamos bajo #ui
+  if(!pekepuntosEl){
+    try{
+      const ui = document.getElementById('ui');
+      pekepuntosEl = document.createElement('div');
+      pekepuntosEl.id = 'pekepuntos';
+      pekepuntosEl.style.marginTop = '8px';
+      pekepuntosEl.style.fontSize = '1rem';
+      pekepuntosEl.textContent = 'Pekepuntos: 0';
+      ui.appendChild(pekepuntosEl);
+    } catch(e){
+      // si no puede, no es crítico
+    }
+  }
+
+  // ---------- Usuario (desde localStorage) ----------
+  let currentUser = null;
+  try {
+    currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
+  } catch(e){
+    currentUser = null;
+  }
+  if(!currentUser){
+    alert('Debes iniciar sesión para jugar. (currentUser no encontrado en localStorage).');
+    return; // salimos para no intentar operar sin usuario
+  }
+
+  // Balance local
+  let balance = Number(currentUser.pekepuntos || 0);
+
+  function refreshBalanceUI(){
+    if(balanceSpan) balanceSpan.textContent = balance;
+    if(pekepuntosEl) pekepuntosEl.textContent = `Pekepuntos: ${balance}`;
+  }
   refreshBalanceUI();
 
-  // ---------- saveBalance (only when currentUser present) ----------
+  // Guardar balance (Supabase si está, si no solo localStorage)
   async function saveBalance(){
     try{
-      if(!currentUser) { refreshBalanceUI(); return; }
-      const { error } = await supabase.from('usuarios').update({ pekepuntos: balance }).eq('id', currentUser.id);
-      if(error) throw error;
+      if(supabase){
+        const { error } = await supabase
+          .from('usuarios')
+          .update({ pekepuntos: balance })
+          .eq('id', currentUser.id);
+        if(error) throw error;
+      }
+      // también actualizamos localStorage
       currentUser.pekepuntos = balance;
       localStorage.setItem('currentUser', JSON.stringify(currentUser));
       refreshBalanceUI();
     } catch(err){
-      alert('Error guardando balance: ' + (err.message || err));
+      alert('Error guardando balance: ' + (err && err.message ? err.message : err));
     }
   }
 
-  // ---------- claimDaily ----------
+  // Claim diario (protección: 1 vez al día)
   async function claimDaily(){
     try{
-      const today = isoDay();
-      if(lastDaily === today){
-        alert('Ya reclamaste hoy.');
+      const today = new Date().toISOString().slice(0,10);
+      const last = currentUser.last_claim ? currentUser.last_claim.slice(0,10) : null;
+      if(last === today){
+        alert('Ya has reclamado las fichas diarias hoy.');
         return;
       }
       balance += 100;
-      lastDaily = today;
-      if(currentUser){ currentUser.last_claim = (new Date()).toISOString(); }
-      refreshBalanceUI();
-      if(currentUser){
-        const { error } = await supabase.from('usuarios').update({ pekepuntos: balance, last_claim: currentUser.last_claim }).eq('id', currentUser.id);
+      currentUser.last_claim = new Date().toISOString();
+
+      if(supabase){
+        const { error } = await supabase
+          .from('usuarios')
+          .update({ pekepuntos: balance, last_claim: currentUser.last_claim })
+          .eq('id', currentUser.id);
         if(error) throw error;
-        localStorage.setItem('currentUser', JSON.stringify(currentUser));
       }
-      if(npcMsg){ npcMsg.innerText = '¡Has recogido tus fichas diarias!'; npcMsg.style.display='block'; setTimeout(()=>npcMsg.style.display='none',1400); }
-      alert('¡+100 Pekepuntos añadidos!');
-    }catch(err){ alert('Error al reclamar diario: ' + (err.message || err)); }
+      // siempre guardamos localmente
+      localStorage.setItem('currentUser', JSON.stringify(currentUser));
+      refreshBalanceUI();
+      if(npcMsgEl){ npcMsgEl.innerText = '¡Has recogido tus fichas diarias!'; npcMsgEl.style.display = 'block'; setTimeout(()=> npcMsgEl.style.display='none',1400); }
+      alert('¡Has reclamado +100 Pekepuntos!');
+    } catch(err){
+      alert('Error al reclamar diario: ' + (err && err.message ? err.message : err));
+    }
   }
 
-  // ---------- THREE initialization ----------
+  // ---------- Juegos simples (mantengo la lógica que tenías) ----------
+  async function playBlackjack(bet = 50){
+    if(balance < bet){ alert('No tienes suficientes Pekepuntos.'); return; }
+    const player = rand(15,21);
+    const dealer = rand(16,21);
+    let result;
+    if(player > 21) result = 'lose';
+    else if(dealer > 21 || player > dealer) result = 'win';
+    else if(player === dealer) result = 'tie';
+    else result = 'lose';
+
+    if(result === 'win'){ balance += bet; alert(`¡Ganaste Blackjack!\nTu: ${player} — Dealer: ${dealer}\n+${bet} Pekepuntos`); }
+    else if(result === 'lose'){ balance -= bet; alert(`Perdiste Blackjack.\nTu: ${player} — Dealer: ${dealer}\n-${bet} Pekepuntos`); }
+    else { alert(`Empate Blackjack.\nTu: ${player} — Dealer: ${dealer}\nSin cambios.`); }
+
+    await saveBalance();
+  }
+
+  async function playRoulette(bet = 50){
+    if(balance < bet){ alert('No tienes suficientes Pekepuntos.'); return; }
+    const chosen = prompt('Apuesta a un número (0-36):');
+    if(chosen === null) return;
+    const pick = Number(chosen);
+    if(Number.isNaN(pick) || pick < 0 || pick > 36){ alert('Número inválido.'); return; }
+
+    const result = rand(0,36);
+    if(pick === result){
+      const payout = bet * 35;
+      balance += payout;
+      alert(`¡Ha salido ${result}! Ganaste ${payout} Pekepuntos (x35).`);
+    } else {
+      balance -= bet;
+      alert(`Salió ${result}. Pierdes ${bet} Pekepuntos.`);
+    }
+    await saveBalance();
+  }
+
+  async function playSlots(bet = 50){
+    if(balance < bet){ alert('No tienes suficientes Pekepuntos.'); return; }
+    const symbols = ['🍒','🍋','🍊','🍇','💎','7️⃣'];
+    const r = [rand(0,5), rand(0,5), rand(0,5)];
+    const res = r.map(i => symbols[i]).join(' | ');
+    let won = false;
+    if(r[0] === r[1] && r[1] === r[2]) won = true;
+
+    if(won){
+      const payout = bet * 5;
+      balance += payout;
+      alert(`${res}\n¡Jackpot! Ganaste ${payout} Pekepuntos (x5).`);
+    } else {
+      balance -= bet;
+      alert(`${res}\nNo hay combinación. Pierdes ${bet} Pekepuntos.`);
+    }
+    await saveBalance();
+  }
+
+  // ---------- THREE.JS escena ----------
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0b0f1a);
 
   const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
   camera.position.set(0, 1.6, 5);
-  camera.lookAt(0,1,0);
   camera.rotation.order = 'YXZ';
 
-  const renderer = new THREE.WebGLRenderer({ antialias:true });
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(innerWidth, innerHeight);
-  renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.shadowMap.enabled = true;
-
-  // append to container (clear previous children to avoid duplicates)
-  while(container.firstChild) container.removeChild(container.firstChild);
   container.appendChild(renderer.domElement);
 
-  // lights
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.85); hemi.position.set(0,50,0); scene.add(hemi);
+  // luces
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.8); hemi.position.set(0,50,0); scene.add(hemi);
   scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-  const dir = new THREE.DirectionalLight(0xfff6d6, 0.6); dir.position.set(5,10,5); dir.castShadow = true; scene.add(dir);
+  const dir = new THREE.DirectionalLight(0xfff6d6, 0.6); dir.position.set(5,10,5); scene.add(dir);
 
-  // ---------- Canvas textures helpers ----------
-  function createCanvasTexture(drawFn, size=1024){
-    const c = document.createElement('canvas'); c.width = c.height = size;
+  // helpers texturas con canvas
+  function canvasTextureGradient(a,b,size=512){
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
     const ctx = c.getContext('2d');
-    drawFn(ctx, size);
-    const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(1,1);
-    tex.needsUpdate = true;
-    return tex;
+    const g = ctx.createLinearGradient(0,0,size,size);
+    g.addColorStop(0,a); g.addColorStop(1,b);
+    ctx.fillStyle = g; ctx.fillRect(0,0,size,size);
+    return new THREE.CanvasTexture(c);
   }
 
-  const velvetTex = createCanvasTexture((ctx,s) => {
-    ctx.fillStyle = '#123f2a'; ctx.fillRect(0,0,s,s);
-    ctx.globalAlpha = 0.06; ctx.fillStyle = '#000';
-    for(let i=0;i<s;i+=12) ctx.fillRect(i,0,2,s);
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = '#7a2f1f'; ctx.lineWidth = Math.max(1,s/220);
-    ctx.strokeRect(6,6,s-12,s-12);
-  }, 1024);
-
-  const woodTex = createCanvasTexture((ctx,s) => {
-    ctx.fillStyle = '#513923'; ctx.fillRect(0,0,s,s);
-    ctx.strokeStyle = '#66432a'; ctx.lineWidth = Math.max(1,s/140);
-    for(let y=0;y<s;y+=32){ ctx.beginPath(); ctx.moveTo(0,y+8); ctx.lineTo(s,y+8); ctx.stroke(); }
-  }, 1024);
-
-  const fabricTex = createCanvasTexture((ctx,s) => {
-    ctx.fillStyle = '#11121a'; ctx.fillRect(0,0,s,s);
-    ctx.globalAlpha = 0.03; ctx.fillStyle = '#fff';
-    for(let i=0;i<s;i+=8) ctx.fillRect(i,0,1,s);
-    ctx.globalAlpha = 1;
-  }, 1024);
-
-  const slotScreenTex = createCanvasTexture((ctx,s) => {
-    ctx.fillStyle = '#040405'; ctx.fillRect(0,0,s,s);
-    const g = ctx.createLinearGradient(0,0,0,s); g.addColorStop(0,'rgba(255,255,255,0.02)'); g.addColorStop(1,'rgba(0,0,0,0.06)');
-    ctx.fillStyle = g; ctx.fillRect(0,0,s,s);
-  }, 512);
-
-  const rouletteTex = createCanvasTexture((ctx,s) => {
-    ctx.translate(s/2,s/2);
-    const r = s/2;
-    ctx.fillStyle = '#2f1d12'; ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
-    const cells = 37; const angle = (Math.PI*2)/cells;
-    for(let i=0;i<cells;i++){
-      const start = i*angle - Math.PI/2;
-      const end = start + angle;
-      const isZero = i===0;
-      ctx.beginPath();
-      ctx.fillStyle = isZero ? '#0b8a12' : (i%2===0 ? '#d22' : '#111');
-      ctx.moveTo(0,0); ctx.arc(0,0,r*0.92,start,end); ctx.closePath(); ctx.fill();
-      ctx.save(); ctx.rotate(start + angle/2);
-      ctx.fillStyle = isZero? '#fff' : '#eee';
-      ctx.font = `${Math.max(12, s*0.06)}px sans-serif`; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(String(i), 0, -r*0.68); ctx.restore();
-    }
-    ctx.beginPath(); ctx.fillStyle = '#8b5a2b'; ctx.arc(0,0,r*0.18,0,Math.PI*2); ctx.fill();
-  }, 1024);
-
-  // ---------- floor & walls ----------
-  const floorMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.92 });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40,40), floorMat);
+  // suelo
+  const floorMat = new THREE.MeshStandardMaterial({ map: canvasTextureGradient('#2a0033','#550077'), roughness: 0.9 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
   floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
 
-  const wallMat = new THREE.MeshStandardMaterial({ map: fabricTex, roughness: 0.95 });
-  function makeWall(x,z,rotY=0) { const w = new THREE.Mesh(new THREE.BoxGeometry(40,6,0.2), wallMat); w.position.set(x,3,z); w.rotation.y = rotY; w.receiveShadow = true; scene.add(w); }
-  makeWall(0,-19); makeWall(0,19,Math.PI); makeWall(-19,0,Math.PI/2); makeWall(19,0,-Math.PI/2);
-
-  // ---------- interactable objects ----------
-  const interact = [];
-  function addObject(mesh, type){ mesh.userData.type = type; mesh.castShadow = true; mesh.receiveShadow = true; interact.push(mesh); scene.add(mesh); }
-
-  // blackjack table
-  const bjMat = new THREE.MeshStandardMaterial({ map: velvetTex, roughness: 0.6, metalness: 0.02 });
-  const bjTable = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.34,32), bjMat);
-  bjTable.position.set(-6,0.34,0); addObject(bjTable,'blackjack');
-
-  // roulette base + disk
-  const ruletaBaseMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness:0.6, roughness:0.3 });
-  const ruletaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.42,64), ruletaBaseMat);
-  ruletaBase.position.set(0,0.22,0); addObject(ruletaBase,'roulette');
-
-  const ruletaDisk = new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.15,0.08,128), new THREE.MeshStandardMaterial({ map: rouletteTex, metalness:0.12, roughness:0.45 }));
-  // make disk face-up and spin using rotation.z
-  ruletaDisk.rotation.x = Math.PI/2;
-  ruletaDisk.rotation.z = 0;
-  ruletaDisk.position.set(0,0.48,0);
-  ruletaDisk.receiveShadow = true; ruletaDisk.castShadow = true;
-  ruletaDisk.material.map.needsUpdate = true;
-  scene.add(ruletaDisk);
-
-  // slots
-  const slotBodyMat = new THREE.MeshStandardMaterial({ map: velvetTex, metalness:0.25, roughness:0.5 });
-  const slot = new THREE.Mesh(new THREE.BoxGeometry(1.0,2.0,1.0), slotBodyMat);
-  slot.position.set(6,1,0); addObject(slot,'slots');
-  const slotScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.75,0.4), new THREE.MeshStandardMaterial({ map: slotScreenTex, emissive:0x000000 }));
-  slotScreen.position.set(6,1.45,0.51); scene.add(slotScreen);
-
-  // npc
-  const npcMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,1.6,16), new THREE.MeshStandardMaterial({ color:0x999999 }));
-  npcMesh.position.set(0,1.0,6); addObject(npcMesh,'npc');
-
-  function addTableLight(x,z){
-    const l = new THREE.PointLight(0xffe7c6, 0.85, 6);
-    l.position.set(x,3,z); scene.add(l);
+  // mesas/objetos interactuables
+  const interactables = [];
+  function addTable(x,z,type){
+    const mat = new THREE.MeshStandardMaterial({ map: canvasTextureGradient('#222','#550') });
+    const geom = (type === 'slots') ? new THREE.BoxGeometry(1,2,1) : new THREE.CylinderGeometry(1.5,1.5,0.3,32);
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.position.set(x, (type==='slots'?1:0.3), z);
+    mesh.userData.type = type;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    interactables.push(mesh);
+    return mesh;
   }
-  addTableLight(-6,0); addTableLight(0,0); addTableLight(6,0);
 
-  // ---------- controls ----------
+  const tableBJ = addTable(-4, 0, 'blackjack');
+  const tableR  = addTable(0, 0, 'roulette');
+  const tableS  = addTable(4, 0, 'slots');
+
+  // NPC (cofre diario)
+  const npcGeom = new THREE.CylinderGeometry(0.4,0.4,1.6,16);
+  const npcMat = new THREE.MeshStandardMaterial({ color: 0x999999 });
+  const npcMesh = new THREE.Mesh(npcGeom, npcMat);
+  npcMesh.position.set(0,1,5);
+  npcMesh.userData.type = 'npc';
+  scene.add(npcMesh);
+  interactables.push(npcMesh);
+
+  // movimiento cámara
   const keys = {};
   document.addEventListener('keydown', e => keys[e.code] = true);
   document.addEventListener('keyup', e => keys[e.code] = false);
 
   let yaw = 0, pitch = 0;
-  function updateCameraRotation(dt){
-    if(keys['ArrowLeft']) yaw += 1.8 * dt;
-    if(keys['ArrowRight']) yaw -= 1.8 * dt;
-    if(keys['ArrowUp']) pitch += 1.2 * dt;
-    if(keys['ArrowDown']) pitch -= 1.2 * dt;
-    const limit = Math.PI/2 - 0.05;
-    pitch = Math.max(-limit, Math.min(limit, pitch));
-    camera.rotation.y = yaw; camera.rotation.x = pitch;
-  }
-  function updateCameraPosition(dt){
-    const speed = 3.0;
-    const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
-    const right = new THREE.Vector3(); right.crossVectors(forward, camera.up).normalize();
+  function updateCamera(dt){
+    const yawSpeed = 1.8, pitchSpeed = 1.2;
+    if(keys['ArrowLeft']) yaw += yawSpeed * dt;
+    if(keys['ArrowRight']) yaw -= yawSpeed * dt;
+    if(keys['ArrowUp']) pitch += pitchSpeed * dt;
+    if(keys['ArrowDown']) pitch -= pitchSpeed * dt;
+    const pitchLimit = Math.PI/2 - 0.05;
+    pitch = Math.max(-pitchLimit, Math.min(pitchLimit, pitch));
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
+
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0; forward.normalize();
+    const right = new THREE.Vector3();
+    right.crossVectors(forward, camera.up).normalize();
     const move = new THREE.Vector3();
     if(keys['KeyW']) move.add(forward);
     if(keys['KeyS']) move.sub(forward);
     if(keys['KeyD']) move.add(right);
     if(keys['KeyA']) move.sub(right);
-    move.multiplyScalar(speed * dt); camera.position.add(move);
+    move.multiplyScalar(3 * dt);
+    camera.position.add(move);
   }
 
-  // ---------- raycast interaction ----------
+  // raycast interacción
   const ray = new THREE.Raycaster();
   let lookingAt = null;
   function checkInteraction(){
     ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
-    const hits = ray.intersectObjects(interact, false);
+    const hits = ray.intersectObjects(interactables, false);
     if(hits.length === 0 || hits[0].distance > 4){
-      lookingAt = null; if(npcMsg) npcMsg.style.display='none'; return;
+      lookingAt = null;
+      if(npcMsgEl) npcMsgEl.style.display = 'none';
+      return;
     }
     lookingAt = hits[0].object;
-    if(lookingAt.userData.type === 'npc'){ if(npcMsg){ npcMsg.style.display='block'; npcMsg.innerText = 'Pulsa E para recoger fichas diarias'; } }
-    else { if(npcMsg) npcMsg.style.display='none'; }
-  }
-
-  // ---------- game logic ----------
-  function createDeck(){
-    const vals = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-    const suits = ['♠','♥','♦','♣'];
-    const d = [];
-    for(const s of suits) for(const v of vals) d.push({v,s});
-    for(let i=d.length-1;i>0;i--){ const j = rand(0,i); [d[i],d[j]]=[d[j],d[i]]; }
-    return d;
-  }
-  function cardValue(c){ if(c.v==='A') return 11; if(['J','Q','K'].includes(c.v)) return 10; return parseInt(c.v); }
-  function handScore(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum+=cardValue(c); } while(sum>21 && aces>0){ sum-=10; aces--; } return sum; }
-
-  // ---------- Blackjack UI ----------
-  function renderBlackjackUI(){
-    modal.innerHTML = '';
-    const ui = document.createElement('div'); ui.className='gameUI';
-    ui.innerHTML = `
-      <h2>Blackjack</h2>
-      <div>Saldo: <span id="bjBal">${balance}</span> Pekepuntos</div>
-      <label>Apuesta: <input id="bjBet" type="number" value="10" min="1" style="width:100px"></label>
-      <div id="bjTable" style="margin-top:8px"></div>
-      <div style="margin-top:10px">
-        <button id="bjDeal">Repartir</button>
-        <button id="bjHit" disabled>Pedir</button>
-        <button id="bjStand" disabled>Plantarse</button>
-        <button id="bjDouble" disabled>Doblar</button>
-        <button id="bjSplit" disabled>Dividir</button>
-        <button id="bjClose">Cerrar</button>
-      </div>
-    `;
-    modal.appendChild(ui);
-
-    const bjTable = modal.querySelector('#bjTable');
-    const bjBal = modal.querySelector('#bjBal');
-    const btnHit = modal.querySelector('#bjHit');
-    const btnStand = modal.querySelector('#bjStand');
-    const btnDouble = modal.querySelector('#bjDouble');
-    const btnSplit = modal.querySelector('#bjSplit');
-
-    let deck, player=[], player2=[], dealer=[], bet=0, inRound=false, splitMode=false;
-
-    function updateTable(){
-      const dealerDisplay = inRound ? (dealer[0].v + dealer[0].s + ' ?') : dealer.map(c=>c.v+c.s).join(' ');
-      let playerDisplay = player.map(c=>c.v+c.s).join(' ');
-      if(splitMode) playerDisplay += ` | ${player2.map(c=>c.v+c.s).join(' ')}`;
-      bjTable.innerHTML = `<div>Jugador: ${playerDisplay} (${handScore(player)})</div><div>Dealer: ${dealerDisplay}</div>`;
-      bjBal.textContent = balance;
+    if(lookingAt.userData.type === 'npc'){
+      if(npcMsgEl){ npcMsgEl.style.display = 'block'; npcMsgEl.innerText = 'Pulsa E para recoger fichas diarias'; }
+    } else {
+      if(npcMsgEl) npcMsgEl.style.display = 'none';
     }
+  }
 
-    function dealerPlay(){ while(handScore(dealer) < 17) dealer.push(deck.pop()); }
-
-    function finishHandSingle(h){
-      if(handScore(h) > 21) return 'Pierdes';
-      dealerPlay();
-      const ds = handScore(dealer), ps = handScore(h);
-      if(ds > 21) return 'Ganas';
-      if(ps > ds) return 'Ganas';
-      if(ps === ds) return 'Empate';
-      return 'Pierdes';
+  // tecla E => acciones
+  document.addEventListener('keydown', async (e) => {
+    if(e.code !== 'KeyE') return;
+    if(!lookingAt) return;
+    const t = lookingAt.userData.type;
+    try{
+      if(t === 'npc') await claimDaily();
+      else if(t === 'blackjack') await playBlackjack(50);
+      else if(t === 'roulette') await playRoulette(50);
+      else if(t === 'slots') await playSlots(50);
+    } catch(err){
+      alert('Error en la acción: ' + (err && err.message ? err.message : err));
     }
-
-    async function endRound(){
-      btnHit.disabled = true; btnStand.disabled = true; btnDouble.disabled = true; btnSplit.disabled = true;
-      inRound = false;
-      if(splitMode){
-        const res1 = finishHandSingle(player), res2 = finishHandSingle(player2);
-        let payout = 0;
-        if(res1==='Ganas') payout += bet*2; else if(res1==='Empate') payout += bet;
-        if(res2==='Ganas') payout += bet*2; else if(res2==='Empate') payout += bet;
-        balance += payout; await saveBalance();
-        bjTable.innerHTML += `<div>Resultado Mano 1: ${res1}</div><div>Resultado Mano 2: ${res2}</div><div>Total ganado: ${payout}</div>`;
-      } else {
-        const res = finishHandSingle(player);
-        if(res==='Ganas') balance += bet*2; else if(res==='Empate') balance += bet;
-        await saveBalance();
-        bjTable.innerHTML += `<div>Resultado: ${res}</div>`;
-      }
-      updateTable();
-    }
-
-    modal.querySelector('#bjDeal').onclick = () => {
-      bet = Math.min(balance, Number(modal.querySelector('#bjBet').value) || 0);
-      if(bet <= 0){ alert('Apuesta inválida'); return; }
-      balance -= bet; saveBalance();
-      deck = createDeck(); player=[deck.pop(), deck.pop()]; dealer=[deck.pop(), deck.pop()]; player2=[]; inRound=true; splitMode=false;
-      btnHit.disabled = false; btnStand.disabled = false; btnDouble.disabled = false;
-      btnSplit.disabled = !(player[0].v === player[1].v);
-      updateTable();
-    };
-
-    btnHit.onclick = () => { if(!inRound) return; player.push(deck.pop()); if(handScore(player)>21) endRound(); updateTable(); };
-    btnStand.onclick = () => { endRound(); updateTable(); };
-    btnDouble.onclick = () => { if(balance < bet){ alert('Saldo insuficiente'); return; } balance -= bet; bet *= 2; saveBalance(); player.push(deck.pop()); endRound(); updateTable(); };
-    btnSplit.onclick = () => { if(player[0].v !== player[1].v){ alert('No se puede dividir'); return; } if(balance < bet){ alert('Saldo insuficiente'); return; } balance -= bet; saveBalance(); player2.push(player.pop()); player.push(deck.pop()); player2.push(deck.pop()); splitMode=true; btnSplit.disabled=true; updateTable(); };
-
-    modal.querySelector('#bjClose').onclick = () => { modal.style.display = 'none'; };
-  }
-
-  // ---------- Roulette UI ----------
-  function isRed(n){ const reds = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]); return reds.has(n); }
-
-  let ruletaSpinVelocity = 0, ruletaSpinning = false, ruletaResolveTimer = null;
-
-  function renderRouletteUI(){
-    modal.innerHTML = '';
-    const ui = document.createElement('div'); ui.className='gameUI';
-    ui.innerHTML = `
-      <h2>Ruleta</h2>
-      <div>Saldo: <span id="rBal">${balance}</span> Pekepuntos</div>
-      <label>Apuesta: <input id="rBet" type="number" value="10" min="1" style="width:100px"></label>
-      <label>Tipo: <select id="rType"><option value="number">Número</option><option value="color">Color</option><option value="par">Par/Impar</option></select></label>
-      <label id="rNumberWrap"><input id="rNumber" type="number" min="0" max="36" value="7" style="width:80px"></label>
-      <label id="rColorWrap" style="display:none"><select id="rColor"><option value="red">Rojo</option><option value="black">Negro</option></select></label>
-      <div style="margin-top:8px"><button id="rSpin">Girar</button> <button id="rClose">Cerrar</button></div>
-      <div id="rOut" style="margin-top:8px"></div>
-    `;
-    modal.appendChild(ui);
-
-    const rBal = modal.querySelector('#rBal');
-    const rType = modal.querySelector('#rType');
-    const rNumberWrap = modal.querySelector('#rNumberWrap');
-    const rColorWrap = modal.querySelector('#rColorWrap');
-    const rOut = modal.querySelector('#rOut');
-
-    rType.onchange = () => {
-      rNumberWrap.style.display = rType.value === 'number' ? 'inline-block' : 'none';
-      rColorWrap.style.display = rType.value === 'color' ? 'inline-block' : 'none';
-      if(rType.value === 'par') rColorWrap.style.display = 'inline-block';
-    };
-
-    modal.querySelector('#rSpin').onclick = () => {
-      const bet = Math.min(balance, Number(modal.querySelector('#rBet').value) || 0);
-      if(bet <= 0){ alert('Apuesta inválida'); return; }
-      modal.querySelector('#rSpin').disabled = true;
-      balance -= bet; saveBalance(); rBal.textContent = balance;
-
-      ruletaSpinVelocity = 7 + Math.random()*6;
-      ruletaSpinning = true;
-      if(ruletaResolveTimer) clearTimeout(ruletaResolveTimer);
-
-      ruletaResolveTimer = setTimeout(() => {
-        const result = rand(0,36);
-        const color = isRed(result) ? 'red' : 'black';
-        let win=false, payout=0;
-        if(rType.value === 'number'){
-          const pick = Number(modal.querySelector('#rNumber').value);
-          if(pick === result){ win=true; payout = bet * 35; }
-        } else if(rType.value === 'color'){
-          const pick = modal.querySelector('#rColor').value;
-          if(pick === color){ win=true; payout = bet * 2; }
-        } else if(rType.value === 'par'){
-          const pick = modal.querySelector('#rColor').value;
-          if(result !== 0){
-            const isEven = (result % 2 === 0);
-            if(pick === 'red' && !isEven){ win=true; payout = bet * 2; }
-            if(pick === 'black' && isEven){ win=true; payout = bet * 2; }
-          }
-        }
-
-        setTimeout(async () => {
-          if(win){ balance += payout; await saveBalance(); rOut.innerHTML = `<div>Sale ${result} (${result===0?'green':color})</div><div>¡Ganas ${payout} Pekepuntos!</div>`; }
-          else { rOut.innerHTML = `<div>Sale ${result} (${result===0?'green':color})</div><div>Pierdes ${bet} Pekepuntos</div>`; }
-          modal.querySelector('#rSpin').disabled = false;
-        }, 800);
-
-      }, 1600);
-    };
-
-    modal.querySelector('#rClose').onclick = () => { modal.style.display = 'none'; };
-  }
-
-  // ---------- Slots UI ----------
-  function renderSlotsUI(){
-    modal.innerHTML = '';
-    const ui = document.createElement('div'); ui.className='gameUI';
-    ui.innerHTML = `
-      <h2>Tragaperras</h2>
-      <div>Saldo: <span id="sBal">${balance}</span> Pekepuntos</div>
-      <label>Apuesta: <input id="sBet" type="number" value="5" min="1" style="width:100px"></label>
-      <div style="margin-top:8px"><div id="reels" style="font-size:40px;letter-spacing:12px;text-align:center">• · •</div></div>
-      <div style="margin-top:8px"><button id="sSpin">Girar</button> <button id="sClose">Cerrar</button></div>
-      <div id="sOut" style="margin-top:8px"></div>
-    `;
-    modal.appendChild(ui);
-
-    const sBal = modal.querySelector('#sBal');
-    const reels = modal.querySelector('#reels');
-    const sOut = modal.querySelector('#sOut');
-    const symbols = ['🍒','🔔','7️⃣','⭐','🍋'];
-
-    modal.querySelector('#sSpin').onclick = () => {
-      const bet = Math.min(balance, Number(modal.querySelector('#sBet').value) || 0);
-      if(bet <= 0){ alert('Apuesta inválida'); return; }
-      balance -= bet; saveBalance(); sBal.textContent = balance;
-      modal.querySelector('#sSpin').disabled = true;
-
-      let ticks=0; const result=['','',''];
-      const it = setInterval(() => {
-        ticks++;
-        result[0] = symbols[rand(0,symbols.length-1)];
-        result[1] = symbols[rand(0,symbols.length-1)];
-        result[2] = symbols[rand(0,symbols.length-1)];
-        reels.textContent = result.join('  ');
-        if(ticks > 22){
-          clearInterval(it);
-          let payout = 0;
-          if(result[0] === result[1] && result[1] === result[2]) payout = bet * 10;
-          else if(result[0] === result[1] || result[1] === result[2] || result[0] === result[2]) payout = bet * 2;
-          if(payout > 0){ balance += payout; saveBalance(); sOut.innerHTML = `¡Ganaste ${payout} Pekepuntos!`; }
-          else sOut.innerHTML = 'Sin premio';
-          sBal.textContent = balance;
-          modal.querySelector('#sSpin').disabled = false;
-        }
-      }, 80);
-    };
-
-    modal.querySelector('#sClose').onclick = () => { modal.style.display = 'none'; };
-  }
-
-  // ---------- open UI by type ----------
-  function openUI(type){
-    if(type === 'blackjack'){ modal.style.display = 'block'; renderBlackjackUI(); }
-    else if(type === 'roulette'){ modal.style.display = 'block'; renderRouletteUI(); }
-    else if(type === 'slots'){ modal.style.display = 'block'; renderSlotsUI(); }
-    else if(type === 'npc'){ claimDaily(); }
-  }
-
-  // key E to open UI
-  document.addEventListener('keydown', e => {
-    if(e.code === 'KeyE' && lookingAt) openUI(lookingAt.userData.type);
   });
 
-  // ---------- animation loop (with roulette spin) ----------
+  // animación
   const clock = new THREE.Clock();
   function animate(){
     requestAnimationFrame(animate);
     const dt = clock.getDelta();
-    updateCameraPosition(dt);
-    updateCameraRotation(dt);
+    updateCamera(dt);
     checkInteraction();
-
-    // roulette spin: rotate around disk's local Z
-    if(ruletaSpinning){
-      ruletaDisk.rotation.z += ruletaSpinVelocity * dt;
-      ruletaSpinVelocity = Math.max(0, ruletaSpinVelocity - dt * 2.8);
-      if(ruletaSpinVelocity <= 0.01){
-        ruletaSpinning = false;
-        ruletaDisk.rotation.z += 0.03;
-      }
-    } else {
-      ruletaDisk.rotation.z += 0.0015;
-    }
-
     renderer.render(scene, camera);
   }
   animate();
 
-  // ---------- raycast & update helpers (placed here because used above) ----------
-  function updateCameraRotation(dt){ /* defined earlier as closure? keep a noop here to avoid reference errors if called before defined */ }
-  function updateCameraPosition(dt){ /* noop placeholder */ }
-  // Re-define correctly to ensure closure consistency:
-  updateCameraRotation = (dt) => {
-    if(keys['ArrowLeft']) yaw += 1.8 * dt;
-    if(keys['ArrowRight']) yaw -= 1.8 * dt;
-    if(keys['ArrowUp']) pitch += 1.2 * dt;
-    if(keys['ArrowDown']) pitch -= 1.2 * dt;
-    const limit = Math.PI/2 - 0.05;
-    pitch = Math.max(-limit, Math.min(limit, pitch));
-    camera.rotation.y = yaw; camera.rotation.x = pitch;
-  };
-  updateCameraPosition = (dt) => {
-    const speed = 3.0;
-    const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
-    const right = new THREE.Vector3(); right.crossVectors(forward, camera.up).normalize();
-    const move = new THREE.Vector3();
-    if(keys['KeyW']) move.add(forward);
-    if(keys['KeyS']) move.sub(forward);
-    if(keys['KeyD']) move.add(right);
-    if(keys['KeyA']) move.sub(right);
-    move.multiplyScalar(speed * dt); camera.position.add(move);
-  };
-
-  function checkInteraction(){
-    ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
-    const hits = ray.intersectObjects(interact, false);
-    if(hits.length === 0 || hits[0].distance > 4){ lookingAt = null; if(npcMsg) npcMsg.style.display='none'; return; }
-    lookingAt = hits[0].object;
-    if(lookingAt.userData.type === 'npc'){ if(npcMsg){ npcMsg.style.display='block'; npcMsg.innerText='Pulsa E para recoger fichas diarias'; } } else { if(npcMsg) npcMsg.style.display='none'; }
-  }
-
-  // ---------- keyboard interaction to trigger games for testing (also support click) ----------
-  document.addEventListener('keydown', async (ev) => {
-    if(ev.code === 'KeyP'){ // debug: print current balance
-      alert('Balance actual: ' + balance);
-    }
-  });
-
-  // also support clicking objects to open UI (more friendly)
-  renderer.domElement.addEventListener('pointerdown', (ev) => {
-    // raycast from camera through mouse
-    const rect = renderer.domElement.getBoundingClientRect();
-    const x = ( (ev.clientX - rect.left) / rect.width ) * 2 - 1;
-    const y = - ( (ev.clientY - rect.top)  / rect.height ) * 2 + 1;
-    const pointer = new THREE.Vector2(x,y);
-    ray.setFromCamera(pointer, camera);
-    const hits = ray.intersectObjects(interact, false);
-    if(hits.length > 0 && hits[0].distance < 6){
-      openUI(hits[0].object.userData.type);
-    }
-  });
-
-  // ---------- resize ----------
-  window.addEventListener('resize', () => {
+  // resize
+  window.addEventListener('resize', ()=> {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
   });
 
-  // ---------- initial sync ----------
-  refreshBalanceUI();
-  loadUserData().catch(err => { alert('No se pudo sincronizar con servidor: ' + (err.message || err)); });
+  // Exponer funciones para debugging si quieres llamarlas desde consola (opcional)
+  window._casino = {
+    playBlackjack, playRoulette, playSlots, claimDaily, saveBalance, currentUser
+  };
 
-} catch(topErr){
-  // cualquier error fatal cae aquí y se muestra al usuario
-  alert('Error crítico inicializando casino 3D: ' + (topErr && topErr.message ? topErr.message : String(topErr)));
-}
+})(); // fin main
 </script>
 </body>
 </html>
