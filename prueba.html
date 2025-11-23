@@ -25,24 +25,75 @@
 <div id="modal"></div>
 <div id="npcMsg">Pulsa E para recoger fichas diarias</div>
 
+<!-- three.js (min) -->
 <script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
 
 <script>
-  // CONFIG SUPABASE
+/*
+  Versión corregida/robusta del JS del casino 3D.
+  - Carga Supabase si falta
+  - Crea #pekepuntos si no existe
+  - Usa alert(...) para errores
+  - Protecciones para currentUser
+*/
+
+(async function main(){
+  // ---------- Config Supabase ----------
   const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  // Helper random
+  // Si no hay window.supabase, lo cargamos dinámicamente
+  if(!window.supabase){
+    try{
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/@supabase/supabase-js';
+        s.onload = () => res();
+        s.onerror = () => rej(new Error('No se pudo cargar supabase.js'));
+        document.head.appendChild(s);
+      });
+    } catch(e){
+      alert('Error cargando Supabase: ' + (e.message||e));
+      // continuamos sin supabase (guardados locales)
+    }
+  }
+
+  // create client si disponible
+  let supabase = null;
+  try{
+    if(window.supabase && typeof window.supabase.createClient === 'function'){
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    } else {
+      // no disponible: supabase quedará null y guardados se harán solo en localStorage
+      supabase = null;
+    }
+  } catch(e){
+    supabase = null;
+  }
+
+  // ---------- Helpers ----------
   function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
-
-  // DOM refs
   const container = document.getElementById('container');
-  const balanceSpan = document.getElementById('balance'); // muestra en UI
-  const pekepuntosEl = document.getElementById('pekepuntos'); // opcional (si existe)
+  const balanceSpan = document.getElementById('balance');
+  let pekepuntosEl = document.getElementById('pekepuntos');
   const npcMsgEl = document.getElementById('npcMsg');
 
-  // USUARIO (desde localStorage — tu flow de login lo pone ahí)
+  // si no existe el elemento pekepuntos (tu otra página lo tenía), lo creamos bajo #ui
+  if(!pekepuntosEl){
+    try{
+      const ui = document.getElementById('ui');
+      pekepuntosEl = document.createElement('div');
+      pekepuntosEl.id = 'pekepuntos';
+      pekepuntosEl.style.marginTop = '8px';
+      pekepuntosEl.style.fontSize = '1rem';
+      pekepuntosEl.textContent = 'Pekepuntos: 0';
+      ui.appendChild(pekepuntosEl);
+    } catch(e){
+      // si no puede, no es crítico
+    }
+  }
+
+  // ---------- Usuario (desde localStorage) ----------
   let currentUser = null;
   try {
     currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
@@ -50,36 +101,39 @@
     currentUser = null;
   }
   if(!currentUser){
-    alert('Debes iniciar sesión para jugar (currentUser no encontrado en localStorage).');
-    // no hacemos throw para que la UI no se rompa por completo; salimos.
-    return;
+    alert('Debes iniciar sesión para jugar. (currentUser no encontrado en localStorage).');
+    return; // salimos para no intentar operar sin usuario
   }
 
-  // Balance inicial
+  // Balance local
   let balance = Number(currentUser.pekepuntos || 0);
+
   function refreshBalanceUI(){
     if(balanceSpan) balanceSpan.textContent = balance;
     if(pekepuntosEl) pekepuntosEl.textContent = `Pekepuntos: ${balance}`;
   }
   refreshBalanceUI();
 
-  // Guardar balance en Supabase + localStorage
+  // Guardar balance (Supabase si está, si no solo localStorage)
   async function saveBalance(){
     try{
-      const { error } = await supabase
-        .from('usuarios')
-        .update({ pekepuntos: balance })
-        .eq('id', currentUser.id);
-      if(error) throw error;
+      if(supabase){
+        const { error } = await supabase
+          .from('usuarios')
+          .update({ pekepuntos: balance })
+          .eq('id', currentUser.id);
+        if(error) throw error;
+      }
+      // también actualizamos localStorage
       currentUser.pekepuntos = balance;
       localStorage.setItem('currentUser', JSON.stringify(currentUser));
       refreshBalanceUI();
     } catch(err){
-      alert('Error guardando balance: ' + (err.message || err));
+      alert('Error guardando balance: ' + (err && err.message ? err.message : err));
     }
   }
 
-  // Claim diario (protección: una vez al día)
+  // Claim diario (protección: 1 vez al día)
   async function claimDaily(){
     try{
       const today = new Date().toISOString().slice(0,10);
@@ -90,27 +144,27 @@
       }
       balance += 100;
       currentUser.last_claim = new Date().toISOString();
-      // guardamos
-      const { error } = await supabase
-        .from('usuarios')
-        .update({ pekepuntos: balance, last_claim: currentUser.last_claim })
-        .eq('id', currentUser.id);
-      if(error) throw error;
+
+      if(supabase){
+        const { error } = await supabase
+          .from('usuarios')
+          .update({ pekepuntos: balance, last_claim: currentUser.last_claim })
+          .eq('id', currentUser.id);
+        if(error) throw error;
+      }
+      // siempre guardamos localmente
       localStorage.setItem('currentUser', JSON.stringify(currentUser));
       refreshBalanceUI();
       if(npcMsgEl){ npcMsgEl.innerText = '¡Has recogido tus fichas diarias!'; npcMsgEl.style.display = 'block'; setTimeout(()=> npcMsgEl.style.display='none',1400); }
       alert('¡Has reclamado +100 Pekepuntos!');
     } catch(err){
-      alert('Error al reclamar diario: ' + (err.message || err));
+      alert('Error al reclamar diario: ' + (err && err.message ? err.message : err));
     }
   }
 
-  // --------------------
-  // Juegos (simples)
-  // --------------------
+  // ---------- Juegos simples (mantengo la lógica que tenías) ----------
   async function playBlackjack(bet = 50){
     if(balance < bet){ alert('No tienes suficientes Pekepuntos.'); return; }
-    // mecánica simplificada (simulación)
     const player = rand(15,21);
     const dealer = rand(16,21);
     let result;
@@ -164,9 +218,7 @@
     await saveBalance();
   }
 
-  // --------------------
-  // THREE.JS escena
-  // --------------------
+  // ---------- THREE.JS escena ----------
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0b0f1a);
 
@@ -177,7 +229,6 @@
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
-  // poner renderer en tu contenedor
   container.appendChild(renderer.domElement);
 
   // luces
@@ -185,7 +236,7 @@
   scene.add(new THREE.AmbientLight(0xffffff, 0.25));
   const dir = new THREE.DirectionalLight(0xfff6d6, 0.6); dir.position.set(5,10,5); scene.add(dir);
 
-  // texturas simples con canvas
+  // helpers texturas con canvas
   function canvasTextureGradient(a,b,size=512){
     const c = document.createElement('canvas');
     c.width = c.height = size;
@@ -201,9 +252,8 @@
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
   floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
 
-  // crear mesas/objetos interactuables
+  // mesas/objetos interactuables
   const interactables = [];
-
   function addTable(x,z,type){
     const mat = new THREE.MeshStandardMaterial({ map: canvasTextureGradient('#222','#550') });
     const geom = (type === 'slots') ? new THREE.BoxGeometry(1,2,1) : new THREE.CylinderGeometry(1.5,1.5,0.3,32);
@@ -230,10 +280,10 @@
   scene.add(npcMesh);
   interactables.push(npcMesh);
 
-  // cámara movimiento
+  // movimiento cámara
   const keys = {};
-  document.addEventListener('keydown', e=> keys[e.code] = true);
-  document.addEventListener('keyup', e=> keys[e.code] = false);
+  document.addEventListener('keydown', e => keys[e.code] = true);
+  document.addEventListener('keyup', e => keys[e.code] = false);
 
   let yaw = 0, pitch = 0;
   function updateCamera(dt){
@@ -249,8 +299,7 @@
 
     const forward = new THREE.Vector3();
     camera.getWorldDirection(forward);
-    forward.y = 0;
-    forward.normalize();
+    forward.y = 0; forward.normalize();
     const right = new THREE.Vector3();
     right.crossVectors(forward, camera.up).normalize();
     const move = new THREE.Vector3();
@@ -262,7 +311,7 @@
     camera.position.add(move);
   }
 
-  // raycast interaccion
+  // raycast interacción
   const ray = new THREE.Raycaster();
   let lookingAt = null;
   function checkInteraction(){
@@ -314,6 +363,12 @@
     renderer.setSize(innerWidth, innerHeight);
   });
 
+  // Exponer funciones para debugging si quieres llamarlas desde consola (opcional)
+  window._casino = {
+    playBlackjack, playRoulette, playSlots, claimDaily, saveBalance, currentUser
+  };
+
+})(); // fin main
 </script>
 </body>
 </html>
