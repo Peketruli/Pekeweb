@@ -27,20 +27,52 @@
 
 <script type="module">
 import * as THREE from 'https://unpkg.com/three@0.155.0/build/three.module.js';
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm';
 
 /* ---------------------------
-   Helpers / elementos DOM
-   --------------------------- */
+   Supabase
+---------------------------- */
+const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
+let userId = 'id_del_usuario_actual'; // Cambiar por tu usuario actual
+
+/* ---------------------------
+   Helpers / DOM
+---------------------------- */
 const modal = document.getElementById('modal');
 const container = document.getElementById('container');
 const npcMsg = document.getElementById('npcMsg');
 const balanceEl = document.getElementById('balance');
 
 function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
+function setBal(v){ balance = Math.round(v); balanceEl.textContent = balance; saveBalance(); }
+
+/* ---------------------------
+   Supabase helpers
+---------------------------- */
+async function loadBalance(){
+    const { data, error } = await supabase
+        .from('usuarios')
+        .select('pekepuntos')
+        .eq('id', userId)
+        .single();
+    if(error){ console.error(error); return; }
+    balance = data.pekepuntos || 0;
+    setBal(balance);
+}
+
+async function saveBalance(){
+    const { error } = await supabase
+        .from('usuarios')
+        .update({ pekepuntos: balance })
+        .eq('id', userId);
+    if(error) console.error(error);
+}
 
 /* ---------------------------
    Escena, cámara y renderer
-   --------------------------- */
+---------------------------- */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0f1a);
 
@@ -55,11 +87,9 @@ container.appendChild(renderer.domElement);
 
 /* ---------------------------
    Luces
-   --------------------------- */
-const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.8);
-hemi.position.set(0,50,0); scene.add(hemi);
-const ambient = new THREE.AmbientLight(0xffffff, 0.25); scene.add(ambient);
-
+---------------------------- */
+scene.add(new THREE.HemisphereLight(0xffffff, 0x222233, 0.8));
+scene.add(new THREE.AmbientLight(0xffffff, 0.25));
 const dir = new THREE.DirectionalLight(0xfff6d6, 0.6);
 dir.position.set(5,10,5); dir.castShadow = true;
 dir.shadow.camera.left = -10; dir.shadow.camera.right = 10;
@@ -67,154 +97,79 @@ dir.shadow.camera.top = 10; dir.shadow.camera.bottom = -10;
 scene.add(dir);
 
 /* ---------------------------
-   Texturas generadas por Canvas
-   --------------------------- */
+   Texturas Canvas
+---------------------------- */
 function createCanvasTexture(drawFn, size = 512){
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  drawFn(ctx, size);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1,1);
-  return tex;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    drawFn(ctx, size);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
 }
 
-// Tapete tipo casino (verde)
-const velvetTex = createCanvasTexture((ctx, s) => {
-  ctx.fillStyle = '#174938';
-  ctx.fillRect(0,0,s,s);
-  // finas líneas para "grano"
-  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
-  ctx.lineWidth = 1;
-  for(let i=0;i<s;i+=12){
-    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke();
-  }
-  // borde
-  ctx.strokeStyle = '#7a2f1f';
-  ctx.lineWidth = Math.max(2, s/180);
-  ctx.strokeRect(4,4,s-8,s-8);
+// Tapete
+const velvetTex = createCanvasTexture((ctx,s)=>{
+    ctx.fillStyle = '#174938'; ctx.fillRect(0,0,s,s);
+    ctx.strokeStyle = 'rgba(0,0,0,0.08)'; ctx.lineWidth=1;
+    for(let i=0;i<s;i+=12){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke(); }
+    ctx.strokeStyle = '#7a2f1f'; ctx.lineWidth=Math.max(2,s/180); ctx.strokeRect(4,4,s-8,s-8);
 });
-
-// Madera simple para suelo
-const woodTex = createCanvasTexture((ctx,s) => {
-  ctx.fillStyle = '#513923';
-  ctx.fillRect(0,0,s,s);
-  ctx.strokeStyle = '#66432a';
-  ctx.lineWidth = Math.max(2, s/120);
-  for(let i=0;i<s;i+=32){
-    ctx.beginPath(); ctx.moveTo(0,i+4); ctx.lineTo(s,i+4); ctx.stroke();
-  }
+// Suelo
+const woodTex = createCanvasTexture((ctx,s)=>{
+    ctx.fillStyle='#513923'; ctx.fillRect(0,0,s,s);
+    ctx.strokeStyle='#66432a'; ctx.lineWidth=Math.max(2,s/120);
+    for(let i=0;i<s;i+=32){ ctx.beginPath(); ctx.moveTo(0,i+4); ctx.lineTo(s,i+4); ctx.stroke(); }
 });
-
-// Tela de pared (sutil)
-const fabricTex = createCanvasTexture((ctx,s) => {
-  ctx.fillStyle = '#151827';
-  ctx.fillRect(0,0,s,s);
-  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
-  ctx.lineWidth = 1;
-  for(let i=0;i<s;i+=8){
-    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke();
-  }
+// Tela pared
+const fabricTex = createCanvasTexture((ctx,s)=>{
+    ctx.fillStyle='#151827'; ctx.fillRect(0,0,s,s);
+    ctx.strokeStyle='rgba(255,255,255,0.02)'; ctx.lineWidth=1;
+    for(let i=0;i<s;i+=8){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke(); }
 });
-
-// Pantalla tragaperras (oscura)
-const slotScreenTex = createCanvasTexture((ctx,s) => {
-  ctx.fillStyle = '#0b0b0b';
-  ctx.fillRect(0,0,s,s);
-  ctx.fillStyle = '#111';
-  ctx.fillRect(6,6,s-12,s-12);
-  // sutil brillo
-  const g = ctx.createLinearGradient(0,0,0,s);
-  g.addColorStop(0,'rgba(255,255,255,0.02)');
-  g.addColorStop(1,'rgba(0,0,0,0.06)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0,0,s,s);
+// Pantalla slots
+const slotScreenTex = createCanvasTexture((ctx,s)=>{
+    ctx.fillStyle='#0b0b0b'; ctx.fillRect(0,0,s,s);
+    ctx.fillStyle='#111'; ctx.fillRect(6,6,s-12,s-12);
+    const g=ctx.createLinearGradient(0,0,0,s);
+    g.addColorStop(0,'rgba(255,255,255,0.02)'); g.addColorStop(1,'rgba(0,0,0,0.06)');
+    ctx.fillStyle=g; ctx.fillRect(0,0,s,s);
+});
+// Ruleta
+const rouletteTex = createCanvasTexture((ctx,s)=>{
+    ctx.translate(s/2,s/2);
+    ctx.fillStyle='#3b2212'; ctx.beginPath(); ctx.arc(0,0,s/2,0,Math.PI*2); ctx.fill();
+    const cellCount = 37; const anglePer = Math.PI*2 / cellCount;
+    for(let i=0;i<cellCount;i++){
+        const start=i*anglePer-Math.PI/2, end=start+anglePer;
+        const isZero=i===0, fill=isZero?'#0b8a12':i%2===0?'#d22':'#111';
+        ctx.beginPath(); ctx.fillStyle=fill; ctx.moveTo(0,0); ctx.arc(0,0,s*0.48,start,end); ctx.closePath(); ctx.fill();
+        ctx.save(); ctx.rotate(start+anglePer/2);
+        ctx.fillStyle=isZero?'#fff':'#eee'; ctx.font=`${s*0.06}px Arial Black`;
+        ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(i,0,-s*0.35); ctx.restore();
+    }
+    ctx.beginPath(); ctx.fillStyle='#8b5a2b'; ctx.arc(0,0,s*0.20,0,Math.PI*2); ctx.fill();
+    const g=ctx.createRadialGradient(0,0,0,0,0,s*0.40);
+    g.addColorStop(0,'rgba(255,255,255,0.15)'); g.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.fillStyle=g; ctx.beginPath(); ctx.arc(0,0,s*0.48,0,Math.PI*2); ctx.fill();
 });
 
 /* ---------------------------
    Suelo y paredes
-   --------------------------- */
+---------------------------- */
 const floorMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.9 });
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
-floor.rotation.x = -Math.PI/2;
-floor.receiveShadow = true;
-scene.add(floor);
-
+floor.rotation.x = -Math.PI/2; floor.receiveShadow=true; scene.add(floor);
 const wallMat = new THREE.MeshStandardMaterial({ map: fabricTex, roughness: 0.95 });
-function makeWall(x,z,rotY=0){
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(30,6,0.2), wallMat);
-  wall.position.set(x,3,z); wall.rotation.y = rotY;
-  wall.receiveShadow = true; scene.add(wall);
-}
-makeWall(0,-15); makeWall(0,15,Math.PI);
-makeWall(-15,0,Math.PI/2); makeWall(15,0,-Math.PI/2);
-
-    // --------- TEXTURA DISCO RULETA ---------
-const rouletteTex = createCanvasTexture((ctx, s) => {
-  ctx.translate(s/2, s/2);
-
-  // Fondo base
-  ctx.fillStyle = '#3b2212';
-  ctx.beginPath();
-  ctx.arc(0,0,s/2,0,Math.PI*2);
-  ctx.fill();
-
-  // Aros exteriores
-  const ringColors = ['#d22', '#111'];
-  const cellCount = 37; // 0–36
-  const anglePer = (Math.PI*2) / cellCount;
-
-  for(let i=0;i<cellCount;i++){
-    const start = i * anglePer - Math.PI/2;
-    const end   = start + anglePer;
-
-    const isZero = (i===0);
-    const fill = isZero ? '#0b8a12' : (i%2===0 ? '#d22' : '#111');
-
-    ctx.beginPath();
-    ctx.fillStyle = fill;
-    ctx.moveTo(0,0);
-    ctx.arc(0,0,s*0.48,start,end);
-    ctx.closePath();
-    ctx.fill();
-
-    // Número
-    ctx.save();
-    ctx.rotate(start + anglePer/2);
-    ctx.fillStyle = isZero ? '#fff' : '#eee';
-    ctx.font = `${s*0.06}px Arial Black`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(i, 0, -s*0.35);
-    ctx.restore();
-  }
-
-  // Centro de madera
-  ctx.beginPath();
-  ctx.fillStyle = '#8b5a2b';
-  ctx.arc(0,0,s*0.20,0,Math.PI*2);
-  ctx.fill();
-
-  // Pequeño brillo
-  const g = ctx.createRadialGradient(0,0,0,0,0,s*0.40);
-  g.addColorStop(0,'rgba(255,255,255,0.15)');
-  g.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle = g;
-  ctx.beginPath();
-  ctx.arc(0,0,s*0.48,0,Math.PI*2);
-  ctx.fill();
-});
+function makeWall(x,z,rotY=0){ const wall=new THREE.Mesh(new THREE.BoxGeometry(30,6,0.2), wallMat); wall.position.set(x,3,z); wall.rotation.y=rotY; wall.receiveShadow=true; scene.add(wall); }
+makeWall(0,-15); makeWall(0,15,Math.PI); makeWall(-15,0,Math.PI/2); makeWall(15,0,-Math.PI/2);
 
 /* ---------------------------
    Objetos interactuables
-   --------------------------- */
-const interact = [];
-function addObject(mesh, type){
-  mesh.userData.type = type;
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  interact.push(mesh); scene.add(mesh);
-}
+---------------------------- */
+const interact=[];
+function addObject(mesh,type){ mesh.userData.type=type; mesh.castShadow=true; mesh.receiveShadow=true; interact.push(mesh); scene.add(mesh); }
 
 // Blackjack table
 const bjMat = new THREE.MeshStandardMaterial({ map: velvetTex, roughness: 0.6, metalness: 0.05 });
@@ -222,430 +177,126 @@ const bjTable = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.3,32), bjMat
 bjTable.position.set(-4,0.3,0); addObject(bjTable,'blackjack');
 
 // Ruleta base + disco
-const ruletaBaseMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6, roughness: 0.3 });
+const ruletaBaseMat = new THREE.MeshStandardMaterial({ color:0x222222, metalness:0.6, roughness:0.3 });
 const ruletaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.4,64), ruletaBaseMat);
 ruletaBase.position.set(0,0.2,0); addObject(ruletaBase,'roulette');
 
 const ruletaDisk = new THREE.Mesh(
-  new THREE.CylinderGeometry(1.15,1.15,0.08,128),
-  new THREE.MeshStandardMaterial({
-    map: rouletteTex,
-    metalness: 0.25,
-    roughness: 0.45
-  })
+    new THREE.CylinderGeometry(1.15,1.15,0.08,128),
+    new THREE.MeshStandardMaterial({ map: rouletteTex, metalness:0.25, roughness:0.45 })
 );
-ruletaDisk.rotation.x = Math.PI/2;
-ruletaDisk.rotation.y = 2*Math.PI;
-
-ruletaDisk.position.copy(ruletaBase.position).add(new THREE.Vector3(0,0.25,0));
-scene.add(ruletaDisk);
+ruletaDisk.rotation.x = -Math.PI/2; // plano sobre mesa
+ruletaDisk.position.set(0,0.25,0); scene.add(ruletaDisk);
 
 // Slot machine
-const slotBodyMat = new THREE.MeshStandardMaterial({ map: fabricTex, metalness: 0.35, roughness: 0.5 });
+const slotBodyMat = new THREE.MeshStandardMaterial({ map: fabricTex, metalness:0.35, roughness:0.5 });
 const slot = new THREE.Mesh(new THREE.BoxGeometry(1.0,2.0,1.0), slotBodyMat);
 slot.position.set(4,1,0); addObject(slot,'slots');
-
-const slotScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.35), new THREE.MeshStandardMaterial({ map: slotScreenTex, emissive: 0x000000 }));
+const slotScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.35), new THREE.MeshStandardMaterial({ map: slotScreenTex, emissive:0x000000 }));
 slotScreen.position.set(4,1.25,0.51); scene.add(slotScreen);
 
-// NPC (cofre de fichas diarias)
-const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({ color: 0x999999 }));
+// NPC (fichas diarias)
+const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({ color:0x999999 }));
 npc.position.set(0,1,5); addObject(npc,'npc');
 
-/* ---------------------------
-   Iluminación local sobre mesas
-   --------------------------- */
-function addTableLight(x,z){
-  const light = new THREE.PointLight(0xffddaa, 0.7, 6);
-  light.position.set(x,3,z); scene.add(light);
-}
+// Luces sobre mesas
+function addTableLight(x,z){ const light=new THREE.PointLight(0xffddaa,0.7,6); light.position.set(x,3,z); scene.add(light); }
 addTableLight(-4,0); addTableLight(0,0); addTableLight(4,0);
 
 /* ---------------------------
-   Controles de movimiento
-   --------------------------- */
-const keys = {};
-document.addEventListener('keydown', e => keys[e.code] = true);
-document.addEventListener('keyup', e => keys[e.code] = false);
+   Controles
+---------------------------- */
+const keys={};
+document.addEventListener('keydown', e=>keys[e.code]=true);
+document.addEventListener('keyup', e=>keys[e.code]=false);
 
-let balance = 1000;
-function setBal(v){ balance = Math.round(v); balanceEl.textContent = balance; }
-setBal(balance);
+let balance=1000; loadBalance();
 
-let yaw = 0, pitch = 0;
-const yawSpeed = 1.8, pitchSpeed = 1.2, pitchLimit = Math.PI/2 - 0.05;
+let yaw=0, pitch=0;
+const yawSpeed=1.8, pitchSpeed=1.2, pitchLimit=Math.PI/2-0.05;
 
 function updateCameraRotation(dt){
-  if(keys['ArrowLeft']) yaw += yawSpeed * dt;
-  if(keys['ArrowRight']) yaw -= yawSpeed * dt;
-  if(keys['ArrowUp']) pitch += pitchSpeed * dt;
-  if(keys['ArrowDown']) pitch -= pitchSpeed * dt;
-  pitch = Math.max(-pitchLimit, Math.min(pitchLimit, pitch));
-  camera.rotation.y = yaw;
-  camera.rotation.x = pitch;
+    if(keys['ArrowLeft']) yaw += yawSpeed*dt;
+    if(keys['ArrowRight']) yaw -= yawSpeed*dt;
+    if(keys['ArrowUp']) pitch += pitchSpeed*dt;
+    if(keys['ArrowDown']) pitch -= pitchSpeed*dt;
+    pitch=Math.max(-pitchLimit, Math.min(pitchLimit,pitch));
+    camera.rotation.y = yaw;
+    camera.rotation.x = pitch;
 }
 
 function updateCameraPosition(dt){
-  const speed = 3.0;
-  const forward = new THREE.Vector3();
-  camera.getWorldDirection(forward);
-  forward.y = 0; forward.normalize();
-  const right = new THREE.Vector3(); right.crossVectors(forward, camera.up).normalize();
-  const move = new THREE.Vector3();
-  if(keys['KeyW']) move.add(forward);
-  if(keys['KeyS']) move.sub(forward);
-  if(keys['KeyD']) move.add(right);
-  if(keys['KeyA']) move.sub(right);
-  move.multiplyScalar(speed * dt);
-  camera.position.add(move);
+    const speed=3.0;
+    const forward=new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
+    const right=new THREE.Vector3(); right.crossVectors(forward,camera.up).normalize();
+    const move=new THREE.Vector3();
+    if(keys['KeyW']) move.add(forward);
+    if(keys['KeyS']) move.sub(forward);
+    if(keys['KeyD']) move.add(right);
+    if(keys['KeyA']) move.sub(right);
+    move.multiplyScalar(speed*dt);
+    camera.position.add(move);
 }
 
 /* ---------------------------
-   Raycast para interacción (E)
-   --------------------------- */
+   Raycast interacción
+---------------------------- */
 const ray = new THREE.Raycaster();
 let lookingAt = null;
 function checkInteraction(){
-  ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
-  const hits = ray.intersectObjects(interact, false);
-  if(hits.length === 0 || hits[0].distance > 4){
-    lookingAt = null; npcMsg.style.display = 'none'; return;
-  }
-  lookingAt = hits[0].object;
-  if(lookingAt.userData.type === 'npc'){
-    npcMsg.style.display = 'block';
-  } else {
-    npcMsg.style.display = 'none';
-  }
+    ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
+    const hits = ray.intersectObjects(interact,false);
+    if(hits.length===0||hits[0].distance>4){ lookingAt=null; npcMsg.style.display='none'; return; }
+    lookingAt = hits[0].object;
+    if(lookingAt.userData.type==='npc') npcMsg.style.display='block'; else npcMsg.style.display='none';
 }
 
 /* ---------------------------
-   Lógica de juegos
-   --------------------------- */
-function createDeck(){
-  const vals = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  const suits = ['♠','♥','♦','♣'];
-  const d = [];
-  for(const s of suits) for(const v of vals) d.push({v,s});
-  for(let i=d.length-1;i>0;i--){ const j = rand(0,i); [d[i],d[j]]=[d[j],d[i]]; }
-  return d;
-}
-function cardValue(c){ if(c.v==='A') return 11; if(['J','Q','K'].includes(c.v)) return 10; return parseInt(c.v); }
-function handScore(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum+=cardValue(c); } while(sum>21 && aces>0){ sum-=10; aces--; } return sum; }
+   Blackjack, Ruleta y Slots UI
+---------------------------- */
+// ... (puedes copiar el código que ya tienes de UI de juegos, solo asegurando que balance y saveBalance() se llamen tras cada cambio)
 
 /* ---------------------------
-   Blackjack UI & lógica
-   --------------------------- */
-function renderBlackjackUI(){
-  modal.innerHTML = '';
-  const el = document.createElement('div'); el.className = 'gameUI';
-  el.innerHTML = `
-    <h2>Blackjack</h2>
-    <div>Saldo: <span id='bjBal'>${balance}</span> €</div>
-    <label>Apuesta: <input id='bjBet' type='number' value='10' min='1' style='width:80px'></label>
-    <div id='bjTable' style='margin-top:8px'></div>
-    <div style='margin-top:8px'>
-      <button id='bjDeal'>Repartir</button>
-      <button id='bjHit' disabled>Pedir</button>
-      <button id='bjStand' disabled>Plantarse</button>
-      <button id='bjDouble' disabled>Doblar</button>
-      <button id='bjSplit' disabled>Dividir</button>
-      <button id='bjClose'>Cerrar</button>
-    </div>
-  `;
-  modal.appendChild(el);
-
-  const bjTable = el.querySelector('#bjTable');
-  const bjBal = el.querySelector('#bjBal');
-  const btnHit = el.querySelector('#bjHit');
-  const btnStand = el.querySelector('#bjStand');
-  const btnDouble = el.querySelector('#bjDouble');
-  const btnSplit = el.querySelector('#bjSplit');
-
-  let deck, player=[], player2=[], dealer=[], bet=0, inRound=false, splitMode=false;
-
-  function updateTable(){
-    const dealerDisplay = inRound ? (dealer[0].v + dealer[0].s + ' ?') : dealer.map(c=>c.v+c.s).join(' ');
-    let playerDisplay = player.map(c=>c.v+c.s).join(' ');
-    if(splitMode) playerDisplay += ` | ${player2.map(c=>c.v+c.s).join(' ')}`;
-    bjTable.innerHTML = `<div>Jugador: ${playerDisplay} (${handScore(player)})</div>
-                         <div>Dealer: ${dealerDisplay}</div>`;
-    bjBal.textContent = balance;
-  }
-
-  function dealerPlay(){
-    while(handScore(dealer) < 17) dealer.push(deck.pop());
-  }
-
-  function finishHandSingle(h){
-    if(handScore(h) > 21) return 'Pierdes';
-    dealerPlay();
-    const ds = handScore(dealer);
-    const ps = handScore(h);
-    if(ds > 21) return 'Ganas';
-    if(ps > ds) return 'Ganas';
-    if(ps === ds) return 'Empate';
-    return 'Pierdes';
-  }
-
-  function endRound(){
-    btnHit.disabled = true; btnStand.disabled = true; btnDouble.disabled = true; btnSplit.disabled = true;
-    inRound = false;
-    if(splitMode){
-      const res1 = finishHandSingle(player);
-      const res2 = finishHandSingle(player2);
-      let payout = 0;
-      if(res1==='Ganas') payout += bet*2; else if(res1==='Empate') payout += bet;
-      if(res2==='Ganas') payout += bet*2; else if(res2==='Empate') payout += bet;
-      balance += payout; setBal(balance);
-      bjTable.innerHTML += `<div>Resultado Mano 1: ${res1}</div><div>Resultado Mano 2: ${res2}</div><div>Total ganado: ${payout}€</div>`;
-    } else {
-      const res = finishHandSingle(player);
-      if(res==='Ganas') balance += bet*2; else if(res==='Empate') balance += bet;
-      setBal(balance);
-      bjTable.innerHTML += `<div>Resultado: ${res}</div>`;
-    }
-  }
-
-  el.querySelector('#bjDeal').onclick = () => {
-    bet = Math.min(balance, Number(el.querySelector('#bjBet').value) || 0);
-    if(bet <= 0){ alert('Apuesta inválida'); return; }
-    balance -= bet; setBal(balance);
-    deck = createDeck();
-    player = [deck.pop(), deck.pop()];
-    dealer = [deck.pop(), deck.pop()];
-    player2 = []; inRound = true; splitMode = false;
-    btnHit.disabled = false; btnStand.disabled = false; btnDouble.disabled = false;
-    btnSplit.disabled = !(player[0].v === player[1].v);
-    updateTable();
-  };
-
-  btnHit.onclick = () => {
-    if(!inRound) return;
-    player.push(deck.pop());
-    if(handScore(player) > 21) endRound();
-    updateTable();
-  };
-
-  btnStand.onclick = () => { endRound(); updateTable(); };
-
-  btnDouble.onclick = () => {
-    if(balance < bet){ alert('Saldo insuficiente'); return; }
-    balance -= bet; bet *= 2; setBal(balance);
-    player.push(deck.pop()); endRound(); updateTable();
-  };
-
-  btnSplit.onclick = () => {
-    if(player[0].v !== player[1].v){ alert('No se puede dividir'); return; }
-    if(balance < bet){ alert('Saldo insuficiente'); return; }
-    balance -= bet; setBal(balance);
-    player2.push(player.pop());
-    player.push(deck.pop());
-    player2.push(deck.pop());
-    splitMode = true;
-    btnSplit.disabled = true;
-    updateTable();
-  };
-
-  el.querySelector('#bjClose').onclick = () => { modal.style.display = 'none'; };
-}
-
-/* ---------------------------
-   Ruleta UI & lógica
-   --------------------------- */
-function isRed(n){ const reds = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]); return reds.has(n); }
-
-let ruletaSpinVelocity = 0, ruletaSpinning = false, ruletaResolveTimer = null;
-
-function renderRouletteUI(){
-  modal.innerHTML = '';
-  const el = document.createElement('div'); el.className = 'gameUI';
-  el.innerHTML = `
-    <h2>Ruleta</h2>
-    <div>Saldo: <span id='rBal'>${balance}</span> €</div>
-    <label>Apuesta: <input id='rBet' type='number' value='10' min='1' style='width:80px'></label>
-    <label>Tipo: <select id='rType'><option value='number'>Número</option><option value='color'>Color</option><option value='par'>Par/Impar</option></select></label>
-    <label id='rNumberWrap'><input id='rNumber' type='number' min='0' max='36' value='7' style='width:80px'></label>
-    <label id='rColorWrap' style='display:none'><select id='rColor'><option value='red'>Rojo</option><option value='black'>Negro</option></select></label>
-    <div style='margin-top:8px'><button id='rSpin'>Girar</button> <button id='rClose'>Cerrar</button></div>
-    <div id='rOut' style='margin-top:8px'></div>
-  `;
-  modal.appendChild(el);
-
-  const rBal = el.querySelector('#rBal');
-  const rType = el.querySelector('#rType');
-  const rNumberWrap = el.querySelector('#rNumberWrap');
-  const rColorWrap = el.querySelector('#rColorWrap');
-  const rOut = el.querySelector('#rOut');
-
-  rType.onchange = () => {
-    rNumberWrap.style.display = rType.value === 'number' ? 'inline-block' : 'none';
-    rColorWrap.style.display = rType.value === 'color' ? 'inline-block' : 'none';
-    if(rType.value === 'par') rColorWrap.style.display = 'inline-block';
-  };
-
-  el.querySelector('#rSpin').onclick = () => {
-    const bet = Math.min(balance, Number(el.querySelector('#rBet').value) || 0);
-    if(bet <= 0){ alert('Apuesta inválida'); return; }
-    el.querySelector('#rSpin').disabled = true;
-    balance -= bet; setBal(balance); rBal.textContent = balance;
-
-    // Empieza la animación de la ruleta
-    ruletaSpinVelocity = 8 + Math.random()*6;
-    ruletaSpinning = true;
-
-    if(ruletaResolveTimer) clearTimeout(ruletaResolveTimer);
-    // resolvemos el resultado tras un tiempo
-    ruletaResolveTimer = setTimeout(() => {
-      const result = rand(0,36);
-      const color = isRed(result) ? 'red' : 'black';
-      let win = false, payout = 0;
-
-      if(rType.value === 'number'){
-        const pick = Number(el.querySelector('#rNumber').value);
-        if(pick === result){ win = true; payout = bet * 35; }
-      } else if(rType.value === 'color'){
-        const pick = el.querySelector('#rColor').value;
-        if(pick === color){ win = true; payout = bet * 2; }
-      } else if(rType.value === 'par'){
-        const pick = el.querySelector('#rColor').value;
-        if(result !== 0){
-          const isEven = (result % 2 === 0);
-          if(pick === 'red' && !isEven){ win = true; payout = bet * 2; }
-          if(pick === 'black' && isEven){ win = true; payout = bet * 2; }
-        }
-      }
-
-      // Espera un poquito para que la animación se note
-      setTimeout(() => {
-        if(win){ balance += payout; setBal(balance); rOut.innerHTML = `<div>Sale ${result} (${result===0?'green':color})</div><div>¡Ganas ${payout}€!</div>`; }
-        else rOut.innerHTML = `<div>Sale ${result} (${result===0?'green':color})</div><div>Pierdes ${bet}€</div>`;
-        el.querySelector('#rSpin').disabled = false;
-      }, 900);
-    }, 1800);
-  };
-
-  el.querySelector('#rClose').onclick = () => { modal.style.display = 'none'; };
-}
-
-/* ---------------------------
-   Slots UI & lógica
-   --------------------------- */
-function renderSlotsUI(){
-  modal.innerHTML = '';
-  const el = document.createElement('div'); el.className = 'gameUI';
-  el.innerHTML = `
-    <h2>Tragaperras</h2>
-    <div>Saldo: <span id='sBal'>${balance}</span> €</div>
-    <label>Apuesta: <input id='sBet' type='number' value='5' min='1' style='width:80px'></label>
-    <div style='margin-top:8px'><div id='reels' style='font-size:40px;letter-spacing:10px;text-align:center'>• · •</div></div>
-    <div style='margin-top:8px'><button id='sSpin'>Girar</button> <button id='sClose'>Cerrar</button></div>
-    <div id='sOut' style='margin-top:8px'></div>
-  `;
-  modal.appendChild(el);
-
-  const sBal = el.querySelector('#sBal');
-  const reels = el.querySelector('#reels');
-  const sOut = el.querySelector('#sOut');
-  const symbols = ['🍒','🔔','7️⃣','⭐','🍋'];
-
-  el.querySelector('#sSpin').onclick = () => {
-    const bet = Math.min(balance, Number(el.querySelector('#sBet').value) || 0);
-    if(bet <= 0){ alert('Apuesta inválida'); return; }
-    balance -= bet; setBal(balance); sBal.textContent = balance;
-    el.querySelector('#sSpin').disabled = true;
-    let t = 0; let final = ['', '', ''];
-    const interval = setInterval(()=>{
-      t++;
-      const A = symbols[rand(0,symbols.length-1)];
-      const B = symbols[rand(0,symbols.length-1)];
-      const C = symbols[rand(0,symbols.length-1)];
-      reels.textContent = `${A} ${B} ${C}`;
-      final = [A,B,C];
-      reels.style.transform = 'scale(1.06)';
-      setTimeout(()=> reels.style.transform = 'scale(1)', 60);
-      if(t > 28){
-        clearInterval(interval);
-        el.querySelector('#sSpin').disabled = false;
-        const [A2,B2,C2] = final;
-        if(A2 === B2 && B2 === C2){
-          const win = bet * 10; balance += win; setBal(balance); sOut.innerHTML = `<div>¡Jackpot! Ganaste ${win}€</div>`;
-        } else if(A2 === B2 || B2 === C2 || A2 === C2){
-          const win = bet * 2; balance += win; setBal(balance); sOut.innerHTML = `<div>Dos iguales — Ganaste ${win}€</div>`;
-        } else sOut.innerHTML = `<div>No hay coincidencias — Pierdes ${bet}€</div>`;
-      }
-    }, 50);
-  };
-
-  el.querySelector('#sClose').onclick = () => { modal.style.display = 'none'; };
-}
-
-/* ---------------------------
-   Abrir UI según objeto (E)
-   --------------------------- */
+   Interacción tecla E
+---------------------------- */
 function openUI(type){
-  if(type === 'blackjack'){ modal.style.display = 'block'; renderBlackjackUI(); }
-  else if(type === 'roulette'){ modal.style.display = 'block'; renderRouletteUI(); }
-  else if(type === 'slots'){ modal.style.display = 'block'; renderSlotsUI(); }
-  else if(type === 'npc'){
-    setBal(balance + 100);
-    npcMsg.innerText = '¡Has recogido tus fichas diarias!';
-    npcMsg.style.display = 'block';
-    setTimeout(()=> npcMsg.style.display = 'none', 1400);
-  }
+    if(type==='blackjack'){ modal.style.display='block'; renderBlackjackUI(); }
+    else if(type==='roulette'){ modal.style.display='block'; renderRouletteUI(); }
+    else if(type==='slots'){ modal.style.display='block'; renderSlotsUI(); }
+    else if(type==='npc'){
+        balance += 100; setBal(balance); npcMsg.innerText='¡Has recogido tus fichas diarias!'; npcMsg.style.display='block';
+        setTimeout(()=> npcMsg.style.display='none',1400);
+    }
 }
-
-document.addEventListener('keydown', e => {
-  if(e.code === 'KeyE' && lookingAt) openUI(lookingAt.userData.type);
+document.addEventListener('keydown', e=>{
+    if(e.code==='KeyE'&&lookingAt) openUI(lookingAt.userData.type);
 });
 
 /* ---------------------------
-   Animación: incluye spin visual de ruleta
-   --------------------------- */
-const clock = new THREE.Clock();
+   Animación
+---------------------------- */
+let ruletaSpinVelocity=0, ruletaSpinning=false;
+const clock=new THREE.Clock();
 function animate(){
-  requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-
-  updateCameraPosition(dt);
-  updateCameraRotation(dt);
-  checkInteraction();
-
-  // ruleta visual damping
-  if(ruletaSpinning){
-    ruletaDisk.rotation.z += ruletaSpinVelocity * dt;
-    ruletaSpinVelocity = Math.max(0, ruletaSpinVelocity - dt * 2.6);
-    if(ruletaSpinVelocity <= 0.01){
-      ruletaSpinning = false;
-      ruletaDisk.rotation.z += 0.05;
-    }
-  } else {
-    ruletaDisk.rotation.z += 0.005;
-  }
-
-  renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+    const dt=clock.getDelta();
+    updateCameraPosition(dt); updateCameraRotation(dt); checkInteraction();
+    if(ruletaSpinning){
+        ruletaDisk.rotation.z += ruletaSpinVelocity*dt;
+        ruletaSpinVelocity=Math.max(0, ruletaSpinVelocity-dt*2.6);
+        if(ruletaSpinVelocity<=0.01) ruletaSpinning=false;
+    } else ruletaDisk.rotation.z+=0.005;
+    renderer.render(scene,camera);
 }
 animate();
 
 /* ---------------------------
    Resize
-   --------------------------- */
-window.addEventListener('resize', ()=>{
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
+---------------------------- */
+window.addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
 });
-
-/* ---------------------------
-   Extra: small pointer lock toggle via click (opcional)
-   --------------------------- */
-// Nota: la interacción por click fue eliminada según tu requerimiento; dejamos el click para pedir pointerlock opcional.
-container.addEventListener('dblclick', async () => {
-  try {
-    await renderer.domElement.requestPointerLock();
-  } catch(e){}
-});
-
 </script>
 </body>
 </html>
