@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Casino 3D — Mejorado UI</title>
+<title>Casino 3D — Mejorado UI & Texturas</title>
 <style>
   :root{--bg:#0b0f1a;--panel:#101625;--accent:#f5b642;--muted:#9aa5b1}
   html,body{height:100%;margin:0;font-family:Arial;background:var(--bg);color:white;overflow:hidden}
@@ -45,7 +45,6 @@
   function refreshBalanceUI(){ balanceSpan.textContent=balance; }
   refreshBalanceUI();
   function saveBalance(){ currentUser.pekepuntos=balance; localStorage.setItem('currentUser',JSON.stringify(currentUser)); refreshBalanceUI(); }
-
   function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
   // ---------- THREE.JS ----------
@@ -59,31 +58,83 @@
   scene.add(new THREE.AmbientLight(0xffffff,0.25));
   const dir=new THREE.DirectionalLight(0xfff6d6,0.6); dir.position.set(5,10,5); scene.add(dir);
 
-  function canvasTextureGradient(a,b,size=512){
+  // ---------- TEXTURAS CANVAS ----------
+  function canvasChecker(size=512, c1='#2a0033', c2='#550077', squares=8){
     const c=document.createElement('canvas'); c.width=c.height=size;
     const ctx=c.getContext('2d');
-    const g=ctx.createLinearGradient(0,0,size,size); g.addColorStop(0,a); g.addColorStop(1,b);
-    ctx.fillStyle=g; ctx.fillRect(0,0,size,size); return new THREE.CanvasTexture(c);
+    const s=size/squares;
+    for(let i=0;i<squares;i++){
+      for(let j=0;j<squares;j++){
+        ctx.fillStyle=((i+j)%2===0)?c1:c2;
+        ctx.fillRect(i*s,j*s,s,s);
+      }
+    }
+    return new THREE.CanvasTexture(c);
   }
 
-  const floorMat=new THREE.MeshStandardMaterial({map:canvasTextureGradient('#2a0033','#550077'),roughness:0.9});
+  function canvasMarble(size=512, color1='#666666', color2='#cccccc'){
+    const c=document.createElement('canvas'); c.width=c.height=size;
+    const ctx=c.getContext('2d');
+    ctx.fillStyle=color1; ctx.fillRect(0,0,size,size);
+    for(let i=0;i<200;i++){
+      ctx.strokeStyle=color2;
+      ctx.beginPath();
+      ctx.moveTo(Math.random()*size, Math.random()*size);
+      ctx.lineTo(Math.random()*size, Math.random()*size);
+      ctx.stroke();
+    }
+    return new THREE.CanvasTexture(c);
+  }
+
+  function canvasTable(color='#003300'){
+    const c=document.createElement('canvas'); c.width=c.height=256;
+    const ctx=c.getContext('2d');
+    ctx.fillStyle=color; ctx.fillRect(0,0,256,256);
+    for(let i=0;i<50;i++){
+      ctx.strokeStyle='rgba(255,255,255,0.05)';
+      ctx.beginPath();
+      ctx.moveTo(Math.random()*256, Math.random()*256);
+      ctx.lineTo(Math.random()*256, Math.random()*256);
+      ctx.stroke();
+    }
+    return new THREE.CanvasTexture(c);
+  }
+
+  function canvasMetal(size=256){
+    const c=document.createElement('canvas'); c.width=c.height=size;
+    const ctx=c.getContext('2d');
+    const grd=ctx.createLinearGradient(0,0,size,size);
+    grd.addColorStop(0,'#888'); grd.addColorStop(1,'#ccc');
+    ctx.fillStyle=grd; ctx.fillRect(0,0,size,size);
+    return new THREE.CanvasTexture(c);
+  }
+
+  // ---------- SUELO y PAREDES ----------
+  const floorMat=new THREE.MeshStandardMaterial({map:canvasChecker(),roughness:0.9});
   const floor=new THREE.Mesh(new THREE.PlaneGeometry(30,30),floorMat); floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor);
 
+  const wallMat=new THREE.MeshStandardMaterial({map:canvasMarble(),side:THREE.BackSide,roughness:0.8});
+  const walls=new THREE.Mesh(new THREE.BoxGeometry(30,10,30),wallMat);
+  walls.position.y=5; scene.add(walls);
+
+  // ---------- MESAS Y NPC ----------
   const interactables=[];
   function addTable(x,z,type){
-    const mat=new THREE.MeshStandardMaterial({map:canvasTextureGradient('#222','#550')});
+    const mat=canvasTable('#004400');
     const geom=(type==='slots')? new THREE.BoxGeometry(1,2,1) : new THREE.CylinderGeometry(1.5,1.5,0.3,32);
-    const mesh=new THREE.Mesh(geom,mat);
+    const mesh=new THREE.Mesh(geom,new THREE.MeshStandardMaterial({map:mat}));
     mesh.position.set(x,(type==='slots'?1:0.3),z); mesh.userData.type=type;
-    mesh.castShadow=true; mesh.receiveShadow=true; scene.add(mesh); interactables.push(mesh); return mesh;
+    mesh.castShadow=true; mesh.receiveShadow=true; scene.add(mesh); interactables.push(mesh);
+    return mesh;
   }
   const tableBJ=addTable(-4,0,'blackjack');
   const tableR=addTable(0,0,'roulette');
   const tableS=addTable(4,0,'slots');
 
-  const npcMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({color:0x999999}));
+  const npcMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({map:canvasMetal()}));
   npcMesh.position.set(0,1,5); npcMesh.userData.type='npc'; scene.add(npcMesh); interactables.push(npcMesh);
 
+  // ---------- MOVIMIENTO CAMARA ----------
   const keys={}; document.addEventListener('keydown',e=>keys[e.code]=true);
   document.addEventListener('keyup',e=>keys[e.code]=false);
   let yaw=0,pitch=0;
@@ -116,14 +167,13 @@
   function showGameUI(content){ modal.innerHTML=content; modal.style.display='block'; }
   function hideGameUI(){ modal.style.display='none'; }
 
-  async function claimDaily(){
-    const today=new Date().toISOString().slice(0,10);
+  async function claimDaily(){ const today=new Date().toISOString().slice(0,10);
     const last=currentUser.last_claim?currentUser.last_claim.slice(0,10):null;
     if(last===today){ return; }
     balance+=100; currentUser.last_claim=new Date().toISOString(); saveBalance();
   }
 
-  // ---------- BLACKJACK ----------
+ // ---------- BLACKJACK ----------
   function openBlackjack(){
   showGameUI(`
     <div class="gameUI">
@@ -302,6 +352,21 @@
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth,innerHeight);
   });
+  
+  document.addEventListener('keydown',async(e)=>{
+    if(e.code!=='KeyE') return;
+    if(!lookingAt) return;
+    const t=lookingAt.userData.type;
+    if(t==='npc') await claimDaily();
+    else if(t==='blackjack') openBlackjack();
+    else if(t==='roulette') openRoulette();
+    else if(t==='slots') openSlots();
+  });
+
+  const clock=new THREE.Clock();
+  function animate(){ requestAnimationFrame(animate); const dt=clock.getDelta(); updateCamera(dt); checkInteraction(); renderer.render(scene,camera); }
+  animate();
+  window.addEventListener('resize',()=>{ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight); });
 
 })();
 </script>
