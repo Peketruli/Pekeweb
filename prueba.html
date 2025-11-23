@@ -67,32 +67,60 @@ dir.shadow.camera.top = 10; dir.shadow.camera.bottom = -10;
 scene.add(dir);
 
 ////////////////////////////////////////////////////////////////
-// TEXTURAS (CDN fiables)
+// TEXTURAS MANUALES
 ////////////////////////////////////////////////////////////////
-const loader = new THREE.TextureLoader();
+function createCanvasTexture(drawFn, size = 256){
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  drawFn(ctx, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
 
-// texturas usadas (pequeñas y fiables)
-// TEXTURAS REALES
-const blackjackTex = loader.load("https://cdn.jsdelivr.net/gh/mat-1/assets@master/casino/blackjack_felt.jpg");
-blackjackTex.wrapS = blackjackTex.wrapT = THREE.RepeatWrapping;
-blackjackTex.repeat.set(1, 1);
+// Tapete Blackjack / Ruleta — verde tipo casino
+const velvetTex = createCanvasTexture((ctx, s)=>{
+  ctx.fillStyle = '#1b4d3e';
+  ctx.fillRect(0,0,s,s);
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 2;
+  for(let i=0;i<s;i+=16){
+    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(s,i); ctx.stroke();
+  }
+});
 
-const woodTex = loader.load("https://cdn.jsdelivr.net/gh/mat-1/assets@master/casino/wood_dark.jpg");
-woodTex.wrapS = woodTex.wrapT = THREE.RepeatWrapping;
-woodTex.repeat.set(2, 2);
+// Madera — suelo
+const woodTex = createCanvasTexture((ctx,s)=>{
+  ctx.fillStyle = '#4d3220';
+  ctx.fillRect(0,0,s,s);
+  ctx.strokeStyle = '#5c3b27';
+  ctx.lineWidth = 3;
+  for(let i=0;i<s;i+=16){
+    ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(s,i); ctx.stroke();
+  }
+});
 
-const rouletteDiskTex = loader.load("https://cdn.jsdelivr.net/gh/mat-1/assets@master/casino/roulette_wheel.png");
-rouletteDiskTex.wrapS = rouletteDiskTex.wrapT = THREE.ClampToEdgeWrapping;
-rouletteDiskTex.flipY = false;
+// Tela pared
+const fabricTex = createCanvasTexture((ctx,s)=>{
+  ctx.fillStyle = '#222244';
+  ctx.fillRect(0,0,s,s);
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  for(let i=0;i<s;i+=8){
+    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(s,i); ctx.stroke();
+  }
+});
 
-
-woodTex.wrapS = woodTex.wrapT = THREE.RepeatWrapping;
-velvetTex.wrapS = velvetTex.wrapT = THREE.RepeatWrapping;
-fabricTex.wrapS = fabricTex.wrapT = THREE.RepeatWrapping;
-
-woodTex.repeat.set(4,4);
-velvetTex.repeat.set(3,3);
-fabricTex.repeat.set(3,3);
+// Pantalla Slots
+const slotScreenTex = createCanvasTexture((ctx,s)=>{
+  ctx.fillStyle = '#111111';
+  ctx.fillRect(0,0,s,s);
+  ctx.fillStyle = '#333333';
+  ctx.fillRect(4,4,s-8,s-8);
+});
 
 ////////////////////////////////////////////////////////////////
 // SUELO Y PAREDES
@@ -155,8 +183,8 @@ const slot = new THREE.Mesh(new THREE.BoxGeometry(1.0, 2.0, 1.0), slotBodyMat);
 slot.position.set(4, 1, 0);
 addObject(slot, 'slots');
 
-// pantalla simple para slots (un rectángulo negro)
-const slotScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.35), new THREE.MeshStandardMaterial({ color: 0x000000, emissive: 0x000000 }));
+// pantalla simple para slots
+const slotScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.7, 0.35), new THREE.MeshStandardMaterial({ map: slotScreenTex, emissive: 0x000000 }));
 slotScreen.position.set(4, 1.25, 0.51);
 scene.add(slotScreen);
 
@@ -166,7 +194,7 @@ npc.position.set(0, 1, 5);
 addObject(npc, 'npc');
 
 ////////////////////////////////////////////////////////////////
-// ILUMINACIÓN LOCAL (sobre mesas)
+// ILUMINACIÓN LOCAL
 ////////////////////////////////////////////////////////////////
 function addTableLight(x, z) {
   const light = new THREE.PointLight(0xffddaa, 0.7, 6);
@@ -373,7 +401,7 @@ function renderBlackjackUI(){
 }
 
 ////////////////////////////////////////////////////////////////
-// ROULETTE (con disco giratorio y resolución al terminar)
+// ROULETTE
 ////////////////////////////////////////////////////////////////
 function isRed(n){ const reds=new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]); return reds.has(n); }
 
@@ -399,180 +427,6 @@ function renderRouletteUI(){
   const rBal=el.querySelector('#rBal');
   const rType=el.querySelector('#rType');
   const rNumberWrap=el.querySelector('#rNumberWrap');
-  const rColorWrap=el.querySelector('#rColorWrap');
-  const rOut=el.querySelector('#rOut');
-
-  rType.onchange=()=>{
-    rNumberWrap.style.display = rType.value==='number' ? 'inline-block' : 'none';
-    rColorWrap.style.display = rType.value==='color' ? 'inline-block' : 'none';
-    // for par/impar use same control visually as color (red->impar, black->par)
-    if(rType.value==='par') rColorWrap.style.display = 'inline-block';
-  };
-
-  el.querySelector('#rSpin').onclick=()=>{
-    const bet = Math.min(balance, Number(el.querySelector('#rBet').value)||0);
-    if(bet<=0){ alert('Apuesta inválida'); return; }
-    // disable button while spinning
-    el.querySelector('#rSpin').disabled = true;
-
-    balance -= bet; setBal(balance); rBal.textContent = balance;
-
-    // start visual spin
-    ruletaSpinVelocity = 8 + Math.random() * 6; // velocidad inicial
-    ruletaSpinning = true;
-
-    // resolve after short delay (simulación de ruleta)
-    if(ruletaResolveTimer) clearTimeout(ruletaResolveTimer);
-    ruletaResolveTimer = setTimeout(()=>{
-      // choose real result
-      const result = rand(0,36);
-      const color = isRed(result) ? 'red' : 'black';
-      let win = false, payout = 0;
-
-      if (rType.value === 'number') {
-        const pick = Number(el.querySelector('#rNumber').value);
-        if (pick === result) { win = true; payout = bet * 35; }
-      } else if (rType.value === 'color') {
-        const pick = el.querySelector('#rColor').value;
-        if (pick === color) { win = true; payout = bet * 2; }
-      } else if (rType.value === 'par') {
-        // 'red' -> impar, 'black' -> par
-        const pick = el.querySelector('#rColor').value;
-        const isEven = (result % 2 === 0);
-        if (result !== 0) {
-          if (pick === 'red' && !isEven) { win = true; payout = bet * 2; }
-          if (pick === 'black' && isEven) { win = true; payout = bet * 2; }
-        }
-      }
-
-      // After spin visually slows, show result and payout
-      // schedule UI update slightly after spin visually stops
-      setTimeout(()=>{
-        if(win){ balance += payout; setBal(balance); rOut.innerHTML = `<div>Sale ${result} (${result===0?'green':color})</div><div>¡Ganas ${payout}€!</div>`; }
-        else rOut.innerHTML = `<div>Sale ${result} (${result===0?'green':color})</div><div>Pierdes ${bet}€</div>`;
-        el.querySelector('#rSpin').disabled = false;
-      }, 900);
-    }, 1800);
-  };
-
-  el.querySelector('#rClose').onclick=()=>{ modal.style.display='none'; };
-}
-
-////////////////////////////////////////////////////////////////
-// SLOTS
-////////////////////////////////////////////////////////////////
-function renderSlotsUI(){
-  modal.innerHTML='';
-  const el=document.createElement('div'); el.className='gameUI';
-  el.innerHTML=`
-    <h2>Tragaperras</h2>
-    <div>Saldo: <span id='sBal'>${balance}</span> €</div>
-    <label>Apuesta: <input id='sBet' type='number' value='5' min='1' style='width:80px'></label>
-    <div style='margin-top:8px'><div id='reels' style='font-size:40px;letter-spacing:10px;text-align:center'>• &middot; •</div></div>
-    <div style='margin-top:8px'><button id='sSpin'>Girar</button> <button id='sClose'>Cerrar</button></div>
-    <div id='sOut' style='margin-top:8px'></div>
-  `;
-  modal.appendChild(el);
-
-  const sBal=el.querySelector('#sBal');
-  const reels=el.querySelector('#reels');
-  const sOut=el.querySelector('#sOut');
-  const symbols=['🍒','🔔','7️⃣','⭐','🍋'];
-
-  el.querySelector('#sSpin').onclick=()=>{
-    const bet = Math.min(balance, Number(el.querySelector('#sBet').value)||0);
-    if(bet<=0){ alert('Apuesta inválida'); return; }
-    balance -= bet; setBal(balance); sBal.textContent = balance;
-    el.querySelector('#sSpin').disabled = true;
-    reels.style.transition = 'transform 0.1s ease';
-    let t=0;
-    const a = () => symbols[rand(0, symbols.length-1)];
-    const interval = setInterval(()=>{
-      t++;
-      const A=a(), B=a(), C=a();
-      reels.textContent = `${A} ${B} ${C}`;
-      // small bounce
-      reels.style.transform = 'scale(1.08)';
-      setTimeout(()=> reels.style.transform = 'scale(1)', 60);
-      if(t>26){
-        clearInterval(interval);
-        el.querySelector('#sSpin').disabled=false;
-        if(A===B && B===C){
-          const win = bet*10; balance += win; setBal(balance); sOut.innerHTML=`<div>¡Jackpot! Ganaste ${win}€</div>`;
-        } else if(A===B || B===C || A===C){
-          const win = bet*2; balance += win; setBal(balance); sOut.innerHTML=`<div>Dos iguales — Ganaste ${win}€</div>`;
-        } else sOut.innerHTML=`<div>No hay coincidencias — Pierdes ${bet}€</div>`;
-      }
-    }, 55);
-  };
-
-  el.querySelector('#sClose').onclick=()=>{ modal.style.display='none'; };
-}
-
-////////////////////////////////////////////////////////////////
-// ABRIR UI (solo con tecla E)
-////////////////////////////////////////////////////////////////
-function openUI(type){
-  if(type==='blackjack'){ modal.style.display='block'; renderBlackjackUI(); }
-  else if(type==='roulette'){ modal.style.display='block'; renderRouletteUI(); }
-  else if(type==='slots'){ modal.style.display='block'; renderSlotsUI(); }
-  else if(type==='npc'){
-    setBal(balance + 100);
-    document.getElementById('npcMsg').innerText = '¡Has recogido tus fichas diarias!';
-    document.getElementById('npcMsg').style.display = 'block';
-    setTimeout(()=> document.getElementById('npcMsg').style.display = 'none', 1400);
-  }
-}
-
-document.addEventListener('keydown', e => {
-  if(e.code === 'KeyE' && lookingAt) openUI(lookingAt.userData.type);
-});
-
-////////////////////////////////////////////////////////////////
-// Nota: se elimina la interacción por click — solo E abre UI
-// document.getElementById('container').addEventListener('click', ... ) -> REMOVIDO
-
-////////////////////////////////////////////////////////////////
-// ANIMACIÓN (incluye spin visual de ruleta)
-////////////////////////////////////////////////////////////////
-const clock = new THREE.Clock();
-function animate(){
-  requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-
-  // camera
-  updateCameraPosition(dt);
-  updateCameraRotation(dt);
-
-  // interaction
-  checkInteraction();
-
-  // ruleta visual damping
-  if(ruletaSpinning){
-    // rotate by velocity and damp
-    ruletaDisk.rotation.z += ruletaSpinVelocity * dt;
-    ruletaSpinVelocity = Math.max(0, ruletaSpinVelocity - dt * 2.6);
-    // if velocity almost zero, stop spinning
-    if(ruletaSpinVelocity <= 0.01){
-      ruletaSpinning = false;
-      // small settle rotation
-      ruletaDisk.rotation.z += 0.05;
-    }
-  } else {
-    // idle slow rotation
-    ruletaDisk.rotation.z += 0.005;
-  }
-
-  renderer.render(scene, camera);
-}
-animate();
-
-window.addEventListener('resize', ()=>{
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-
 </script>
 </body>
 </html>
