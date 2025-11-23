@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Casino 3D — UI Avanzada</title>
+<title>Casino 3D — UI Animada</title>
 <style>
   :root{--bg:#0b0f1a;--panel:#101625;--accent:#f5b642;--muted:#9aa5b1}
   html,body{height:100%;margin:0;font-family:Arial;background:var(--bg);color:white;overflow:hidden}
@@ -16,19 +16,16 @@
   #gameUI h2{margin:0 0 12px 0; font-size:1.4rem; text-align:center;}
   .game-section{margin-bottom:12px;}
   .btn-row{display:flex; justify-content:space-around; flex-wrap:wrap;}
-  .slot-reels{font-size:2rem; text-align:center; margin:10px 0;}
+  .card, .slot-reels, .roulette-wheel{font-size:2rem; text-align:center; margin:10px 0;}
 </style>
 </head>
 <body>
 <div id="container"></div>
-
 <div id="ui">
   <div class="panel">Saldo: <span id="balance">1000</span> €</div>
   <div id="pekepuntos" class="panel">Pekepuntos: 0</div>
 </div>
-
 <div id="npcMsg">Pulsa E para recoger fichas diarias</div>
-
 <div id="gameUI">
   <h2 id="gameTitle">Juego</h2>
   <div id="gameControls"></div>
@@ -38,151 +35,153 @@
 <script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
 <script>
 (async function main(){
-  const container = document.getElementById('container');
-  const balanceSpan = document.getElementById('balance');
-  const pekepuntosEl = document.getElementById('pekepuntos');
-  const npcMsgEl = document.getElementById('npcMsg');
-  const gameUI = document.getElementById('gameUI');
-  const gameTitle = document.getElementById('gameTitle');
-  const gameControls = document.getElementById('gameControls');
+const container=document.getElementById('container'), balanceSpan=document.getElementById('balance');
+const pekepuntosEl=document.getElementById('pekepuntos'), npcMsgEl=document.getElementById('npcMsg');
+const gameUI=document.getElementById('gameUI'), gameTitle=document.getElementById('gameTitle'), gameControls=document.getElementById('gameControls');
 
-  // ---------- Usuario ----------
-  let currentUser = JSON.parse(localStorage.getItem('currentUser')||'{"id":1,"pekepuntos":1000}');
-  let balance = Number(currentUser.pekepuntos||0);
-  function refreshBalanceUI(){ balanceSpan.textContent=balance; pekepuntosEl.textContent=`Pekepuntos: ${balance}`; }
-  refreshBalanceUI();
-  async function saveBalance(){ currentUser.pekepuntos=balance; localStorage.setItem('currentUser',JSON.stringify(currentUser)); refreshBalanceUI(); }
+let currentUser=JSON.parse(localStorage.getItem('currentUser')||'{"id":1,"pekepuntos":1000}');
+let balance=Number(currentUser.pekepuntos||0);
+function refreshBalanceUI(){ balanceSpan.textContent=balance; pekepuntosEl.textContent=`Pekepuntos: ${balance}`; }
+refreshBalanceUI();
+async function saveBalance(){ currentUser.pekepuntos=balance; localStorage.setItem('currentUser',JSON.stringify(currentUser)); refreshBalanceUI(); }
 
-  // ---------- Claim diario ----------
-  async function claimDaily(){
-    const today = new Date().toISOString().slice(0,10);
-    const last = currentUser.last_claim?currentUser.last_claim.slice(0,10):null;
-    if(last===today){ alert('Ya reclamaste hoy'); return; }
-    balance+=100; currentUser.last_claim=new Date().toISOString(); await saveBalance();
-    npcMsgEl.innerText='¡Has recogido tus fichas diarias!'; npcMsgEl.style.display='block';
-    setTimeout(()=> npcMsgEl.style.display='none',1400);
+async function claimDaily(){
+  const today=new Date().toISOString().slice(0,10); const last=currentUser.last_claim?currentUser.last_claim.slice(0,10):null;
+  if(last===today){ alert('Ya reclamaste hoy'); return; }
+  balance+=100; currentUser.last_claim=new Date().toISOString(); await saveBalance();
+  npcMsgEl.innerText='¡Has recogido tus fichas diarias!'; npcMsgEl.style.display='block';
+  setTimeout(()=> npcMsgEl.style.display='none',1400);
+}
+
+// ---------- UI Juegos ----------
+window.hideGameUI=()=>{ gameUI.style.display='none'; gameControls.innerHTML=''; }
+
+function showGameUI(type){
+  gameUI.style.display='block'; gameControls.innerHTML=''; gameTitle.innerText=type.charAt(0).toUpperCase()+type.slice(1);
+  if(type==='blackjack'){
+    const betDiv=document.createElement('div'); betDiv.className='game-section';
+    betDiv.innerHTML=`Apuesta: <input type="number" id="bjBet" min="1" max="${balance}" value="50">`;
+    gameControls.appendChild(betDiv);
+    const dealBtn=document.createElement('button'); dealBtn.textContent='Repartir cartas'; dealBtn.onclick=startBlackjack;
+    gameControls.appendChild(dealBtn);
+    const cardsDiv=document.createElement('div'); cardsDiv.id='bjCards'; cardsDiv.className='card'; gameControls.appendChild(cardsDiv);
+    const actionDiv=document.createElement('div'); actionDiv.id='bjActions'; classList='btn-row'; gameControls.appendChild(actionDiv);
   }
-
-  // ---------- UI de Juegos ----------
-  window.hideGameUI=()=>{ gameUI.style.display='none'; gameControls.innerHTML=''; }
-
-  function showGameUI(type){
-    gameUI.style.display='block'; gameControls.innerHTML=''; gameTitle.innerText=type.charAt(0).toUpperCase()+type.slice(1);
-
-    if(type==='blackjack'){
-      const betDiv=document.createElement('div'); betDiv.className='game-section';
-      betDiv.innerHTML=`Apuesta: <input type="number" id="bjBet" min="1" max="${balance}" value="50">`;
-      gameControls.appendChild(betDiv);
-      const dealBtn=document.createElement('button'); dealBtn.textContent='Repartir cartas';
-      dealBtn.onclick=()=> startBlackjack(); gameControls.appendChild(dealBtn);
-    }
-    else if(type==='roulette'){
-      const betDiv=document.createElement('div'); betDiv.className='game-section';
-      betDiv.innerHTML=`Apuesta: <input type="number" id="rouBet" min="1" max="${balance}" value="50">`;
-      gameControls.appendChild(betDiv);
-      const typeSelect=document.createElement('select'); typeSelect.id='rouType';
-      typeSelect.innerHTML=`<option value="number">Número</option><option value="color">Color</option><option value="parity">Par/Impar</option>`;
-      gameControls.appendChild(typeSelect);
-      const input=document.createElement('input'); input.id='rouInput'; input.placeholder='Número o color'; gameControls.appendChild(input);
-      const playBtn=document.createElement('button'); playBtn.textContent='Girar'; playBtn.onclick=()=> playRoulette(); gameControls.appendChild(playBtn);
-    }
-    else if(type==='slots'){
-      const betDiv=document.createElement('div'); betDiv.className='game-section';
-      betDiv.innerHTML=`Apuesta: <input type="number" id="slotBet" min="1" max="${balance}" value="50">`;
-      gameControls.appendChild(betDiv);
-      const reels=document.createElement('div'); reels.id='slotReels'; reels.className='slot-reels'; reels.textContent='🍒 🍋 🍊'; gameControls.appendChild(reels);
-      const playBtn=document.createElement('button'); playBtn.textContent='Jugar'; playBtn.onclick=()=> playSlots(); gameControls.appendChild(playBtn);
-    }
+  else if(type==='roulette'){
+    const betDiv=document.createElement('div'); betDiv.className='game-section';
+    betDiv.innerHTML=`Apuesta: <input type="number" id="rouBet" min="1" max="${balance}" value="50">`;
+    gameControls.appendChild(betDiv);
+    const typeSelect=document.createElement('select'); typeSelect.id='rouType';
+    typeSelect.innerHTML=`<option value="number">Número</option><option value="color">Color</option><option value="parity">Par/Impar</option>`;
+    gameControls.appendChild(typeSelect);
+    const input=document.createElement('input'); input.id='rouInput'; input.placeholder='Número o color'; gameControls.appendChild(input);
+    const wheel=document.createElement('div'); wheel.id='rouWheel'; wheel.className='roulette-wheel'; wheel.textContent='🎡'; gameControls.appendChild(wheel);
+    const playBtn=document.createElement('button'); playBtn.textContent='Girar'; playBtn.onclick=playRoulette; gameControls.appendChild(playBtn);
   }
-
-  // ---------- Blackjack ----------
-  let bjPlayer=0,bjDealer=0,bjBet=0;
-  function startBlackjack(){
-    bjBet = Number(document.getElementById('bjBet').value); if(bjBet>balance){ alert('Saldo insuficiente'); return; }
-    bjPlayer=Math.floor(Math.random()*6)+15; bjDealer=Math.floor(Math.random()*6)+16;
-    gameControls.innerHTML='';
-    const info=document.createElement('div'); info.id='bjInfo'; info.innerText=`Tus cartas: ${bjPlayer}\nDealer: ?`; gameControls.appendChild(info);
-    ['Pedir','Doblar','Plantarse'].forEach(act=>{
-      const btn=document.createElement('button'); btn.textContent=act;
-      btn.onclick=()=> blackjackAction(act); gameControls.appendChild(btn);
-    });
+  else if(type==='slots'){
+    const betDiv=document.createElement('div'); betDiv.className='game-section';
+    betDiv.innerHTML=`Apuesta: <input type="number" id="slotBet" min="1" max="${balance}" value="50">`;
+    gameControls.appendChild(betDiv);
+    const reels=document.createElement('div'); reels.id='slotReels'; reels.className='slot-reels'; reels.textContent='🍒 🍋 🍊'; gameControls.appendChild(reels);
+    const playBtn=document.createElement('button'); playBtn.textContent='Jugar'; playBtn.onclick=playSlots; gameControls.appendChild(playBtn);
   }
-  async function blackjackAction(act){
-    if(act==='Pedir'){ bjPlayer+=Math.floor(Math.random()*6)+1; }
-    else if(act==='Doblar'){ bjBet*=2; bjPlayer+=Math.floor(Math.random()*6)+1; }
-    else if(act==='Plantarse'){ }
-    const info=document.getElementById('bjInfo'); info.innerText=`Tus cartas: ${bjPlayer}\nDealer: ?`;
-    if(bjPlayer>21 || act==='Plantarse'){
-      let result='lose'; if(bjPlayer<=21 && (bjPlayer>bjDealer || bjDealer>21)) result='win'; else if(bjPlayer===bjDealer) result='tie';
-      if(result==='win') balance+=bjBet; else if(result==='lose') balance-=bjBet; await saveBalance();
-      info.innerText+=`\nDealer: ${bjDealer}\nResultado: ${result}`;
-    }
-  }
+}
 
-  // ---------- Roulette ----------
-  async function playRoulette(){
-    const bet=Number(document.getElementById('rouBet').value);
-    if(bet>balance){ alert('Saldo insuficiente'); return; }
-    const type=document.getElementById('rouType').value; const val=document.getElementById('rouInput').value;
-    const result=Math.floor(Math.random()*37); const color=result%2===0?'rojo':'negro';
-    let win=false;
-    if(type==='number' && Number(val)===result) win=true;
-    else if(type==='color' && val.toLowerCase()===color) win=true;
-    else if(type==='parity' && ((val.toLowerCase()==='par' && result%2===0) || (val.toLowerCase()==='impar' && result%2!==0))) win=true;
-    if(win) balance+=bet*2; else balance-=bet; await saveBalance();
-    alert(`Ruleta: ${result} (${color})\nResultado: ${win?'Ganaste':'Perdiste'}`);
+// ---------- Blackjack Animado ----------
+let bjPlayer=[], bjDealer=[], bjBet=0;
+function startBlackjack(){
+  bjBet=Number(document.getElementById('bjBet').value); if(bjBet>balance){ alert('Saldo insuficiente'); return; }
+  bjPlayer=[randCard(),randCard()]; bjDealer=[randCard(),randCard()];
+  updateBJUI();
+  showBJActions();
+}
+function randCard(){ const suits=['♠','♥','♦','♣'], vals=['A','2','3','4','5','6','7','8','9','10','J','Q','K']; return vals[Math.floor(Math.random()*vals.length)]+suits[Math.floor(Math.random()*suits.length)]; }
+function updateBJUI(){ document.getElementById('bjCards').innerText=`Tus cartas: ${bjPlayer.join(' ')}\nDealer: ${bjDealer[0]} ❓`; }
+function showBJActions(){
+  const actDiv=document.getElementById('bjActions'); actDiv.innerHTML='';
+  ['Pedir','Doblar','Plantarse'].forEach(act=>{ const b=document.createElement('button'); b.textContent=act; b.onclick=()=> blackjackAction(act); actDiv.appendChild(b); });
+}
+async function blackjackAction(act){
+  if(act==='Pedir'){ bjPlayer.push(randCard()); }
+  else if(act==='Doblar'){ bjBet*=2; bjPlayer.push(randCard()); }
+  // Plantarse no añade cartas
+  updateBJUI();
+  if(calcBJScore(bjPlayer)>21 || act==='Plantarse'){
+    const playerScore=calcBJScore(bjPlayer), dealerScore=calcBJScore(bjDealer);
+    let result='lose'; if(playerScore<=21 && (playerScore>dealerScore || dealerScore>21)) result='win'; else if(playerScore===dealerScore) result='tie';
+    if(result==='win') balance+=bjBet; else if(result==='lose') balance-=bjBet; await saveBalance();
+    document.getElementById('bjCards').innerText+=`\nDealer: ${bjDealer.join(' ')}\nResultado: ${result}`;
+    document.getElementById('bjActions').innerHTML='';
+  }
+}
+function calcBJScore(cards){
+  let score=0, aces=0;
+  cards.forEach(c=>{ let v=c.slice(0,-1); if(['J','Q','K'].includes(v)) score+=10; else if(v==='A'){ aces+=1; score+=11; } else score+=Number(v); });
+  while(score>21 && aces>0){ score-=10; aces--; }
+  return score;
+}
+
+// ---------- Ruleta Animada ----------
+async function playRoulette(){
+  const bet=Number(document.getElementById('rouBet').value); if(bet>balance){ alert('Saldo insuficiente'); return; }
+  const type=document.getElementById('rouType').value, val=document.getElementById('rouInput').value;
+  const wheel=document.getElementById('rouWheel'); wheel.textContent='🎡'; 
+  await animateWheel(wheel);
+  const result=rand(0,36); const color=result%2===0?'rojo':'negro';
+  let win=false;
+  if(type==='number' && Number(val)===result) win=true;
+  else if(type==='color' && val.toLowerCase()===color) win=true;
+  else if(type==='parity' && ((val.toLowerCase()==='par' && result%2===0) || (val.toLowerCase()==='impar' && result%2!==0))) win=true;
+  if(win) balance+=bet*2; else balance-=bet; await saveBalance();
+  alert(`Ruleta: ${result} (${color})\nResultado: ${win?'Ganaste':'Perdiste'}`);
+  hideGameUI();
+}
+function animateWheel(wheel){ return new Promise(res=>{ let deg=0, interval=setInterval(()=>{ deg+=15; wheel.style.transform=`rotate(${deg}deg)`; },50); setTimeout(()=>{ clearInterval(interval); wheel.style.transform='rotate(0deg)'; res(); },1000); }); }
+
+// ---------- Slots Animada ----------
+async function playSlots(){
+  const bet=Number(document.getElementById('slotBet').value); if(bet>balance){ alert('Saldo insuficiente'); return; }
+  const symbols=['🍒','🍋','🍊','🍇','💎','7️⃣']; const reels=document.getElementById('slotReels');
+  const animInterval=setInterval(()=>{ reels.textContent=symbols.map(()=>symbols[rand(0,5)]).join(' '); },100);
+  setTimeout(()=>{
+    clearInterval(animInterval);
+    const r=[rand(0,5),rand(0,5),rand(0,5)];
+    reels.textContent=r.map(i=>symbols[i]).join(' ');
+    const won=(r[0]===r[1] && r[1]===r[2]);
+    if(won) balance+=bet*5; else balance-=bet;
+    saveBalance();
+    alert(`Tragaperras: ${reels.textContent}\n${won?'Jackpot! Ganaste':'Perdiste'}`);
     hideGameUI();
-  }
+  },1500);
+}
 
-  // ---------- Slots ----------
-  async function playSlots(){
-    const bet=Number(document.getElementById('slotBet').value);
-    if(bet>balance){ alert('Saldo insuficiente'); return; }
-    const symbols=['🍒','🍋','🍊','🍇','💎','7️⃣']; const reels=document.getElementById('slotReels');
-    const animInterval = setInterval(()=>{ reels.textContent=symbols.map(()=>symbols[Math.floor(Math.random()*6)]).join(' '); },100);
-    setTimeout(()=>{
-      clearInterval(animInterval);
-      const r=[Math.floor(Math.random()*6),Math.floor(Math.random()*6),Math.floor(Math.random()*6)];
-      reels.textContent=r.map(i=>symbols[i]).join(' ');
-      const won=(r[0]===r[1] && r[1]===r[2]);
-      if(won) balance+=bet*5; else balance-=bet;
-      saveBalance();
-      alert(`Tragaperras: ${reels.textContent}\n${won?'Jackpot! Ganaste':'Perdiste'}`);
-      hideGameUI();
-    },1500);
-  }
+// ---------- Helpers ----------
+function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
-  // ---------- THREE.js Básico para cámara y NPC ----------
-  const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0b0f1a);
-  const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,1000);
-  camera.position.set(0,1.6,5); camera.rotation.order='YXZ';
-  const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); container.appendChild(renderer.domElement);
-  const floor=new THREE.Mesh(new THREE.PlaneGeometry(30,30), new THREE.MeshStandardMaterial({color:0x333355})); floor.rotation.x=-Math.PI/2; scene.add(floor);
-  const npcMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({color:0x999999}));
-  npcMesh.position.set(0,1,5); scene.add(npcMesh);
+// ---------- THREE.js Básico ----------
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x0b0f1a);
+const camera=new THREE.PerspectiveCamera(75,innerWidth/innerHeight,0.1,1000); camera.position.set(0,1.6,5); camera.rotation.order='YXZ';
+const renderer=new THREE.WebGLRenderer({antialias:true}); renderer.setSize(innerWidth,innerHeight); container.appendChild(renderer.domElement);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(30,30), new THREE.MeshStandardMaterial({color:0x333355})); floor.rotation.x=-Math.PI/2; scene.add(floor);
+const npcMesh=new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({color:0x999999}));
+npcMesh.position.set(0,1,5); scene.add(npcMesh);
 
-  const keys={}; document.addEventListener('keydown',e=>keys[e.code]=true);
-  document.addEventListener('keyup',e=>keys[e.code]=false);
-  let yaw=0,pitch=0;
-  function updateCamera(dt){
-    const forward=new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
-    const right=new THREE.Vector3(); right.crossVectors(forward,camera.up).normalize();
-    const move=new THREE.Vector3();
-    if(keys['KeyW']) move.add(forward); if(keys['KeyS']) move.sub(forward);
-    if(keys['KeyD']) move.add(right); if(keys['KeyA']) move.sub(right);
-    move.multiplyScalar(3*dt); camera.position.add(move);
-  }
+const keys={}; document.addEventListener('keydown',e=>keys[e.code]=true);
+document.addEventListener('keyup',e=>keys[e.code]=false);
+let yaw=0,pitch=0;
+function updateCamera(dt){
+  const forward=new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
+  const right=new THREE.Vector3(); right.crossVectors(forward,camera.up).normalize();
+  const move=new THREE.Vector3();
+  if(keys['KeyW']) move.add(forward); if(keys['KeyS']) move.sub(forward);
+  if(keys['KeyD']) move.add(right); if(keys['KeyA']) move.sub(right);
+  move.multiplyScalar(3*dt); camera.position.add(move);
+}
+document.addEventListener('keydown',async e=>{ if(e.code==='KeyE'){ if(camera.position.distanceTo(npcMesh.position)<3) claimDaily(); } });
 
-  document.addEventListener('keydown',async e=>{
-    if(e.code==='KeyE'){
-      const dist = camera.position.distanceTo(npcMesh.position);
-      if(dist<3) claimDaily();
-    }
-  });
-
-  const clock=new THREE.Clock();
-  function animate(){ requestAnimationFrame(animate); const dt=clock.getDelta(); updateCamera(dt); renderer.render(scene,camera);}
-  animate();
+const clock=new THREE.Clock();
+function animate(){ requestAnimationFrame(animate); const dt=clock.getDelta(); updateCamera(dt); renderer.render(scene,camera);}
+animate();
 })();
 </script>
 </body>
