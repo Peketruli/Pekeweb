@@ -26,27 +26,21 @@
 <div id="npcMsg">Pulsa E para recoger fichas diarias</div>
 
 <script type="module">
-// ------------------ PARTE 1/4 ------------------
-// Setup inicial, escena, cámara, renderer, luces,
-// helpers para texturas Canvas y controles / raycast.
-// Pegar primero (luego PARTES 2,3,4 en ese orden).
-
 import * as THREE from 'https://unpkg.com/three@0.155.0/build/three.module.js';
 
-/////////////////////////////////////////////////////////////////////
-// Elementos DOM y utilidades
-/////////////////////////////////////////////////////////////////////
+/* ---------------------------
+   Helpers / elementos DOM
+   --------------------------- */
 const modal = document.getElementById('modal');
 const container = document.getElementById('container');
 const npcMsg = document.getElementById('npcMsg');
 const balanceEl = document.getElementById('balance');
 
-function rand(min, max){ return Math.floor(Math.random()*(max-min+1))+min; }
-function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
-/////////////////////////////////////////////////////////////////////
-// Escena, cámara, renderer
-/////////////////////////////////////////////////////////////////////
+/* ---------------------------
+   Escena, cámara y renderer
+   --------------------------- */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0f1a);
 
@@ -57,119 +51,174 @@ camera.rotation.order = 'YXZ';
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 container.appendChild(renderer.domElement);
 
-/////////////////////////////////////////////////////////////////////
-// Luces globales
-/////////////////////////////////////////////////////////////////////
+/* ---------------------------
+   Luces
+   --------------------------- */
 const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.8);
-hemi.position.set(0,50,0);
-scene.add(hemi);
-
-const ambient = new THREE.AmbientLight(0xffffff, 0.25);
-scene.add(ambient);
+hemi.position.set(0,50,0); scene.add(hemi);
+const ambient = new THREE.AmbientLight(0xffffff, 0.25); scene.add(ambient);
 
 const dir = new THREE.DirectionalLight(0xfff6d6, 0.6);
-dir.position.set(5,10,5);
-dir.castShadow = true;
-// ajustar cámara de sombras para área de juego
+dir.position.set(5,10,5); dir.castShadow = true;
 dir.shadow.camera.left = -10; dir.shadow.camera.right = 10;
 dir.shadow.camera.top = 10; dir.shadow.camera.bottom = -10;
-dir.shadow.mapSize.set(2048,2048);
 scene.add(dir);
 
-/////////////////////////////////////////////////////////////////////
-// Helpers: crear CanvasTexture (reutilizable)
-/////////////////////////////////////////////////////////////////////
-function createCanvasTexture(drawFn, size = 512, options = {}) {
+/* ---------------------------
+   Texturas generadas por Canvas
+   --------------------------- */
+function createCanvasTexture(drawFn, size = 512){
   const canvas = document.createElement('canvas');
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext('2d');
   drawFn(ctx, size);
   const tex = new THREE.CanvasTexture(canvas);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  if(options.repeat) tex.repeat.set(options.repeat[0], options.repeat[1]);
-  if(options.encoding) tex.encoding = options.encoding;
+  tex.repeat.set(1,1);
   return tex;
 }
 
-// Permite crear texturas más tarde (parte 2) y reasignarlas a materiales
-// Placeholder minimal para evitar errores si partes posteriores tardan.
-const PLACEHOLDER_COLOR = new THREE.Color(0x222222);
-
-/////////////////////////////////////////////////////////////////////
-// Suelo y paredes básicos: materiales con mapas que se rellenarán luego
-/////////////////////////////////////////////////////////////////////
-let floor, floorMat, wallMat;
-(function initRoomBasic(){
-  // material provisional (se reemplazará con mapas en Parte 2)
-  floorMat = new THREE.MeshStandardMaterial({ color: 0x513923, roughness: 0.9 });
-  floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
-  floor.rotation.x = -Math.PI/2;
-  floor.receiveShadow = true;
-  scene.add(floor);
-
-  wallMat = new THREE.MeshStandardMaterial({ color: 0x151827, roughness: 0.95 });
-  function makeWall(x,z,rotY=0){
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(30,6,0.2), wallMat);
-    wall.position.set(x,3,z);
-    wall.rotation.y = rotY;
-    wall.receiveShadow = true;
-    scene.add(wall);
+// Tapete tipo casino (verde)
+const velvetTex = createCanvasTexture((ctx, s) => {
+  ctx.fillStyle = '#174938';
+  ctx.fillRect(0,0,s,s);
+  // finas líneas para "grano"
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.lineWidth = 1;
+  for(let i=0;i<s;i+=12){
+    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke();
   }
-  makeWall(0,-15);
-  makeWall(0,15,Math.PI);
-  makeWall(-15,0,Math.PI/2);
-  makeWall(15,0,-Math.PI/2);
-})();
+  // borde
+  ctx.strokeStyle = '#7a2f1f';
+  ctx.lineWidth = Math.max(2, s/180);
+  ctx.strokeRect(4,4,s-8,s-8);
+});
 
-/////////////////////////////////////////////////////////////////////
-// Interactables array (se irá llenando en Parte 3)
-/////////////////////////////////////////////////////////////////////
+// Madera simple para suelo
+const woodTex = createCanvasTexture((ctx,s) => {
+  ctx.fillStyle = '#513923';
+  ctx.fillRect(0,0,s,s);
+  ctx.strokeStyle = '#66432a';
+  ctx.lineWidth = Math.max(2, s/120);
+  for(let i=0;i<s;i+=32){
+    ctx.beginPath(); ctx.moveTo(0,i+4); ctx.lineTo(s,i+4); ctx.stroke();
+  }
+});
+
+// Tela de pared (sutil)
+const fabricTex = createCanvasTexture((ctx,s) => {
+  ctx.fillStyle = '#151827';
+  ctx.fillRect(0,0,s,s);
+  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+  ctx.lineWidth = 1;
+  for(let i=0;i<s;i+=8){
+    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke();
+  }
+});
+
+// Pantalla tragaperras (oscura)
+const slotScreenTex = createCanvasTexture((ctx,s) => {
+  ctx.fillStyle = '#0b0b0b';
+  ctx.fillRect(0,0,s,s);
+  ctx.fillStyle = '#111';
+  ctx.fillRect(6,6,s-12,s-12);
+  // sutil brillo
+  const g = ctx.createLinearGradient(0,0,0,s);
+  g.addColorStop(0,'rgba(255,255,255,0.02)');
+  g.addColorStop(1,'rgba(0,0,0,0.06)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,s,s);
+});
+
+/* ---------------------------
+   Suelo y paredes
+   --------------------------- */
+const floorMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.9 });
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
+floor.rotation.x = -Math.PI/2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const wallMat = new THREE.MeshStandardMaterial({ map: fabricTex, roughness: 0.95 });
+function makeWall(x,z,rotY=0){
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(30,6,0.2), wallMat);
+  wall.position.set(x,3,z); wall.rotation.y = rotY;
+  wall.receiveShadow = true; scene.add(wall);
+}
+makeWall(0,-15); makeWall(0,15,Math.PI);
+makeWall(-15,0,Math.PI/2); makeWall(15,0,-Math.PI/2);
+
+/* ---------------------------
+   Objetos interactuables
+   --------------------------- */
 const interact = [];
 function addObject(mesh, type){
   mesh.userData.type = type;
-  mesh.castShadow = true;
-  mesh.receiveShadow = true;
-  interact.push(mesh);
-  scene.add(mesh);
+  mesh.castShadow = true; mesh.receiveShadow = true;
+  interact.push(mesh); scene.add(mesh);
 }
 
-/////////////////////////////////////////////////////////////////////
-// LUCES LOCALES (función, se usarán en Parte 3 también)
-/////////////////////////////////////////////////////////////////////
-function addTableLight(x, z, intensity = 0.7, distance = 6){
-  const light = new THREE.PointLight(0xffddaa, intensity, distance);
-  light.position.set(x, 3, z);
-  light.castShadow = true;
-  scene.add(light);
-  return light;
-}
+// Blackjack table
+const bjMat = new THREE.MeshStandardMaterial({ map: velvetTex, roughness: 0.6, metalness: 0.05 });
+const bjTable = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.3,32), bjMat);
+bjTable.position.set(-4,0.3,0); addObject(bjTable,'blackjack');
 
-/////////////////////////////////////////////////////////////////////
-// Controles: WASD para moverse (relativo a cámara) + flechas para mirar
-/////////////////////////////////////////////////////////////////////
+// Ruleta base + disco
+const ruletaBaseMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.6, roughness: 0.3 });
+const ruletaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.4,64), ruletaBaseMat);
+ruletaBase.position.set(0,0.2,0); addObject(ruletaBase,'roulette');
+
+const ruletaDisk = new THREE.Mesh(
+  new THREE.CylinderGeometry(1.15,1.15,0.08,64),
+  new THREE.MeshStandardMaterial({ map: velvetTex, metalness: 0.2, roughness: 0.5 })
+);
+ruletaDisk.rotation.x = Math.PI/2;
+ruletaDisk.position.copy(ruletaBase.position).add(new THREE.Vector3(0,0.25,0));
+scene.add(ruletaDisk);
+
+// Slot machine
+const slotBodyMat = new THREE.MeshStandardMaterial({ map: fabricTex, metalness: 0.35, roughness: 0.5 });
+const slot = new THREE.Mesh(new THREE.BoxGeometry(1.0,2.0,1.0), slotBodyMat);
+slot.position.set(4,1,0); addObject(slot,'slots');
+
+const slotScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.35), new THREE.MeshStandardMaterial({ map: slotScreenTex, emissive: 0x000000 }));
+slotScreen.position.set(4,1.25,0.51); scene.add(slotScreen);
+
+// NPC (cofre de fichas diarias)
+const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({ color: 0x999999 }));
+npc.position.set(0,1,5); addObject(npc,'npc');
+
+/* ---------------------------
+   Iluminación local sobre mesas
+   --------------------------- */
+function addTableLight(x,z){
+  const light = new THREE.PointLight(0xffddaa, 0.7, 6);
+  light.position.set(x,3,z); scene.add(light);
+}
+addTableLight(-4,0); addTableLight(0,0); addTableLight(4,0);
+
+/* ---------------------------
+   Controles de movimiento
+   --------------------------- */
 const keys = {};
-document.addEventListener('keydown', (e) => { keys[e.code] = true; });
-document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+document.addEventListener('keydown', e => keys[e.code] = true);
+document.addEventListener('keyup', e => keys[e.code] = false);
 
-// balance simple
 let balance = 1000;
-function setBal(v){ balance = Math.round(v); if(balanceEl) balanceEl.textContent = balance; }
+function setBal(v){ balance = Math.round(v); balanceEl.textContent = balance; }
 setBal(balance);
 
-// cámara libre con yaw/pitch controlado por flechas
 let yaw = 0, pitch = 0;
-const yawSpeed = 1.8, pitchSpeed = 1.2;
-const pitchLimit = Math.PI/2 - 0.05;
+const yawSpeed = 1.8, pitchSpeed = 1.2, pitchLimit = Math.PI/2 - 0.05;
 
 function updateCameraRotation(dt){
   if(keys['ArrowLeft']) yaw += yawSpeed * dt;
   if(keys['ArrowRight']) yaw -= yawSpeed * dt;
   if(keys['ArrowUp']) pitch += pitchSpeed * dt;
   if(keys['ArrowDown']) pitch -= pitchSpeed * dt;
-  pitch = clamp(pitch, -pitchLimit, pitchLimit);
+  pitch = Math.max(-pitchLimit, Math.min(pitchLimit, pitch));
   camera.rotation.y = yaw;
   camera.rotation.x = pitch;
 }
@@ -179,8 +228,7 @@ function updateCameraPosition(dt){
   const forward = new THREE.Vector3();
   camera.getWorldDirection(forward);
   forward.y = 0; forward.normalize();
-  const right = new THREE.Vector3();
-  right.crossVectors(forward, camera.up).normalize();
+  const right = new THREE.Vector3(); right.crossVectors(forward, camera.up).normalize();
   const move = new THREE.Vector3();
   if(keys['KeyW']) move.add(forward);
   if(keys['KeyS']) move.sub(forward);
@@ -190,698 +238,49 @@ function updateCameraPosition(dt){
   camera.position.add(move);
 }
 
-/////////////////////////////////////////////////////////////////////
-// RAYCAST para detectar interactuables (tecla E)
-/////////////////////////////////////////////////////////////////////
+/* ---------------------------
+   Raycast para interacción (E)
+   --------------------------- */
 const ray = new THREE.Raycaster();
 let lookingAt = null;
-
 function checkInteraction(){
-  // ray desde la posición de la cámara en la dirección que mira
   ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
   const hits = ray.intersectObjects(interact, false);
-  if(!hits || hits.length === 0 || hits[0].distance > 4){
-    lookingAt = null;
-    if(npcMsg) npcMsg.style.display = 'none';
-    return;
+  if(hits.length === 0 || hits[0].distance > 4){
+    lookingAt = null; npcMsg.style.display = 'none'; return;
   }
   lookingAt = hits[0].object;
   if(lookingAt.userData.type === 'npc'){
-    if(npcMsg) npcMsg.style.display = 'block';
+    npcMsg.style.display = 'block';
   } else {
-    if(npcMsg) npcMsg.style.display = 'none';
+    npcMsg.style.display = 'none';
   }
 }
 
-// tecla E abre UI según tipo (implementación completa en Parte 4)
-document.addEventListener('keydown', (e) => {
-  if(e.code === 'KeyE' && lookingAt){
-    // openUI será implementada en la PARTE 4; comprobamos si existe
-    if(typeof openUI === 'function') {
-      openUI(lookingAt.userData.type);
-    } else {
-      // fallback visual si aún no se ha definido openUI
-      console.log('Interacción: ', lookingAt.userData.type);
-    }
-  }
-});
-
-/////////////////////////////////////////////////////////////////////
-// Animación básica (las partes 2/3/4 añaden más comportamientos a animate)
-/////////////////////////////////////////////////////////////////////
-const clock = new THREE.Clock();
-
-function animate(){
-  requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-
-  // controles
-  updateCameraPosition(dt);
-  updateCameraRotation(dt);
-
-  // interacción
-  checkInteraction();
-
-  // ruleta u otros objetos que puedan existir: comprobar variable opcional
-  if(typeof ruletaDisk !== 'undefined' && typeof ruletaSpinVelocity !== 'undefined'){
-    if(typeof ruletaSpinning !== 'undefined' && ruletaSpinning){
-      // si las variables están definidas, la Parte 4 actualizará la física/animación
-      ruletaDisk.rotation.z += ruletaSpinVelocity * dt;
-      ruletaSpinVelocity = Math.max(0, ruletaSpinVelocity - dt * 2.6);
-      if(ruletaSpinVelocity <= 0.01) {
-        ruletaSpinning = false;
-        ruletaDisk.rotation.z += 0.05;
-      }
-    } else {
-      // rotación idle si existe el disco
-      ruletaDisk.rotation.z += 0.005;
-    }
-  }
-
-  renderer.render(scene, camera);
-}
-animate();
-
-/////////////////////////////////////////////////////////////////////
-// Resize handler
-/////////////////////////////////////////////////////////////////////
-window.addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth, innerHeight);
-});
-
-/////////////////////////////////////////////////////////////////////
-// Optional: double-click para requestPointerLock (mejor experiencia)
-// (No obligatorio; el control sigue funcionando con teclado)
-/////////////////////////////////////////////////////////////////////
-container.addEventListener('dblclick', () => {
-  try {
-    renderer.domElement.requestPointerLock();
-  } catch(e){}
-});
-
-// ------------------ FIN PARTE 1/4 ------------------
-// ------------------ PARTE 2/4 ------------------
-// Texturas ricas generadas por Canvas (tapete, madera, paredes,
-// ruleta dibujada con números, cartas del blackjack, pantalla slots).
-
-// Reutiliza createCanvasTexture de la PARTE 1.
-// Variables que exportamos para usar en Partes 3/4:
-let velvetTex, woodTex, fabricTex, slotScreenTex, rouletteFaceTex;
-let cardFaceTextures = {}; // key: "A♠", "10♥", etc.
-let cardBackTexture;
-
-// ---------------------------
-// Tapete casino (verde) — con zonas marcadas
-// ---------------------------
-velvetTex = createCanvasTexture((ctx, s) => {
-  // fondo verde
-  ctx.fillStyle = '#164c36';
-  ctx.fillRect(0,0,s,s);
-
-  // borde exterior decorativo
-  ctx.strokeStyle = '#7a2f1f';
-  ctx.lineWidth = Math.max(3, s/140);
-  ctx.strokeRect(6,6,s-12,s-12);
-
-  // líneas que simulan tela y marcas (centro y semicírculos para ruleta/bj)
-  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
-  ctx.lineWidth = 1;
-  for(let i=0;i<s;i+=14){
-    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke();
-  }
-
-  // marca central tipo "semi-oval" para blackjack
-  ctx.fillStyle = 'rgba(255,255,255,0.035)';
-  ctx.beginPath();
-  ctx.ellipse(s*0.5, s*0.55, s*0.32, s*0.12, 0, Math.PI*0.02, Math.PI*0.98);
-  ctx.fill();
-
-  // repetir patrón sutil
-}, 1024, { repeat: [2,2] });
-
-// ---------------------------
-// Madera con vetas
-// ---------------------------
-woodTex = createCanvasTexture((ctx, s) => {
-  // base
-  const base = '#4b3322';
-  ctx.fillStyle = base;
-  ctx.fillRect(0,0,s,s);
-
-  // vetas
-  function stripe(y, w, color, alpha) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.bezierCurveTo(s*0.25, y + w*0.3, s*0.75, y - w*0.2, s, y + w*0.1);
-    ctx.lineTo(s, y + w);
-    ctx.bezierCurveTo(s*0.75, y + w*1.2, s*0.25, y + w*0.8, 0, y + w);
-    ctx.closePath();
-    ctx.fillStyle = color;
-    ctx.globalAlpha = alpha;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-  }
-
-  stripe(s*0.05, s*0.1, '#3e2417', 0.35);
-  stripe(s*0.25, s*0.08, '#6a442c', 0.12);
-  stripe(s*0.45, s*0.12, '#26170f', 0.28);
-  stripe(s*0.65, s*0.07, '#5b3925', 0.1);
-  stripe(s*0.85, s*0.09, '#2f1a12', 0.2);
-
-  // barniz sutil
-  const g = ctx.createLinearGradient(0,0,0,s);
-  g.addColorStop(0,'rgba(255,255,255,0.02)');
-  g.addColorStop(0.5,'rgba(255,255,255,0.0)');
-  g.addColorStop(1,'rgba(255,255,255,0.02)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0,0,s,s);
-}, 1024, { repeat: [4,4] });
-
-// ---------------------------
-// Tela pared (textura sutil)
-// ---------------------------
-fabricTex = createCanvasTexture((ctx, s) => {
-  ctx.fillStyle = '#0f1320';
-  ctx.fillRect(0,0,s,s);
-  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
-  ctx.lineWidth = 1;
-  for(let x=0;x<s;x+=8){
-    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,s); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0,x); ctx.lineTo(s,x); ctx.stroke();
-  }
-  // overlay gradient
-  const g = ctx.createLinearGradient(0,0,0,s);
-  g.addColorStop(0,'rgba(50,60,80,0.06)');
-  g.addColorStop(1,'rgba(0,0,0,0.16)');
-  ctx.fillStyle = g; ctx.fillRect(0,0,s,s);
-}, 1024, { repeat: [2,2] });
-
-// ---------------------------
-// Pantalla tragaperras (glow + bevel)
-// ---------------------------
-slotScreenTex = createCanvasTexture((ctx, s) => {
-  // pantalla negra con borde metálico
-  ctx.fillStyle = '#050608';
-  ctx.fillRect(0,0,s,s);
-
-  // inner screen
-  const pad = Math.floor(s*0.06);
-  ctx.fillStyle = '#07080a';
-  ctx.fillRect(pad,pad,s-pad*2,s-pad*2);
-
-  // faux gloss
-  const g = ctx.createLinearGradient(0,0,0,s);
-  g.addColorStop(0,'rgba(255,255,255,0.05)');
-  g.addColorStop(0.25,'rgba(255,255,255,0.02)');
-  g.addColorStop(1,'rgba(0,0,0,0.2)');
-  ctx.fillStyle = g; ctx.fillRect(pad,pad,s-pad*2,s-pad*2);
-
-  // faint grid for "pixel" feel
-  ctx.strokeStyle = 'rgba(255,255,255,0.01)';
-  ctx.lineWidth = 1;
-  for(let i = pad; i < s-pad; i += Math.floor((s-pad*2)/8)){
-    ctx.beginPath(); ctx.moveTo(i, pad); ctx.lineTo(i, s-pad); ctx.stroke();
-  }
-}, 512, { repeat: [1,1] });
-
-// ---------------------------
-// Ruleta: dibujar disco con números y cuños
-// Devuelve un texture usable para el disco y/o para una placa frontal.
-// ---------------------------
-rouletteFaceTex = createCanvasTexture((ctx, s) => {
-  const cx = s/2, cy = s/2, R = s*0.45;
-  // fondo madera oscuro
-  ctx.fillStyle = '#2a1f1a';
-  ctx.fillRect(0,0,s,s);
-
-  // círculo base
-  ctx.beginPath(); ctx.arc(cx,cy,R,0,Math.PI*2); ctx.closePath();
-  const grad = ctx.createRadialGradient(cx,cy,R*0.2,cx,cy,R);
-  grad.addColorStop(0,'#3b2b22'); grad.addColorStop(1,'#1a1410');
-  ctx.fillStyle = grad; ctx.fill();
-
-  // draw pockets (37 pockets: 0..36)
-  const pockets = 37;
-  const angleStep = Math.PI*2 / pockets;
-  const pocketRInner = R*0.54;
-  const pocketROuter = R*0.9;
-
-  // ordering typical European wheel (0 at top)
-  const wheelOrder = [0,32,15,19,4,21,2,25,17,34,6,27,13,36,11,30,8,23,10,5,24,16,33,1,20,14,31,9,22,18,29,7,28,12,35,3,26];
-
-  for(let i=0;i<pockets;i++){
-    const a1 = -Math.PI/2 + i*angleStep;
-    const a2 = a1 + angleStep;
-    // color for pocket
-    const val = wheelOrder[i % wheelOrder.length];
-    const isZero = (val === 0);
-    const redSet = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
-    const pocketColor = isZero ? '#0ea7a7' : (redSet.has(val) ? '#c82b2b' : '#0b0b0b');
-
-    // draw segment
-    ctx.beginPath();
-    ctx.moveTo(cx + pocketRInner*Math.cos(a1), cy + pocketRInner*Math.sin(a1));
-    ctx.lineTo(cx + pocketROuter*Math.cos(a1), cy + pocketROuter*Math.sin(a1));
-    ctx.arc(cx,cy,pocketROuter,a1,a2);
-    ctx.lineTo(cx + pocketRInner*Math.cos(a2), cy + pocketRInner*Math.sin(a2));
-    ctx.arc(cx,cy,pocketRInner,a2,a1,true);
-    ctx.closePath();
-    ctx.fillStyle = pocketColor;
-    ctx.fill();
-
-    // number label
-    const labA = a1 + angleStep*0.5;
-    const lx = cx + (pocketRInner + (pocketROuter-pocketRInner)*0.6) * Math.cos(labA);
-    const ly = cy + (pocketRInner + (pocketROuter-pocketRInner)*0.6) * Math.sin(labA);
-    ctx.save();
-    ctx.translate(lx, ly);
-    ctx.rotate(labA + Math.PI*0.5);
-    ctx.font = `${Math.max(10, Math.floor(s*0.04))}px Arial`;
-    ctx.fillStyle = '#ffffff';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(String(val), 0, 0);
-    ctx.restore();
-  }
-
-  // center hub
-  ctx.beginPath(); ctx.arc(cx,cy,R*0.36,0,Math.PI*2); ctx.closePath();
-  ctx.fillStyle = '#111111';
-  ctx.fill();
-  ctx.strokeStyle = '#333'; ctx.lineWidth = 2; ctx.stroke();
-
-  // small highlights
-  ctx.beginPath(); ctx.arc(cx,cy,R*0.12,0,Math.PI*2); ctx.fillStyle = 'rgba(255,255,255,0.03)'; ctx.fill();
-}, 2048, { repeat: [1,1] });
-
-// ---------------------------
-// Cartas: dibuja cara simple + reverso
-// Genera texturas para cada combinación V+S (A,2..10,J,Q,K) x suits
-// ---------------------------
-(function generateCardTextures(){
-  const suits = {'♠':'black','♣':'black','♥':'red','♦':'red'};
+/* ---------------------------
+   Lógica de juegos
+   --------------------------- */
+function createDeck(){
   const vals = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  const size = 256;
-
-  // back of card
-  cardBackTexture = createCanvasTexture((ctx, s) => {
-    // background pattern
-    ctx.fillStyle = '#0b2a2a';
-    ctx.fillRect(0,0,s,s);
-    // small diamond grid
-    ctx.fillStyle = 'rgba(255,255,255,0.03)';
-    for(let x=10;x<s;x+=16){
-      for(let y=10;y<s;y+=16){
-        ctx.beginPath();
-        ctx.ellipse(x,y,3,5,Math.PI/4,0,Math.PI*2);
-        ctx.fill();
-      }
-    }
-    // center emblem
-    ctx.fillStyle = '#0fffcf';
-    ctx.beginPath(); ctx.arc(s/2, s/2, s*0.12, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#073'; ctx.font = `${Math.floor(s*0.08)}px Arial`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText('PEKE', s/2, s/2);
-  }, size, { repeat: [1,1] });
-
-  for(const v of vals){
-    for(const sSym of Object.keys(suits)){
-      const key = `${v}${sSym}`;
-      cardFaceTextures[key] = createCanvasTexture((ctx, size) => {
-        // white card
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0,0,size,size);
-        // border
-        ctx.strokeStyle = '#ddd'; ctx.lineWidth = 4; ctx.strokeRect(2,2,size-4,size-4);
-
-        // suit symbol big center
-        ctx.font = `${Math.floor(size*0.28)}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillStyle = suits[sSym] === 'red' ? '#d22' : '#111';
-        ctx.fillText(sSym, size/2, size*0.55);
-
-        // top-left value
-        ctx.font = `${Math.floor(size*0.12)}px Arial`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.fillText(v, size*0.06, size*0.06);
-        ctx.fillText(sSym, size*0.06, size*0.12 + Math.floor(size*0.02));
-
-        // bottom-right mirrored
-        ctx.save();
-        ctx.translate(size, size);
-        ctx.rotate(Math.PI);
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-        ctx.fillText(v, size*0.06, size*0.06);
-        ctx.fillText(sSym, size*0.06, size*0.12 + Math.floor(size*0.02));
-        ctx.restore();
-      }, size, { repeat: [1,1] });
-    }
-  }
-})();
-
-// ---------------------------
-// Aplicar texturas a materiales creados en PARTE 1
-// (sustituimos los mapas provisionales)
-if(typeof floorMat !== 'undefined' && floorMat) {
-  floorMat.map = woodTex;
-  floorMat.needsUpdate = true;
+  const suits = ['♠','♥','♦','♣'];
+  const d = [];
+  for(const s of suits) for(const v of vals) d.push({v,s});
+  for(let i=d.length-1;i>0;i--){ const j = rand(0,i); [d[i],d[j]]=[d[j],d[i]]; }
+  return d;
 }
-if(typeof wallMat !== 'undefined' && wallMat) {
-  wallMat.map = fabricTex;
-  wallMat.needsUpdate = true;
-}
+function cardValue(c){ if(c.v==='A') return 11; if(['J','Q','K'].includes(c.v)) return 10; return parseInt(c.v); }
+function handScore(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum+=cardValue(c); } while(sum>21 && aces>0){ sum-=10; aces--; } return sum; }
 
-// Exponer algunas variables globales que PARTES 3/4 usarán:
-window.__CASINO_TEX = {
-  velvetTex,
-  woodTex,
-  fabricTex,
-  slotScreenTex,
-  rouletteFaceTex,
-  cardFaceTextures,
-  cardBackTexture
-};
-
-// ------------------ FIN PARTE 2/4 ------------------
-// ------------------ PARTE 3/4 ------------------
-// Construcción del casino y sus objetos
-// Mesas, ruleta física, blackjack, tragaperras, paredes, luces, deco.
-
-// Accedemos a las texturas cargadas:
-const T = window.__CASINO_TEX;
-
-// --------------------------------------------------
-// MATERIALES
-// --------------------------------------------------
-const matVelvet = new THREE.MeshStandardMaterial({
-  map: T.velvetTex,
-  roughness: 0.9,
-  metalness: 0.0
-});
-const matWood = new THREE.MeshStandardMaterial({
-  map: T.woodTex,
-  roughness: 0.7,
-  metalness: 0.2
-});
-const matFabric = new THREE.MeshStandardMaterial({
-  map: T.fabricTex,
-  roughness: 1.0,
-  metalness: 0.0
-});
-const matMetal = new THREE.MeshStandardMaterial({
-  color: 0xaaaaaa,
-  roughness: 0.3,
-  metalness: 1.0
-});
-
-// --------------------------------------------------
-// PAREDES + DECORACIÓN
-// --------------------------------------------------
-(function createWalls(){
-  const geo = new THREE.BoxGeometry(40, 10, 1);
-  const wall1 = new THREE.Mesh(geo, matFabric);
-  wall1.position.set(0, 5, -20);
-  scene.add(wall1);
-
-  const wall2 = wall1.clone();
-  wall2.position.set(0, 5, 20);
-  scene.add(wall2);
-
-  const wall3 = new THREE.Mesh(new THREE.BoxGeometry(1,10,40), matFabric);
-  wall3.position.set(-20,5,0);
-  scene.add(wall3);
-
-  const wall4 = wall3.clone();
-  wall4.position.set(20,5,0);
-  scene.add(wall4);
-})();
-
-// --------------------------------------------------
-// LÁMPARAS COLGANTES
-// --------------------------------------------------
-(function lamps(){
-  const lampGeo = new THREE.SphereGeometry(0.4, 16, 16);
-  for(let x=-10; x<=10; x+=5){
-    for(let z=-10; z<=10; z+=5){
-      const lamp = new THREE.Mesh(lampGeo, new THREE.MeshStandardMaterial({ color: 0xffffdd, emissive: 0xffffaa }));
-      lamp.position.set(x, 8, z);
-      scene.add(lamp);
-
-      const light = new THREE.PointLight(0xffffff, 0.6, 15);
-      light.position.set(x, 8, z);
-      scene.add(light);
-    }
-  }
-})();
-
-// --------------------------------------------------
-// MESA DE RULETA
-// --------------------------------------------------
-let rouletteWheel, rouletteBall, rouletteRotation = 0;
-
-(function createRoulette(){
-  // Mesa (base)
-  const table = new THREE.Mesh(
-    new THREE.CylinderGeometry(3,3,0.4,32),
-    matWood
-  );
-  table.position.set(-10,0.2,0);
-  scene.add(table);
-
-  // Tapete circular
-  const carpet = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.8,2.8,0.1,64),
-    matVelvet
-  );
-  carpet.position.set(-10,0.35,0);
-  scene.add(carpet);
-
-  // Disco de la ruleta
-  const wheelMat = new THREE.MeshStandardMaterial({
-    map: T.rouletteFaceTex,
-    roughness: 0.6,
-    metalness: 0.3
-  });
-
-  rouletteWheel = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.6,2.6,0.3,64),
-    wheelMat
-  );
-  rouletteWheel.rotation.x = Math.PI/2;
-  rouletteWheel.position.set(-10,0.55,0);
-  scene.add(rouletteWheel);
-
-  // Bola
-  rouletteBall = new THREE.Mesh(
-    new THREE.SphereGeometry(0.12,16,16),
-    new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2 })
-  );
-  rouletteBall.position.set(-10, 0.75, 2.4);
-  scene.add(rouletteBall);
-})();
-
-// --------------------------------------------------
-// MESA DE BLACKJACK
-// --------------------------------------------------
-let blackjackTable, blackjackCards = [];
-
-(function createBlackjackTable(){
-  // Base madera
-  blackjackTable = new THREE.Mesh(
-    new THREE.BoxGeometry(5,0.5,3),
-    matWood
-  );
-  blackjackTable.position.set(0,0.25,-10);
-  scene.add(blackjackTable);
-
-  // Tapete
-  const velvet = new THREE.Mesh(
-    new THREE.BoxGeometry(4.7,0.05,2.7),
-    matVelvet
-  );
-  velvet.position.set(0,0.53,-10);
-  scene.add(velvet);
-
-  // Tarjetas placeholder (se posicionan luego en la lógica del BJ)
-  function createCardMesh(){
-    const geo = new THREE.BoxGeometry(0.85,0.02,1.2);
-    const mat = new THREE.MeshStandardMaterial({
-      map: T.cardBackTexture
-    });
-    const c = new THREE.Mesh(geo, mat);
-    c.visible = false;
-    scene.add(c);
-    return c;
-  }
-
-  for(let i=0; i<10; i++){
-    blackjackCards.push(createCardMesh());
-  }
-})();
-
-// --------------------------------------------------
-// TRAGAPERRAS
-// --------------------------------------------------
-let slotMachine, slotReels = [];
-
-(function createSlotMachine(){
-  // Cuerpo
-  slotMachine = new THREE.Mesh(
-    new THREE.BoxGeometry(2,3,1.2),
-    matWood
-  );
-  slotMachine.position.set(10,1.5,0);
-  scene.add(slotMachine);
-
-  // Pantalla
-  const screen = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.6,1.2),
-    new THREE.MeshStandardMaterial({ map: T.slotScreenTex })
-  );
-  screen.position.set(10,2,0.61);
-  scene.add(screen);
-
-  // Reels (3 columnas)
-  function makeReel(x){
-    const r = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.4,0.4,1,32),
-      new THREE.MeshStandardMaterial({ color: 0xffffff })
-    );
-    r.rotation.z = Math.PI/2;
-    r.position.set(x,1.2,0.61);
-    scene.add(r);
-    return r;
-  }
-
-  slotReels.push(makeReel(9.6));
-  slotReels.push(makeReel(10));
-  slotReels.push(makeReel(10.4));
-})();
-
-// --------------------------------------------------
-// SILLAS
-// --------------------------------------------------
-(function createChairs(){
-  const chairMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-
-  function makeChair(x,z){
-    const seat = new THREE.Mesh(new THREE.BoxGeometry(1,0.2,1), chairMat);
-    seat.position.set(x,0.6,z);
-    scene.add(seat);
-
-    const back = new THREE.Mesh(new THREE.BoxGeometry(1,1,0.2), chairMat);
-    back.position.set(x,1.2,z-0.4);
-    scene.add(back);
-  }
-
-  makeChair(0,-12);
-  makeChair(-10,-2);
-  makeChair(10,-2);
-})();
-
-// --------------------------------------------------
-// PEQUEÑOS DETALLES
-// --------------------------------------------------
-(function decorations(){
-  const poleGeo = new THREE.CylinderGeometry(0.05,0.05,2,16);
-  for(let i=-18; i<=18; i+=6){
-    const pole = new THREE.Mesh(poleGeo, matMetal);
-    pole.position.set(i,1,15);
-    scene.add(pole);
-  }
-})();
-
-// --------------------------------------------------
-// ANIMACIONES DE OBJETOS (ruleta + reels)
-// --------------------------------------------------
-function updateCasinoObjects(dt){
-  // Ruleta gira siempre un poco
-  rouletteRotation += dt * 0.8;
-  rouletteWheel.rotation.y = rouletteRotation;
-
-  // Bola gira alrededor
-  const r = 2.3;
-  const bx = -10 + Math.cos(rouletteRotation * 1.4) * r;
-  const bz = 0 + Math.sin(rouletteRotation * 1.4) * r;
-  rouletteBall.position.set(bx, 0.75, bz);
-
-  // Tragamonedas (si están girando, se controla en parte 4)
-}
-window.updateCasinoObjects = updateCasinoObjects;
-
-// ------------------ FIN PARTE 3/4 ------------------
-// ------------------ PARTE 4/4 ------------------
-// Lógica completa: Blackjack, Ruleta, Slots, animaciones,
-// openUI, sincronización con objetos 3D y balance.
-
-// Accedemos a texturas y objetos creados en las Partes anteriores
-const TEX = window.__CASINO_TEX || {};
-// blackjackCards (array) y slotReels, rouletteWheel, rouletteBall vienen de Parte 3
-// Blackjack table card meshes: blackjackCards
-// Slot machine reels: slotReels
-// Roulette wheel: rouletteWheel
-
-// Compatibilidad con animate() de Parte 1: expongo ruletaDisk, ruletaSpinVelocity, ruletaSpinning
-let ruletaDisk = (typeof rouletteWheel !== 'undefined') ? rouletteWheel : undefined;
-let ruletaSpinVelocity = 0;
-let ruletaSpinning = false;
-let ruletaResolveTimer = null;
-
-// Si la Parte 3 definió updateCasinoObjects, mantenemos la llamada en paralelo
-if(typeof window.updateCasinoObjects === 'function') {
-  // lanzamos un loop paralelo para actualizar objetos con dt
-  (function loopObjs(){
-    requestAnimationFrame(loopObjs);
-    const dt = clock.getDelta();
-    try { window.updateCasinoObjects(dt); } catch(e){ /* noop */ }
-  })();
-}
-
-// ------------------ UTILIDADES PARA UI ------------------
-function clampInt(v, minV, maxV){ v = Math.floor(v); if(isNaN(v)) v = minV; return Math.max(minV, Math.min(maxV, v)); }
-
-// aseguramos que blackjackCards existan (Parte3)
-if(typeof blackjackCards === 'undefined') blackjackCards = [];
-
-// Helper para aplicar textura a un mesh (si la textura existe)
-function applyTextureSafe(mesh, tex){
-  if(!mesh || !mesh.material) return;
-  if(tex) {
-    mesh.material.map = tex;
-    mesh.material.needsUpdate = true;
-  }
-}
-
-// ------------------ OPEN UI (invocado por la tecla E) ------------------
-function openUI(type){
-  if(!modal) return;
-  if(type === 'blackjack') { renderBlackjackUI(); modal.style.display = 'block'; }
-  else if(type === 'roulette') { renderRouletteUI(); modal.style.display = 'block'; }
-  else if(type === 'slots') { renderSlotsUI(); modal.style.display = 'block'; }
-  else if(type === 'npc') {
-    setBal(balance + 100);
-    if(npcMsg){ npcMsg.innerText = '¡Has recogido tus fichas diarias!'; npcMsg.style.display = 'block'; setTimeout(()=> npcMsg.style.display = 'none', 1400); }
-  }
-}
-
-// Hacemos visible openUI global (Parte1 verifica typeof openUI)
-window.openUI = openUI;
-
-// ------------------ BLACKJACK (UI + lógica que actualiza malla 3D) ------------------
+/* ---------------------------
+   Blackjack UI & lógica
+   --------------------------- */
 function renderBlackjackUI(){
   modal.innerHTML = '';
-  const el = document.createElement('div');
-  el.className = 'gameUI';
+  const el = document.createElement('div'); el.className = 'gameUI';
   el.innerHTML = `
     <h2>Blackjack</h2>
     <div>Saldo: <span id='bjBal'>${balance}</span> €</div>
-    <label>Apuesta: <input id='bjBet' type='number' value='10' min='1' style='width:90px'></label>
+    <label>Apuesta: <input id='bjBet' type='number' value='10' min='1' style='width:80px'></label>
     <div id='bjTable' style='margin-top:8px'></div>
     <div style='margin-top:8px'>
       <button id='bjDeal'>Repartir</button>
@@ -894,7 +293,6 @@ function renderBlackjackUI(){
   `;
   modal.appendChild(el);
 
-  // UI refs
   const bjTable = el.querySelector('#bjTable');
   const bjBal = el.querySelector('#bjBal');
   const btnHit = el.querySelector('#bjHit');
@@ -902,74 +300,15 @@ function renderBlackjackUI(){
   const btnDouble = el.querySelector('#bjDouble');
   const btnSplit = el.querySelector('#bjSplit');
 
-  // Game state
-  let deck=[], player=[], player2=[], dealer=[], bet=0, inRound=false, splitMode=false;
-  // local copy of card meshes for visual dealing
-  const localCards = blackjackCards; // from Parte3
+  let deck, player=[], player2=[], dealer=[], bet=0, inRound=false, splitMode=false;
 
-  function makeDeck(){
-    const vals=['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-    const suits=['♠','♥','♦','♣'];
-    const d=[];
-    for(const s of suits) for(const v of vals) d.push({v,s});
-    for(let i=d.length-1;i>0;i--){ const j = rand(0,i); [d[i],d[j]]=[d[j],d[i]]; }
-    return d;
-  }
-
-  function cardValue(c){ if(c.v==='A') return 11; if(['J','Q','K'].includes(c.v)) return 10; return parseInt(c.v); }
-  function handScore(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum += cardValue(c); } while(sum>21 && aces>0){ sum -= 10; aces--; } return sum; }
-
-  function updateTableText(){
-    const dealerDisplay = inRound ? (dealer.length ? dealer[0].v+dealer[0].s + ' ?' : '?') : dealer.map(c=>c.v+c.s).join(' ');
+  function updateTable(){
+    const dealerDisplay = inRound ? (dealer[0].v + dealer[0].s + ' ?') : dealer.map(c=>c.v+c.s).join(' ');
     let playerDisplay = player.map(c=>c.v+c.s).join(' ');
-    if(splitMode) playerDisplay += ' | ' + player2.map(c=>c.v+c.s).join(' ');
-    bjTable.innerHTML = `<div>Jugador: ${playerDisplay} (${handScore(player)})</div><div>Dealer: ${dealerDisplay}</div>`;
+    if(splitMode) playerDisplay += ` | ${player2.map(c=>c.v+c.s).join(' ')}`;
+    bjTable.innerHTML = `<div>Jugador: ${playerDisplay} (${handScore(player)})</div>
+                         <div>Dealer: ${dealerDisplay}</div>`;
     bjBal.textContent = balance;
-  }
-
-  // Visual: coloca las mallas de cartas sobre la mesa
-  function layout3DCards(){
-    // base position near blackjack table from Parte3: table at (0,0.25,-10)
-    const baseX = 0, baseY = 0.55, baseZ = -10;
-    const spacing = 0.95;
-    let idx = 0;
-
-    function placeCardMesh(mesh, xOffset, zOffset, angle = 0){
-      if(!mesh) return;
-      mesh.visible = true;
-      mesh.position.set(baseX + xOffset, baseY, baseZ + zOffset);
-      mesh.rotation.set(-Math.PI/2, 0, angle);
-      // apply texture for top face: we use map (will apply to all faces)
-    }
-
-    // hide all first
-    for(const m of localCards) m.visible = false;
-
-    // dealer cards (top row)
-    for(let i=0;i<dealer.length;i++){
-      const m = localCards[idx++];
-      const tex = (i===0 && inRound) ? TEX.cardBackTexture : TEX.cardFaceTextures[dealer[i].v + dealer[i].s];
-      applyTextureSafe(m, tex || TEX.cardBackTexture);
-      placeCardMesh(m, -0.8 + i*0.45, -0.4, 0);
-    }
-
-    // player cards (bottom row)
-    for(let i=0;i<player.length;i++){
-      const m = localCards[idx++];
-      const tex = TEX.cardFaceTextures[player[i].v + player[i].s];
-      applyTextureSafe(m, tex || TEX.cardBackTexture);
-      placeCardMesh(m, -0.8 + i*0.45, 0.4, 0);
-    }
-
-    // second hand if split
-    if(splitMode){
-      for(let i=0;i<player2.length;i++){
-        const m = localCards[idx++];
-        const tex = TEX.cardFaceTextures[player2[i].v + player2[i].s];
-        applyTextureSafe(m, tex || TEX.cardBackTexture);
-        placeCardMesh(m, -0.8 + i*0.45, 1.0, 0);
-      }
-    }
   }
 
   function dealerPlay(){
@@ -1004,39 +343,34 @@ function renderBlackjackUI(){
       setBal(balance);
       bjTable.innerHTML += `<div>Resultado: ${res}</div>`;
     }
-    layout3DCards();
   }
 
-  // UI button handlers
   el.querySelector('#bjDeal').onclick = () => {
     bet = Math.min(balance, Number(el.querySelector('#bjBet').value) || 0);
     if(bet <= 0){ alert('Apuesta inválida'); return; }
     balance -= bet; setBal(balance);
-    deck = makeDeck();
+    deck = createDeck();
     player = [deck.pop(), deck.pop()];
     dealer = [deck.pop(), deck.pop()];
     player2 = []; inRound = true; splitMode = false;
     btnHit.disabled = false; btnStand.disabled = false; btnDouble.disabled = false;
     btnSplit.disabled = !(player[0].v === player[1].v);
-    updateTableText();
-    layout3DCards();
+    updateTable();
   };
 
   btnHit.onclick = () => {
     if(!inRound) return;
     player.push(deck.pop());
     if(handScore(player) > 21) endRound();
-    updateTableText();
-    layout3DCards();
+    updateTable();
   };
 
-  btnStand.onclick = () => { endRound(); updateTableText(); };
+  btnStand.onclick = () => { endRound(); updateTable(); };
 
   btnDouble.onclick = () => {
     if(balance < bet){ alert('Saldo insuficiente'); return; }
     balance -= bet; bet *= 2; setBal(balance);
-    player.push(deck.pop());
-    endRound(); updateTableText(); layout3DCards();
+    player.push(deck.pop()); endRound(); updateTable();
   };
 
   btnSplit.onclick = () => {
@@ -1048,30 +382,26 @@ function renderBlackjackUI(){
     player2.push(deck.pop());
     splitMode = true;
     btnSplit.disabled = true;
-    updateTableText();
-    layout3DCards();
+    updateTable();
   };
 
-  el.querySelector('#bjClose').onclick = () => {
-    // hide cards visuals
-    for(const m of localCards) if(m) m.visible = false;
-    modal.style.display = 'none';
-  };
+  el.querySelector('#bjClose').onclick = () => { modal.style.display = 'none'; };
 }
 
-// ------------------ ROULETTE (UI + lógica + animaciones que usan ruletaDisk) ------------------
+/* ---------------------------
+   Ruleta UI & lógica
+   --------------------------- */
 function isRed(n){ const reds = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]); return reds.has(n); }
 
-let ruletaResolveTimerLocal = null;
+let ruletaSpinVelocity = 0, ruletaSpinning = false, ruletaResolveTimer = null;
 
 function renderRouletteUI(){
   modal.innerHTML = '';
-  const el = document.createElement('div');
-  el.className = 'gameUI';
+  const el = document.createElement('div'); el.className = 'gameUI';
   el.innerHTML = `
     <h2>Ruleta</h2>
     <div>Saldo: <span id='rBal'>${balance}</span> €</div>
-    <label>Apuesta: <input id='rBet' type='number' value='10' min='1' style='width:90px'></label>
+    <label>Apuesta: <input id='rBet' type='number' value='10' min='1' style='width:80px'></label>
     <label>Tipo: <select id='rType'><option value='number'>Número</option><option value='color'>Color</option><option value='par'>Par/Impar</option></select></label>
     <label id='rNumberWrap'><input id='rNumber' type='number' min='0' max='36' value='7' style='width:80px'></label>
     <label id='rColorWrap' style='display:none'><select id='rColor'><option value='red'>Rojo</option><option value='black'>Negro</option></select></label>
@@ -1098,12 +428,13 @@ function renderRouletteUI(){
     el.querySelector('#rSpin').disabled = true;
     balance -= bet; setBal(balance); rBal.textContent = balance;
 
-    // start spin: we set ruletaSpinVelocity and ruletaSpinning so PART1 animate will animate ruletaDisk
-    ruletaSpinVelocity = 10 + Math.random()*8;
+    // Empieza la animación de la ruleta
+    ruletaSpinVelocity = 8 + Math.random()*6;
     ruletaSpinning = true;
 
-    if(ruletaResolveTimerLocal) clearTimeout(ruletaResolveTimerLocal);
-    ruletaResolveTimerLocal = setTimeout(()=>{
+    if(ruletaResolveTimer) clearTimeout(ruletaResolveTimer);
+    // resolvemos el resultado tras un tiempo
+    ruletaResolveTimer = setTimeout(() => {
       const result = rand(0,36);
       const color = isRed(result) ? 'red' : 'black';
       let win = false, payout = 0;
@@ -1123,29 +454,24 @@ function renderRouletteUI(){
         }
       }
 
-      // stop spinning smoothly by zeroing the velocity over time.
-      const slowDownInterval = setInterval(()=>{
-        ruletaSpinVelocity = Math.max(0, ruletaSpinVelocity - 0.7);
-        if(ruletaSpinVelocity <= 0.05){ clearInterval(slowDownInterval); ruletaSpinning = false; }
-      }, 90);
-
-      // present result after small delay so animation is perceptible
-      setTimeout(()=>{
+      // Espera un poquito para que la animación se note
+      setTimeout(() => {
         if(win){ balance += payout; setBal(balance); rOut.innerHTML = `<div>Sale ${result} (${result===0?'green':color})</div><div>¡Ganas ${payout}€!</div>`; }
         else rOut.innerHTML = `<div>Sale ${result} (${result===0?'green':color})</div><div>Pierdes ${bet}€</div>`;
         el.querySelector('#rSpin').disabled = false;
-      }, 1200);
-    }, 1400);
+      }, 900);
+    }, 1800);
   };
 
   el.querySelector('#rClose').onclick = () => { modal.style.display = 'none'; };
 }
 
-// ------------------ SLOTS (UI + lógica que usa slotReels) ------------------
+/* ---------------------------
+   Slots UI & lógica
+   --------------------------- */
 function renderSlotsUI(){
   modal.innerHTML = '';
-  const el = document.createElement('div');
-  el.className = 'gameUI';
+  const el = document.createElement('div'); el.className = 'gameUI';
   el.innerHTML = `
     <h2>Tragaperras</h2>
     <div>Saldo: <span id='sBal'>${balance}</span> €</div>
@@ -1161,85 +487,102 @@ function renderSlotsUI(){
   const sOut = el.querySelector('#sOut');
   const symbols = ['🍒','🔔','7️⃣','⭐','🍋'];
 
-  // Slot machine visual spin: rotate the cylinder meshes in slotReels
-  let reelSpinIntervals = [];
-
   el.querySelector('#sSpin').onclick = () => {
     const bet = Math.min(balance, Number(el.querySelector('#sBet').value) || 0);
     if(bet <= 0){ alert('Apuesta inválida'); return; }
     balance -= bet; setBal(balance); sBal.textContent = balance;
     el.querySelector('#sSpin').disabled = true;
-
-    // Simulate spinning by rotating cylinders quickly for a short time, then stop with random symbols
-    const spinTime = 900 + Math.random()*600;
-    const start = performance.now();
-
-    // stop any existing intervals
-    reelSpinIntervals.forEach(id => clearInterval(id));
-    reelSpinIntervals = [];
-
-    // animate three textual reels in DOM + 3D rotation
-    const finalSymbols = [null,null,null];
-    const spinLoop = () => {
-      const tnow = performance.now();
-      const elapsed = tnow - start;
-      // update DOM textual reels for feedback
+    let t = 0; let final = ['', '', ''];
+    const interval = setInterval(()=>{
+      t++;
       const A = symbols[rand(0,symbols.length-1)];
       const B = symbols[rand(0,symbols.length-1)];
       const C = symbols[rand(0,symbols.length-1)];
       reels.textContent = `${A} ${B} ${C}`;
-
-      // rotate 3D cylinders a bit if present
-      for(let i=0;i<slotReels.length;i++){
-        const r = slotReels[i];
-        if(r) r.rotation.x += 0.6 + Math.random()*0.8;
-      }
-
-      if(elapsed > spinTime){
-        // choose final
-        finalSymbols[0] = symbols[rand(0,symbols.length-1)];
-        finalSymbols[1] = symbols[rand(0,symbols.length-1)];
-        finalSymbols[2] = symbols[rand(0,symbols.length-1)];
-        reels.textContent = `${finalSymbols[0]} ${finalSymbols[1]} ${finalSymbols[2]}`;
-
-        // small 3D settle: rotate each reel to a deterministic orientation
-        for(let i=0;i<slotReels.length;i++){
-          const r = slotReels[i];
-          if(r) {
-            // set rotation to a pseudo-random final angle
-            r.rotation.x += (Math.PI * (2 + Math.random()));
-          }
-        }
-
-        // evaluate wins
-        if(finalSymbols[0] === finalSymbols[1] && finalSymbols[1] === finalSymbols[2]){
-          const win = bet * 10; balance += win; setBal(balance); sOut.innerHTML = `<div>¡Jackpot! Ganaste ${win}€</div>`;
-        } else if(finalSymbols[0] === finalSymbols[1] || finalSymbols[1] === finalSymbols[2] || finalSymbols[0] === finalSymbols[2]){
-          const win = bet * 2; balance += win; setBal(balance); sOut.innerHTML = `<div>Dos iguales — Ganaste ${win}€</div>`;
-        } else {
-          sOut.innerHTML = `<div>No hay coincidencias — Pierdes ${bet}€</div>`;
-        }
+      final = [A,B,C];
+      reels.style.transform = 'scale(1.06)';
+      setTimeout(()=> reels.style.transform = 'scale(1)', 60);
+      if(t > 28){
+        clearInterval(interval);
         el.querySelector('#sSpin').disabled = false;
-        return;
+        const [A2,B2,C2] = final;
+        if(A2 === B2 && B2 === C2){
+          const win = bet * 10; balance += win; setBal(balance); sOut.innerHTML = `<div>¡Jackpot! Ganaste ${win}€</div>`;
+        } else if(A2 === B2 || B2 === C2 || A2 === C2){
+          const win = bet * 2; balance += win; setBal(balance); sOut.innerHTML = `<div>Dos iguales — Ganaste ${win}€</div>`;
+        } else sOut.innerHTML = `<div>No hay coincidencias — Pierdes ${bet}€</div>`;
       }
-      requestAnimationFrame(spinLoop);
-    };
-    requestAnimationFrame(spinLoop);
+    }, 50);
   };
 
   el.querySelector('#sClose').onclick = () => { modal.style.display = 'none'; };
 }
 
-// ------------------ Integraciones finales ------------------
-// Aseguramos que ruletaDisk referencia la malla de la Parte 3 (rouletteWheel)
-if(typeof rouletteWheel !== 'undefined') ruletaDisk = rouletteWheel;
+/* ---------------------------
+   Abrir UI según objeto (E)
+   --------------------------- */
+function openUI(type){
+  if(type === 'blackjack'){ modal.style.display = 'block'; renderBlackjackUI(); }
+  else if(type === 'roulette'){ modal.style.display = 'block'; renderRouletteUI(); }
+  else if(type === 'slots'){ modal.style.display = 'block'; renderSlotsUI(); }
+  else if(type === 'npc'){
+    setBal(balance + 100);
+    npcMsg.innerText = '¡Has recogido tus fichas diarias!';
+    npcMsg.style.display = 'block';
+    setTimeout(()=> npcMsg.style.display = 'none', 1400);
+  }
+}
 
-// Exponemos ruleta variables globalmente por si algo las necesita
-window.ruletaDisk = ruletaDisk;
-window.ruletaSpinVelocity = ruletaSpinVelocity;
-window.ruletaSpinning = ruletaSpinning;
+document.addEventListener('keydown', e => {
+  if(e.code === 'KeyE' && lookingAt) openUI(lookingAt.userData.type);
+});
 
-// Fin PARTE 4/4
+/* ---------------------------
+   Animación: incluye spin visual de ruleta
+   --------------------------- */
+const clock = new THREE.Clock();
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = clock.getDelta();
+
+  updateCameraPosition(dt);
+  updateCameraRotation(dt);
+  checkInteraction();
+
+  // ruleta visual damping
+  if(ruletaSpinning){
+    ruletaDisk.rotation.z += ruletaSpinVelocity * dt;
+    ruletaSpinVelocity = Math.max(0, ruletaSpinVelocity - dt * 2.6);
+    if(ruletaSpinVelocity <= 0.01){
+      ruletaSpinning = false;
+      ruletaDisk.rotation.z += 0.05;
+    }
+  } else {
+    ruletaDisk.rotation.z += 0.005;
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+/* ---------------------------
+   Resize
+   --------------------------- */
+window.addEventListener('resize', ()=>{
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ---------------------------
+   Extra: small pointer lock toggle via click (opcional)
+   --------------------------- */
+// Nota: la interacción por click fue eliminada según tu requerimiento; dejamos el click para pedir pointerlock opcional.
+container.addEventListener('dblclick', async () => {
+  try {
+    await renderer.domElement.requestPointerLock();
+  } catch(e){}
+});
 
 </script>
 </body>
