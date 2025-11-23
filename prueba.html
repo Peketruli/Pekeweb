@@ -33,65 +33,47 @@ const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-/* ---------------------------
-   Helpers / elementos DOM
---------------------------- */
-const modal = document.getElementById('modal');
-const container = document.getElementById('container');
-const npcMsg = document.getElementById('npcMsg');
-const balanceEl = document.getElementById('balance');
+// -------------------- USUARIO --------------------
+let currentUser = JSON.parse(localStorage.getItem("currentUser") || "null");
+if (!currentUser) {
+    alert("Debes iniciar sesión para jugar.");
+    throw "Usuario no identificado";
+}
 
+let balance = currentUser.pekepuntos || 0;
+document.getElementById("balance").textContent = balance;
+
+// -------------------- Helpers --------------------
 function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
-/* ---------------------------
-   Balance y Supabase
---------------------------- */
-let balance = 0;
-let lastDaily = null;
-
-async function loadUserData(){
-    const { data, error } = await supabase
-        .from('usuarios')
-        .select('pekepuntos, last_claim')
-        .eq('id', userId)
-        .single();
-    if(error){ alert("Error cargando usuario: " + error.message); balance = 0; lastDaily = null; }
-    else{ balance = data.pekepuntos || 0; lastDaily = data.last_daily; }
-    balanceEl.textContent = balance;
+async function saveBalance() {
+    try {
+        await supabase.from("usuarios").update({ pekepuntos: balance }).eq("id", currentUser.id);
+        currentUser.pekepuntos = balance;
+        localStorage.setItem("currentUser", JSON.stringify(currentUser));
+    } catch(err) { alert("Error guardando balance: " + err.message); }
 }
 
-async function saveBalance(){
-    const { error } = await supabase
-        .from('usuarios')
-        .update({ pekepuntos: balance })
-        .eq('id', userId);
-    if(error) alert("Error guardando balance: " + error.message);
-}
-
-async function claimDaily(){
+// -------------------- Recompensa diaria --------------------
+async function claimDaily() {
     const today = new Date().toISOString().slice(0,10);
-    if(lastDaily === today){
-        npcMsg.innerText = "Ya has recogido tus fichas diarias hoy";
-        npcMsg.style.display = 'block';
-        setTimeout(()=> npcMsg.style.display='none', 2000);
+    const lastClaim = currentUser.last_claim ? currentUser.last_claim.slice(0,10) : null;
+    if (lastClaim === today) {
+        alert("Ya has recogido tus fichas diarias hoy.");
         return;
     }
     balance += 100;
-    lastDaily = today;
-    const { error } = await supabase
-        .from('usuarios')
-        .update({ pekepuntos: balance, last_daily: lastDaily })
-        .eq('id', userId);
-    if(error) alert("Error guardando balance diario: " + error.message);
-    balanceEl.textContent = balance;
-    npcMsg.innerText = "¡Has recogido tus fichas diarias!";
-    npcMsg.style.display = 'block';
-    setTimeout(()=> npcMsg.style.display='none', 2000);
+    currentUser.pekepuntos = balance;
+    currentUser.last_claim = new Date().toISOString();
+    try {
+        await supabase.from("usuarios").update({ pekepuntos: balance, last_claim: currentUser.last_claim }).eq("id", currentUser.id);
+        localStorage.setItem("currentUser", JSON.stringify(currentUser));
+        document.getElementById("balance").textContent = balance;
+        alert("¡Has recogido tus 100 fichas diarias!");
+    } catch(err) { alert("Error al reclamar diario: " + err.message); }
 }
 
-/* ---------------------------
-   Escena, cámara y renderer
---------------------------- */
+// -------------------- ESCENA 3D --------------------
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0f1a);
 
@@ -102,225 +84,110 @@ camera.rotation.order = 'YXZ';
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-container.appendChild(renderer.domElement);
+document.getElementById("container").appendChild(renderer.domElement);
 
-/* ---------------------------
-   Luces
---------------------------- */
+// Luces
 const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.8);
 hemi.position.set(0,50,0); scene.add(hemi);
-const ambient = new THREE.AmbientLight(0xffffff, 0.25); scene.add(ambient);
-
-const dir = new THREE.DirectionalLight(0xfff6d6, 0.6);
-dir.position.set(5,10,5); dir.castShadow = true;
-dir.shadow.camera.left = -10; dir.shadow.camera.right = 10;
-dir.shadow.camera.top = 10; dir.shadow.camera.bottom = -10;
+scene.add(new THREE.AmbientLight(0xffffff,0.25));
+const dir = new THREE.DirectionalLight(0xfff6d6,0.6);
+dir.position.set(5,10,5); dir.castShadow=true;
 scene.add(dir);
 
-/* ---------------------------
-   Texturas generadas por Canvas
---------------------------- */
-function createCanvasTexture(drawFn, size = 512){
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  drawFn(ctx, size);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(1,1);
-  return tex;
+// Texturas básicas
+function createCanvasTexture(drawFn, size=512){
+    const canvas = document.createElement('canvas'); canvas.width=canvas.height=size;
+    const ctx = canvas.getContext('2d');
+    drawFn(ctx,size);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+    return tex;
 }
+const velvetTex = createCanvasTexture((ctx,s)=>{ctx.fillStyle="#174938";ctx.fillRect(0,0,s,s);});
 
-// Tapete tipo casino (verde)
-const velvetTex = createCanvasTexture((ctx, s) => {
-  ctx.fillStyle = '#174938';
-  ctx.fillRect(0,0,s,s);
-  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
-  ctx.lineWidth = 1;
-  for(let i=0;i<s;i+=12){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke(); }
-  ctx.strokeStyle = '#7a2f1f';
-  ctx.lineWidth = Math.max(2, s/180);
-  ctx.strokeRect(4,4,s-8,s-8);
-});
-
-// Suelo y paredes
-const woodTex = createCanvasTexture((ctx,s) => {
-  ctx.fillStyle = '#513923';
-  ctx.fillRect(0,0,s,s);
-  ctx.strokeStyle = '#66432a';
-  ctx.lineWidth = Math.max(2, s/120);
-  for(let i=0;i<s;i+=32){ ctx.beginPath(); ctx.moveTo(0,i+4); ctx.lineTo(s,i+4); ctx.stroke(); }
-});
-
-const fabricTex = createCanvasTexture((ctx,s) => {
-  ctx.fillStyle = '#151827';
-  ctx.fillRect(0,0,s,s);
-  ctx.strokeStyle = 'rgba(255,255,255,0.02)';
-  ctx.lineWidth = 1;
-  for(let i=0;i<s;i+=8){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke(); }
-});
-
-// Ruleta
-const rouletteTex = createCanvasTexture((ctx, s) => {
-  ctx.translate(s/2, s/2);
-  ctx.fillStyle = '#3b2212';
-  ctx.beginPath();
-  ctx.arc(0,0,s/2,0,Math.PI*2);
-  ctx.fill();
-  const cellCount = 37;
-  const anglePer = (Math.PI*2)/cellCount;
-  for(let i=0;i<cellCount;i++){
-    const start = i*anglePer - Math.PI/2;
-    const end = start + anglePer;
-    const isZero = (i===0);
-    ctx.beginPath();
-    ctx.fillStyle = isZero ? '#0b8a12' : (i%2===0?'#d22':'#111');
-    ctx.moveTo(0,0);
-    ctx.arc(0,0,s*0.48,start,end);
-    ctx.closePath(); ctx.fill();
-    ctx.save();
-    ctx.rotate(start + anglePer/2);
-    ctx.fillStyle = isZero?'#fff':'#eee';
-    ctx.font = `${s*0.06}px Arial Black`;
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(i,0,-s*0.35);
-    ctx.restore();
-  }
-  ctx.beginPath();
-  ctx.fillStyle='#8b5a2b';
-  ctx.arc(0,0,s*0.20,0,Math.PI*2); ctx.fill();
-});
-
-/* ---------------------------
-   Suelo, paredes y mesas
---------------------------- */
-const floorMat = new THREE.MeshStandardMaterial({ map: woodTex, roughness: 0.9 });
+// Suelo
+const floorMat = new THREE.MeshStandardMaterial({map: velvetTex, roughness:0.9});
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
-floor.rotation.x = -Math.PI/2;
-floor.receiveShadow = true; scene.add(floor);
+floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor);
 
-const wallMat = new THREE.MeshStandardMaterial({ map: fabricTex, roughness: 0.95 });
-function makeWall(x,z,rotY=0){ const wall = new THREE.Mesh(new THREE.BoxGeometry(30,6,0.2), wallMat); wall.position.set(x,3,z); wall.rotation.y = rotY; wall.receiveShadow=true; scene.add(wall); }
-makeWall(0,-15); makeWall(0,15,Math.PI);
-makeWall(-15,0,Math.PI/2); makeWall(15,0,-Math.PI/2);
+// Objetos de juego
+const bjTable = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.3,32), new THREE.MeshStandardMaterial({map:velvetTex}));
+bjTable.position.set(-4,0.3,0); bjTable.userData.type='blackjack';
+scene.add(bjTable);
 
-// Blackjack table
-const bjMat = new THREE.MeshStandardMaterial({ map: velvetTex, roughness: 0.6, metalness: 0.05 });
-const bjTable = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.3,32), bjMat);
-bjTable.position.set(-4,0.3,0);
+const ruletaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.4,64), new THREE.MeshStandardMaterial({color:0x222222}));
+ruletaBase.position.set(0,0.2,0); ruletaBase.userData.type='roulette';
+scene.add(ruletaBase);
 
-// Ruleta
-const ruletaBaseMat = new THREE.MeshStandardMaterial({ color:0x222222, metalness:0.6, roughness:0.3 });
-const ruletaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.4,64), ruletaBaseMat);
-ruletaBase.position.set(0,0.2,0);
-const ruletaDisk = new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.15,0.08,128), new THREE.MeshStandardMaterial({ map: rouletteTex, metalness:0.25, roughness:0.45 }));
-ruletaDisk.rotation.x=Math.PI/2; ruletaDisk.position.set(0,0.45,0);
+const slot = new THREE.Mesh(new THREE.BoxGeometry(1,2,1), new THREE.MeshStandardMaterial({map:velvetTex}));
+slot.position.set(4,1,0); slot.userData.type='slots';
+scene.add(slot);
 
-scene.add(bjTable, ruletaBase, ruletaDisk);
+const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({color:0x999999}));
+npc.position.set(0,1,5); npc.userData.type='npc';
+scene.add(npc);
 
-// Slots
-const slotBodyMat = new THREE.MeshStandardMaterial({ map: fabricTex, metalness:0.35, roughness:0.5 });
-const slot = new THREE.Mesh(new THREE.BoxGeometry(1.0,2.0,1.0), slotBodyMat);
-slot.position.set(4,1,0); scene.add(slot);
-
-// NPC
-const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({ color: 0x999999 }));
-npc.position.set(0,1,5); scene.add(npc);
-
-// Objetos interactuables
 const interact = [bjTable, ruletaBase, slot, npc];
-bjTable.userData.type='blackjack'; ruletaBase.userData.type='roulette';
-slot.userData.type='slots'; npc.userData.type='npc';
 
-/* ---------------------------
-   Movimiento y cámara
---------------------------- */
+// -------------------- Movimiento y cámara --------------------
 const keys = {}; document.addEventListener('keydown', e=>keys[e.code]=true);
 document.addEventListener('keyup', e=>keys[e.code]=false);
 let yaw=0,pitch=0;
 function updateCameraRotation(dt){
-  if(keys['ArrowLeft']) yaw+=1.8*dt;
-  if(keys['ArrowRight']) yaw-=1.8*dt;
-  if(keys['ArrowUp']) pitch+=1.2*dt;
-  if(keys['ArrowDown']) pitch-=1.2*dt;
-  pitch=Math.max(-Math.PI/2+0.05,Math.min(Math.PI/2-0.05,pitch));
-  camera.rotation.y=yaw; camera.rotation.x=pitch;
+    if(keys['ArrowLeft']) yaw+=1.8*dt;
+    if(keys['ArrowRight']) yaw-=1.8*dt;
+    if(keys['ArrowUp']) pitch+=1.2*dt;
+    if(keys['ArrowDown']) pitch-=1.2*dt;
+    pitch=Math.max(-Math.PI/2+0.05,Math.min(Math.PI/2-0.05,pitch));
+    camera.rotation.y=yaw; camera.rotation.x=pitch;
 }
 function updateCameraPosition(dt){
-  const speed=3.0; const forward=new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
-  const right=new THREE.Vector3(); right.crossVectors(forward,camera.up).normalize();
-  const move=new THREE.Vector3();
-  if(keys['KeyW']) move.add(forward);
-  if(keys['KeyS']) move.sub(forward);
-  if(keys['KeyD']) move.add(right);
-  if(keys['KeyA']) move.sub(right);
-  move.multiplyScalar(speed*dt); camera.position.add(move);
+    const speed=3; const forward=new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
+    const right=new THREE.Vector3(); right.crossVectors(forward,camera.up).normalize();
+    const move=new THREE.Vector3();
+    if(keys['KeyW']) move.add(forward);
+    if(keys['KeyS']) move.sub(forward);
+    if(keys['KeyD']) move.add(right);
+    if(keys['KeyA']) move.sub(right);
+    move.multiplyScalar(speed*dt); camera.position.add(move);
 }
 
-/* ---------------------------
-   Raycast para interacción (E)
---------------------------- */
-const ray = new THREE.Raycaster();
-let lookingAt=null;
+// -------------------- Interacción --------------------
+const ray = new THREE.Raycaster(); let lookingAt=null;
 function checkInteraction(){
-  ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
-  const hits = ray.intersectObjects(interact,false);
-  if(hits.length===0||hits[0].distance>4){ lookingAt=null; npcMsg.style.display='none'; return; }
-  lookingAt=hits[0].object;
-  if(lookingAt.userData.type==='npc'){ npcMsg.style.display='block'; } else { npcMsg.style.display='none'; }
+    ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
+    const hits = ray.intersectObjects(interact,false);
+    if(hits.length===0 || hits[0].distance>4){ lookingAt=null; return; }
+    lookingAt=hits[0].object;
 }
+document.addEventListener('keydown', async e=>{
+    if(e.code==='KeyE' && lookingAt){
+        const type = lookingAt.userData.type;
+        if(type==='npc'){ await claimDaily(); }
+        else if(type==='blackjack'){ alert("Blackjack aún no implementado"); }
+        else if(type==='roulette'){ alert("Ruleta aún no implementada"); }
+        else if(type==='slots'){ alert("Slots aún no implementados"); }
+    }
+});
 
-/* ---------------------------
-   Abrir UI según objeto
---------------------------- */
-function openUI(type){
-  if(type==='blackjack'){ modal.style.display='block'; renderBlackjackUI(); }
-  else if(type==='roulette'){ modal.style.display='block'; renderRouletteUI(); }
-  else if(type==='slots'){ modal.style.display='block'; renderSlotsUI(); }
-  else if(type==='npc'){ claimDaily(); }
-}
-
-document.addEventListener('keydown', e=>{ if(e.code==='KeyE'&&lookingAt) openUI(lookingAt.userData.type); });
-
-/* ---------------------------
-   Juegos (Blackjack, Ruleta, Slots)
-   --- Aquí puedes usar tu lógica de juego actual pero reemplazando "balance" por el balance real y llamando saveBalance() al ganar/perder
---------------------------- */
-// Por ejemplo, cada vez que ganes o pierdas algo:
-// balance += winAmount; balanceEl.textContent = balance; saveBalance();
-
-/* ---------------------------
-   Animación: incluye spin visual de ruleta
---------------------------- */
-let ruletaSpinVelocity=0, ruletaSpinning=false, ruletaResolveTimer=null;
+// -------------------- Animación --------------------
 const clock = new THREE.Clock();
 function animate(){
-  requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-  updateCameraPosition(dt); updateCameraRotation(dt); checkInteraction();
-  if(ruletaSpinning){
-    ruletaDisk.rotation.z += ruletaSpinVelocity*dt;
-    ruletaSpinVelocity = Math.max(0, ruletaSpinVelocity - dt*2.6);
-    if(ruletaSpinVelocity<=0.01){ ruletaSpinning=false; ruletaDisk.rotation.z+=0.05; }
-  } else { ruletaDisk.rotation.z += 0.005; }
-  renderer.render(scene,camera);
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    updateCameraPosition(dt);
+    updateCameraRotation(dt);
+    checkInteraction();
+    renderer.render(scene,camera);
 }
 animate();
 
-/* ---------------------------
-   Resize
---------------------------- */
+// -------------------- Resize --------------------
 window.addEventListener('resize', ()=>{
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(innerWidth,innerHeight);
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
 });
-
-/* ---------------------------
-   Carga inicial
---------------------------- */
-loadUserData();
-
 </script>
 </body>
 </html>
