@@ -29,232 +29,199 @@
 <script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
 
 <script>
-(async function main() {
-  // ---------- Config Supabase ----------
-  const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-
-  if (!window.supabase) {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://unpkg.com/@supabase/supabase-js';
-      s.onload = res;
-      s.onerror = rej;
-      document.head.appendChild(s);
-    }).catch(e => alert('Error cargando Supabase: ' + e));
-  }
-
-  let supabase = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
-
-  // ---------- Helpers ----------
-  const rand = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+(async function main(){
   const container = document.getElementById('container');
   const balanceSpan = document.getElementById('balance');
-  let pekepuntosEl = document.getElementById('pekepuntos');
   const npcMsgEl = document.getElementById('npcMsg');
 
-  if (!pekepuntosEl) {
-    pekepuntosEl = document.createElement('div');
-    pekepuntosEl.id = 'pekepuntos';
-    pekepuntosEl.style.marginTop = '8px';
-    pekepuntosEl.style.fontSize = '1rem';
-    pekepuntosEl.textContent = 'Pekepuntos: 0';
-    document.getElementById('ui').appendChild(pekepuntosEl);
-  }
-
+  // ---------- Usuario ----------
   let currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null');
-  if (!currentUser) { alert('Debes iniciar sesión.'); return; }
-
+  if(!currentUser){ alert('Debes iniciar sesión para jugar.'); return; }
   let balance = Number(currentUser.pekepuntos || 0);
-  function refreshBalanceUI() {
-    balanceSpan.textContent = balance;
-    pekepuntosEl.textContent = `Pekepuntos: ${balance}`;
+
+  function refreshBalanceUI(){
+    if(balanceSpan) balanceSpan.textContent = balance;
   }
   refreshBalanceUI();
 
-  async function saveBalance() {
-    if (supabase) {
-      const { error } = await supabase.from('usuarios').update({ pekepuntos: balance }).eq('id', currentUser.id);
-      if (error) alert('Error guardando en Supabase: ' + error.message);
-    }
+  async function saveBalance(){
     currentUser.pekepuntos = balance;
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
     refreshBalanceUI();
   }
 
-  async function claimDaily() {
-    const today = new Date().toISOString().slice(0, 10);
-    const last = currentUser.last_claim ? currentUser.last_claim.slice(0, 10) : null;
-    if (last === today) { alert('Ya reclamaste hoy.'); return; }
-    balance += 100;
-    currentUser.last_claim = new Date().toISOString();
-    if (supabase) await supabase.from('usuarios').update({ pekepuntos: balance, last_claim: currentUser.last_claim }).eq('id', currentUser.id);
-    localStorage.setItem('currentUser', JSON.stringify(currentUser));
-    refreshBalanceUI();
-    if (npcMsgEl) { npcMsgEl.innerText = '¡Has recogido tus fichas diarias!'; npcMsgEl.style.display = 'block'; setTimeout(() => npcMsgEl.style.display = 'none', 1400); }
-    alert('¡+100 Pekepuntos!');
-  }
+  // ---------- Helpers ----------
+  function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
 
-  async function playBlackjack(bet = 50) {
-    if (balance < bet) { alert('Saldo insuficiente'); return; }
-    const player = rand(15, 21), dealer = rand(16, 21);
-    let result;
-    if (player > 21) result = 'lose';
-    else if (dealer > 21 || player > dealer) result = 'win';
-    else if (player === dealer) result = 'tie';
-    else result = 'lose';
-
-    if (result === 'win') { balance += bet; alert(`¡Ganaste Blackjack! Tu:${player} Dealer:${dealer} +${bet}`); }
-    else if (result === 'lose') { balance -= bet; alert(`Perdiste Blackjack. Tu:${player} Dealer:${dealer} -${bet}`); }
-    else alert(`Empate Blackjack. Tu:${player} Dealer:${dealer}`);
-
-    await saveBalance();
-  }
-
-  async function playRoulette(bet = 50) {
-    if (balance < bet) { alert('Saldo insuficiente'); return; }
-    const chosen = prompt('Apuesta a un número (0-36):');
-    if (chosen === null) return;
-    const pick = Number(chosen);
-    if (Number.isNaN(pick) || pick < 0 || pick > 36) { alert('Número inválido'); return; }
-    const result = rand(0, 36);
-    if (pick === result) { balance += bet * 35; alert(`¡Ha salido ${result}! Ganaste ${bet * 35}`); }
-    else { balance -= bet; alert(`Salió ${result}. Pierdes ${bet}`); }
-    await saveBalance();
-  }
-
-  async function playSlots(bet = 50) {
-    if (balance < bet) { alert('Saldo insuficiente'); return; }
-    const symbols = ['🍒', '🍋', '🍊', '🍇', '💎', '7️⃣'];
-    const r = [rand(0, 5), rand(0, 5), rand(0, 5)];
-    const res = r.map(i => symbols[i]).join(' | ');
-    if (r[0] === r[1] && r[1] === r[2]) { balance += bet * 5; alert(`${res}\n¡Jackpot! +${bet*5}`); }
-    else { balance -= bet; alert(`${res}\nPierdes ${bet}`); }
-    await saveBalance();
-  }
-
-  // ---------- THREE.JS escena ----------
+  // ---------- THREE.js ----------
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0b0f1a);
-  const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
-  camera.position.set(0, 1.6, 5);
+
+  const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+  camera.position.set(0,1.6,5);
   camera.rotation.order = 'YXZ';
 
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(innerWidth, innerHeight);
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(innerWidth,innerHeight);
   renderer.shadowMap.enabled = true;
   container.appendChild(renderer.domElement);
 
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x222233, 0.8));
-  scene.add(new THREE.AmbientLight(0xffffff, 0.25));
-  const dir = new THREE.DirectionalLight(0xfff6d6, 0.6);
-  dir.position.set(5, 10, 5);
-  scene.add(dir);
+  // luces
+  scene.add(new THREE.AmbientLight(0xffffff,0.3));
+  const dir = new THREE.DirectionalLight(0xfff6d6,0.7);
+  dir.position.set(5,10,5); scene.add(dir);
 
-  // ---------- Canvas textures ----------
-  function canvasTextureGradient(color1, color2, size = 512) {
-    const c = document.createElement('canvas');
-    c.width = c.height = size;
+  // ---------- Texturas Canvas ----------
+  function canvasTexture(color1,color2,size=512){
+    const c = document.createElement('canvas'); c.width=c.height=size;
     const ctx = c.getContext('2d');
-    const g = ctx.createLinearGradient(0, 0, size, size);
-    g.addColorStop(0, color1); g.addColorStop(1, color2);
-    ctx.fillStyle = g; ctx.fillRect(0, 0, size, size);
+    const g = ctx.createLinearGradient(0,0,size,size);
+    g.addColorStop(0,color1); g.addColorStop(1,color2);
+    ctx.fillStyle = g; ctx.fillRect(0,0,size,size);
     return new THREE.CanvasTexture(c);
   }
 
+  // ---------- Suelo ----------
   const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(30, 30),
-    new THREE.MeshStandardMaterial({ map: canvasTextureGradient('#2a0033', '#550077'), roughness: 0.9 })
+    new THREE.PlaneGeometry(30,30),
+    new THREE.MeshStandardMaterial({map:canvasTexture('#2a0033','#550077'), roughness:0.9})
   );
-  floor.rotation.x = -Math.PI / 2;
-  floor.receiveShadow = true;
-  scene.add(floor);
+  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
 
+  // ---------- Mesas / Interactuables ----------
   const interactables = [];
-  function addTable(x, z, type) {
-    const geom = type === 'slots' ? new THREE.BoxGeometry(1, 2, 1) : new THREE.CylinderGeometry(1.5, 1.5, 0.3, 32);
-    const mat = new THREE.MeshStandardMaterial({ map: canvasTextureGradient('#222', '#550') });
+
+  function addTable(x,z,type){
+    let geom, mat;
+    if(type==='slots'){
+      geom = new THREE.BoxGeometry(1,2,1);
+      mat = new THREE.MeshStandardMaterial({map:canvasTexture('#111','#6600ff')});
+    } else if(type==='blackjack'){
+      geom = new THREE.CylinderGeometry(1.5,1.5,0.3,32);
+      mat = new THREE.MeshStandardMaterial({map:canvasTexture('#006600','#00aa00')});
+    } else if(type==='roulette'){
+      geom = new THREE.CylinderGeometry(1.5,1.5,0.3,32);
+      mat = new THREE.MeshStandardMaterial({map:canvasTexture('#222200','#ffaa00')});
+    }
     const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.set(x, type === 'slots' ? 1 : 0.3, z);
+    mesh.position.set(x,(type==='slots'?1:0.3),z);
     mesh.userData.type = type;
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    interactables.push(mesh);
-    return mesh;
+    scene.add(mesh); interactables.push(mesh); return mesh;
   }
 
-  addTable(-4, 0, 'blackjack');
-  addTable(0, 0, 'roulette');
-  addTable(4, 0, 'slots');
+  const tableBJ = addTable(-4,0,'blackjack');
+  const tableR  = addTable(0,0,'roulette');
+  const tableS  = addTable(4,0,'slots');
 
-  const npc = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.4, 0.4, 1.6, 16),
-    new THREE.MeshStandardMaterial({ color: 0x999999 })
-  );
-  npc.position.set(0, 1, 5);
-  npc.userData.type = 'npc';
-  scene.add(npc);
-  interactables.push(npc);
+  // ---------- NPC ----------
+  const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.4,0.4,1.6,16), new THREE.MeshStandardMaterial({color:0x999999}));
+  npc.position.set(0,1,5); npc.userData.type='npc';
+  scene.add(npc); interactables.push(npc);
 
-  // ---------- Camara y movimiento ----------
-  const keys = {};
-  document.addEventListener('keydown', e => keys[e.code] = true);
-  document.addEventListener('keyup', e => keys[e.code] = false);
+  // ---------- Movimiento cámara ----------
+  const keys={};
+  document.addEventListener('keydown',e=>keys[e.code]=true);
+  document.addEventListener('keyup',e=>keys[e.code]=false);
+  let yaw=0,pitch=0;
 
-  let yaw = 0, pitch = 0;
-  function updateCamera(dt) {
-    const yawSpeed = 1.8, pitchSpeed = 1.2;
-    if (keys['ArrowLeft']) yaw += yawSpeed * dt;
-    if (keys['ArrowRight']) yaw -= yawSpeed * dt;
-    if (keys['ArrowUp']) pitch += pitchSpeed * dt;
-    if (keys['ArrowDown']) pitch -= pitchSpeed * dt;
-
-    const limit = Math.PI / 2 - 0.05;
-    pitch = Math.max(-limit, Math.min(limit, pitch));
-    camera.rotation.y = yaw;
-    camera.rotation.x = pitch;
-
-    const forward = new THREE.Vector3();
-    camera.getWorldDirection(forward);
-    forward.y = 0; forward.normalize();
-    const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
-    const move = new THREE.Vector3();
-    if (keys['KeyW']) move.add(forward);
-    if (keys['KeyS']) move.sub(forward);
-    if (keys['KeyD']) move.add(right);
-    if (keys['KeyA']) move.sub(right);
-    move.multiplyScalar(3 * dt);
-    camera.position.add(move);
+  function updateCamera(dt){
+    const ys=1.8, ps=1.2;
+    if(keys['ArrowLeft']) yaw+=ys*dt; if(keys['ArrowRight']) yaw-=ys*dt;
+    if(keys['ArrowUp']) pitch+=ps*dt; if(keys['ArrowDown']) pitch-=ps*dt;
+    const limit = Math.PI/2-0.05; pitch=Math.max(-limit,Math.min(limit,pitch));
+    camera.rotation.y=yaw; camera.rotation.x=pitch;
+    const forward=new THREE.Vector3(); camera.getWorldDirection(forward); forward.y=0; forward.normalize();
+    const right=new THREE.Vector3(); right.crossVectors(forward,camera.up).normalize();
+    const move=new THREE.Vector3();
+    if(keys['KeyW']) move.add(forward); if(keys['KeyS']) move.sub(forward);
+    if(keys['KeyD']) move.add(right); if(keys['KeyA']) move.sub(right);
+    move.multiplyScalar(3*dt); camera.position.add(move);
   }
 
-  const ray = new THREE.Raycaster();
-  let lookingAt = null;
-  function checkInteraction() {
-    ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
-    const hits = ray.intersectObjects(interactables, false);
-    if (!hits.length || hits[0].distance > 4) { lookingAt = null; if (npcMsgEl) npcMsgEl.style.display = 'none'; return; }
+  // ---------- Raycast interacción ----------
+  const ray = new THREE.Raycaster(); let lookingAt=null;
+  function checkInteraction(){
+    ray.set(camera.position,camera.getWorldDirection(new THREE.Vector3()));
+    const hits = ray.intersectObjects(interactables,false);
+    if(!hits.length || hits[0].distance>4){ lookingAt=null; npcMsgEl.style.display='none'; return; }
     lookingAt = hits[0].object;
-    if (lookingAt.userData.type === 'npc') { npcMsgEl.style.display = 'block'; npcMsgEl.innerText = 'Pulsa E para recoger fichas diarias'; }
-    else npcMsgEl.style.display = 'none';
+    if(lookingAt.userData.type==='npc'){ npcMsgEl.style.display='block'; npcMsgEl.innerText='Pulsa E para fichas diarias'; }
+    else npcMsgEl.style.display='none';
   }
 
-  document.addEventListener('keydown', async e => {
-    if (e.code !== 'KeyE' || !lookingAt) return;
-    const t = lookingAt.userData.type;
-    if (t === 'npc') await claimDaily();
-    else if (t === 'blackjack') await playBlackjack(50);
-    else if (t === 'roulette') await playRoulette(50);
-    else if (t === 'slots') await playSlots(50);
+  // ---------- Juegos ----------
+  async function claimDaily(){
+    const today = new Date().toISOString().slice(0,10);
+    const last = currentUser.last_claim?currentUser.last_claim.slice(0,10):null;
+    if(last===today){ alert('Ya has reclamado hoy'); return; }
+    balance+=100; currentUser.last_claim=new Date().toISOString();
+    await saveBalance();
+    npcMsgEl.innerText='¡Has recogido tus fichas diarias!'; npcMsgEl.style.display='block';
+    setTimeout(()=>npcMsgEl.style.display='none',1400);
+  }
+
+  async function playBlackjack(bet=50){
+    if(balance<bet){ alert('Saldo insuficiente'); return; }
+    let player=rand(15,21), dealer=rand(16,21);
+    let action=prompt(`Blackjack\nTu: ${player}\nDealer: ???\n¿Pedís pedir/plantarse? (p/l)`);
+    if(action==='p'){ player+=rand(1,5); } // simple pedir
+    let result='lose';
+    if(player>21) result='lose';
+    else if(dealer>21||player>dealer) result='win';
+    else if(player===dealer) result='tie';
+    else result='lose';
+    if(result==='win'){ balance+=bet; alert(`Ganaste! Tu: ${player} Dealer: ${dealer} +${bet}`); }
+    else if(result==='lose'){ balance-=bet; alert(`Perdiste! Tu: ${player} Dealer: ${dealer} -${bet}`); }
+    else alert(`Empate! Tu: ${player} Dealer: ${dealer}`);
+    await saveBalance();
+  }
+
+  async function playRoulette(bet=50){
+    if(balance<bet){ alert('Saldo insuficiente'); return; }
+    const chosen = prompt('Número (0-36) o color (rojo/negro)?');
+    if(!chosen) return;
+    const result = rand(0,36);
+    const color = (result%2===0)?'rojo':'negro';
+    let win=false;
+    if(!isNaN(chosen) && Number(chosen)===result) win=true;
+    else if(chosen.toLowerCase()===color) win=true;
+    if(win){ balance+=bet*2; alert(`Ganaste! Salió ${result} (${color}) +${bet*2}`); }
+    else { balance-=bet; alert(`Perdiste! Salió ${result} (${color}) -${bet}`); }
+    await saveBalance();
+  }
+
+  async function playSlots(bet=50){
+    if(balance<bet){ alert('Saldo insuficiente'); return; }
+    const symbols=['🍒','🍋','🍊','🍇','💎','7️⃣'];
+    const r=[rand(0,5),rand(0,5),rand(0,5)];
+    const res=r.map(i=>symbols[i]).join(' | ');
+    const won=(r[0]===r[1] && r[1]===r[2]);
+    if(won){ balance+=bet*5; alert(`${res}\nJackpot! +${bet*5}`); }
+    else { balance-=bet; alert(`${res}\nPerdiste -${bet}`); }
+    await saveBalance();
+  }
+
+  document.addEventListener('keydown',async(e)=>{
+    if(e.code!=='KeyE') return;
+    if(!lookingAt) return;
+    const t=lookingAt.userData.type;
+    if(t==='npc') await claimDaily();
+    else if(t==='blackjack') await playBlackjack(50);
+    else if(t==='roulette') await playRoulette(50);
+    else if(t==='slots') await playSlots(50);
   });
 
-  const clock = new THREE.Clock();
-  function animate() { requestAnimationFrame(animate); const dt = clock.getDelta(); updateCamera(dt); checkInteraction(); renderer.render(scene, camera); }
+  // ---------- Animación ----------
+  const clock=new THREE.Clock();
+  function animate(){ requestAnimationFrame(animate); const dt=clock.getDelta(); updateCamera(dt); checkInteraction(); renderer.render(scene,camera);}
   animate();
 
-  window.addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
+  window.addEventListener('resize',()=>{
+    camera.aspect=innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth,innerHeight);
+  });
 
-  window._casino = { playBlackjack, playRoulette, playSlots, claimDaily, saveBalance, currentUser };
 })();
 </script>
 </body>
