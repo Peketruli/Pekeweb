@@ -42,42 +42,79 @@
 <script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
 
 <script>
+/*
+  Casino 3D — Complete JS (integrates Supabase if available)
+  Drop this whole <script> block into your page (replace existing).
+  - Robust: loads @supabase/supabase-js dynamically if possible.
+  - Uses table "usuarios" for TOP10 and to update pekepuntos on save (best-effort).
+  - Visual ruleta spin that eases to a computed target.
+  - Blackjack with full deck, hit/stand/double/split (simplified split).
+  - Slots with UI reels animation.
+  - UI modal centered, keyboard E to interact, WASD + arrow rotation.
+*/
+
 (async function(){
 
-  const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd...";
-const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
-  
+/* ----------------------
+   Supabase init (best-effort)
+   ---------------------- */
+const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+
+let supabase = null;
+async function loadSupabase(){
+  if(window.supabase && typeof window.supabase.createClient === 'function'){
+    try { supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); return; } catch(e){}
+  }
+  // try to load library
+  try {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://unpkg.com/@supabase/supabase-js/dist/umd/supabase.min.js';
+      s.onload = () => res();
+      s.onerror = () => rej(new Error('No se pudo cargar supabase'));
+      document.head.appendChild(s);
+    });
+    if(window.supabase && typeof window.supabase.createClient === 'function'){
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    }
+  } catch(err){
+    console.warn('Supabase no disponible (posiblemente bloqueado):', err);
+    supabase = null;
+  }
+}
+await loadSupabase();
+
 /* ---------------------
-   Inicialización usuario
+   DOM refs + user init
    --------------------- */
 const balanceEl = document.getElementById('balance');
-let currentUser;
-try{ currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); }catch(e){ currentUser = null; }
+const modalEl = document.getElementById('modal');
+const container = document.getElementById('container');
+const npcMsgEl = document.getElementById('npcMsg');
+
+let currentUser = null;
+try { currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch(e){ currentUser = null; }
 if(!currentUser){
-  // Usuario de prueba local (si en tu app tienes login, localStorage debe contener currentUser)
+  // fallback guest
   currentUser = { id: 1, username: 'Guest', pekepuntos: 1000, last_claim: null };
   localStorage.setItem('currentUser', JSON.stringify(currentUser));
 }
 let balance = Number(currentUser.pekepuntos || 0);
-function refreshBalance(){ balanceEl.textContent = balance.toLocaleString(); }
-function saveBalance(){
-  currentUser.pekepuntos = balance;
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
-  refreshBalance();
-}
-refreshBalance();
+function refreshBalanceUI(){ balanceEl.textContent = Number(balance).toLocaleString(); }
+function localSaveUser(){ currentUser.pekepuntos = balance; localStorage.setItem('currentUser', JSON.stringify(currentUser)); refreshBalanceUI(); }
+
+refreshBalanceUI();
 
 /* ---------------------
    Helpers
    --------------------- */
-function rand(min,max){ return Math.floor(Math.random()*(max-min+1))+min; }
-function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+const rand = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
 
 /* ---------------------
-   THREE scene, camera, renderer
+   THREE scene setup
    --------------------- */
-const container = document.getElementById('container');
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0f1a);
 
@@ -88,18 +125,16 @@ camera.rotation.order = 'YXZ';
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.outputColorSpace = THREE.SRGBColorSpace;
+try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch(e){} // backwards compat
 container.appendChild(renderer.domElement);
 
-/* ---------------------
-   Lights
-   --------------------- */
+/* lights */
 const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.8); hemi.position.set(0,50,0); scene.add(hemi);
 scene.add(new THREE.AmbientLight(0xffffff, 0.22));
 const dir = new THREE.DirectionalLight(0xfff6d6, 0.6); dir.position.set(5,10,5); dir.castShadow = true; scene.add(dir);
 
 /* ---------------------
-   Canvas textures (reusable)
+   Canvas texture factory
    --------------------- */
 function canvasTexture(size, drawFn){
   const c = document.createElement('canvas'); c.width = c.height = size;
@@ -108,26 +143,21 @@ function canvasTexture(size, drawFn){
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 4;
+  tex.needsUpdate = true;
   return tex;
 }
 
 /* floor pattern */
-const floorTex = canvasTexture(1024, (ctx, s) => {
-  // radial soft pattern + grid
-  ctx.fillStyle = '#1b0022';
-  ctx.fillRect(0,0,s,s);
-  const grd = ctx.createLinearGradient(0,0,s,s);
-  grd.addColorStop(0,'#22001f'); grd.addColorStop(1,'#0e0010');
+const floorTex = canvasTexture(1024, (ctx,s) => {
+  ctx.fillStyle = '#1b0022'; ctx.fillRect(0,0,s,s);
+  const grd = ctx.createLinearGradient(0,0,s,s); grd.addColorStop(0,'#22001f'); grd.addColorStop(1,'#0e0010');
   ctx.fillStyle = grd; ctx.globalAlpha = 0.7; ctx.fillRect(0,0,s,s); ctx.globalAlpha = 1;
   ctx.strokeStyle = 'rgba(255,255,255,0.02)'; ctx.lineWidth = 2;
-  for(let i=0;i<s;i+=64){
-    ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(s,i); ctx.stroke();
-  }
+  for(let i=0;i<s;i+=64){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(s,i); ctx.stroke(); }
 });
 
 /* marble walls */
-const marbleTex = canvasTexture(1024, (ctx,s)=>{
+const marbleTex = canvasTexture(1024, (ctx,s) => {
   ctx.fillStyle = '#222428'; ctx.fillRect(0,0,s,s);
   for(let i=0;i<300;i++){
     ctx.strokeStyle = `rgba(255,255,255,${0.02+Math.random()*0.03})`;
@@ -138,56 +168,25 @@ const marbleTex = canvasTexture(1024, (ctx,s)=>{
   }
 });
 
-  async function updateTop10(){
-  const { data, error } = await supabase
-    .from('users')
-    .select('username, pekepuntos')
-    .order('pekepuntos',{ascending:false})
-    .limit(10);
-  if(error) return console.error(error);
-
-  const s=1024;
-  const tex = canvasTexture(s,(ctx)=>{
-    ctx.fillStyle='#000'; ctx.fillRect(0,0,s,s);
-    ctx.fillStyle='#fff'; ctx.font='40px Arial'; ctx.fillText('TOP 10', s/2,60);
-    ctx.font='28px Arial'; ctx.textAlign='left';
-    data.forEach((u,i)=> ctx.fillText(`${i+1}. ${u.username}: ${u.pekepuntos}`,50,120+i*40));
-  });
-
-  if(!scene.getObjectByName('top10Wall')){
-    const wall=new THREE.Mesh(new THREE.PlaneGeometry(8,5), new THREE.MeshStandardMaterial({ map:tex, side:THREE.DoubleSide }));
-    wall.position.set(0,2,-14.9);
-    wall.name='top10Wall';
-    scene.add(wall);
-  }else scene.getObjectByName('top10Wall').material.map=tex;
-}
-updateTop10();
-setInterval(updateTop10,60000);
-
 /* blackjack felt */
 const blackjackTex = canvasTexture(512, (ctx,s)=>{
   ctx.fillStyle = '#084b2f'; ctx.fillRect(0,0,s,s);
   ctx.fillStyle = 'rgba(255,255,255,0.04)';
-  for(let i=0;i<200;i++){ ctx.fillRect(Math.random()*s, Math.random()*s, 1, 1); }
-  ctx.strokeStyle = '#f2e7c9'; ctx.lineWidth = Math.max(1, s/160);
-  ctx.strokeRect(6, s-120, s-12, 108);
-  ctx.fillStyle = '#fff'; ctx.font = '18px Arial'; ctx.textAlign='center';
+  for(let i=0;i<200;i++) ctx.fillRect(Math.random()*s, Math.random()*s, 1, 1);
+  ctx.strokeStyle = '#f2e7c9'; ctx.lineWidth = Math.max(1, s/160); ctx.strokeRect(6, s-120, s-12, 108);
+  ctx.fillStyle = '#fff'; ctx.font = '18px Arial'; ctx.textAlign = 'center';
   ctx.fillText('BLACKJACK PAYS 3 TO 2', s/2, 26);
 });
 
-/* slot screen texture (empty dark) */
+/* slot screen dark */
 const slotScreenTex = canvasTexture(512, (ctx,s)=>{
   ctx.fillStyle = '#05050b'; ctx.fillRect(0,0,s,s);
-  const g = ctx.createLinearGradient(0,0,s,0);
-  g.addColorStop(0, 'rgba(255,255,255,0.02)'); g.addColorStop(1,'rgba(0,0,0,0.15)');
+  const g = ctx.createLinearGradient(0,0,s,0); g.addColorStop(0,'rgba(255,255,255,0.02)'); g.addColorStop(1,'rgba(0,0,0,0.15)');
   ctx.fillStyle = g; ctx.fillRect(0,0,s,s);
 });
 
-/* metallic */
-const metalTex = canvasTexture(256, (ctx,s)=>{
-  const g = ctx.createLinearGradient(0,0,s,s); g.addColorStop(0,'#777'); g.addColorStop(1,'#bcbcbc');
-  ctx.fillStyle = g; ctx.fillRect(0,0,s,s);
-});
+/* metal */
+const metalTex = canvasTexture(256, (ctx,s)=>{ const g = ctx.createLinearGradient(0,0,s,s); g.addColorStop(0,'#777'); g.addColorStop(1,'#bcbcbc'); ctx.fillStyle=g; ctx.fillRect(0,0,s,s); });
 
 /* ---------------------
    Room (floor + walls)
@@ -199,34 +198,83 @@ floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
 const wallMat = new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.9 });
 function makeWall(x,z,rotY=0){
   const wall = new THREE.Mesh(new THREE.BoxGeometry(30,6,0.2), wallMat);
-  wall.position.set(x,3,z); wall.rotation.y = rotY; wall.receiveShadow=true; scene.add(wall);
+  wall.position.set(x,3,z); wall.rotation.y = rotY; wall.receiveShadow = true; scene.add(wall);
 }
 makeWall(0,-15); makeWall(0,15,Math.PI); makeWall(-15,0,Math.PI/2); makeWall(15,0,-Math.PI/2);
 
 /* ---------------------
-   Objects: Blackjack table, Roulette (base + disk), Slot machine, NPC
+   TOP 10 wall (canvas texture drawn from Supabase)
+   --------------------- */
+let top10UpdateTimer = null;
+async function updateTop10(){
+  // try supabase only if available; otherwise show local only
+  let rows = [];
+  if(supabase){
+    try{
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('username, pekepuntos')
+        .order('pekepuntos', { ascending: false })
+        .limit(10);
+      if(!error && data) rows = data;
+    } catch(e){ console.warn('Error top10 supabase', e); }
+  }
+  // fallback: show currentUser only if no rows
+  if(!rows || rows.length === 0){
+    rows = [{ username: currentUser.username || 'Guest', pekepuntos: currentUser.pekepuntos || 0 }];
+  }
+
+  const s = 1024;
+  const tex = canvasTexture(s, (ctx) => {
+    ctx.fillStyle = '#071018'; ctx.fillRect(0,0,s,s);
+    ctx.fillStyle = '#f5b642'; ctx.font = '48px Arial'; ctx.textAlign = 'center'; ctx.fillText('TOP 10', s/2, 70);
+    ctx.font = '28px Arial'; ctx.textAlign = 'left';
+    ctx.fillStyle = '#ffffff';
+    rows.forEach((r,i) => {
+      const y = 130 + i*70;
+      ctx.fillText(`${i+1}. ${r.username}`, 60, y);
+      ctx.fillText((r.pekepuntos||0).toLocaleString(), s-140, y);
+    });
+  });
+
+  const name = 'top10Wall';
+  const existing = scene.getObjectByName(name);
+  if(!existing){
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(8,5), new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide }));
+    wall.position.set(0,2,-14.9);
+    wall.name = name;
+    scene.add(wall);
+  } else {
+    existing.material.map = tex;
+    existing.material.needsUpdate = true;
+  }
+}
+await updateTop10();
+top10UpdateTimer = setInterval(updateTop10, 60000);
+
+/* ---------------------
+   Objects: blackjack, roulette, slots, npc
    --------------------- */
 const interactables = [];
 
-/* blackjack table */
+/* Blackjack table */
 const bjMat = new THREE.MeshStandardMaterial({ map: blackjackTex, roughness: 0.6, metalness: 0.02 });
 const bjTable = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.3,64), bjMat);
-bjTable.position.set(-4,0.3,0); bjTable.userData.type='blackjack';
-bjTable.castShadow = true; bjTable.receiveShadow = true; scene.add(bjTable); interactables.push(bjTable);
+bjTable.position.set(-4,0.3,0); bjTable.userData.type='blackjack'; bjTable.castShadow=true; bjTable.receiveShadow=true;
+scene.add(bjTable); interactables.push(bjTable);
 
-/* roulette base + wheel (disk) */
+/* Roulette base + disk */
 const ruletaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.4,64), new THREE.MeshStandardMaterial({ color:0x222222, metalness:0.45, roughness:0.25 }));
-ruletaBase.position.set(0,0.2,0); ruletaBase.userData.type='roulette';
-ruletaBase.castShadow=true; ruletaBase.receiveShadow=true; scene.add(ruletaBase); interactables.push(ruletaBase);
+ruletaBase.position.set(0,0.2,0); ruletaBase.userData.type='roulette'; ruletaBase.castShadow=true; ruletaBase.receiveShadow=true;
+scene.add(ruletaBase); interactables.push(ruletaBase);
 
-/* ruleta disk (separate mesh to rotate) */
+/* ruleta disk (texture applied below) */
 const ruletaDisk = new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.15,0.08,256), new THREE.MeshStandardMaterial({ map: null, metalness:0.25, roughness:0.45 }));
-ruletaDisk.rotation.x = Math.PI;
-ruletaDisk.position.set(0,0.45,0);
-ruletaDisk.castShadow=true; ruletaDisk.receiveShadow=true;
+ruletaDisk.rotation.x = Math.PI; // flat
+ruletaDisk.position.set(0,0.45,0); ruletaDisk.castShadow=true; ruletaDisk.receiveShadow=true;
 scene.add(ruletaDisk);
 
-/* create numbered segments on a canvas and set as texture for disk */
+/* Create roulette numbered texture */
 (function createRouletteTexture(){
   const s = 2048;
   const canv = document.createElement('canvas'); canv.width = canv.height = s;
@@ -234,22 +282,19 @@ scene.add(ruletaDisk);
   ctx.translate(s/2, s/2);
   const cellCount = 37;
   const anglePer = (Math.PI*2)/cellCount;
-  // outer circle
   ctx.fillStyle = '#2f1b10'; ctx.beginPath(); ctx.arc(0,0,s/2,0,Math.PI*2); ctx.fill();
-  const redNums = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+  const redSet = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
   for(let i=0;i<cellCount;i++){
     const start = i*anglePer - Math.PI/2;
     const end = start + anglePer;
     const isZero = (i===0);
     ctx.beginPath();
-    ctx.fillStyle = isZero ? '#0b8a12' : (redNums.has(i) ? '#d22' : '#111');
-    ctx.moveTo(0,0);
-    ctx.arc(0,0,s*0.48,start,end);
-    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = isZero ? '#0b8a12' : (redSet.has(i) ? '#d22' : '#111');
+    ctx.moveTo(0,0); ctx.arc(0,0,s*0.48,start,end); ctx.closePath(); ctx.fill();
     // numbers
     ctx.save();
-    ctx.rotate(start + anglePer);
-    ctx.fillStyle = isZero ? '#fff' : '#fff';
+    ctx.rotate(start + anglePer/2);
+    ctx.fillStyle = '#fff';
     ctx.font = `${s*0.05}px Arial`;
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText(i.toString(), 0, -s*0.35);
@@ -259,11 +304,10 @@ scene.add(ruletaDisk);
   ctx.beginPath(); ctx.fillStyle='#8b5a2b'; ctx.arc(0,0,s*0.18,0,Math.PI*2); ctx.fill();
   const tex = new THREE.CanvasTexture(canv); tex.needsUpdate = true;
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-  ruletaDisk.material.map = tex;
-  ruletaDisk.material.needsUpdate = true;
+  ruletaDisk.material.map = tex; ruletaDisk.material.needsUpdate = true;
 })();
 
-/* slot machine model (group) */
+/* Slot machine model + invisible proxy for raycast */
 function createSlotMachine(){
   const g = new THREE.Group();
   const body = new THREE.Mesh(new THREE.BoxGeometry(1.1,2.1,1.0), new THREE.MeshStandardMaterial({ color:0x222222, metalness:0.6, roughness:0.25 }));
@@ -276,38 +320,35 @@ function createSlotMachine(){
   coin.position.set(0.95,1.1,0); g.add(coin);
   return g;
 }
-const slotMachine = createSlotMachine();
-slotMachine.position.set(4,0,0);
-slotMachine.userData = { type: 'slots' }; // for raycast we add proxy separately
-scene.add(slotMachine);
+const slotMachine = createSlotMachine(); slotMachine.position.set(4,0,0); scene.add(slotMachine);
 const slotProxy = new THREE.Mesh(new THREE.BoxGeometry(1.05,2.05,1.05), new THREE.MeshBasicMaterial({ visible:false }));
 slotProxy.position.copy(slotMachine.position); slotProxy.position.y = 1; slotProxy.userData.type = 'slots';
 scene.add(slotProxy); interactables.push(slotProxy);
 
-/* NPC (glossy chest-coffer) */
+/* NPC glossy chest */
 const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,1.6,16), new THREE.MeshStandardMaterial({ color:0xdddddd, metalness:0.7, roughness:0.25, map: metalTex }));
 npc.position.set(0,1,5); npc.userData.type = 'npc'; npc.castShadow = true; scene.add(npc); interactables.push(npc);
 
-/* add ruletaBase and blackjack table to interactables already added earlier */
+/* add ruletaBase and bjTable to interactables */
 interactables.push(ruletaBase);
 interactables.push(bjTable);
 
 /* ---------------------
-   Movement & camera control
+   Movement & camera
    --------------------- */
 const keys = {};
-document.addEventListener('keydown', e => keys[e.code] = true);
-document.addEventListener('keyup', e => keys[e.code] = false);
-let yaw = 0, pitch = 0;
+document.addEventListener('keydown', e => { keys[e.code] = true; });
+document.addEventListener('keyup', e => { keys[e.code] = false; });
 
+let yaw = 0, pitch = 0;
 function updateCamera(dt){
   const yawSpeed = 1.8, pitchSpeed = 1.2;
   if(keys['ArrowLeft']) yaw += yawSpeed * dt;
   if(keys['ArrowRight']) yaw -= yawSpeed * dt;
   if(keys['ArrowUp']) pitch += pitchSpeed * dt;
   if(keys['ArrowDown']) pitch -= pitchSpeed * dt;
-  const pitchLimit = Math.PI/2 - 0.05;
-  pitch = clamp(pitch, -pitchLimit, pitchLimit);
+  const limit = Math.PI/2 - 0.05;
+  pitch = clamp(pitch, -limit, limit);
   camera.rotation.set(pitch, yaw, 0);
 
   const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
@@ -322,12 +363,10 @@ function updateCamera(dt){
 }
 
 /* ---------------------
-   Raycast / interaction detection
+   Raycast interactions
    --------------------- */
 const ray = new THREE.Raycaster();
 let lookingAt = null;
-const npcMsgEl = document.getElementById('npcMsg');
-
 function checkInteraction(){
   ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
   const hits = ray.intersectObjects(interactables, false);
@@ -337,40 +376,50 @@ function checkInteraction(){
 }
 
 /* ---------------------
-   UI modal functions
+   UI Modal helpers
    --------------------- */
-const modal = document.getElementById('modal');
 function showUI(html){
-  modal.innerHTML = html; modal.style.display = 'block';
+  modalEl.innerHTML = html; modalEl.style.display = 'block';
+  // ensure focus accessibility
+  modalEl.querySelectorAll('button,input,select').forEach(el=> el.tabIndex = 0);
 }
-function hideUI(){ modal.style.display = 'none'; }
+function hideUI(){ modalEl.style.display = 'none'; }
 
 /* ---------------------
-   Daily claim
+   Daily claim (also persist to supabase usuarios.pekepuntos if supabase)
    --------------------- */
 async function claimDaily(){
   const today = new Date().toISOString().slice(0,10);
   const last = currentUser.last_claim ? currentUser.last_claim.slice(0,10) : null;
   if(last === today){
-    showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Ya reclamaste hoy.</div><button onclick="document.getElementById('modal').style.display='none'">Cerrar</button></div>`);
+    showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Ya reclamaste hoy.</div><div class="row"><button id="closeDaily">Cerrar</button></div></div>`);
+    document.getElementById('closeDaily').onclick = () => hideUI();
     return;
   }
   balance += 100;
   currentUser.last_claim = new Date().toISOString();
-  saveBalance();
-  showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Recibiste +100 Pekepuntos.</div><button onclick="document.getElementById('modal').style.display='none'">Cerrar</button></div>`);
+  localSaveUser();
+  // try update supabase
+  if(supabase){
+    try{
+      await supabase.from('usuarios').update({ pekepuntos: balance, last_claim: currentUser.last_claim }).eq('id', currentUser.id);
+      // refresh top10 immediately
+      updateTop10();
+    }catch(e){ console.warn('supabase claim error', e); }
+  }
+  showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Recibiste +100 Pekepuntos.</div><div class="row"><button id="closeDaily2">Cerrar</button></div></div>`);
+  document.getElementById('closeDaily2').onclick = () => hideUI();
 }
 
 /* ---------------------
-   Blackjack: full deck, UI, hit/stand/double/split (simplified split)
+   Blackjack implementation (deck, UI, actions)
    --------------------- */
 function createDeck(){
   const vals = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
   const suits = ['♠','♥','♦','♣'];
   const d = [];
   for(const s of suits) for(const v of vals) d.push({ v, s });
-  // shuffle
-  for(let i = d.length-1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [d[i], d[j]] = [d[j], d[i]]; }
+  for(let i = d.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [d[i], d[j]]=[d[j], d[i]]; }
   return d;
 }
 function valueOf(card){
@@ -381,7 +430,7 @@ function valueOf(card){
 function score(hand){
   let sum = 0, aces = 0;
   for(const c of hand){ if(c.v === 'A') aces++; sum += valueOf(c); }
-  while(sum > 21 && aces) { sum -= 10; aces--; }
+  while(sum > 21 && aces){ sum -= 10; aces--; }
   return sum;
 }
 
@@ -391,7 +440,7 @@ function openBlackjack(){
       <h2>Blackjack</h2>
       <div class="row"><label>Apuesta: <input id="bjBet" type="number" value="50" min="1" /></label></div>
       <div class="row"><button id="dealBtn">Repartir</button><button id="closeBJ">Cerrar</button></div>
-      <div id="bjState" style="width:100%;margin-top:8px;"></div>
+      <div id="bjState" style="width:100%;margin-top:8px;text-align:left"></div>
       <div id="bjActions" class="row" style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:8px"></div>
       <div class="gameResult" id="bjResult"></div>
     </div>
@@ -400,30 +449,32 @@ function openBlackjack(){
   const actionsEl = document.getElementById('bjActions');
   const resultEl = document.getElementById('bjResult');
   const betInput = document.getElementById('bjBet');
-  let deck, playerHand, dealerHand, betAmount, splitHand=null, inRound=false;
+
+  let deck, playerHand, dealerHand, betAmount, inRound=false;
 
   function renderHands(){
     const ph = playerHand.map(c => c.v + c.s).join(' ');
     const dh = dealerHand.map((c,i) => i===0 && inRound ? (c.v + c.s) + ' ?' : c.v + c.s).join(' ');
-    stateEl.innerHTML = `<div style="text-align:left"><strong>Jugador:</strong> ${ph} — (${score(playerHand)})</div>
-                         <div style="text-align:left"><strong>Dealer:</strong> ${dh} — (${inRound ? '??' : score(dealerHand)})</div>`;
+    stateEl.innerHTML = `<div><strong>Jugador:</strong> ${ph} — (${score(playerHand)})</div><div><strong>Dealer:</strong> ${dh} — (${inRound ? '??' : score(dealerHand)})</div>`;
   }
 
-  function endRound(){
-    inRound = false;
-    actionsEl.innerHTML = '';
-    // reveal and compute result
-    const playerScore = score(playerHand);
+  function finalize(){
+    inRound = false; actionsEl.innerHTML = '';
     let dealerScore = score(dealerHand);
     while(dealerScore < 17){ dealerHand.push(deck.pop()); dealerScore = score(dealerHand); }
+    const playerScore = score(playerHand);
     if(playerScore > 21){ resultEl.textContent = `Te pasaste (${playerScore}). Pierdes ${betAmount}`; balance -= betAmount; }
     else if(dealerScore > 21 || playerScore > dealerScore){ resultEl.textContent = `Ganas! Tu ${playerScore} / Dealer ${dealerScore} → +${betAmount}`; balance += betAmount; }
     else if(playerScore === dealerScore){ resultEl.textContent = `Empate (${playerScore}). No hay cambios.`; }
     else { resultEl.textContent = `Pierdes (${playerScore} vs ${dealerScore}). -${betAmount}`; balance -= betAmount; }
-    saveBalance();
+    // try update supabase
+    if(supabase){
+      supabase.from('usuarios').update({ pekepuntos: balance }).eq('id', currentUser.id).catch(e=>console.warn('supabase bj save', e));
+      updateTop10();
+    }
+    localSaveUser();
     renderHands();
-    // auto-close after a short time
-    setTimeout(()=> hideUI(), 1600);
+    setTimeout(()=> hideUI(), 1400);
   }
 
   document.getElementById('dealBtn').onclick = () => {
@@ -432,48 +483,33 @@ function openBlackjack(){
     deck = createDeck();
     playerHand = [deck.pop(), deck.pop()];
     dealerHand = [deck.pop(), deck.pop()];
-    inRound = true;
-    renderHands();
-    actionsEl.innerHTML = `
-      <button id="hitBtn">Pedir</button>
-      <button id="standBtn">Plantarse</button>
-      <button id="doubleBtn">Doblar</button>
-      <button id="splitBtn">Dividir</button>
-    `;
+    inRound = true; renderHands();
+    actionsEl.innerHTML = `<button id="hitBtn">Pedir</button><button id="standBtn">Plantarse</button><button id="doubleBtn">Doblar</button><button id="splitBtn">Dividir</button>`;
     resultEl.textContent = '';
-    // attach actions
     document.getElementById('hitBtn').onclick = () => {
-      playerHand.push(deck.pop());
-      renderHands();
-      if(score(playerHand) > 21){ endRound(); }
+      playerHand.push(deck.pop()); renderHands(); if(score(playerHand) > 21) finalize();
     };
-    document.getElementById('standBtn').onclick = () => { endRound(); };
+    document.getElementById('standBtn').onclick = () => finalize();
     document.getElementById('doubleBtn').onclick = () => {
       if(balance < betAmount * 2){ resultEl.textContent = 'Saldo insuficiente para doblar.'; return; }
-      balance -= betAmount; betAmount *= 2;
-      playerHand.push(deck.pop());
-      renderHands();
-      endRound();
+      balance -= betAmount; betAmount *= 2; playerHand.push(deck.pop()); renderHands(); finalize();
     };
-    const canSplit = playerHand.length === 2 && playerHand[0].v === playerHand[1].v && balance >= betAmount;
     const splitBtn = document.getElementById('splitBtn');
-    if(!canSplit){ splitBtn.disabled = true; }
+    const canSplit = playerHand.length === 2 && playerHand[0].v === playerHand[1].v && (balance >= betAmount);
+    if(!canSplit) splitBtn.disabled = true;
     else {
       splitBtn.onclick = () => {
-        // Simplified split handling: treat as two separate single-card hands, resolve sequentially.
+        // simplified split: play both hands automatically vs dealer
+        balance -= betAmount; // extra bet
         const cardA = [playerHand[0], deck.pop()];
         const cardB = [playerHand[1], deck.pop()];
-        // Play each quickly: we'll compare both to dealer
-        const resolveHand = (hand) => {
+        // resolve dealer
+        while(score(dealerHand) < 17) dealerHand.push(deck.pop());
+        const resolve = (hand) => {
           while(score(hand) < 17) hand.push(deck.pop());
           return hand;
         };
-        // deduct an extra bet
-        balance -= betAmount;
-        const hand1 = resolveHand(cardA);
-        const hand2 = resolveHand(cardB);
-        const dealerResolve = () => { while(score(dealerHand) < 17) dealerHand.push(deck.pop()); };
-        dealerResolve();
+        const h1 = resolve(cardA), h2 = resolve(cardB);
         let payout = 0;
         const check = (h) => {
           const ps = score(h), ds = score(dealerHand);
@@ -482,12 +518,15 @@ function openBlackjack(){
           if(ps === ds) return 0;
           return -betAmount;
         };
-        payout += check(hand1) + check(hand2);
+        payout += check(h1) + check(h2);
         balance += payout;
-        saveBalance();
-        resultEl.innerHTML = `Split result — Dealer ${score(dealerHand)}. Mano1 ${score(hand1)} / Mano2 ${score(hand2)} → ${payout>=0?('+'+payout):payout}`;
-        renderHands();
-        setTimeout(()=> hideUI(), 2000);
+        if(supabase){
+          supabase.from('usuarios').update({ pekepuntos: balance }).eq('id', currentUser.id).catch(e=>console.warn('supabase split save', e));
+          updateTop10();
+        }
+        localSaveUser();
+        resultEl.innerHTML = `Split result — Dealer ${score(dealerHand)}. Mano1 ${score(h1)} / Mano2 ${score(h2)} → ${payout>=0?('+'+payout):payout}`;
+        setTimeout(()=> hideUI(), 1600);
       };
     }
   };
@@ -496,84 +535,72 @@ function openBlackjack(){
 }
 
 /* ---------------------
-   Roulette: UI + spin animation of ruletaDisk (visual)
+   Roulette UI + spin (visual targeting)
    --------------------- */
-let ruletaSpinning = false, ruletaVelocity = 0, ruletaTargetAngle = 0;
+
+let ruletaSpinning = false;
+let ruletaVelocity = 0;
+let ruletaTargetAngle = 0;
+let ruletaPending = null; // { bet, type, value, landing, resultEl }
+
 function openRoulette(){
   showUI(`
     <div class="gameUI">
       <h2>Ruleta</h2>
       <div class="row"><label>Apuesta: <input id="rBet" type="number" value="50" min="1" /></label></div>
-      <div class="row">
-        <button id="btnNumber">Número</button>
-        <button id="btnColor">Color</button>
-        <button id="btnParity">Par/Impar</button>
-      </div>
+      <div class="row"><button id="btnNumber">Número</button><button id="btnColor">Color</button><button id="btnParity">Par/Impar</button></div>
       <div id="rOptions" style="margin-top:8px" class="row"></div>
       <div id="rResult" class="gameResult"></div>
       <div class="row"><button id="closeR">Cerrar</button></div>
     </div>
   `);
+  const rBet = document.getElementById('rBet');
   const options = document.getElementById('rOptions');
   const rResult = document.getElementById('rResult');
-  const rBet = document.getElementById('rBet');
 
   function commitSpin(type, value){
     const bet = clamp(Number(rBet.value)||0, 1, balance);
     if(!bet){ rResult.textContent = 'Introduce una apuesta válida.'; return; }
-    // start visual spin
-    ruletaSpinning = true;
-    ruletaVelocity = 10 + Math.random()*6;
-    // select landing number
+    // choose landing
     const landing = rand(0,36);
-    // compute target angle so that landing number faces a "pointer" at angle 0.
-    // On texture we placed numbers starting at -Math.PI/2 offset; we simply map index -> angle
-    const idx = landing;
-    const anglePer = (Math.PI*2)/37;
-    const desired = - (idx * anglePer); // choose negative rotation to match earlier mapping
-    // simulate several rotations
+    // compute angle target: each index mapped; our texture placed numbers starting at -PI/2
+    const cellCount = 37;
+    const anglePer = (Math.PI*2)/cellCount;
+    const desired = - (landing * anglePer); // rotate negative so index faces forward (approx)
     const spins = 3 + Math.floor(Math.random()*3);
     ruletaTargetAngle = spins * Math.PI*2 + desired;
-    // temporarily lock UI spin button
-    rResult.textContent = 'Girando...';
-    // determine win after delay (we'll check when spin stops)
-    // store bet & choice for result resolution
+    ruletaSpinning = true;
+    ruletaVelocity = 12 + Math.random()*8;
     ruletaPending = { bet, type, value, landing, rResult };
-    // deduct player bet now
-    balance -= bet; saveBalance();
-    refreshBalance();
+    // deduct now
+    balance -= bet; localSaveUser();
+    rResult.textContent = 'Girando...';
+    // close UI controls to avoid double spin
+    options.querySelectorAll('button').forEach(b=>b.disabled=true);
   }
 
   document.getElementById('btnNumber').onclick = () => {
     options.innerHTML = '';
     for(let i=0;i<=36;i++){
-      const b = document.createElement('button'); b.textContent = i; b.onclick = ()=> commitSpin('number', i);
+      const b = document.createElement('button'); b.textContent = i;
+      b.onclick = ()=> commitSpin('number', i);
       options.appendChild(b);
     }
   };
   document.getElementById('btnColor').onclick = () => {
     options.innerHTML = '';
-    ['rojo','negro'].forEach(c => {
-      const b = document.createElement('button'); b.textContent = c; b.onclick = ()=> commitSpin('color', c);
-      options.appendChild(b);
-    });
+    ['rojo','negro'].forEach(c=>{ const b=document.createElement('button'); b.textContent=c; b.onclick=()=>commitSpin('color', c); options.appendChild(b); });
   };
   document.getElementById('btnParity').onclick = () => {
     options.innerHTML = '';
-    ['par','impar'].forEach(p => {
-      const b = document.createElement('button'); b.textContent = p; b.onclick = ()=> commitSpin('par', p);
-      options.appendChild(b);
-    });
+    ['par','impar'].forEach(p=>{ const b=document.createElement('button'); b.textContent=p; b.onclick=()=>commitSpin('par', p); options.appendChild(b); });
   };
 
   document.getElementById('closeR').onclick = () => hideUI();
 }
 
-// pending spin info
-let ruletaPending = null;
-
 /* ---------------------
-   Slots UI (screen animation simulated / reels handled in UI)
+   Slots UI (reels animation)
    --------------------- */
 function openSlots(){
   showUI(`
@@ -594,47 +621,44 @@ function openSlots(){
   document.getElementById('playSlotsBtn').onclick = () => {
     const bet = clamp(Number(betEl.value)||0, 1, balance);
     if(!bet){ resEl.textContent = 'Introduce una apuesta válida.'; return; }
-    balance -= bet; saveBalance();
-    // animate reels
+    balance -= bet; localSaveUser();
     let ticks = 0; const final = [];
     const interval = setInterval(()=>{
       ticks++;
       const a = symbols[rand(0,symbols.length-1)], b = symbols[rand(0,symbols.length-1)], c = symbols[rand(0,symbols.length-1)];
       reelsEl.textContent = `${a} ${b} ${c}`;
-      if(ticks > 24){
+      if(ticks > 30){
         clearInterval(interval);
-        // finalize
         final[0] = symbols[rand(0,symbols.length-1)];
         final[1] = symbols[rand(0,symbols.length-1)];
         final[2] = symbols[rand(0,symbols.length-1)];
         reelsEl.textContent = final.join(' ');
-        let won = final[0] === final[1] && final[1] === final[2];
-        if(won){ const payout = bet*5; balance += payout; resEl.textContent = `¡Jackpot! ${final.join(' ')} Ganaste ${payout}`; }
+        if(final[0]===final[1] && final[1]===final[2]){ const payout = bet*5; balance += payout; resEl.textContent = `¡Jackpot! ${final.join(' ')} Ganaste ${payout}`; }
         else if(final[0]===final[1]||final[1]===final[2]||final[0]===final[2]){ const payout = bet*2; balance += payout; resEl.textContent = `Dos iguales ${final.join(' ')} Ganaste ${payout}`; }
         else { resEl.textContent = `Perdiste ${bet} — ${final.join(' ')}`; }
-        saveBalance();
+        localSaveUser();
       }
-    }, 50);
+    }, 40);
   };
 
   document.getElementById('closeS').onclick = () => hideUI();
 }
 
 /* ---------------------
-   Keyboard E to open related UI
+   Keyboard E handler to open UI
    --------------------- */
 document.addEventListener('keydown', async (e) => {
   if(e.code !== 'KeyE') return;
   if(!lookingAt) return;
-  const type = lookingAt.userData.type;
-  if(type === 'npc'){ await claimDaily(); return; }
-  if(type === 'blackjack'){ openBlackjack(); return; }
-  if(type === 'roulette'){ openRoulette(); return; }
-  if(type === 'slots'){ openSlots(); return; }
+  const t = lookingAt.userData.type;
+  if(t === 'npc'){ await claimDaily(); return; }
+  if(t === 'blackjack'){ openBlackjack(); return; }
+  if(t === 'roulette'){ openRoulette(); return; }
+  if(t === 'slots'){ openSlots(); return; }
 });
 
 /* ---------------------
-   Animation loop - handles ruleta spin damping & resolution
+   Animate loop: ruleta spin easing & resolution
    --------------------- */
 const clock = new THREE.Clock();
 function animate(){
@@ -643,41 +667,45 @@ function animate(){
   updateCamera(dt);
   checkInteraction();
 
-  // ruleta spin animation
+  // ruleta spinning behaviour (ease to ruletaTargetAngle)
   if(ruletaSpinning){
-    // simple angular approach to target
-    const cur = ruletaDisk.rotation.z;
-    // rotate forward by velocity
+    // rotate using velocity until it falls under threshold then ease to target
     ruletaDisk.rotation.z += ruletaVelocity * dt;
-    // slowly reduce velocity
-    ruletaVelocity = Math.max(0, ruletaVelocity - dt * 2.8);
-    // if velocity low, ease to target
-    if(ruletaVelocity <= 0.01){
-      // snap toward target angle (increase rotation toward ruletaTargetAngle)
-      const diff = ruletaTargetAngle - (ruletaDisk.userData._spinStart || 0) - (ruletaDisk.rotation.z - (ruletaDisk.userData._spinBase || 0));
-      // actually simply stop and resolve now
-      ruletaSpinning = false;
-      // resolve pending
+    ruletaVelocity = Math.max(0, ruletaVelocity - dt * 3.0); // damping
+    if(ruletaVelocity <= 0.05){
+      // ease to target angle
+      const current = ruletaDisk.rotation.z % (Math.PI*2);
+      // we want ruletaDisk.rotation.z to increase to ruletaTargetAngle
+      const diff = ruletaTargetAngle - ruletaDisk.rotation.z;
+      // apply easing step
+      const step = diff * Math.min(1, dt * 3.0);
+      ruletaDisk.rotation.z += step;
+      if(Math.abs(diff) < 0.03){
+        ruletaSpinning = false;
+        ruletaVelocity = 0;
+      }
     }
   }
 
-  // if there is a pending ruleta and the disk has slowed a lot, resolve outcome
-  if(ruletaPending && !ruletaSpinning && ruletaVelocity <= 0.02){
-    // resolve immediately using ruletaPending.landing
+  // resolve pending when spin finished
+  if(ruletaPending && !ruletaSpinning && ruletaVelocity <= 0.05){
     const pending = ruletaPending;
     const landing = pending.landing;
-    // color & parity
     const redSet = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
     const color = landing === 0 ? 'green' : (redSet.has(landing) ? 'rojo' : 'negro');
     const parity = landing === 0 ? 'none' : (landing % 2 === 0 ? 'par' : 'impar');
     let won = false, payout = 0;
-    const type = pending.type, value = pending.value;
-    if(type === 'number'){ if(Number(value) === landing){ won = true; payout = pending.bet * 35; } }
-    else if(type === 'color'){ if(value === color) { won = true; payout = pending.bet * 2; } }
-    else if(type === 'par'){ if(value === parity) { won = true; payout = pending.bet * 2; } }
+    if(pending.type === 'number' && Number(pending.value) === landing){ won = true; payout = pending.bet * 35; }
+    else if(pending.type === 'color' && pending.value === color){ won = true; payout = pending.bet * 2; }
+    else if(pending.type === 'par' && pending.value === parity){ won = true; payout = pending.bet * 2; }
     if(won){ balance += payout; pending.rResult.textContent = `¡Sale ${landing} (${color}) — Ganaste ${payout}!`; }
     else { pending.rResult.textContent = `Sale ${landing} (${color}) — Perdiste ${pending.bet}`; }
-    saveBalance();
+    // try persist
+    if(supabase){
+      supabase.from('usuarios').update({ pekepuntos: balance }).eq('id', currentUser.id).catch(e=>console.warn('supabase ruleta save', e));
+      updateTop10();
+    }
+    localSaveUser();
     ruletaPending = null;
   }
 
@@ -688,21 +716,27 @@ animate();
 /* ---------------------
    Resize handling
    --------------------- */
-window.addEventListener('resize', ()=>{
+window.addEventListener('resize', ()=> {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
 });
 
-/* ---------------------
-   Debug helper (opcional)
-   --------------------- */
-window._casino = { scene, camera, renderer, currentUser, saveBalance };
+/* -------------
+   Small API for UI commitSpin to set ruletaPending
+   We set ruletaPending inside openRoulette.commitSpin when the user spins.
+   ------------- */
 
-/* ---------------------
-   Success: ready
-   --------------------- */
-console.log('Casino 3D inicializado — versión A (full quality).');
+// Helper to set ruleta pending from openRoulette (exposed)
+window._casino = {
+  scene, camera, renderer,
+  currentUser,
+  setBalance: (v) => { balance = Number(v); localSaveUser(); },
+  getBalance: () => balance,
+  saveLocalUser: localSaveUser
+};
+
+console.log('Casino 3D inicializado con Supabase ' + (supabase ? 'ACTIVO' : 'NO disponible'));
 
 })(); // end main
 </script>
