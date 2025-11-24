@@ -110,33 +110,43 @@ function renderHistory() {
   HISTORY_DIV.innerHTML = hist.map(q => `<span onclick="doSearch('${q}')">${q}</span>`).join('');
 }
 
+function extractResults(topics) {
+  const results = [];
+  for (let t of topics) {
+    if (t.Text && t.FirstURL) {
+      results.push({title: t.Text, url: t.FirstURL});
+    } else if (t.Topics) {
+      results.push(...extractResults(t.Topics));
+    }
+  }
+  return results;
+}
+
 async function doSearch(query, openFirst=false) {
   if(!query) return;
   saveHistory(query);
   RESULTS_DIV.innerHTML = "<p>Cargando...</p>";
 
   try {
-    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://duckduckgo.com/html/?q=' + encodeURIComponent(query))}`);
-    const text = await res.text();
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(text, "text/html");
-    const links = [...doc.querySelectorAll("a.result__a")]; // DuckDuckGo HTML results
-    RESULTS_DIV.innerHTML = "";
+    const res = await fetch(`https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&pretty=1&no_redirect=1`);
+    const data = await res.json();
+    const results = extractResults(data.RelatedTopics || []);
 
-    if(links.length === 0) {
+    RESULTS_DIV.innerHTML = "";
+    if(results.length === 0) {
       RESULTS_DIV.innerHTML = "<p>No se encontraron resultados</p>";
       return;
     }
 
     if(openFirst) {
-      window.open(links[0].href, "_blank");
+      window.open(results[0].url, "_blank");
       return;
     }
 
-    links.forEach(a => {
+    results.forEach(r => {
       const div = document.createElement("div");
       div.classList.add("result");
-      div.innerHTML = `<a href="${a.href}" target="_blank">${a.textContent}</a>`;
+      div.innerHTML = `<a href="${r.url}" target="_blank">${r.title}</a>`;
       RESULTS_DIV.appendChild(div);
     });
   } catch(err) {
