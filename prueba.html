@@ -42,7 +42,6 @@
 <script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
 
 <script>
-
 (async function(){
 
 const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
@@ -89,7 +88,32 @@ if(!currentUser){
 }
 let balance = Number(currentUser.pekepuntos || 0);
 function refreshBalanceUI(){ balanceEl.textContent = Number(balance).toLocaleString(); }
-function localSaveUser(){ currentUser.pekepuntos = balance; localStorage.setItem('currentUser', JSON.stringify(currentUser)); refreshBalanceUI(); }
+
+// CENTRAL: guarda local y en Supabase
+async function saveUser(balanceUpdate = true){
+  if(balanceUpdate) currentUser.pekepuntos = balance;
+  try {
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+  } catch(e){
+    console.warn('No se pudo escribir localStorage', e);
+  }
+  try {
+    refreshBalanceUI();
+  } catch(e){}
+
+  if(supabase){
+    try {
+      await supabase
+        .from('usuarios')
+        .update({ pekepuntos: currentUser.pekepuntos, last_claim: currentUser.last_claim || null })
+        .eq('id', currentUser.id);
+      // refresh top 10 after update
+      updateTop10();
+    } catch(e){
+      console.warn('Supabase save error:', e);
+    }
+  }
+}
 
 refreshBalanceUI();
 
@@ -338,7 +362,10 @@ function checkInteraction(){
   const hits = ray.intersectObjects(interactables, false);
   if(!hits.length || hits[0].distance > 4){ lookingAt = null; npcMsgEl.style.display = 'none'; return; }
   lookingAt = hits[0].object;
-  npcMsgEl.style.display = (lookingAt.userData.type === 'npc') ? 'block' : 'none';
+  npcMsgEl.style.display = 'block';
+  // show specific text
+  if(lookingAt.userData.type === 'npc') npcMsgEl.textContent = 'Pulsa E para recoger fichas diarias';
+  else npcMsgEl.textContent = 'Pulsa E para interactuar';
 }
 
 /* ---------------------
@@ -364,15 +391,7 @@ async function claimDaily(){
   }
   balance += 100;
   currentUser.last_claim = new Date().toISOString();
-  localSaveUser();
-  // try update supabase
-  if(supabase){
-    try{
-      await supabase.from('usuarios').update({ pekepuntos: balance, last_claim: currentUser.last_claim }).eq('id', currentUser.id);
-      // refresh top10 immediately
-      updateTop10();
-    }catch(e){ console.warn('supabase claim error', e); }
-  }
+  await saveUser();
   showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Recibiste +100 Pekepuntos.</div><div class="row"><button id="closeDaily2">Cerrar</button></div></div>`);
   document.getElementById('closeDaily2').onclick = () => hideUI();
 }
@@ -424,7 +443,8 @@ function openBlackjack(){
     stateEl.innerHTML = `<div><strong>Jugador:</strong> ${ph} — (${score(playerHand)})</div><div><strong>Dealer:</strong> ${dh} — (${inRound ? '??' : score(dealerHand)})</div>`;
   }
 
-  function finalize(){
+  // finalize ahora es async para await saveUser()
+  async function finalize(){
     inRound = false; actionsEl.innerHTML = '';
     let dealerScore = score(dealerHand);
     while(dealerScore < 17){ dealerHand.push(deck.pop()); dealerScore = score(dealerHand); }
@@ -433,12 +453,10 @@ function openBlackjack(){
     else if(dealerScore > 21 || playerScore > dealerScore){ resultEl.textContent = `Ganas! Tu ${playerScore} / Dealer ${dealerScore} → +${betAmount}`; balance += betAmount; }
     else if(playerScore === dealerScore){ resultEl.textContent = `Empate (${playerScore}). No hay cambios.`; }
     else { resultEl.textContent = `Pierdes (${playerScore} vs ${dealerScore}). -${betAmount}`; balance -= betAmount; }
-    // try update supabase
-    if(supabase){
-      supabase.from('usuarios').update({ pekepuntos: balance }).eq('id', currentUser.id).catch(e=>console.warn('supabase bj save', e));
-      updateTop10();
-    }
-    localSaveUser();
+
+    // persistir (saveUser se encarga de local + supabase)
+    try { await saveUser(); } catch(e){ console.warn('saveUser error', e); }
+
     renderHands();
     setTimeout(()=> hideUI(), 1400);
   }
@@ -452,19 +470,19 @@ function openBlackjack(){
     inRound = true; renderHands();
     actionsEl.innerHTML = `<button id="hitBtn">Pedir</button><button id="standBtn">Plantarse</button><button id="doubleBtn">Doblar</button><button id="splitBtn">Dividir</button>`;
     resultEl.textContent = '';
-    document.getElementById('hitBtn').onclick = () => {
-      playerHand.push(deck.pop()); renderHands(); if(score(playerHand) > 21) finalize();
+    document.getElementById('hitBtn').onclick = async () => {
+      playerHand.push(deck.pop()); renderHands(); if(score(playerHand) > 21) await finalize();
     };
-    document.getElementById('standBtn').onclick = () => finalize();
-    document.getElementById('doubleBtn').onclick = () => {
+    document.getElementById('standBtn').onclick = async () => await finalize();
+    document.getElementById('doubleBtn').onclick = async () => {
       if(balance < betAmount * 2){ resultEl.textContent = 'Saldo insuficiente para doblar.'; return; }
-      balance -= betAmount; betAmount *= 2; playerHand.push(deck.pop()); renderHands(); finalize();
+      balance -= betAmount; betAmount *= 2; playerHand.push(deck.pop()); renderHands(); await finalize();
     };
     const splitBtn = document.getElementById('splitBtn');
     const canSplit = playerHand.length === 2 && playerHand[0].v === playerHand[1].v && (balance >= betAmount);
     if(!canSplit) splitBtn.disabled = true;
     else {
-      splitBtn.onclick = () => {
+      splitBtn.onclick = async () => {
         // simplified split: play both hands automatically vs dealer
         balance -= betAmount; // extra bet
         const cardA = [playerHand[0], deck.pop()];
@@ -486,11 +504,7 @@ function openBlackjack(){
         };
         payout += check(h1) + check(h2);
         balance += payout;
-        if(supabase){
-          supabase.from('usuarios').update({ pekepuntos: balance }).eq('id', currentUser.id).catch(e=>console.warn('supabase split save', e));
-          updateTop10();
-        }
-        localSaveUser();
+        try { await saveUser(); } catch(e){ console.warn('supabase split save', e); }
         resultEl.innerHTML = `Split result — Dealer ${score(dealerHand)}. Mano1 ${score(h1)} / Mano2 ${score(h2)} → ${payout>=0?('+'+payout):payout}`;
         setTimeout(()=> hideUI(), 1600);
       };
@@ -539,7 +553,9 @@ function openRoulette(){
     ruletaVelocity = 12 + Math.random()*8;
     ruletaPending = { bet, type, value, landing, rResult };
     // deduct now
-    balance -= bet; localSaveUser();
+    balance -= bet;
+    // fire-and-forget save (don't block animation)
+    saveUser().catch(e=>console.warn('saveUser error (ruleta commit):', e));
     rResult.textContent = 'Girando...';
     // close UI controls to avoid double spin
     options.querySelectorAll('button').forEach(b=>b.disabled=true);
@@ -587,7 +603,9 @@ function openSlots(){
   document.getElementById('playSlotsBtn').onclick = () => {
     const bet = clamp(Number(betEl.value)||0, 1, balance);
     if(!bet){ resEl.textContent = 'Introduce una apuesta válida.'; return; }
-    balance -= bet; localSaveUser();
+    balance -= bet;
+    // fire-and-forget save
+    saveUser().catch(e=>console.warn('saveUser error (slots deduct):', e));
     let ticks = 0; const final = [];
     const interval = setInterval(()=>{
       ticks++;
@@ -602,7 +620,8 @@ function openSlots(){
         if(final[0]===final[1] && final[1]===final[2]){ const payout = bet*5; balance += payout; resEl.textContent = `¡Jackpot! ${final.join(' ')} Ganaste ${payout}`; }
         else if(final[0]===final[1]||final[1]===final[2]||final[0]===final[2]){ const payout = bet*2; balance += payout; resEl.textContent = `Dos iguales ${final.join(' ')} Ganaste ${payout}`; }
         else { resEl.textContent = `Perdiste ${bet} — ${final.join(' ')}`; }
-        localSaveUser();
+        // persist result
+        saveUser().catch(e=>console.warn('saveUser error (slots result):', e));
       }
     }, 40);
   };
@@ -641,11 +660,9 @@ function animate(){
     if(ruletaVelocity <= 0.05){
       // ease to target angle
       const current = ruletaDisk.rotation.y % (Math.PI*2);
-      // we want ruletaDisk.rotation.z to increase to ruletaTargetAngle
       const diff = ruletaTargetAngle - ruletaDisk.rotation.y;
-      // apply easing step
       const step = diff * Math.min(1, dt * 3.0);
-      ruletaDisk.rotation.z += step;
+      ruletaDisk.rotation.y += step;
       if(Math.abs(diff) < 0.03){
         ruletaSpinning = false;
         ruletaVelocity = 0;
@@ -666,12 +683,8 @@ function animate(){
     else if(pending.type === 'par' && pending.value === parity){ won = true; payout = pending.bet * 2; }
     if(won){ balance += payout; pending.rResult.textContent = `¡Sale ${landing} (${color}) — Ganaste ${payout}!`; }
     else { pending.rResult.textContent = `Sale ${landing} (${color}) — Perdiste ${pending.bet}`; }
-    // try persist
-    if(supabase){
-      supabase.from('usuarios').update({ pekepuntos: balance }).eq('id', currentUser.id).catch(e=>console.warn('supabase ruleta save', e));
-      updateTop10();
-    }
-    localSaveUser();
+    // persist
+    saveUser().catch(e=>console.warn('saveUser error (ruleta resolution):', e));
     ruletaPending = null;
   }
 
@@ -697,9 +710,9 @@ window.addEventListener('resize', ()=> {
 window._casino = {
   scene, camera, renderer,
   currentUser,
-  setBalance: (v) => { balance = Number(v); localSaveUser(); },
+  setBalance: (v) => { balance = Number(v); saveUser().catch(()=>{}); },
   getBalance: () => balance,
-  saveLocalUser: localSaveUser
+  saveLocalUser: () => saveUser().catch(()=>{})
 };
 
 console.log('Casino 3D inicializado con Supabase ' + (supabase ? 'ACTIVO' : 'NO disponible'));
