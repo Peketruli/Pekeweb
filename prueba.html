@@ -42,171 +42,198 @@
 <script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
 
 <script>
+/* ====== CASINO 3D: versión corregida (persistencia siempre en Supabase) ======
+   - Asegúrate de pegar esto reemplazando scripts previos.
+   - Usa la consola del navegador (F12) para ver errores si algo falla.
+   - Nota: utiliza la UMD de supabase (dist/umd) para exponer window.supabase correctamente.
+*/
 
 (async function(){
   const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
   const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
 
-  // Inicializa supabase (umd)
+  // ---------- init supabase UMD reliably ----------
   let supabase = null;
-  try {
-    if(window.supabase && window.supabase.createClient){
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-    } else {
-      // si la lib no está cargada, cargamos la versión CDN (fallback)
+  async function ensureSupabase(){
+    try {
+      if(window.supabase && typeof window.supabase.createClient === 'function'){
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('Supabase: using existing window.supabase');
+        return;
+      }
+      // load UMD bundle that exposes window.supabase
       await new Promise((res, rej) => {
         const s = document.createElement('script');
-        s.src = 'https://unpkg.com/@supabase/supabase-js';
-        s.onload = res; s.onerror = rej;
+        s.src = 'https://unpkg.com/@supabase/supabase-js/dist/umd/supabase.min.js';
+        s.onload = res;
+        s.onerror = () => rej(new Error('No se pudo cargar supabase UMD'));
         document.head.appendChild(s);
       });
-      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      if(window.supabase && typeof window.supabase.createClient === 'function'){
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        console.log('Supabase inicializado correctamente (UMD).');
+      } else {
+        console.warn('Supabase cargado pero window.supabase.createClient no es una función.');
+        supabase = null;
+      }
+    } catch (e){
+      console.warn('No se pudo inicializar Supabase:', e);
+      supabase = null;
     }
-  } catch (err) {
-    console.error('No se pudo inicializar supabase:', err);
-    alert('Supabase no se pudo inicializar. Revisa consola.');
-    supabase = null;
+  }
+  await ensureSupabase();
+
+  // ---------- DOM refs (safe) ----------
+  const container = document.getElementById('container') || document.body;
+  const modalEl = document.getElementById('modal') || null;
+  // soporta tanto tu #balance (strong) como #pekepuntos antiguo
+  let balanceEl = document.getElementById('balance') || document.getElementById('pekepuntos');
+  if(!balanceEl){
+    balanceEl = document.createElement('div');
+    balanceEl.id = 'balance';
+    balanceEl.style.position = 'absolute';
+    balanceEl.style.left = '12px';
+    balanceEl.style.top = '12px';
+    balanceEl.style.zIndex = 999;
+    balanceEl.style.color = 'white';
+    document.body.appendChild(balanceEl);
   }
 
-  // DOM refs
-  const balanceEl = document.getElementById('balance') || document.getElementById('pekepuntos') || (() => { const d=document.createElement('div'); d.id='balance'; document.body.prepend(d); return d; })();
-  const modalEl = document.getElementById('modal') || null;
-  const container = document.getElementById('container') || document.body;
-
-  // Estado de usuario
+  // ---------- estado de usuario ----------
   let currentUser = null;
   let balance = 0;
 
-  // Helpers
+  // ---------- util helpers ----------
   const rand = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
-  const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
+  const clamp = (v,a,b) => Math.max(a, Math.min(b,v));
+  function safeLog() { try{ console.log.apply(console, arguments); }catch(e){} }
 
-  // FUNCIONES SUPABASE / USUARIO ---------------------------------------
+  // ---------- funciones supabase/usuario ----------
   async function promptUsername(){
-    // Sencillo: pedir nombre con prompt. Puedes sustituir aquí por login real.
-    let name = '';
-    while(!name){
-      name = prompt('Introduce tu nombre de usuario para jugar en el Casino (sin espacios):','Guest' + Math.floor(Math.random()*999));
-      if(name === null) { // usuario canceló
-        alert('Necesitas un nombre para jugar. Se crea un usuario Guest automáticamente.');
-        name = 'Guest' + Math.floor(Math.random()*10000);
-        break;
-      }
-      name = String(name).trim();
-      if(!name) alert('Nombre vacío, prueba otro.');
-    }
+    // breve prompt fallback; puedes reemplazar por tu login más tarde
+    let name = prompt('Nombre de usuario para el Casino (sin espacios):', 'Guest'+Math.floor(Math.random()*9000+1000));
+    if(name === null) return null;
+    name = String(name).trim().replace(/\s+/g,'_').slice(0,50) || ('Guest' + Math.floor(Math.random()*10000));
     return name;
   }
 
-  async function findUserByUsername(username){
+  async function findUser(username){
     if(!supabase) return null;
-    const { data, error } = await supabase.from('usuarios').select('*').eq('username', username).limit(1).single();
-    if(error && error.code !== 'PGRST116') { // PGRST116 = no rows? check
-      // not fatal, but log
-      console.warn('findUser error', error);
+    try {
+      const { data, error } = await supabase.from('usuarios').select('*').eq('username', username).limit(1).single();
+      if(error){
+        // si no existe data, data será null; pero single() lanza error cuando no hay filas.
+        if(error.code === 'PGRST116' || /No rows/.test(error.message)) return null;
+        console.warn('findUser supabase error', error);
+        return null;
+      }
+      return data || null;
+    } catch (e){
+      console.warn('findUser exception', e);
+      return null;
     }
-    return data || null;
   }
 
   async function createUser(username){
     if(!supabase) return null;
-    const now = new Date().toISOString();
-    const payload = {
-      username,
-      pekepuntos: 500,
-      last_claim: null,
-      created_at: now
-    };
-    const { data, error } = await supabase.from('usuarios').insert([payload]).select().limit(1).single();
-    if(error){ console.error('createUser error', error); return null; }
-    return data;
+    try {
+      const now = new Date().toISOString();
+      const payload = { username, pekepuntos: 500, last_claim: null, created_at: now };
+      // insert y devolver la fila
+      const { data, error } = await supabase.from('usuarios').insert([payload]).select().single();
+      if(error){ console.warn('createUser error', error); return null; }
+      return data;
+    } catch(e){
+      console.warn('createUser exception', e);
+      return null;
+    }
   }
 
   async function getOrCreateUserFlow(){
-    // 1) pedir username
-    const username = await promptUsername();
-    if(!username) throw new Error('No username provided');
-
-    // 2) buscar en supabase
-    let user = await findUserByUsername(username);
-    if(user){
-      return user;
+    let name = await promptUsername();
+    if(!name){
+      // si canceló, creamos guest rápido
+      name = 'Guest' + Math.floor(Math.random()*10000);
+      safeLog('Usuario canceló prompt. Generado:', name);
     }
-    // 3) no existe -> crear
-    user = await createUser(username);
-    return user;
+    // buscar
+    let user = await findUser(name);
+    if(user) return user;
+    // no existe: crear (si da error por RLS o permisos, createUser devolverá null)
+    user = await createUser(name);
+    if(user) return user;
+    // como fallback, devolver objeto local no persistido
+    return { id: null, username: name, pekepuntos: 500, last_claim: null };
   }
 
   async function updateBalanceOnServer(){
-    if(!supabase || !currentUser) return;
+    // intenta actualizar la fila del usuario en supabase; si user.id es null, intenta por username (upsert)
+    if(!supabase || !currentUser) { refreshBalanceUI(); return; }
     try {
-      const { data, error } = await supabase
-        .from('usuarios')
-        .update({ pekepuntos: balance, last_claim: currentUser.last_claim || null })
-        .eq('id', currentUser.id)
-        .select()
-        .single();
-
-      if(error){
-        console.warn('updateBalanceOnServer error', error);
-        // intentar fallback: upsert por username (si update no encontró fila)
-        try {
+      if(currentUser.id){
+        const { data, error } = await supabase.from('usuarios')
+          .update({ pekepuntos: balance, last_claim: currentUser.last_claim || null })
+          .eq('id', currentUser.id)
+          .select()
+          .single();
+        if(error){
+          console.warn('updateBalance (by id) error', error);
+          // intentar upsert por username
           const { data: up, error: errUp } = await supabase.from('usuarios')
             .upsert({ username: currentUser.username, pekepuntos: balance, last_claim: currentUser.last_claim || null }, { onConflict: 'username' })
-            .select().single();
-          if(errUp) console.warn('upsert fallback error', errUp);
+            .select()
+            .single();
+          if(errUp) { console.warn('upsert fallback error', errUp); }
           else { currentUser = up; }
-        } catch(e){ console.error('upsert fallback exception', e); }
+        } else {
+          currentUser = data;
+        }
       } else {
-        currentUser = data;
+        // upsert por username si no hay id
+        const { data, error } = await supabase.from('usuarios')
+          .upsert({ username: currentUser.username, pekepuntos: balance, last_claim: currentUser.last_claim || null }, { onConflict: 'username' })
+          .select()
+          .single();
+        if(error){ console.warn('updateBalance upsert error', error); }
+        else currentUser = data;
       }
-
     } catch (e){
-      console.error('updateBalanceOnServer exception', e);
+      console.warn('updateBalance exception', e);
     } finally {
       refreshBalanceUI();
-      // refrescar top10
-      try { await updateTop10(); } catch(e){}
+      try { await updateTop10(); } catch(e){ /* no bloqueante */ }
     }
   }
 
-  async function logActivity(accion, detalle=''){
+  async function logActivity(accion, detalle = ''){
     if(!supabase || !currentUser) return;
     try {
       await supabase.from('actividad').insert([{ usuario: currentUser.username, accion, detalle, fecha: new Date().toISOString() }]);
-    } catch(e){ /* no bloqueante */ console.warn('logActivity error', e); }
+    } catch(e){ console.warn('logActivity error', e); }
   }
 
   function refreshBalanceUI(){
-    if(balanceEl){
-      // si usas el antiguo #pekepuntos
-      if(balanceEl.id === 'pekepuntos'){
-        balanceEl.textContent = `Pekepuntos: ${Number(balance || 0).toLocaleString()}`;
-      } else {
-        balanceEl.textContent = Number(balance || 0).toLocaleString();
-      }
-    }
-    // también actualiza el nombre si existe el elemento
+    if(!balanceEl) return;
+    // si es el #pekepuntos antiguo, mantenemos formato
+    if(balanceEl.id === 'pekepuntos') balanceEl.textContent = `Pekepuntos: ${Number(balance || 0).toLocaleString()}`;
+    else balanceEl.textContent = Number(balance || 0).toLocaleString();
     const userNameEl = document.getElementById('userName');
-    if(userNameEl && currentUser) userNameEl.textContent = currentUser.username;
+    if(userNameEl && currentUser) userNameEl.textContent = currentUser.username || 'Usuario';
   }
 
-  // Inicializar usuario
+  // cargar/crear usuario
   try {
     currentUser = await getOrCreateUserFlow();
-    if(!currentUser) throw new Error('No se pudo obtener/crear usuario');
     balance = Number(currentUser.pekepuntos || 0);
     refreshBalanceUI();
     await logActivity('Entró al casino');
-    console.log('Usuario cargado:', currentUser.username, 'balance', balance);
+    safeLog('Usuario cargado:', currentUser);
   } catch (err){
-    console.error('Error init user flow:', err);
-    alert('Error al inicializar usuario. Revisa consola.');
+    console.error('Error init user flow', err);
+    alert('Error inicializando usuario, mira la consola.');
   }
 
-  // ----------------- THREE.JS y escena (igual que la tuya, adaptado) -----------------
-  // (mantengo la mayor parte de tu escena; solo incluyo lo esencial aquí y
-  // dejo que el resto de tu código de escena y objetos siga igual)
+  // -------------------- THREE.JS (esqueleto) --------------------
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0b0f1a);
 
@@ -220,116 +247,88 @@
   try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch(e){}
   container.appendChild(renderer.domElement);
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.8); hemi.position.set(0,50,0); scene.add(hemi);
   scene.add(new THREE.AmbientLight(0xffffff, 0.22));
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.8); hemi.position.set(0,50,0); scene.add(hemi);
   const dir = new THREE.DirectionalLight(0xfff6d6, 0.6); dir.position.set(5,10,5); dir.castShadow = true; scene.add(dir);
 
   function canvasTexture(size, drawFn){
     const c = document.createElement('canvas'); c.width = c.height = size;
     const ctx = c.getContext('2d'); drawFn(ctx, size);
-    const tex = new THREE.CanvasTexture(c);
-    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-    tex.anisotropy = 4;
-    tex.needsUpdate = true;
+    const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.needsUpdate = true;
     return tex;
   }
 
-  // floor, walls, textures (copiado de tu código - puedes mantener)
-  const floorTex = canvasTexture(1024, (ctx,s) => {
-    ctx.fillStyle = '#1b0022'; ctx.fillRect(0,0,s,s);
-    const grd = ctx.createLinearGradient(0,0,s,s); grd.addColorStop(0,'#22001f'); grd.addColorStop(1,'#0e0010');
-    ctx.fillStyle = grd; ctx.globalAlpha = 0.7; ctx.fillRect(0,0,s,s); ctx.globalAlpha = 1;
-  });
-
-  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.95, metalness: 0.02 });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
+  // floor básico
+  const floorTex = canvasTexture(512, (ctx,s) => { ctx.fillStyle='#0b0b12'; ctx.fillRect(0,0,s,s); });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.95 }));
   floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
 
-  // TOP10 wall (usa updateTop10 definido más abajo)
+  // TOP10 wall
   async function updateTop10(){
     if(!supabase) return;
     try {
       const { data, error } = await supabase.from('usuarios').select('username, pekepuntos').order('pekepuntos', { ascending: false }).limit(10);
-      if(error) { console.warn('updateTop10 error', error); return; }
-      const s=1024;
+      if(error){ console.warn('updateTop10 error', error); return; }
+      const s = 1024;
       const tex = canvasTexture(s, (ctx) => {
         ctx.fillStyle = '#071018'; ctx.fillRect(0,0,s,s);
-        ctx.fillStyle = '#f5b642'; ctx.font = '48px Arial'; ctx.textAlign = 'center'; ctx.fillText('TOP 10', s/2, 70);
-        ctx.font = '28px Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
-        data.forEach((r,i) => { const y = 130 + i*70; ctx.fillText(`${i+1}. ${r.username}`, 60, y); ctx.fillText((r.pekepuntos||0).toLocaleString(), s-140, y);});
+        ctx.fillStyle = '#f5b642'; ctx.font = '48px Arial'; ctx.textAlign='center'; ctx.fillText('TOP 10', s/2, 70);
+        ctx.font = '26px Arial'; ctx.textAlign='left'; ctx.fillStyle = '#fff';
+        data.forEach((r,i) => { const y = 140 + i*64; ctx.fillText(`${i+1}. ${r.username}`, 60, y); ctx.fillText((r.pekepuntos||0).toLocaleString(), s-140, y); });
       });
       const name = 'top10Wall';
       const existing = scene.getObjectByName(name);
       if(!existing){
-        const wall = new THREE.Mesh(new THREE.PlaneGeometry(8,5), new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide }));
+        const wall = new THREE.Mesh(new THREE.PlaneGeometry(8,5), new THREE.MeshStandardMaterial({ map: tex, side:THREE.DoubleSide }));
         wall.position.set(0,2,-14.9); wall.name = name; scene.add(wall);
       } else {
         existing.material.map = tex; existing.material.needsUpdate = true;
       }
-    } catch(e){
-      console.error('updateTop10 exception', e);
-    }
+    } catch(e){ console.warn('updateTop10 exception', e); }
   }
-  // primer updateTop10
   await updateTop10();
-  setInterval(updateTop10, 60000);
+  setInterval(updateTop10, 60_000);
 
-  // Interactables (blackjack, ruleta, slots, npc)
+  // objetos interactables (sencillos)
   const interactables = [];
   const bjTable = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.3,64), new THREE.MeshStandardMaterial({ color: 0x084b2f }));
-  bjTable.position.set(-4,0.3,0); bjTable.userData.type='blackjack'; scene.add(bjTable); interactables.push(bjTable);
+  bjTable.position.set(-4,0.3,0); bjTable.userData.type='blackjack'; bjTable.castShadow=true; scene.add(bjTable); interactables.push(bjTable);
 
   const ruletaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.4,64), new THREE.MeshStandardMaterial({ color:0x222222 }));
-  ruletaBase.position.set(0,0.2,0); ruletaBase.userData.type='roulette'; scene.add(ruletaBase); interactables.push(ruletaBase);
+  ruletaBase.position.set(0,0.2,0); ruletaBase.userData.type='roulette'; ruletaBase.castShadow=true; scene.add(ruletaBase); interactables.push(ruletaBase);
 
   const ruletaDisk = new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.15,0.08,256), new THREE.MeshStandardMaterial({ map: null }));
-  ruletaDisk.rotation.x = Math.PI;
-  ruletaDisk.position.set(0,0.45,0); scene.add(ruletaDisk);
+  ruletaDisk.rotation.x = Math.PI; ruletaDisk.position.set(0,0.45,0); ruletaDisk.castShadow=true; scene.add(ruletaDisk);
 
-  // create roulette texture (copiado)
+  // crear textura ruleta (copia simple)
   (function createRouletteTexture(){
-    const s = 2048;
-    const canv = document.createElement('canvas'); canv.width = canv.height = s;
-    const ctx = canv.getContext('2d'); ctx.translate(s/2, s/2);
-    const cellCount = 37; const anglePer = (Math.PI*2)/cellCount;
-    ctx.fillStyle = '#2f1b10'; ctx.beginPath(); ctx.arc(0,0,s/2,0,Math.PI*2); ctx.fill();
-    const redSet = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
-    for(let i=0;i<cellCount;i++){
-      const start = i*anglePer - Math.PI/2; const end = start + anglePer;
-      const isZero = (i===0);
-      ctx.beginPath();
-      ctx.fillStyle = isZero ? '#0b8a12' : (redSet.has(i) ? '#d22' : '#111');
-      ctx.moveTo(0,0); ctx.arc(0,0,s*0.48,start,end); ctx.closePath(); ctx.fill();
-      ctx.save(); ctx.rotate(start + anglePer/2); ctx.fillStyle = '#fff';
-      ctx.font = `${s*0.05}px Arial`; ctx.textAlign='center'; ctx.textBaseline='middle';
-      ctx.fillText(i.toString(), 0, -s*0.35); ctx.restore();
+    const s = 1024;
+    const c = document.createElement('canvas'); c.width = c.height = s;
+    const ctx = c.getContext('2d'); ctx.translate(s/2, s/2);
+    const cell = 37; const anglePer = (Math.PI*2)/cell;
+    ctx.fillStyle='#2f1b10'; ctx.beginPath(); ctx.arc(0,0,s/2,0,Math.PI*2); ctx.fill();
+    for(let i=0;i<cell;i++){
+      const start = i*anglePer - Math.PI/2; ctx.save(); ctx.rotate(start + anglePer/2);
+      ctx.fillStyle = i===0 ? '#0b8a12' : (i%2? '#d22':'#111');
+      ctx.fillRect(-s*0.18, -s*0.48, s*0.36, s*0.24);
+      ctx.fillStyle = '#fff'; ctx.font = '20px Arial'; ctx.textAlign='center'; ctx.fillText(i.toString(), 0, -s*0.36);
+      ctx.restore();
     }
-    ctx.beginPath(); ctx.fillStyle='#8b5a2b'; ctx.arc(0,0,s*0.18,0,Math.PI*2); ctx.fill();
-    const tex = new THREE.CanvasTexture(canv); tex.needsUpdate = true; tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-    ruletaDisk.material.map = tex; ruletaDisk.material.needsUpdate = true;
+    const tex = new THREE.CanvasTexture(c); tex.needsUpdate = true; ruletaDisk.material.map = tex; ruletaDisk.material.needsUpdate = true;
   })();
 
-  // slots proxy
-  function createSlotMachine(){
-    const g = new THREE.Group();
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.1,2.1,1.0), new THREE.MeshStandardMaterial({ color:0x222222 }));
-    body.position.y = 1.05; g.add(body);
-    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.45), new THREE.MeshStandardMaterial({ color:0x05050b, emissive:0x111111 }));
-    screen.position.set(0,1.4,0.51); g.add(screen);
-    return g;
-  }
-  const slotMachine = createSlotMachine(); slotMachine.position.set(4,0,0); scene.add(slotMachine);
+  // slot proxy
   const slotProxy = new THREE.Mesh(new THREE.BoxGeometry(1.05,2.05,1.05), new THREE.MeshBasicMaterial({ visible:false }));
-  slotProxy.position.copy(slotMachine.position); slotProxy.position.y = 1; slotProxy.userData.type = 'slots';
-  scene.add(slotProxy); interactables.push(slotProxy);
+  slotProxy.position.set(4,1,0); slotProxy.userData.type='slots'; scene.add(slotProxy); interactables.push(slotProxy);
 
+  // npc
   const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,1.6,16), new THREE.MeshStandardMaterial({ color:0xdddddd }));
-  npc.position.set(0,1,5); npc.userData.type = 'npc'; scene.add(npc); interactables.push(npc);
+  npc.position.set(0,1,5); npc.userData.type='npc'; scene.add(npc); interactables.push(npc);
 
-  // Movimiento & cámara (igual que tu código anterior)
+  // movimiento y cámara (tu implementación)
   const keys = {};
-  document.addEventListener('keydown', e => { keys[e.code] = true; });
-  document.addEventListener('keyup', e => { keys[e.code] = false; });
+  document.addEventListener('keydown', e => keys[e.code] = true);
+  document.addEventListener('keyup', e => keys[e.code] = false);
 
   let yaw = 0, pitch = 0;
   function updateCamera(dt){
@@ -339,7 +338,7 @@
     if(keys['ArrowUp']) pitch += pitchSpeed * dt;
     if(keys['ArrowDown']) pitch -= pitchSpeed * dt;
     const limit = Math.PI/2 - 0.05;
-    pitch = clamp(pitch, -limit, limit);
+    pitch = Math.max(-limit, Math.min(limit, pitch));
     camera.rotation.set(pitch, yaw, 0);
 
     const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
@@ -353,10 +352,15 @@
     camera.position.add(move);
   }
 
-  // Raycast interactions
+  // raycast interactions
   const ray = new THREE.Raycaster();
   let lookingAt = null;
-  const npcMsgEl = document.getElementById('npcMsg') || (function(){ const d=document.createElement('div'); d.id='npcMsg'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.background='rgba(0,0,0,0.6)'; d.style.padding='8px 12px'; d.style.borderRadius='8px'; d.style.display='none'; d.textContent='Pulsa E para interactuar'; document.body.appendChild(d); return d; })();
+  const npcMsgEl = document.getElementById('npcMsg') || (function(){
+    const d = document.createElement('div'); d.id='npcMsg';
+    d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)';
+    d.style.background='rgba(0,0,0,0.6)'; d.style.padding='8px 12px'; d.style.borderRadius='8px'; d.style.display='none'; d.style.color='white';
+    document.body.appendChild(d); return d;
+  })();
 
   function checkInteraction(){
     ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
@@ -368,120 +372,81 @@
     else npcMsgEl.textContent = 'Pulsa E para interactuar';
   }
 
-  // UI modal helpers (si tienes modalEl lo usará)
+  // UI helpers (mínimos)
   function showUI(html){
     if(modalEl){ modalEl.innerHTML = html; modalEl.style.display = 'block'; return; }
-    const tmp = document.createElement('div'); tmp.style.position='absolute'; tmp.style.left='50%'; tmp.style.top='50%'; tmp.style.transform='translate(-50%,-50%)'; tmp.style.background='rgba(16,22,37,0.95)'; tmp.style.padding='18px'; tmp.style.borderRadius='10px'; tmp.innerHTML = html;
-    document.body.appendChild(tmp);
+    const tmp = document.createElement('div');
+    tmp.style.position='absolute'; tmp.style.left='50%'; tmp.style.top='50%'; tmp.style.transform='translate(-50%,-50%)';
+    tmp.style.background='rgba(16,22,37,0.95)'; tmp.style.padding='18px'; tmp.style.borderRadius='10px'; tmp.style.color='white';
+    tmp.innerHTML = html; document.body.appendChild(tmp);
     setTimeout(()=> tmp.remove(), 3000);
   }
   function hideUI(){ if(modalEl) modalEl.style.display = 'none'; }
 
-  // Juegos: Daily, Blackjack, Ruleta, Slots
+  // ---------- Daily claim ----------
   async function claimDaily(){
     const today = new Date().toISOString().slice(0,10);
-    const last = currentUser.last_claim ? currentUser.last_claim.slice(0,10) : null;
+    const last = currentUser && currentUser.last_claim ? currentUser.last_claim.slice(0,10) : null;
     if(last === today){
       showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Ya reclamaste hoy.</div></div>`);
       return;
     }
     balance += 100;
-    currentUser.last_claim = new Date().toISOString();
+    if(currentUser) currentUser.last_claim = new Date().toISOString();
     await updateBalanceOnServer();
     await logActivity('Reclamó diaria', '+100');
     showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Recibiste +100 Pekepuntos.</div></div>`);
   }
 
-  // Blackjack (simplificado, usando updateBalanceOnServer)
-  function createDeck(){
-    const vals = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-    const suits = ['♠','♥','♦','♣'];
-    const d = [];
-    for(const s of suits) for(const v of vals) d.push({ v, s });
-    for(let i = d.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [d[i], d[j]]=[d[j], d[i]]; }
-    return d;
-  }
-  function valueOf(card){ if(card.v === 'A') return 11; if(['J','Q','K'].includes(card.v)) return 10; return parseInt(card.v,10); }
-  function score(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum += valueOf(c); } while(sum>21 && aces){ sum -= 10; aces--; } return sum; }
-
+  // ---------- Juegos simples que persisten en servidor ----------
+  // Blackjack minimal (apuesta fija)
   async function openBlackjack(){
-    showUI(`<div class="gameUI"><h2>Blackjack</h2><div class="gameResult" id="bjResult"></div></div>`);
-    // UI minimal: realizar una apuesta rápida de ejemplo
     const bet = Math.min(50, balance);
     if(!bet){ showUI('<div class="gameResult">Saldo insuficiente</div>'); return; }
-    // jugar una mano automática: 50% win
+    // simulación rápida: 50% win
     const win = Math.random() < 0.5;
-    if(win){ balance += bet; await updateBalanceOnServer(); showUI(`<div class="gameResult">Ganas ${bet}</div>`); await logActivity('Blackjack win', `+${bet}`); }
-    else { balance -= bet; await updateBalanceOnServer(); showUI(`<div class="gameResult">Pierdes ${bet}</div>`); await logActivity('Blackjack lose', `-${bet}`); }
+    if(win){ balance += bet; await updateBalanceOnServer(); await logActivity('Blackjack win', `+${bet}`); showUI(`<div class="gameResult">Ganas ${bet}</div>`); }
+    else { balance -= bet; await updateBalanceOnServer(); await logActivity('Blackjack lose', `-${bet}`); showUI(`<div class="gameResult">Pierdes ${bet}</div>`); }
   }
 
-  // Ruleta: interfaz simple
-  let ruletaSpinning = false;
-  let ruletaPending = null;
-  function openRoulette(){
-    showUI(`<div class="gameUI"><h2>Ruleta</h2><div class="row"><label>Apuesta: <input id="rBet" type="number" value="50" min="1" /></label></div><div class="row"><button id="spinBtn">Girar Número (aleatorio)</button></div><div id="rResult" class="gameResult"></div></div>`);
-    // attach handler
-    setTimeout(()=> {
-      const btn = document.getElementById('spinBtn');
-      if(btn) btn.onclick = async () => {
-        const betInput = document.getElementById('rBet');
-        const bet = clamp(Number(betInput.value)||0, 1, balance);
-        if(!bet){ document.getElementById('rResult').textContent = 'Introduce apuesta válida'; return; }
-        balance -= bet; await updateBalanceOnServer();
-        document.getElementById('rResult').textContent = 'Girando...';
-        // decide landing
-        const landing = rand(0,36);
-        // decide win (if landing is even)
-        const won = landing % 2 === 0;
-        let payout = 0;
-        if(won){ payout = bet * 2; balance += payout; await updateBalanceOnServer(); document.getElementById('rResult').textContent = `Sale ${landing} — Ganaste ${payout}`; await logActivity('Ruleta win', `+${payout}`); }
-        else { document.getElementById('rResult').textContent = `Sale ${landing} — Perdiste ${bet}`; await logActivity('Ruleta lose', `-${bet}`); }
-      };
-    }, 50);
+  // Ruleta simple
+  async function openRoulette(){
+    showUI(`<div class="gameUI"><h2>Ruleta</h2><div class="gameResult" id="rResult"></div></div>`);
+    const bet = Math.min(50, balance);
+    if(!bet){ showUI('<div class="gameResult">Saldo insuficiente</div>'); return; }
+    // retiramos apuesta y persistimos inmediatamente
+    balance -= bet; await updateBalanceOnServer();
+    const landing = rand(0,36);
+    const win = (landing % 2 === 0);
+    if(win){ const payout = bet*2; balance += payout; await updateBalanceOnServer(); await logActivity('Ruleta win', `+${payout}`); showUI(`<div class="gameResult">Sale ${landing} — Ganaste ${payout}</div>`); }
+    else { await logActivity('Ruleta lose', `-${bet}`); showUI(`<div class="gameResult">Sale ${landing} — Perdiste ${bet}</div>`); }
   }
 
-  // Slots (simplificado)
-  function openSlots(){
-    showUI(`<div class="gameUI"><h2>Tragamonedas</h2><div class="row"><label>Apuesta: <input id="sBet" type="number" value="50" min="1" /></label></div><div class="row"><button id="playSlotsBtn">Jugar</button></div><div id="slotsReels" style="font-size:32px;margin-top:10px">• • •</div><div id="slotsRes" class="gameResult"></div></div>`);
-    setTimeout(()=> {
-      const playBtn = document.getElementById('playSlotsBtn');
-      if(!playBtn) return;
-      playBtn.onclick = async () => {
-        const bet = clamp(Number(document.getElementById('sBet').value)||0, 1, balance);
-        if(!bet){ document.getElementById('slotsRes').textContent = 'Introduce apuesta válida'; return; }
-        balance -= bet; await updateBalanceOnServer();
-        const symbols = ['🍒','🍋','🍊','🍇','💎','7️⃣'];
-        let ticks = 0;
-        const reelsEl = document.getElementById('slotsReels'); const resEl = document.getElementById('slotsRes');
-        const interval = setInterval(()=> {
-          ticks++;
-          const a = symbols[rand(0,symbols.length-1)], b = symbols[rand(0,symbols.length-1)], c = symbols[rand(0,symbols.length-1)];
-          reelsEl.textContent = `${a} ${b} ${c}`;
-          if(ticks>30){
-            clearInterval(interval);
-            const final = [symbols[rand(0,symbols.length-1)], symbols[rand(0,symbols.length-1)], symbols[rand(0,symbols.length-1)]];
-            reelsEl.textContent = final.join(' ');
-            if(final[0]===final[1] && final[1]===final[2]){ const payout = bet*5; balance += payout; resEl.textContent = `¡Jackpot! Ganaste ${payout}`; await updateBalanceOnServer(); await logActivity('Slots win', `+${payout}`); }
-            else if(final[0]===final[1]||final[1]===final[2]||final[0]===final[2]){ const payout = bet*2; balance += payout; resEl.textContent = `Dos iguales — Ganaste ${payout}`; await updateBalanceOnServer(); await logActivity('Slots pair', `+${payout}`); }
-            else { resEl.textContent = `Perdiste ${bet}`; await logActivity('Slots lose', `-${bet}`); }
-          }
-        }, 40);
-      };
-    }, 50);
+  // Slots simple
+  async function openSlots(){
+    const bet = Math.min(50, balance);
+    if(!bet){ showUI('<div class="gameResult">Saldo insuficiente</div>'); return; }
+    balance -= bet; await updateBalanceOnServer();
+    // animación simbólica
+    const symbols = ['🍒','🍋','🍊','🍇','💎','7️⃣'];
+    const final = [symbols[rand(0,symbols.length-1)], symbols[rand(0,symbols.length-1)], symbols[rand(0,symbols.length-1)]];
+    if(final[0]===final[1] && final[1]===final[2]){ const payout = bet*5; balance += payout; await updateBalanceOnServer(); await logActivity('Slots win', `+${payout}`); showUI(`<div class="gameResult">¡Jackpot! Ganaste ${payout}</div>`); }
+    else if(final[0]===final[1]||final[1]===final[2]||final[0]===final[2]){ const payout = bet*2; balance += payout; await updateBalanceOnServer(); await logActivity('Slots pair', `+${payout}`); showUI(`<div class="gameResult">Dos iguales — Ganaste ${payout}</div>`); }
+    else { await logActivity('Slots lose', `-${bet}`); showUI(`<div class="gameResult">Perdiste ${bet}</div>`); }
   }
 
-  // Atajo E para interactuar
+  // manejar tecla E
   document.addEventListener('keydown', async (e) => {
     if(e.code !== 'KeyE') return;
     if(!lookingAt) return;
     const t = lookingAt.userData.type;
     if(t === 'npc'){ await claimDaily(); return; }
     if(t === 'blackjack'){ await openBlackjack(); return; }
-    if(t === 'roulette'){ openRoulette(); return; }
-    if(t === 'slots'){ openSlots(); return; }
+    if(t === 'roulette'){ await openRoulette(); return; }
+    if(t === 'slots'){ await openSlots(); return; }
   });
 
-  // Loop de animación
+  // anim loop
   const clock = new THREE.Clock();
   function animate(){
     requestAnimationFrame(animate);
@@ -492,14 +457,14 @@
   }
   animate();
 
-  // Resize
+  // resize
   window.addEventListener('resize', ()=> {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
   });
 
-  // Export API útil
+  // API externa
   window._casino = {
     getCurrentUser: () => currentUser,
     getBalance: () => balance,
@@ -507,7 +472,7 @@
     subBalance: async (amt, reason='') => { balance -= amt; await updateBalanceOnServer(); if(reason) await logActivity('Sub', reason); }
   };
 
-  console.log('Casino 3D iniciado — Supabase ' + (supabase ? 'OK' : 'NO disponible'));
+  safeLog('Casino 3D iniciado. Supabase:', supabase ? 'OK' : 'NO DISPONIBLE');
 })();
 </script>
 </body>
