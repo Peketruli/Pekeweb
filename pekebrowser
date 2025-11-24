@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PekeSearch</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f2f2f2;
+  margin: 0;
+  padding: 0;
+}
+#app {
+  max-width: 700px;
+  margin: 20px auto;
+  background: #fff;
+  padding: 15px 20px;
+  border-radius: 10px;
+  box-shadow: 0 3px 15px rgba(0,0,0,0.2);
+}
+.titlebar {
+  font-size: 24px;
+  font-weight: bold;
+  margin-bottom: 15px;
+  color: #1a73e8;
+}
+.searchContainer {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+#searchInput {
+  flex: 1;
+  padding: 8px 10px;
+  font-size: 16px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+#searchBtn, #luckyBtn {
+  padding: 8px 12px;
+  font-size: 16px;
+  background: #1a73e8;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+#searchBtn:hover, #luckyBtn:hover {
+  background: #1558b0;
+}
+.result {
+  margin-bottom: 15px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #eee;
+}
+.result a {
+  font-weight: bold;
+  color: #1a0dab;
+  text-decoration: none;
+  font-size: 18px;
+}
+.result a:hover {
+  text-decoration: underline;
+}
+.result p {
+  margin: 5px 0 0 0;
+  color: #545454;
+  font-size: 14px;
+}
+#history {
+  margin-top: 15px;
+  font-size: 14px;
+  color: #333;
+}
+#history span {
+  cursor: pointer;
+  text-decoration: underline;
+  margin-right: 8px;
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="titlebar">PekeSearch</div>
+  <div class="searchContainer">
+    <input type="text" id="searchInput" placeholder="Buscar en la web...">
+    <button id="searchBtn">Buscar</button>
+    <button id="luckyBtn">Me siento con suerte</button>
+  </div>
+  <div id="results"></div>
+  <div id="history"></div>
+</div>
+
+<script>
+const RESULTS_DIV = document.getElementById("results");
+const HISTORY_DIV = document.getElementById("history");
+
+function saveHistory(query) {
+  let hist = JSON.parse(localStorage.getItem("pekeSearchHistory") || "[]");
+  hist = hist.filter(q => q !== query);
+  hist.unshift(query);
+  if(hist.length > 10) hist.pop();
+  localStorage.setItem("pekeSearchHistory", JSON.stringify(hist));
+  renderHistory();
+}
+
+function renderHistory() {
+  let hist = JSON.parse(localStorage.getItem("pekeSearchHistory") || "[]");
+  HISTORY_DIV.innerHTML = hist.map(q => `<span onclick="doSearch('${q}')">${q}</span>`).join('');
+}
+
+async function doSearch(query, openFirst=false) {
+  if(!query) return;
+  saveHistory(query);
+  RESULTS_DIV.innerHTML = "<p>Cargando...</p>";
+
+  try {
+    const res = await fetch(`https://api.allorigins.win/get?url=${encodeURIComponent('https://duckduckgo.com/html/?q=' + encodeURIComponent(query))}`);
+    const text = await res.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, "text/html");
+    const links = [...doc.querySelectorAll("a.result__a")]; // DuckDuckGo HTML results
+    RESULTS_DIV.innerHTML = "";
+
+    if(links.length === 0) {
+      RESULTS_DIV.innerHTML = "<p>No se encontraron resultados</p>";
+      return;
+    }
+
+    if(openFirst) {
+      window.open(links[0].href, "_blank");
+      return;
+    }
+
+    links.forEach(a => {
+      const div = document.createElement("div");
+      div.classList.add("result");
+      div.innerHTML = `<a href="${a.href}" target="_blank">${a.textContent}</a>`;
+      RESULTS_DIV.appendChild(div);
+    });
+  } catch(err) {
+    console.error(err);
+    RESULTS_DIV.innerHTML = "<p>Error al buscar</p>";
+  }
+}
+
+document.getElementById("searchBtn").onclick = () => {
+  const q = document.getElementById("searchInput").value.trim();
+  doSearch(q);
+};
+
+document.getElementById("luckyBtn").onclick = () => {
+  const q = document.getElementById("searchInput").value.trim();
+  doSearch(q, true);
+};
+
+document.getElementById("searchInput").addEventListener("keydown", e => {
+  if(e.key === "Enter") document.getElementById("searchBtn").click();
+});
+
+renderHistory();
+</script>
+</body>
+</html>
