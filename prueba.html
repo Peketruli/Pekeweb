@@ -42,16 +42,6 @@
 <script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
 
 <script>
-/*
-  Casino 3D — Complete JS (integrates Supabase if available)
-  Drop this whole <script> block into your page (replace existing).
-  - Robust: loads @supabase/supabase-js dynamically if possible.
-  - Uses table "usuarios" for TOP10 and to update pekepuntos on save (best-effort).
-  - Visual ruleta spin that eases to a computed target.
-  - Blackjack with full deck, hit/stand/double/split (simplified split).
-  - Slots with UI reels animation.
-  - UI modal centered, keyboard E to interact, WASD + arrow rotation.
-*/
 
 (async function(){
 
@@ -207,50 +197,29 @@ makeWall(0,-15); makeWall(0,15,Math.PI); makeWall(-15,0,Math.PI/2); makeWall(15,
    --------------------- */
 let top10UpdateTimer = null;
 async function updateTop10(){
-  // try supabase only if available; otherwise show local only
-  let rows = [];
+  let rows=[];
   if(supabase){
     try{
-      const { data, error } = await supabase
-        .from('usuarios')
-        .select('username, pekepuntos')
-        .order('pekepuntos', { ascending: false })
-        .limit(10);
-      if(!error && data) rows = data;
-    } catch(e){ console.warn('Error top10 supabase', e); }
+      const { data,error } = await supabase.from('usuarios').select('username, pekepuntos').order('pekepuntos',{ascending:false}).limit(10);
+      if(!error && data) rows=data;
+    } catch(e){ console.warn('top10 supabase error',e);}
   }
-  // fallback: show currentUser only if no rows
-  if(!rows || rows.length === 0){
-    rows = [{ username: currentUser.username || 'Guest', pekepuntos: currentUser.pekepuntos || 0 }];
-  }
-
-  const s = 1024;
-  const tex = canvasTexture(s, (ctx) => {
-    ctx.fillStyle = '#071018'; ctx.fillRect(0,0,s,s);
-    ctx.fillStyle = '#f5b642'; ctx.font = '48px Arial'; ctx.textAlign = 'center'; ctx.fillText('TOP 10', s/2, 70);
-    ctx.font = '28px Arial'; ctx.textAlign = 'left';
-    ctx.fillStyle = '#ffffff';
-    rows.forEach((r,i) => {
-      const y = 130 + i*70;
-      ctx.fillText(`${i+1}. ${r.username}`, 60, y);
-      ctx.fillText((r.pekepuntos||0).toLocaleString(), s-140, y);
-    });
+  if(!rows.length) rows=[{username:currentUser.username, pekepuntos:currentUser.pekepuntos}];
+  const s=1024;
+  const tex=canvasTexture(s,(ctx)=>{
+    ctx.fillStyle='#071018'; ctx.fillRect(0,0,s,s);
+    ctx.fillStyle='#f5b642'; ctx.font='48px Arial'; ctx.textAlign='center'; ctx.fillText('TOP 10',s/2,70);
+    ctx.font='28px Arial'; ctx.textAlign='left'; ctx.fillStyle='#fff';
+    rows.forEach((r,i)=>{ const y=130+i*70; ctx.fillText(`${i+1}. ${r.username}`,60,y); ctx.fillText((r.pekepuntos||0).toLocaleString(),s-140,y); });
   });
-
-  const name = 'top10Wall';
-  const existing = scene.getObjectByName(name);
+  const name='top10Wall';
+  const existing=scene.getObjectByName(name);
   if(!existing){
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(8,5), new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide }));
-    wall.position.set(0,2,-14.9);
-    wall.name = name;
-    scene.add(wall);
-  } else {
-    existing.material.map = tex;
-    existing.material.needsUpdate = true;
-  }
+    const wall=new THREE.Mesh(new THREE.PlaneGeometry(8,5),new THREE.MeshStandardMaterial({ map:tex, side:THREE.DoubleSide }));
+    wall.position.set(0,2,-14.9); wall.name=name; scene.add(wall);
+  } else { existing.material.map=tex; existing.material.needsUpdate=true; }
 }
-await updateTop10();
-top10UpdateTimer = setInterval(updateTop10, 60000);
+await updateTop10(); setInterval(updateTop10,60000);
 
 /* ---------------------
    Objects: blackjack, roulette, slots, npc
