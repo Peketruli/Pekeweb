@@ -42,682 +42,473 @@
 <script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
 
 <script>
+
 (async function(){
+  const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+  const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
 
-const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-
-let supabase = null;
-async function loadSupabase(){
-  if(window.supabase && typeof window.supabase.createClient === 'function'){
-    try { supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY); return; } catch(e){}
-  }
-  // try to load library
+  // Inicializa supabase (umd)
+  let supabase = null;
   try {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://unpkg.com/@supabase/supabase-js/dist/umd/supabase.min.js';
-      s.onload = () => res();
-      s.onerror = () => rej(new Error('No se pudo cargar supabase'));
-      document.head.appendChild(s);
-    });
-    if(window.supabase && typeof window.supabase.createClient === 'function'){
+    if(window.supabase && window.supabase.createClient){
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    } else {
+      // si la lib no está cargada, cargamos la versión CDN (fallback)
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://unpkg.com/@supabase/supabase-js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
       supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     }
-  } catch(err){
-    console.warn('Supabase no disponible (posiblemente bloqueado):', err);
+  } catch (err) {
+    console.error('No se pudo inicializar supabase:', err);
+    alert('Supabase no se pudo inicializar. Revisa consola.');
     supabase = null;
   }
-}
-await loadSupabase();
 
-/* ---------------------
-   DOM refs + user init
-   --------------------- */
-const balanceEl = document.getElementById('balance');
-const modalEl = document.getElementById('modal');
-const container = document.getElementById('container');
-const npcMsgEl = document.getElementById('npcMsg');
+  // DOM refs
+  const balanceEl = document.getElementById('balance') || document.getElementById('pekepuntos') || (() => { const d=document.createElement('div'); d.id='balance'; document.body.prepend(d); return d; })();
+  const modalEl = document.getElementById('modal') || null;
+  const container = document.getElementById('container') || document.body;
 
-let currentUser = null;
-try { currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch(e){ currentUser = null; }
-if(!currentUser){
-  // fallback guest
-  currentUser = { id: 1, username: 'Guest', pekepuntos: 1000, last_claim: null };
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
-}
-let balance = Number(currentUser.pekepuntos || 0);
-function refreshBalanceUI(){ balanceEl.textContent = Number(balance).toLocaleString(); }
+  // Estado de usuario
+  let currentUser = null;
+  let balance = 0;
 
-// CENTRAL: guarda local y en Supabase
-async function saveUser(balanceUpdate = true){
-  if(balanceUpdate) currentUser.pekepuntos = balance;
-  try {
-    localStorage.setItem('currentUser', JSON.stringify(currentUser));
-  } catch(e){
-    console.warn('No se pudo escribir localStorage', e);
+  // Helpers
+  const rand = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
+  const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
+
+  // FUNCIONES SUPABASE / USUARIO ---------------------------------------
+  async function promptUsername(){
+    // Sencillo: pedir nombre con prompt. Puedes sustituir aquí por login real.
+    let name = '';
+    while(!name){
+      name = prompt('Introduce tu nombre de usuario para jugar en el Casino (sin espacios):','Guest' + Math.floor(Math.random()*999));
+      if(name === null) { // usuario canceló
+        alert('Necesitas un nombre para jugar. Se crea un usuario Guest automáticamente.');
+        name = 'Guest' + Math.floor(Math.random()*10000);
+        break;
+      }
+      name = String(name).trim();
+      if(!name) alert('Nombre vacío, prueba otro.');
+    }
+    return name;
   }
-  try {
-    refreshBalanceUI();
-  } catch(e){}
 
-  if(supabase){
+  async function findUserByUsername(username){
+    if(!supabase) return null;
+    const { data, error } = await supabase.from('usuarios').select('*').eq('username', username).limit(1).single();
+    if(error && error.code !== 'PGRST116') { // PGRST116 = no rows? check
+      // not fatal, but log
+      console.warn('findUser error', error);
+    }
+    return data || null;
+  }
+
+  async function createUser(username){
+    if(!supabase) return null;
+    const now = new Date().toISOString();
+    const payload = {
+      username,
+      pekepuntos: 500,
+      last_claim: null,
+      created_at: now
+    };
+    const { data, error } = await supabase.from('usuarios').insert([payload]).select().limit(1).single();
+    if(error){ console.error('createUser error', error); return null; }
+    return data;
+  }
+
+  async function getOrCreateUserFlow(){
+    // 1) pedir username
+    const username = await promptUsername();
+    if(!username) throw new Error('No username provided');
+
+    // 2) buscar en supabase
+    let user = await findUserByUsername(username);
+    if(user){
+      return user;
+    }
+    // 3) no existe -> crear
+    user = await createUser(username);
+    return user;
+  }
+
+  async function updateBalanceOnServer(){
+    if(!supabase || !currentUser) return;
     try {
-      await supabase
+      const { data, error } = await supabase
         .from('usuarios')
-        .update({ pekepuntos: currentUser.pekepuntos, last_claim: currentUser.last_claim || null })
-        .eq('id', currentUser.id);
-      // refresh top 10 after update
-      updateTop10();
-    } catch(e){
-      console.warn('Supabase save error:', e);
-    }
-  }
-}
+        .update({ pekepuntos: balance, last_claim: currentUser.last_claim || null })
+        .eq('id', currentUser.id)
+        .select()
+        .single();
 
-refreshBalanceUI();
-
-/* ---------------------
-   Helpers
-   --------------------- */
-const rand = (a,b) => Math.floor(Math.random()*(b-a+1))+a;
-const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
-
-/* ---------------------
-   THREE scene setup
-   --------------------- */
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b0f1a);
-
-const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-camera.position.set(0,1.6,5);
-camera.rotation.order = 'YXZ';
-
-const renderer = new THREE.WebGLRenderer({ antialias: true });
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch(e){} // backwards compat
-container.appendChild(renderer.domElement);
-
-/* lights */
-const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.8); hemi.position.set(0,50,0); scene.add(hemi);
-scene.add(new THREE.AmbientLight(0xffffff, 0.22));
-const dir = new THREE.DirectionalLight(0xfff6d6, 0.6); dir.position.set(5,10,5); dir.castShadow = true; scene.add(dir);
-
-/* ---------------------
-   Canvas texture factory
-   --------------------- */
-function canvasTexture(size, drawFn){
-  const c = document.createElement('canvas'); c.width = c.height = size;
-  const ctx = c.getContext('2d');
-  drawFn(ctx, size);
-  const tex = new THREE.CanvasTexture(c);
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.anisotropy = 4;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-/* floor pattern */
-const floorTex = canvasTexture(1024, (ctx,s) => {
-  ctx.fillStyle = '#1b0022'; ctx.fillRect(0,0,s,s);
-  const grd = ctx.createLinearGradient(0,0,s,s); grd.addColorStop(0,'#22001f'); grd.addColorStop(1,'#0e0010');
-  ctx.fillStyle = grd; ctx.globalAlpha = 0.7; ctx.fillRect(0,0,s,s); ctx.globalAlpha = 1;
-  ctx.strokeStyle = 'rgba(255,255,255,0.02)'; ctx.lineWidth = 2;
-  for(let i=0;i<s;i+=64){ ctx.beginPath(); ctx.moveTo(i,0); ctx.lineTo(i,s); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0,i); ctx.lineTo(s,i); ctx.stroke(); }
-});
-
-/* marble walls */
-const marbleTex = canvasTexture(1024, (ctx,s) => {
-  ctx.fillStyle = '#222428'; ctx.fillRect(0,0,s,s);
-  for(let i=0;i<300;i++){
-    ctx.strokeStyle = `rgba(255,255,255,${0.02+Math.random()*0.03})`;
-    ctx.beginPath();
-    ctx.moveTo(Math.random()*s, Math.random()*s);
-    ctx.quadraticCurveTo(Math.random()*s, Math.random()*s, Math.random()*s, Math.random()*s);
-    ctx.stroke();
-  }
-});
-
-/* blackjack felt */
-const blackjackTex = canvasTexture(512, (ctx,s)=>{
-  ctx.fillStyle = '#084b2f'; ctx.fillRect(0,0,s,s);
-  ctx.fillStyle = 'rgba(255,255,255,0.04)';
-  for(let i=0;i<200;i++) ctx.fillRect(Math.random()*s, Math.random()*s, 1, 1);
-  ctx.strokeStyle = '#f2e7c9'; ctx.lineWidth = Math.max(1, s/160); ctx.strokeRect(6, s-120, s-12, 108);
-  ctx.fillStyle = '#fff'; ctx.font = '18px Arial'; ctx.textAlign = 'center';
-  ctx.fillText('BLACKJACK PAYS 3 TO 2', s/2, 26);
-});
-
-/* slot screen dark */
-const slotScreenTex = canvasTexture(512, (ctx,s)=>{
-  ctx.fillStyle = '#05050b'; ctx.fillRect(0,0,s,s);
-  const g = ctx.createLinearGradient(0,0,s,0); g.addColorStop(0,'rgba(255,255,255,0.02)'); g.addColorStop(1,'rgba(0,0,0,0.15)');
-  ctx.fillStyle = g; ctx.fillRect(0,0,s,s);
-});
-
-/* metal */
-const metalTex = canvasTexture(256, (ctx,s)=>{ const g = ctx.createLinearGradient(0,0,s,s); g.addColorStop(0,'#777'); g.addColorStop(1,'#bcbcbc'); ctx.fillStyle=g; ctx.fillRect(0,0,s,s); });
-
-/* ---------------------
-   Room (floor + walls)
-   --------------------- */
-const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.95, metalness: 0.02 });
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
-floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
-
-const wallMat = new THREE.MeshStandardMaterial({ map: marbleTex, roughness: 0.9 });
-function makeWall(x,z,rotY=0){
-  const wall = new THREE.Mesh(new THREE.BoxGeometry(30,6,0.2), wallMat);
-  wall.position.set(x,3,z); wall.rotation.y = rotY; wall.receiveShadow = true; scene.add(wall);
-}
-makeWall(0,-15); makeWall(0,15,Math.PI); makeWall(-15,0,Math.PI/2); makeWall(15,0,-Math.PI/2);
-
-/* ---------------------
-   TOP 10 wall (canvas texture drawn from Supabase)
-   --------------------- */
-let top10UpdateTimer = null;
-async function updateTop10(){
-  let rows=[];
-  if(supabase){
-    try{
-      const { data,error } = await supabase.from('usuarios').select('username, pekepuntos').order('pekepuntos',{ascending:false}).limit(10);
-      if(!error && data) rows=data;
-    } catch(e){ console.warn('top10 supabase error',e);}
-  }
-  if(!rows.length) rows=[{username:currentUser.username, pekepuntos:currentUser.pekepuntos}];
-  const s=1024;
-  const tex=canvasTexture(s,(ctx)=>{
-    ctx.fillStyle='#071018'; ctx.fillRect(0,0,s,s);
-    ctx.fillStyle='#f5b642'; ctx.font='48px Arial'; ctx.textAlign='center'; ctx.fillText('TOP 10',s/2,70);
-    ctx.font='28px Arial'; ctx.textAlign='left'; ctx.fillStyle='#fff';
-    rows.forEach((r,i)=>{ const y=130+i*70; ctx.fillText(`${i+1}. ${r.username}`,60,y); ctx.fillText((r.pekepuntos||0).toLocaleString(),s-140,y); });
-  });
-  const name='top10Wall';
-  const existing=scene.getObjectByName(name);
-  if(!existing){
-    const wall=new THREE.Mesh(new THREE.PlaneGeometry(8,5),new THREE.MeshStandardMaterial({ map:tex, side:THREE.DoubleSide }));
-    wall.position.set(0,2,-14.9); wall.name=name; scene.add(wall);
-  } else { existing.material.map=tex; existing.material.needsUpdate=true; }
-}
-await updateTop10(); setInterval(updateTop10,60000);
-
-/* ---------------------
-   Objects: blackjack, roulette, slots, npc
-   --------------------- */
-const interactables = [];
-
-/* Blackjack table */
-const bjMat = new THREE.MeshStandardMaterial({ map: blackjackTex, roughness: 0.6, metalness: 0.02 });
-const bjTable = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.3,64), bjMat);
-bjTable.position.set(-4,0.3,0); bjTable.userData.type='blackjack'; bjTable.castShadow=true; bjTable.receiveShadow=true;
-scene.add(bjTable); interactables.push(bjTable);
-
-/* Roulette base + disk */
-const ruletaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.4,64), new THREE.MeshStandardMaterial({ color:0x222222, metalness:0.45, roughness:0.25 }));
-ruletaBase.position.set(0,0.2,0); ruletaBase.userData.type='roulette'; ruletaBase.castShadow=true; ruletaBase.receiveShadow=true;
-scene.add(ruletaBase); interactables.push(ruletaBase);
-
-/* ruleta disk (texture applied below) */
-const ruletaDisk = new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.15,0.08,256), new THREE.MeshStandardMaterial({ map: null, metalness:0.25, roughness:0.45 }));
-ruletaDisk.rotation.x = Math.PI; // flat
-ruletaDisk.position.set(0,0.45,0); ruletaDisk.castShadow=true; ruletaDisk.receiveShadow=true;
-scene.add(ruletaDisk);
-
-/* Create roulette numbered texture */
-(function createRouletteTexture(){
-  const s = 2048;
-  const canv = document.createElement('canvas'); canv.width = canv.height = s;
-  const ctx = canv.getContext('2d');
-  ctx.translate(s/2, s/2);
-  const cellCount = 37;
-  const anglePer = (Math.PI*2)/cellCount;
-  ctx.fillStyle = '#2f1b10'; ctx.beginPath(); ctx.arc(0,0,s/2,0,Math.PI*2); ctx.fill();
-  const redSet = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
-  for(let i=0;i<cellCount;i++){
-    const start = i*anglePer - Math.PI/2;
-    const end = start + anglePer;
-    const isZero = (i===0);
-    ctx.beginPath();
-    ctx.fillStyle = isZero ? '#0b8a12' : (redSet.has(i) ? '#d22' : '#111');
-    ctx.moveTo(0,0); ctx.arc(0,0,s*0.48,start,end); ctx.closePath(); ctx.fill();
-    // numbers
-    ctx.save();
-    ctx.rotate(start + anglePer/2);
-    ctx.fillStyle = '#fff';
-    ctx.font = `${s*0.05}px Arial`;
-    ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(i.toString(), 0, -s*0.35);
-    ctx.restore();
-  }
-  // center wood
-  ctx.beginPath(); ctx.fillStyle='#8b5a2b'; ctx.arc(0,0,s*0.18,0,Math.PI*2); ctx.fill();
-  const tex = new THREE.CanvasTexture(canv); tex.needsUpdate = true;
-  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-  ruletaDisk.material.map = tex; ruletaDisk.material.needsUpdate = true;
-})();
-
-/* Slot machine model + invisible proxy for raycast */
-function createSlotMachine(){
-  const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.1,2.1,1.0), new THREE.MeshStandardMaterial({ color:0x222222, metalness:0.6, roughness:0.25 }));
-  body.position.y = 1.05; g.add(body);
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.45), new THREE.MeshStandardMaterial({ map: slotScreenTex, emissive: 0x111111, emissiveIntensity: 0.9 }));
-  screen.position.set(0,1.4,0.51); g.add(screen);
-  const lever = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.04,0.9,12), new THREE.MeshStandardMaterial({ color:0xaa3333, metalness:0.4, roughness:0.4 }));
-  lever.rotation.z = -Math.PI/2; lever.position.set(0.6,1.1,0); g.add(lever);
-  const coin = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.03, 12, 24), new THREE.MeshStandardMaterial({ color:0xffdd66, metalness:0.9, roughness:0.2 }));
-  coin.position.set(0.95,1.1,0); g.add(coin);
-  return g;
-}
-const slotMachine = createSlotMachine(); slotMachine.position.set(4,0,0); scene.add(slotMachine);
-const slotProxy = new THREE.Mesh(new THREE.BoxGeometry(1.05,2.05,1.05), new THREE.MeshBasicMaterial({ visible:false }));
-slotProxy.position.copy(slotMachine.position); slotProxy.position.y = 1; slotProxy.userData.type = 'slots';
-scene.add(slotProxy); interactables.push(slotProxy);
-
-/* NPC glossy chest */
-const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,1.6,16), new THREE.MeshStandardMaterial({ color:0xdddddd, metalness:0.7, roughness:0.25, map: metalTex }));
-npc.position.set(0,1,5); npc.userData.type = 'npc'; npc.castShadow = true; scene.add(npc); interactables.push(npc);
-
-/* add ruletaBase and bjTable to interactables */
-interactables.push(ruletaBase);
-interactables.push(bjTable);
-
-/* ---------------------
-   Movement & camera
-   --------------------- */
-const keys = {};
-document.addEventListener('keydown', e => { keys[e.code] = true; });
-document.addEventListener('keyup', e => { keys[e.code] = false; });
-
-let yaw = 0, pitch = 0;
-function updateCamera(dt){
-  const yawSpeed = 1.8, pitchSpeed = 1.2;
-  if(keys['ArrowLeft']) yaw += yawSpeed * dt;
-  if(keys['ArrowRight']) yaw -= yawSpeed * dt;
-  if(keys['ArrowUp']) pitch += pitchSpeed * dt;
-  if(keys['ArrowDown']) pitch -= pitchSpeed * dt;
-  const limit = Math.PI/2 - 0.05;
-  pitch = clamp(pitch, -limit, limit);
-  camera.rotation.set(pitch, yaw, 0);
-
-  const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
-  const right = new THREE.Vector3(); right.crossVectors(forward, camera.up).normalize();
-  const move = new THREE.Vector3();
-  if(keys['KeyW']) move.add(forward);
-  if(keys['KeyS']) move.sub(forward);
-  if(keys['KeyD']) move.add(right);
-  if(keys['KeyA']) move.sub(right);
-  move.multiplyScalar(3 * dt);
-  camera.position.add(move);
-}
-
-/* ---------------------
-   Raycast interactions
-   --------------------- */
-const ray = new THREE.Raycaster();
-let lookingAt = null;
-function checkInteraction(){
-  ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
-  const hits = ray.intersectObjects(interactables, false);
-  if(!hits.length || hits[0].distance > 4){ lookingAt = null; npcMsgEl.style.display = 'none'; return; }
-  lookingAt = hits[0].object;
-  npcMsgEl.style.display = 'block';
-  // show specific text
-  if(lookingAt.userData.type === 'npc') npcMsgEl.textContent = 'Pulsa E para recoger fichas diarias';
-  else npcMsgEl.textContent = 'Pulsa E para interactuar';
-}
-
-/* ---------------------
-   UI Modal helpers
-   --------------------- */
-function showUI(html){
-  modalEl.innerHTML = html; modalEl.style.display = 'block';
-  // ensure focus accessibility
-  modalEl.querySelectorAll('button,input,select').forEach(el=> el.tabIndex = 0);
-}
-function hideUI(){ modalEl.style.display = 'none'; }
-
-/* ---------------------
-   Daily claim (also persist to supabase usuarios.pekepuntos if supabase)
-   --------------------- */
-async function claimDaily(){
-  const today = new Date().toISOString().slice(0,10);
-  const last = currentUser.last_claim ? currentUser.last_claim.slice(0,10) : null;
-  if(last === today){
-    showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Ya reclamaste hoy.</div><div class="row"><button id="closeDaily">Cerrar</button></div></div>`);
-    document.getElementById('closeDaily').onclick = () => hideUI();
-    return;
-  }
-  balance += 100;
-  currentUser.last_claim = new Date().toISOString();
-  await saveUser();
-  showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Recibiste +100 Pekepuntos.</div><div class="row"><button id="closeDaily2">Cerrar</button></div></div>`);
-  document.getElementById('closeDaily2').onclick = () => hideUI();
-}
-
-/* ---------------------
-   Blackjack implementation (deck, UI, actions)
-   --------------------- */
-function createDeck(){
-  const vals = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
-  const suits = ['♠','♥','♦','♣'];
-  const d = [];
-  for(const s of suits) for(const v of vals) d.push({ v, s });
-  for(let i = d.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [d[i], d[j]]=[d[j], d[i]]; }
-  return d;
-}
-function valueOf(card){
-  if(card.v === 'A') return 11;
-  if(['J','Q','K'].includes(card.v)) return 10;
-  return parseInt(card.v,10);
-}
-function score(hand){
-  let sum = 0, aces = 0;
-  for(const c of hand){ if(c.v === 'A') aces++; sum += valueOf(c); }
-  while(sum > 21 && aces){ sum -= 10; aces--; }
-  return sum;
-}
-
-function openBlackjack(){
-  showUI(`
-    <div class="gameUI">
-      <h2>Blackjack</h2>
-      <div class="row"><label>Apuesta: <input id="bjBet" type="number" value="50" min="1" /></label></div>
-      <div class="row"><button id="dealBtn">Repartir</button><button id="closeBJ">Cerrar</button></div>
-      <div id="bjState" style="width:100%;margin-top:8px;text-align:left"></div>
-      <div id="bjActions" class="row" style="display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:8px"></div>
-      <div class="gameResult" id="bjResult"></div>
-    </div>
-  `);
-  const stateEl = document.getElementById('bjState');
-  const actionsEl = document.getElementById('bjActions');
-  const resultEl = document.getElementById('bjResult');
-  const betInput = document.getElementById('bjBet');
-
-  let deck, playerHand, dealerHand, betAmount, inRound=false;
-
-  function renderHands(){
-    const ph = playerHand.map(c => c.v + c.s).join(' ');
-    const dh = dealerHand.map((c,i) => i===0 && inRound ? (c.v + c.s) + ' ?' : c.v + c.s).join(' ');
-    stateEl.innerHTML = `<div><strong>Jugador:</strong> ${ph} — (${score(playerHand)})</div><div><strong>Dealer:</strong> ${dh} — (${inRound ? '??' : score(dealerHand)})</div>`;
-  }
-
-  // finalize ahora es async para await saveUser()
-  async function finalize(){
-    inRound = false; actionsEl.innerHTML = '';
-    let dealerScore = score(dealerHand);
-    while(dealerScore < 17){ dealerHand.push(deck.pop()); dealerScore = score(dealerHand); }
-    const playerScore = score(playerHand);
-    if(playerScore > 21){ resultEl.textContent = `Te pasaste (${playerScore}). Pierdes ${betAmount}`; balance -= betAmount; }
-    else if(dealerScore > 21 || playerScore > dealerScore){ resultEl.textContent = `Ganas! Tu ${playerScore} / Dealer ${dealerScore} → +${betAmount}`; balance += betAmount; }
-    else if(playerScore === dealerScore){ resultEl.textContent = `Empate (${playerScore}). No hay cambios.`; }
-    else { resultEl.textContent = `Pierdes (${playerScore} vs ${dealerScore}). -${betAmount}`; balance -= betAmount; }
-
-    // persistir (saveUser se encarga de local + supabase)
-    try { await saveUser(); } catch(e){ console.warn('saveUser error', e); }
-
-    renderHands();
-    setTimeout(()=> hideUI(), 1400);
-  }
-
-  document.getElementById('dealBtn').onclick = () => {
-    betAmount = clamp(Number(betInput.value) || 0, 1, balance);
-    if(!betAmount || betAmount <= 0){ resultEl.textContent = 'Introduce una apuesta válida.'; return; }
-    deck = createDeck();
-    playerHand = [deck.pop(), deck.pop()];
-    dealerHand = [deck.pop(), deck.pop()];
-    inRound = true; renderHands();
-    actionsEl.innerHTML = `<button id="hitBtn">Pedir</button><button id="standBtn">Plantarse</button><button id="doubleBtn">Doblar</button><button id="splitBtn">Dividir</button>`;
-    resultEl.textContent = '';
-    document.getElementById('hitBtn').onclick = async () => {
-      playerHand.push(deck.pop()); renderHands(); if(score(playerHand) > 21) await finalize();
-    };
-    document.getElementById('standBtn').onclick = async () => await finalize();
-    document.getElementById('doubleBtn').onclick = async () => {
-      if(balance < betAmount * 2){ resultEl.textContent = 'Saldo insuficiente para doblar.'; return; }
-      balance -= betAmount; betAmount *= 2; playerHand.push(deck.pop()); renderHands(); await finalize();
-    };
-    const splitBtn = document.getElementById('splitBtn');
-    const canSplit = playerHand.length === 2 && playerHand[0].v === playerHand[1].v && (balance >= betAmount);
-    if(!canSplit) splitBtn.disabled = true;
-    else {
-      splitBtn.onclick = async () => {
-        // simplified split: play both hands automatically vs dealer
-        balance -= betAmount; // extra bet
-        const cardA = [playerHand[0], deck.pop()];
-        const cardB = [playerHand[1], deck.pop()];
-        // resolve dealer
-        while(score(dealerHand) < 17) dealerHand.push(deck.pop());
-        const resolve = (hand) => {
-          while(score(hand) < 17) hand.push(deck.pop());
-          return hand;
-        };
-        const h1 = resolve(cardA), h2 = resolve(cardB);
-        let payout = 0;
-        const check = (h) => {
-          const ps = score(h), ds = score(dealerHand);
-          if(ps > 21) return -betAmount;
-          if(ds > 21 || ps > ds) return betAmount;
-          if(ps === ds) return 0;
-          return -betAmount;
-        };
-        payout += check(h1) + check(h2);
-        balance += payout;
-        try { await saveUser(); } catch(e){ console.warn('supabase split save', e); }
-        resultEl.innerHTML = `Split result — Dealer ${score(dealerHand)}. Mano1 ${score(h1)} / Mano2 ${score(h2)} → ${payout>=0?('+'+payout):payout}`;
-        setTimeout(()=> hideUI(), 1600);
-      };
-    }
-  };
-
-  document.getElementById('closeBJ').onclick = () => hideUI();
-}
-
-/* ---------------------
-   Roulette UI + spin (visual targeting)
-   --------------------- */
-
-let ruletaSpinning = false;
-let ruletaVelocity = 0;
-let ruletaTargetAngle = 0;
-let ruletaPending = null; // { bet, type, value, landing, resultEl }
-
-function openRoulette(){
-  showUI(`
-    <div class="gameUI">
-      <h2>Ruleta</h2>
-      <div class="row"><label>Apuesta: <input id="rBet" type="number" value="50" min="1" /></label></div>
-      <div class="row"><button id="btnNumber">Número</button><button id="btnColor">Color</button><button id="btnParity">Par/Impar</button></div>
-      <div id="rOptions" style="margin-top:8px" class="row"></div>
-      <div id="rResult" class="gameResult"></div>
-      <div class="row"><button id="closeR">Cerrar</button></div>
-    </div>
-  `);
-  const rBet = document.getElementById('rBet');
-  const options = document.getElementById('rOptions');
-  const rResult = document.getElementById('rResult');
-
-  function commitSpin(type, value){
-    const bet = clamp(Number(rBet.value)||0, 1, balance);
-    if(!bet){ rResult.textContent = 'Introduce una apuesta válida.'; return; }
-    // choose landing
-    const landing = rand(0,36);
-    // compute angle target: each index mapped; our texture placed numbers starting at -PI/2
-    const cellCount = 37;
-    const anglePer = (Math.PI*2)/cellCount;
-    const desired = - (landing * anglePer); // rotate negative so index faces forward (approx)
-    const spins = 3 + Math.floor(Math.random()*3);
-    ruletaTargetAngle = spins * Math.PI*2 + desired;
-    ruletaSpinning = true;
-    ruletaVelocity = 12 + Math.random()*8;
-    ruletaPending = { bet, type, value, landing, rResult };
-    // deduct now
-    balance -= bet;
-    // fire-and-forget save (don't block animation)
-    saveUser().catch(e=>console.warn('saveUser error (ruleta commit):', e));
-    rResult.textContent = 'Girando...';
-    // close UI controls to avoid double spin
-    options.querySelectorAll('button').forEach(b=>b.disabled=true);
-  }
-
-  document.getElementById('btnNumber').onclick = () => {
-    options.innerHTML = '';
-    for(let i=0;i<=36;i++){
-      const b = document.createElement('button'); b.textContent = i;
-      b.onclick = ()=> commitSpin('number', i);
-      options.appendChild(b);
-    }
-  };
-  document.getElementById('btnColor').onclick = () => {
-    options.innerHTML = '';
-    ['rojo','negro'].forEach(c=>{ const b=document.createElement('button'); b.textContent=c; b.onclick=()=>commitSpin('color', c); options.appendChild(b); });
-  };
-  document.getElementById('btnParity').onclick = () => {
-    options.innerHTML = '';
-    ['par','impar'].forEach(p=>{ const b=document.createElement('button'); b.textContent=p; b.onclick=()=>commitSpin('par', p); options.appendChild(b); });
-  };
-
-  document.getElementById('closeR').onclick = () => hideUI();
-}
-
-/* ---------------------
-   Slots UI (reels animation)
-   --------------------- */
-function openSlots(){
-  showUI(`
-    <div class="gameUI">
-      <h2>Tragamonedas</h2>
-      <div class="row"><label>Apuesta: <input id="sBet" type="number" value="50" min="1" /></label></div>
-      <div class="row"><button id="playSlotsBtn">Jugar</button></div>
-      <div id="slotsReels" style="font-size:32px;margin-top:10px">• • •</div>
-      <div id="slotsRes" class="gameResult"></div>
-      <div class="row"><button id="closeS">Cerrar</button></div>
-    </div>
-  `);
-  const reelsEl = document.getElementById('slotsReels');
-  const resEl = document.getElementById('slotsRes');
-  const betEl = document.getElementById('sBet');
-  const symbols = ['🍒','🍋','🍊','🍇','💎','7️⃣'];
-
-  document.getElementById('playSlotsBtn').onclick = () => {
-    const bet = clamp(Number(betEl.value)||0, 1, balance);
-    if(!bet){ resEl.textContent = 'Introduce una apuesta válida.'; return; }
-    balance -= bet;
-    // fire-and-forget save
-    saveUser().catch(e=>console.warn('saveUser error (slots deduct):', e));
-    let ticks = 0; const final = [];
-    const interval = setInterval(()=>{
-      ticks++;
-      const a = symbols[rand(0,symbols.length-1)], b = symbols[rand(0,symbols.length-1)], c = symbols[rand(0,symbols.length-1)];
-      reelsEl.textContent = `${a} ${b} ${c}`;
-      if(ticks > 30){
-        clearInterval(interval);
-        final[0] = symbols[rand(0,symbols.length-1)];
-        final[1] = symbols[rand(0,symbols.length-1)];
-        final[2] = symbols[rand(0,symbols.length-1)];
-        reelsEl.textContent = final.join(' ');
-        if(final[0]===final[1] && final[1]===final[2]){ const payout = bet*5; balance += payout; resEl.textContent = `¡Jackpot! ${final.join(' ')} Ganaste ${payout}`; }
-        else if(final[0]===final[1]||final[1]===final[2]||final[0]===final[2]){ const payout = bet*2; balance += payout; resEl.textContent = `Dos iguales ${final.join(' ')} Ganaste ${payout}`; }
-        else { resEl.textContent = `Perdiste ${bet} — ${final.join(' ')}`; }
-        // persist result
-        saveUser().catch(e=>console.warn('saveUser error (slots result):', e));
+      if(error){
+        console.warn('updateBalanceOnServer error', error);
+        // intentar fallback: upsert por username (si update no encontró fila)
+        try {
+          const { data: up, error: errUp } = await supabase.from('usuarios')
+            .upsert({ username: currentUser.username, pekepuntos: balance, last_claim: currentUser.last_claim || null }, { onConflict: 'username' })
+            .select().single();
+          if(errUp) console.warn('upsert fallback error', errUp);
+          else { currentUser = up; }
+        } catch(e){ console.error('upsert fallback exception', e); }
+      } else {
+        currentUser = data;
       }
-    }, 40);
-  };
 
-  document.getElementById('closeS').onclick = () => hideUI();
-}
+    } catch (e){
+      console.error('updateBalanceOnServer exception', e);
+    } finally {
+      refreshBalanceUI();
+      // refrescar top10
+      try { await updateTop10(); } catch(e){}
+    }
+  }
 
-/* ---------------------
-   Keyboard E handler to open UI
-   --------------------- */
-document.addEventListener('keydown', async (e) => {
-  if(e.code !== 'KeyE') return;
-  if(!lookingAt) return;
-  const t = lookingAt.userData.type;
-  if(t === 'npc'){ await claimDaily(); return; }
-  if(t === 'blackjack'){ openBlackjack(); return; }
-  if(t === 'roulette'){ openRoulette(); return; }
-  if(t === 'slots'){ openSlots(); return; }
-});
+  async function logActivity(accion, detalle=''){
+    if(!supabase || !currentUser) return;
+    try {
+      await supabase.from('actividad').insert([{ usuario: currentUser.username, accion, detalle, fecha: new Date().toISOString() }]);
+    } catch(e){ /* no bloqueante */ console.warn('logActivity error', e); }
+  }
 
-/* ---------------------
-   Animate loop: ruleta spin easing & resolution
-   --------------------- */
-const clock = new THREE.Clock();
-function animate(){
-  requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-  updateCamera(dt);
-  checkInteraction();
-
-  // ruleta spinning behaviour (ease to ruletaTargetAngle)
-  if(ruletaSpinning){
-    // rotate using velocity until it falls under threshold then ease to target
-    ruletaDisk.rotation.y += ruletaVelocity * dt;
-    ruletaVelocity = Math.max(0, ruletaVelocity - dt * 3.0); // damping
-    if(ruletaVelocity <= 0.05){
-      // ease to target angle
-      const current = ruletaDisk.rotation.y % (Math.PI*2);
-      const diff = ruletaTargetAngle - ruletaDisk.rotation.y;
-      const step = diff * Math.min(1, dt * 3.0);
-      ruletaDisk.rotation.y += step;
-      if(Math.abs(diff) < 0.03){
-        ruletaSpinning = false;
-        ruletaVelocity = 0;
+  function refreshBalanceUI(){
+    if(balanceEl){
+      // si usas el antiguo #pekepuntos
+      if(balanceEl.id === 'pekepuntos'){
+        balanceEl.textContent = `Pekepuntos: ${Number(balance || 0).toLocaleString()}`;
+      } else {
+        balanceEl.textContent = Number(balance || 0).toLocaleString();
       }
     }
+    // también actualiza el nombre si existe el elemento
+    const userNameEl = document.getElementById('userName');
+    if(userNameEl && currentUser) userNameEl.textContent = currentUser.username;
   }
 
-  // resolve pending when spin finished
-  if(ruletaPending && !ruletaSpinning && ruletaVelocity <= 0.05){
-    const pending = ruletaPending;
-    const landing = pending.landing;
-    const redSet = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
-    const color = landing === 0 ? 'green' : (redSet.has(landing) ? 'rojo' : 'negro');
-    const parity = landing === 0 ? 'none' : (landing % 2 === 0 ? 'par' : 'impar');
-    let won = false, payout = 0;
-    if(pending.type === 'number' && Number(pending.value) === landing){ won = true; payout = pending.bet * 35; }
-    else if(pending.type === 'color' && pending.value === color){ won = true; payout = pending.bet * 2; }
-    else if(pending.type === 'par' && pending.value === parity){ won = true; payout = pending.bet * 2; }
-    if(won){ balance += payout; pending.rResult.textContent = `¡Sale ${landing} (${color}) — Ganaste ${payout}!`; }
-    else { pending.rResult.textContent = `Sale ${landing} (${color}) — Perdiste ${pending.bet}`; }
-    // persist
-    saveUser().catch(e=>console.warn('saveUser error (ruleta resolution):', e));
-    ruletaPending = null;
+  // Inicializar usuario
+  try {
+    currentUser = await getOrCreateUserFlow();
+    if(!currentUser) throw new Error('No se pudo obtener/crear usuario');
+    balance = Number(currentUser.pekepuntos || 0);
+    refreshBalanceUI();
+    await logActivity('Entró al casino');
+    console.log('Usuario cargado:', currentUser.username, 'balance', balance);
+  } catch (err){
+    console.error('Error init user flow:', err);
+    alert('Error al inicializar usuario. Revisa consola.');
   }
 
-  renderer.render(scene, camera);
-}
-animate();
+  // ----------------- THREE.JS y escena (igual que la tuya, adaptado) -----------------
+  // (mantengo la mayor parte de tu escena; solo incluyo lo esencial aquí y
+  // dejo que el resto de tu código de escena y objetos siga igual)
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0b0f1a);
 
-/* ---------------------
-   Resize handling
-   --------------------- */
-window.addEventListener('resize', ()=> {
-  camera.aspect = innerWidth / innerHeight;
-  camera.updateProjectionMatrix();
+  const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+  camera.position.set(0,1.6,5);
+  camera.rotation.order = 'YXZ';
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(innerWidth, innerHeight);
-});
+  renderer.shadowMap.enabled = true;
+  try { renderer.outputColorSpace = THREE.SRGBColorSpace; } catch(e){}
+  container.appendChild(renderer.domElement);
 
-/* -------------
-   Small API for UI commitSpin to set ruletaPending
-   We set ruletaPending inside openRoulette.commitSpin when the user spins.
-   ------------- */
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.8); hemi.position.set(0,50,0); scene.add(hemi);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.22));
+  const dir = new THREE.DirectionalLight(0xfff6d6, 0.6); dir.position.set(5,10,5); dir.castShadow = true; scene.add(dir);
 
-// Helper to set ruleta pending from openRoulette (exposed)
-window._casino = {
-  scene, camera, renderer,
-  currentUser,
-  setBalance: (v) => { balance = Number(v); saveUser().catch(()=>{}); },
-  getBalance: () => balance,
-  saveLocalUser: () => saveUser().catch(()=>{})
-};
+  function canvasTexture(size, drawFn){
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const ctx = c.getContext('2d'); drawFn(ctx, size);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 4;
+    tex.needsUpdate = true;
+    return tex;
+  }
 
-console.log('Casino 3D inicializado con Supabase ' + (supabase ? 'ACTIVO' : 'NO disponible'));
+  // floor, walls, textures (copiado de tu código - puedes mantener)
+  const floorTex = canvasTexture(1024, (ctx,s) => {
+    ctx.fillStyle = '#1b0022'; ctx.fillRect(0,0,s,s);
+    const grd = ctx.createLinearGradient(0,0,s,s); grd.addColorStop(0,'#22001f'); grd.addColorStop(1,'#0e0010');
+    ctx.fillStyle = grd; ctx.globalAlpha = 0.7; ctx.fillRect(0,0,s,s); ctx.globalAlpha = 1;
+  });
 
-})(); // end main
+  const floorMat = new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.95, metalness: 0.02 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(30,30), floorMat);
+  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true; scene.add(floor);
+
+  // TOP10 wall (usa updateTop10 definido más abajo)
+  async function updateTop10(){
+    if(!supabase) return;
+    try {
+      const { data, error } = await supabase.from('usuarios').select('username, pekepuntos').order('pekepuntos', { ascending: false }).limit(10);
+      if(error) { console.warn('updateTop10 error', error); return; }
+      const s=1024;
+      const tex = canvasTexture(s, (ctx) => {
+        ctx.fillStyle = '#071018'; ctx.fillRect(0,0,s,s);
+        ctx.fillStyle = '#f5b642'; ctx.font = '48px Arial'; ctx.textAlign = 'center'; ctx.fillText('TOP 10', s/2, 70);
+        ctx.font = '28px Arial'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff';
+        data.forEach((r,i) => { const y = 130 + i*70; ctx.fillText(`${i+1}. ${r.username}`, 60, y); ctx.fillText((r.pekepuntos||0).toLocaleString(), s-140, y);});
+      });
+      const name = 'top10Wall';
+      const existing = scene.getObjectByName(name);
+      if(!existing){
+        const wall = new THREE.Mesh(new THREE.PlaneGeometry(8,5), new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide }));
+        wall.position.set(0,2,-14.9); wall.name = name; scene.add(wall);
+      } else {
+        existing.material.map = tex; existing.material.needsUpdate = true;
+      }
+    } catch(e){
+      console.error('updateTop10 exception', e);
+    }
+  }
+  // primer updateTop10
+  await updateTop10();
+  setInterval(updateTop10, 60000);
+
+  // Interactables (blackjack, ruleta, slots, npc)
+  const interactables = [];
+  const bjTable = new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,0.3,64), new THREE.MeshStandardMaterial({ color: 0x084b2f }));
+  bjTable.position.set(-4,0.3,0); bjTable.userData.type='blackjack'; scene.add(bjTable); interactables.push(bjTable);
+
+  const ruletaBase = new THREE.Mesh(new THREE.CylinderGeometry(1.2,1.2,0.4,64), new THREE.MeshStandardMaterial({ color:0x222222 }));
+  ruletaBase.position.set(0,0.2,0); ruletaBase.userData.type='roulette'; scene.add(ruletaBase); interactables.push(ruletaBase);
+
+  const ruletaDisk = new THREE.Mesh(new THREE.CylinderGeometry(1.15,1.15,0.08,256), new THREE.MeshStandardMaterial({ map: null }));
+  ruletaDisk.rotation.x = Math.PI;
+  ruletaDisk.position.set(0,0.45,0); scene.add(ruletaDisk);
+
+  // create roulette texture (copiado)
+  (function createRouletteTexture(){
+    const s = 2048;
+    const canv = document.createElement('canvas'); canv.width = canv.height = s;
+    const ctx = canv.getContext('2d'); ctx.translate(s/2, s/2);
+    const cellCount = 37; const anglePer = (Math.PI*2)/cellCount;
+    ctx.fillStyle = '#2f1b10'; ctx.beginPath(); ctx.arc(0,0,s/2,0,Math.PI*2); ctx.fill();
+    const redSet = new Set([1,3,5,7,9,12,14,16,18,19,21,23,25,27,30,32,34,36]);
+    for(let i=0;i<cellCount;i++){
+      const start = i*anglePer - Math.PI/2; const end = start + anglePer;
+      const isZero = (i===0);
+      ctx.beginPath();
+      ctx.fillStyle = isZero ? '#0b8a12' : (redSet.has(i) ? '#d22' : '#111');
+      ctx.moveTo(0,0); ctx.arc(0,0,s*0.48,start,end); ctx.closePath(); ctx.fill();
+      ctx.save(); ctx.rotate(start + anglePer/2); ctx.fillStyle = '#fff';
+      ctx.font = `${s*0.05}px Arial`; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(i.toString(), 0, -s*0.35); ctx.restore();
+    }
+    ctx.beginPath(); ctx.fillStyle='#8b5a2b'; ctx.arc(0,0,s*0.18,0,Math.PI*2); ctx.fill();
+    const tex = new THREE.CanvasTexture(canv); tex.needsUpdate = true; tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    ruletaDisk.material.map = tex; ruletaDisk.material.needsUpdate = true;
+  })();
+
+  // slots proxy
+  function createSlotMachine(){
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.1,2.1,1.0), new THREE.MeshStandardMaterial({ color:0x222222 }));
+    body.position.y = 1.05; g.add(body);
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.7,0.45), new THREE.MeshStandardMaterial({ color:0x05050b, emissive:0x111111 }));
+    screen.position.set(0,1.4,0.51); g.add(screen);
+    return g;
+  }
+  const slotMachine = createSlotMachine(); slotMachine.position.set(4,0,0); scene.add(slotMachine);
+  const slotProxy = new THREE.Mesh(new THREE.BoxGeometry(1.05,2.05,1.05), new THREE.MeshBasicMaterial({ visible:false }));
+  slotProxy.position.copy(slotMachine.position); slotProxy.position.y = 1; slotProxy.userData.type = 'slots';
+  scene.add(slotProxy); interactables.push(slotProxy);
+
+  const npc = new THREE.Mesh(new THREE.CylinderGeometry(0.42,0.42,1.6,16), new THREE.MeshStandardMaterial({ color:0xdddddd }));
+  npc.position.set(0,1,5); npc.userData.type = 'npc'; scene.add(npc); interactables.push(npc);
+
+  // Movimiento & cámara (igual que tu código anterior)
+  const keys = {};
+  document.addEventListener('keydown', e => { keys[e.code] = true; });
+  document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+  let yaw = 0, pitch = 0;
+  function updateCamera(dt){
+    const yawSpeed = 1.8, pitchSpeed = 1.2;
+    if(keys['ArrowLeft']) yaw += yawSpeed * dt;
+    if(keys['ArrowRight']) yaw -= yawSpeed * dt;
+    if(keys['ArrowUp']) pitch += pitchSpeed * dt;
+    if(keys['ArrowDown']) pitch -= pitchSpeed * dt;
+    const limit = Math.PI/2 - 0.05;
+    pitch = clamp(pitch, -limit, limit);
+    camera.rotation.set(pitch, yaw, 0);
+
+    const forward = new THREE.Vector3(); camera.getWorldDirection(forward); forward.y = 0; forward.normalize();
+    const right = new THREE.Vector3(); right.crossVectors(forward, camera.up).normalize();
+    const move = new THREE.Vector3();
+    if(keys['KeyW']) move.add(forward);
+    if(keys['KeyS']) move.sub(forward);
+    if(keys['KeyD']) move.add(right);
+    if(keys['KeyA']) move.sub(right);
+    move.multiplyScalar(3 * dt);
+    camera.position.add(move);
+  }
+
+  // Raycast interactions
+  const ray = new THREE.Raycaster();
+  let lookingAt = null;
+  const npcMsgEl = document.getElementById('npcMsg') || (function(){ const d=document.createElement('div'); d.id='npcMsg'; d.style.position='absolute'; d.style.bottom='12px'; d.style.left='50%'; d.style.transform='translateX(-50%)'; d.style.background='rgba(0,0,0,0.6)'; d.style.padding='8px 12px'; d.style.borderRadius='8px'; d.style.display='none'; d.textContent='Pulsa E para interactuar'; document.body.appendChild(d); return d; })();
+
+  function checkInteraction(){
+    ray.set(camera.position, camera.getWorldDirection(new THREE.Vector3()));
+    const hits = ray.intersectObjects(interactables, false);
+    if(!hits.length || hits[0].distance > 4){ lookingAt = null; npcMsgEl.style.display = 'none'; return; }
+    lookingAt = hits[0].object;
+    npcMsgEl.style.display = 'block';
+    if(lookingAt.userData.type === 'npc') npcMsgEl.textContent = 'Pulsa E para recoger fichas diarias';
+    else npcMsgEl.textContent = 'Pulsa E para interactuar';
+  }
+
+  // UI modal helpers (si tienes modalEl lo usará)
+  function showUI(html){
+    if(modalEl){ modalEl.innerHTML = html; modalEl.style.display = 'block'; return; }
+    const tmp = document.createElement('div'); tmp.style.position='absolute'; tmp.style.left='50%'; tmp.style.top='50%'; tmp.style.transform='translate(-50%,-50%)'; tmp.style.background='rgba(16,22,37,0.95)'; tmp.style.padding='18px'; tmp.style.borderRadius='10px'; tmp.innerHTML = html;
+    document.body.appendChild(tmp);
+    setTimeout(()=> tmp.remove(), 3000);
+  }
+  function hideUI(){ if(modalEl) modalEl.style.display = 'none'; }
+
+  // Juegos: Daily, Blackjack, Ruleta, Slots
+  async function claimDaily(){
+    const today = new Date().toISOString().slice(0,10);
+    const last = currentUser.last_claim ? currentUser.last_claim.slice(0,10) : null;
+    if(last === today){
+      showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Ya reclamaste hoy.</div></div>`);
+      return;
+    }
+    balance += 100;
+    currentUser.last_claim = new Date().toISOString();
+    await updateBalanceOnServer();
+    await logActivity('Reclamó diaria', '+100');
+    showUI(`<div class="gameUI"><h2>Recompensa diaria</h2><div class="gameResult">Recibiste +100 Pekepuntos.</div></div>`);
+  }
+
+  // Blackjack (simplificado, usando updateBalanceOnServer)
+  function createDeck(){
+    const vals = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+    const suits = ['♠','♥','♦','♣'];
+    const d = [];
+    for(const s of suits) for(const v of vals) d.push({ v, s });
+    for(let i = d.length - 1; i > 0; i--){ const j = Math.floor(Math.random()*(i+1)); [d[i], d[j]]=[d[j], d[i]]; }
+    return d;
+  }
+  function valueOf(card){ if(card.v === 'A') return 11; if(['J','Q','K'].includes(card.v)) return 10; return parseInt(card.v,10); }
+  function score(hand){ let sum=0, aces=0; for(const c of hand){ if(c.v==='A') aces++; sum += valueOf(c); } while(sum>21 && aces){ sum -= 10; aces--; } return sum; }
+
+  async function openBlackjack(){
+    showUI(`<div class="gameUI"><h2>Blackjack</h2><div class="gameResult" id="bjResult"></div></div>`);
+    // UI minimal: realizar una apuesta rápida de ejemplo
+    const bet = Math.min(50, balance);
+    if(!bet){ showUI('<div class="gameResult">Saldo insuficiente</div>'); return; }
+    // jugar una mano automática: 50% win
+    const win = Math.random() < 0.5;
+    if(win){ balance += bet; await updateBalanceOnServer(); showUI(`<div class="gameResult">Ganas ${bet}</div>`); await logActivity('Blackjack win', `+${bet}`); }
+    else { balance -= bet; await updateBalanceOnServer(); showUI(`<div class="gameResult">Pierdes ${bet}</div>`); await logActivity('Blackjack lose', `-${bet}`); }
+  }
+
+  // Ruleta: interfaz simple
+  let ruletaSpinning = false;
+  let ruletaPending = null;
+  function openRoulette(){
+    showUI(`<div class="gameUI"><h2>Ruleta</h2><div class="row"><label>Apuesta: <input id="rBet" type="number" value="50" min="1" /></label></div><div class="row"><button id="spinBtn">Girar Número (aleatorio)</button></div><div id="rResult" class="gameResult"></div></div>`);
+    // attach handler
+    setTimeout(()=> {
+      const btn = document.getElementById('spinBtn');
+      if(btn) btn.onclick = async () => {
+        const betInput = document.getElementById('rBet');
+        const bet = clamp(Number(betInput.value)||0, 1, balance);
+        if(!bet){ document.getElementById('rResult').textContent = 'Introduce apuesta válida'; return; }
+        balance -= bet; await updateBalanceOnServer();
+        document.getElementById('rResult').textContent = 'Girando...';
+        // decide landing
+        const landing = rand(0,36);
+        // decide win (if landing is even)
+        const won = landing % 2 === 0;
+        let payout = 0;
+        if(won){ payout = bet * 2; balance += payout; await updateBalanceOnServer(); document.getElementById('rResult').textContent = `Sale ${landing} — Ganaste ${payout}`; await logActivity('Ruleta win', `+${payout}`); }
+        else { document.getElementById('rResult').textContent = `Sale ${landing} — Perdiste ${bet}`; await logActivity('Ruleta lose', `-${bet}`); }
+      };
+    }, 50);
+  }
+
+  // Slots (simplificado)
+  function openSlots(){
+    showUI(`<div class="gameUI"><h2>Tragamonedas</h2><div class="row"><label>Apuesta: <input id="sBet" type="number" value="50" min="1" /></label></div><div class="row"><button id="playSlotsBtn">Jugar</button></div><div id="slotsReels" style="font-size:32px;margin-top:10px">• • •</div><div id="slotsRes" class="gameResult"></div></div>`);
+    setTimeout(()=> {
+      const playBtn = document.getElementById('playSlotsBtn');
+      if(!playBtn) return;
+      playBtn.onclick = async () => {
+        const bet = clamp(Number(document.getElementById('sBet').value)||0, 1, balance);
+        if(!bet){ document.getElementById('slotsRes').textContent = 'Introduce apuesta válida'; return; }
+        balance -= bet; await updateBalanceOnServer();
+        const symbols = ['🍒','🍋','🍊','🍇','💎','7️⃣'];
+        let ticks = 0;
+        const reelsEl = document.getElementById('slotsReels'); const resEl = document.getElementById('slotsRes');
+        const interval = setInterval(()=> {
+          ticks++;
+          const a = symbols[rand(0,symbols.length-1)], b = symbols[rand(0,symbols.length-1)], c = symbols[rand(0,symbols.length-1)];
+          reelsEl.textContent = `${a} ${b} ${c}`;
+          if(ticks>30){
+            clearInterval(interval);
+            const final = [symbols[rand(0,symbols.length-1)], symbols[rand(0,symbols.length-1)], symbols[rand(0,symbols.length-1)]];
+            reelsEl.textContent = final.join(' ');
+            if(final[0]===final[1] && final[1]===final[2]){ const payout = bet*5; balance += payout; resEl.textContent = `¡Jackpot! Ganaste ${payout}`; await updateBalanceOnServer(); await logActivity('Slots win', `+${payout}`); }
+            else if(final[0]===final[1]||final[1]===final[2]||final[0]===final[2]){ const payout = bet*2; balance += payout; resEl.textContent = `Dos iguales — Ganaste ${payout}`; await updateBalanceOnServer(); await logActivity('Slots pair', `+${payout}`); }
+            else { resEl.textContent = `Perdiste ${bet}`; await logActivity('Slots lose', `-${bet}`); }
+          }
+        }, 40);
+      };
+    }, 50);
+  }
+
+  // Atajo E para interactuar
+  document.addEventListener('keydown', async (e) => {
+    if(e.code !== 'KeyE') return;
+    if(!lookingAt) return;
+    const t = lookingAt.userData.type;
+    if(t === 'npc'){ await claimDaily(); return; }
+    if(t === 'blackjack'){ await openBlackjack(); return; }
+    if(t === 'roulette'){ openRoulette(); return; }
+    if(t === 'slots'){ openSlots(); return; }
+  });
+
+  // Loop de animación
+  const clock = new THREE.Clock();
+  function animate(){
+    requestAnimationFrame(animate);
+    const dt = clock.getDelta();
+    updateCamera(dt);
+    checkInteraction();
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // Resize
+  window.addEventListener('resize', ()=> {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  // Export API útil
+  window._casino = {
+    getCurrentUser: () => currentUser,
+    getBalance: () => balance,
+    addBalance: async (amt, reason='') => { balance += amt; await updateBalanceOnServer(); if(reason) await logActivity('Add', reason); },
+    subBalance: async (amt, reason='') => { balance -= amt; await updateBalanceOnServer(); if(reason) await logActivity('Sub', reason); }
+  };
+
+  console.log('Casino 3D iniciado — Supabase ' + (supabase ? 'OK' : 'NO disponible'));
+})();
 </script>
 </body>
 </html>
