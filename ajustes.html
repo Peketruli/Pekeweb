@@ -16,14 +16,15 @@ body{margin:0;background:linear-gradient(180deg,#021018,#04121a);color:#bfffee;p
 .label{font-weight:700;color:#9ef7ea}
 .input{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.02);background:transparent;color:inherit;width:100%}
 .btn{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.02);cursor:pointer;background:transparent;color:inherit}
-.previewBox{height:140px;border-radius:8px;border:1px solid rgba(0,255,208,0.03);display:flex;align-items:center;justify-content:center;margin-bottom:8px}
+.previewBox{height:140px;border-radius:8px;border:1px solid rgba(0,255,208,0.03);display:flex;align-items:center;justify-content:center;margin-bottom:8px;background:linear-gradient(180deg,#04101a,#021018)}
 .small{font-size:13px;color:#9ef7ea}
+.row{display:flex;gap:8px;align-items:center}
 </style>
 </head>
 <body>
   <div>
     <div class="h1">⚙️ Ajustes — PekeOS</div>
-    <div style="font-size:13px;color:#9ef7ea">Aplica cambios reales al escritorio y guarda en LocalStorage.</div>
+    <div style="font-size:13px;color:#9ef7ea">Aplica cambios reales al escritorio. Usa "Aplicar cambios" para probar y "Guardar" para persistir.</div>
   </div>
 
   <div class="layout">
@@ -35,7 +36,7 @@ body{margin:0;background:linear-gradient(180deg,#021018,#04121a);color:#bfffee;p
 
       <div class="card">
         <div class="label">🖼️ Fondo del escritorio</div>
-        <input id="bgFile" type="file" class="input" />
+        <input id="bgFile" type="file" class="input" accept="image/*" />
         <input id="bgUrl" class="input" placeholder="O pega URL de imagen" style="margin-top:8px" />
         <div style="margin-top:8px;display:flex;gap:8px">
           <button class="btn" id="applyBg">Aplicar fondo</button>
@@ -57,6 +58,13 @@ body{margin:0;background:linear-gradient(180deg,#021018,#04121a);color:#bfffee;p
         </div>
       </div>
 
+      <div class="card">
+        <div class="label">Reset</div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn" id="resetBtn">♻️ Restaurar por defecto</button>
+        </div>
+      </div>
+
     </div>
 
     <div class="right">
@@ -71,22 +79,32 @@ body{margin:0;background:linear-gradient(180deg,#021018,#04121a);color:#bfffee;p
   </div>
 
 <script>
-const THEME_KEY = 'pekeos_theme_v1';
+/*
+  Esta versión usa la CLAVE única: "pekeos_settings"
+  - Al aplicar se escribe "pekeos_settings" y "pekeos_update" (timestamp)
+  - PekeOS debe escuchar 'storage' para la key "pekeos_update" o tener función global aplicarAjustes()
+*/
 
-function defaultTheme(){
-  return { accent:'#00ffd0', bg:null, winOpacity:0.96 };
+const SETTINGS_KEY = 'pekeos_settings';
+
+function defaultSettings(){
+  return {
+    accent: '#00ffd0',
+    wallpaper: null,    // dataURL o URL
+    opacity: 0.96,
+    theme: 'dark'       // 'dark' o 'light' (opcional)
+  };
 }
 
-let theme = defaultTheme();
-
+let settings = defaultSettings();
 try {
-  const raw = localStorage.getItem(THEME_KEY);
-  if(raw) theme = JSON.parse(raw);
-} catch(e) {
-  theme = defaultTheme();
+  const raw = localStorage.getItem(SETTINGS_KEY);
+  if(raw) settings = Object.assign(defaultSettings(), JSON.parse(raw));
+} catch(e){
+  settings = defaultSettings();
 }
 
-/* elements */
+/* ---- elements ---- */
 const accentColor = document.getElementById('accentColor'),
       bgFile = document.getElementById('bgFile'),
       bgUrl = document.getElementById('bgUrl'),
@@ -95,114 +113,173 @@ const accentColor = document.getElementById('accentColor'),
       winOpacity = document.getElementById('winOpacity'),
       opVal = document.getElementById('opVal'),
       previewBox = document.getElementById('previewBox'),
-      currentState = document.getElementById('currentState');
+      currentState = document.getElementById('currentState'),
+      applyBtn = document.getElementById('applySettingsBtn'),
+      saveBtn = document.getElementById('saveSettingsBtn'),
+      resetBtn = document.getElementById('resetBtn');
 
-accentColor.value = theme.accent || '#00ffd0';
-bgUrl.value = theme.bg || '';
-winOpacity.value = theme.winOpacity || 0.96;
+/* init UI from settings */
+accentColor.value = settings.accent;
+bgUrl.value = settings.wallpaper || '';
+winOpacity.value = settings.opacity;
 opVal.textContent = winOpacity.value;
-
 updatePreview();
 updateStateView();
 
+/* helpers */
+function readFileAsDataURL(file){
+  return new Promise((res,rej)=>{
+    const r = new FileReader();
+    r.onload = ()=> res(r.result);
+    r.onerror = rej;
+    r.readAsDataURL(file);
+  });
+}
+
 function hexToRgba(hex,a=1){
-  hex = hex.replace('#','');
-  const r=parseInt(hex.slice(0,2),16),
-        g=parseInt(hex.slice(2,4),16),
-        b=parseInt(hex.slice(4,6),16);
+  hex = (hex||'#000').replace('#','');
+  const r = parseInt(hex.slice(0,2),16);
+  const g = parseInt(hex.slice(2,4),16);
+  const b = parseInt(hex.slice(4,6),16);
   return `rgba(${r},${g},${b},${a})`;
 }
 
-function applyToParent(t){
-  try{
-    const pd = parent.document;
+/* aplicar ajustes EN EL PADRE (llamada directa si iframe->parent) */
+async function applySettingsToSystem(applyToParentFlag = true){
+  // build settings from UI
+  settings.accent = accentColor.value;
+  settings.opacity = parseFloat(winOpacity.value);
+  // wallpaper already set when applyBg clicked; but if bgUrl has value use it
+  if(bgUrl.value && bgUrl.value.trim()) settings.wallpaper = bgUrl.value.trim();
 
-    if(t.accent){
-      pd.documentElement.style.setProperty('--neon', t.accent);
-      pd.documentElement.style.setProperty('--accent', t.accent);
+  // 1) Save to localStorage key used by PekeOS
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  // 2) Fire update signal for other windows (storage event won't fire in this same document)
+  localStorage.setItem('pekeos_update', Date.now().toString());
+
+  // 3) Try to call parent.aplicarAjustes() directly (works if same-origin and function exists)
+  try {
+    if(window.parent && typeof window.parent.aplicarAjustes === 'function' && applyToParentFlag){
+      window.parent.aplicarAjustes();
     }
-
-    if(t.bg){
-      pd.getElementById('desktop').style.backgroundImage = `url('${t.bg}')`;
-      pd.getElementById('desktop').style.backgroundSize = 'cover';
-    } else {
-      pd.getElementById('desktop').style.backgroundImage = '';
-    }
-
-    if(t.winOpacity !== undefined){
-      pd.documentElement.style.setProperty('--win-opacity', t.winOpacity);
-      pd.querySelectorAll('.win').forEach(w=> w.style.opacity = t.winOpacity);
-    }
-
-    localStorage.setItem(THEME_KEY, JSON.stringify(t));
-
-  }catch(e){
-    console.warn('No se pudo aplicar al parent', e);
+  } catch(e){
+    // ignore
   }
 
   updatePreview();
   updateStateView();
 }
 
-document.getElementById('applySettingsBtn').addEventListener('click', ()=>{
-  theme.accent = accentColor.value;
-  theme.winOpacity = parseFloat(winOpacity.value);
-  applyToParent(theme);
+/* UI wiring */
+applyBtn.addEventListener('click', async ()=>{
+  // if a local file selected via bgFile, convert it and set wallpaper first
+  if(bgFile.files && bgFile.files[0]){
+    const data = await readFileAsDataURL(bgFile.files[0]);
+    settings.wallpaper = data;
+    bgUrl.value = '';
+  }
+  await applySettingsToSystem(true);
+  alert('Ajustes aplicados ✔ (se han guardado en localStorage y notificado al sistema)');
 });
 
-document.getElementById('saveSettingsBtn').addEventListener('click', ()=>{
-  localStorage.setItem(THEME_KEY, JSON.stringify(theme));
+saveBtn.addEventListener('click', ()=>{
+  // ensure current UI is read
+  settings.accent = accentColor.value;
+  settings.opacity = parseFloat(winOpacity.value);
+  if(bgUrl.value && bgUrl.value.trim()) settings.wallpaper = bgUrl.value.trim();
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   updateStateView();
+  alert('Ajustes guardados 💾');
 });
 
-winOpacity.addEventListener('input', ()=>{
-  opVal.textContent = winOpacity.value;
-});
+winOpacity.addEventListener('input', ()=>{ opVal.textContent = winOpacity.value; });
 
 applyBgBtn.addEventListener('click', async ()=>{
   const file = bgFile.files[0];
   if(file){
     const data = await readFileAsDataURL(file);
-    theme.bg = data;
+    settings.wallpaper = data;
     bgUrl.value = '';
-    applyToParent(theme);
-  } else if(bgUrl.value.trim()){
-    theme.bg = bgUrl.value.trim();
-    applyToParent(theme);
-  } 
+    updatePreview();
+    updateStateView();
+  } else if(bgUrl.value && bgUrl.value.trim()){
+    settings.wallpaper = bgUrl.value.trim();
+    updatePreview();
+    updateStateView();
+  } else {
+    alert('Selecciona un archivo o pega una URL');
+  }
 });
 
 clearBgBtn.addEventListener('click', ()=>{
-  theme.bg = null;
+  settings.wallpaper = null;
   bgUrl.value = '';
-  applyToParent(theme);
+  updatePreview();
+  updateStateView();
 });
 
-function readFileAsDataURL(file){
-  return new Promise((res,rej)=>{
-    const r=new FileReader();
-    r.onload=()=>res(r.result);
-    r.onerror=rej;
-    r.readAsDataURL(file);
-  });
-}
+resetBtn.addEventListener('click', ()=>{
+  settings = defaultSettings();
+  accentColor.value = settings.accent;
+  winOpacity.value = settings.opacity;
+  opVal.textContent = winOpacity.value;
+  bgUrl.value = '';
+  bgFile.value = '';
+  updatePreview();
+  updateStateView();
+  // also persist and notify
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  localStorage.setItem('pekeos_update', Date.now().toString());
+  try{ if(window.parent && typeof window.parent.aplicarAjustes === 'function') window.parent.aplicarAjustes(); }catch(e){}
+  alert('Restaurado por defecto');
+});
 
+/* preview & status */
 function updatePreview(){
-  previewBox.style.background = theme.bg
-    ? `url('${theme.bg}') center/cover`
-    : 'linear-gradient(180deg,#04101a,#021018)';
-
-  previewBox.style.border = `1px solid ${hexToRgba(theme.accent,0.12)}`;
-  previewBox.style.boxShadow = `0 10px 30px ${hexToRgba(theme.accent,0.03)}`;
-  previewBox.style.color = theme.accent;
+  if(settings.wallpaper){
+    previewBox.style.background = `url('${settings.wallpaper}') center/cover`;
+  } else {
+    previewBox.style.background = 'linear-gradient(180deg,#04101a,#021018)';
+  }
+  previewBox.style.border = `1px solid ${hexToRgba(settings.accent,0.12)}`;
+  previewBox.style.boxShadow = `0 10px 30px ${hexToRgba(settings.accent,0.03)}`;
+  previewBox.style.color = settings.accent;
 }
 
 function updateStateView(){
-  currentState.textContent = JSON.stringify(theme, null, 2);
+  currentState.textContent = JSON.stringify(settings, null, 2);
 }
 
-/* intentar aplicar al abrir */
-try { applyToParent(theme); } catch(e){}
+/* listen for storage changes (if another window changed settings) */
+window.addEventListener('storage', (e)=>{
+  if(e.key === 'pekeos_update'){
+    // reload settings from storage
+    try{
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if(raw){ settings = Object.assign(defaultSettings(), JSON.parse(raw)); }
+      // update UI to reflect external change
+      accentColor.value = settings.accent;
+      winOpacity.value = settings.opacity;
+      opVal.textContent = winOpacity.value;
+      bgUrl.value = settings.wallpaper || '';
+      updatePreview(); updateStateView();
+      // attempt to apply to parent too
+      try{ if(window.parent && typeof window.parent.aplicarAjustes === 'function') window.parent.aplicarAjustes(); }catch(e){}
+    }catch(err){}
+  }
+});
+
+/* on load ensure parent reflects stored settings too */
+try{
+  // Try call parent.aplicarAjustes() so parent updates immediately if possible
+  if(window.parent && typeof window.parent.aplicarAjustes === 'function'){
+    window.parent.aplicarAjustes();
+  }
+} catch(e){}
+
+/* initial UI reflect */
+updatePreview();
+updateStateView();
 </script>
 </body>
 </html>
