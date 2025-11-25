@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PekeSocial</title>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; padding: 0; background: #f0f2f5; }
+    header { background: #ff4da6; padding: 15px; color: white; text-align: center; font-size: 22px; }
+    #app { padding: 20px; }
+    .card { background: white; padding: 15px; border-radius: 10px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);}    
+    .btn { background: #ff4da6; color: white; padding: 10px 15px; border-radius: 8px; border: none; cursor: pointer; }
+    .input { width: 100%; padding: 10px; border-radius: 8px; border: 1px solid #ccc; margin-bottom: 10px; }
+  </style>
+</head>
+<body>
+  <header>PekeSocial</header>
+
+  <div id="app">
+
+    <div id="auth-section" class="card">
+      <h2>Iniciar sesión</h2>
+      <input id="email" class="input" placeholder="Email" />
+      <input id="password" type="password" class="input" placeholder="Contraseña" />
+      <button class="btn" onclick="login()">Entrar</button>
+      <button class="btn" style="background:#888" onclick="signup()">Registrarse</button>
+    </div>
+
+    <div id="post-section" class="card" style="display:none;">
+      <h3>Crear publicación</h3>
+      <textarea id="content" class="input" placeholder="¿Qué estás pensando?"></textarea>
+      <button class="btn" onclick="createPost()">Publicar</button>
+    </div>
+
+    <div id="feed"></div>
+
+  </div>
+
+<script>
+  const supabase = supabase.createClient("https://jdvwlfogkzrzovepzjqa.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI");
+
+  async function login() {
+    let { data, error } = await supabase.auth.signInWithPassword({
+      email: email.value,
+      password: password.value
+    });
+    if (error) alert(error.message);
+    else init();
+  }
+
+  async function signup() {
+    let { error } = await supabase.auth.signUp({
+      email: email.value,
+      password: password.value
+    });
+    if (error) alert(error.message);
+    else alert("Registro completado. Ahora inicia sesión.")
+  }
+
+  async function init() {
+    document.getElementById("auth-section").style.display = "none";
+    document.getElementById("post-section").style.display = "block";
+    loadFeed();
+  }
+
+  async function createPost() {
+    let user = (await supabase.auth.getUser()).data.user;
+    await supabase.from("postsApp").insert({
+      author: user.id,
+      content: content.value
+    });
+    content.value = "";
+    loadFeed();
+  }
+
+  async function loadFeed() {
+    let { data: posts } = await supabase
+      .from("postsApp")
+      .select(`id, content, created_at, author, profiles(username)`)        
+      .order("created_at", { ascending: false });
+
+    let html = "";
+    posts.forEach(p => {
+      html += `
+        <div class='card'>
+          <b>@${p.profiles?.username || "usuario"}</b><br>
+          <p>${p.content}</p>
+          <small>${new Date(p.created_at).toLocaleString()}</small>
+        </div>`;
+    });
+
+    feed.innerHTML = html;
+  }
+
+  supabase.auth.onAuthStateChange((e) => {
+    if (e === "SIGNED_IN") init();
+  });
+</script>
+</body>
+</html>
