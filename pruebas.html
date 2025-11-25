@@ -15,6 +15,7 @@
   --text: #f9f9ff;
   --accent-red: #ff3b3b;
   --accent-green: #1fc94c;
+  --accent-blue: #007bff; /* Color para coleccionables */
 }
 
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -162,11 +163,11 @@ body{
 }
 
 /* ------------------------------------------------ */
-/* ---------- ESTILOS DE MUÑECOS DE NIEVE (AÑADIDO) */
+/* ---------- ESTILOS DE MUÑECOS DE NIEVE (Actualizado) */
 /* ------------------------------------------------ */
 .snow-container{
   margin-top:30px;
-  background:rgba(22,35,48,0.7); /* Oscurecido ligeramente */
+  background:rgba(22,35,48,0.7);
   border-radius:10px;
   padding:20px;
   border:1px solid rgba(255,255,255,0.2);
@@ -181,13 +182,49 @@ body{
   position:absolute;
   font-size:2rem;
   cursor:pointer;
-  transition:all 0.4s ease-out; /* Animación de recogida */
-  z-index:4; /* Para que esté por encima del fondo y otros elementos */
+  transition:all 0.4s ease-out;
+  z-index:4;
   text-shadow: 0 0 8px rgba(255,255,255,0.8);
 }
 .hidden-snowman.catched{
   opacity:0;
   transform:scale(0);
+}
+
+/* ------------------------------------------------ */
+/* ---------- ESTILOS DE COLECCIONABLES (NUEVO) */
+/* ------------------------------------------------ */
+.collectible-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 10px;
+    margin-top: 15px;
+}
+.collectible-item {
+    padding: 10px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.4);
+    text-align: center;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.collectible-item .icon {
+    font-size: 2em;
+    filter: grayscale(100%);
+    opacity: 0.3;
+}
+.collectible-item.unlocked .icon {
+    filter: none;
+    opacity: 1;
+    text-shadow: 0 0 10px var(--accent-blue);
+}
+.collectible-item .name {
+    font-size: 0.8em;
+    margin-top: 5px;
+    color: #aaa;
+}
+.collectible-item.unlocked .name {
+    color: var(--text);
+    font-weight: 600;
 }
 </style>
 </head>
@@ -262,9 +299,13 @@ for(let i=0;i<40;i++){
   </div>
 
 <div class="snow-container card">
-    <h2>⛄ Muñecos de nieve recogidos</h2>
-    <p>Total: <b id="snowCount">0</b></p>
+    <h2>⛄ Progreso Navideño</h2>
+    <p>Muñecos de nieve recogidos: <b id="snowCount">0</b> de 5 para el próximo coleccionable.</p>
     <div class="snow-list" id="snowList"></div>
+    
+    <h3 style="color:var(--accent-blue); margin-top: 20px;">🖼️ Coleccionables Desbloqueados</h3>
+    <div class="collectible-grid" id="collectibleGrid">
+        </div>
 </div>
 
   <div class="card">
@@ -341,26 +382,76 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 
 // ======================================================
-// ---------- MUÑECOS ESCONDIDOS (Lógica Añadida) ----------
+// ---------- MUÑECOS ESCONDIDOS Y COLECCIONABLES (Actualizado) ----------
 // ======================================================
+
+const COLLECTIBLES = [
+  { name: "Galleta de Jengibre", icon: "🍪" },
+  { name: "Calcetín de Lana", icon: "🧦" },
+  { name: "Trineo Rápido", icon: "🛷" },
+  { name: "Pino Nevado", icon: "🌲" },
+  { name: "Regalo Sorpresa", icon: "🎁" },
+  { name: "Chimenea Cálida", icon: "🔥" },
+  { name: "Bastón de Caramelo", icon: "🍭" },
+  { name: "Reno Volador", icon: "🦌" },
+  { name: "Gorro de Elfo", icon: "🧑‍🎄" },
+  { name: "Carta a Papá Noel", icon: "✉️" }
+];
+
 let snowmen = JSON.parse(localStorage.getItem("snowmen")) || [];
 let collectedIDs = JSON.parse(localStorage.getItem("collectedSnowmenIDs")) || [];
-const snowList = document.getElementById("snowList");
-const snowCount = document.getElementById("snowCount");
+let unlockedCollectibles = JSON.parse(localStorage.getItem("unlockedCollectibles")) || 0; // Guarda cuántos se han desbloqueado
 
-function updateSnowList(){
-  // Actualiza la lista visible y el contador
+const SNOWMEN_PER_COLLECTIBLE = 5;
+const snowList = document.getElementById("snowList");
+const snowCountElement = document.getElementById("snowCount");
+const collectibleGrid = document.getElementById("collectibleGrid");
+
+function updateSnowListAndCollectibles(){
+  // 1. Actualiza la lista de muñecos
   snowList.innerHTML="";
   snowmen.forEach(n=>{
     const div=document.createElement("div");
     div.textContent=n;
     snowList.appendChild(div);
   });
-  snowCount.textContent=snowmen.length;
+  
+  // 2. Actualiza el contador de muñecos para el próximo coleccionable
+  const collectedToday = collectedIDs.length % SNOWMEN_PER_COLLECTIBLE;
+  snowCountElement.textContent = `${collectedToday} de ${SNOWMEN_PER_COLLECTIBLE}`;
+  
+  // 3. Actualiza el grid de coleccionables
+  collectibleGrid.innerHTML = "";
+  COLLECTIBLES.forEach((c, index) => {
+    const isUnlocked = index < unlockedCollectibles;
+    const item = document.createElement("div");
+    item.className = "collectible-item" + (isUnlocked ? " unlocked" : "");
+    item.innerHTML = `
+      <div class="icon">${c.icon}</div>
+      <div class="name">${c.name}</div>
+    `;
+    collectibleGrid.appendChild(item);
+  });
+  
+  if (unlockedCollectibles === COLLECTIBLES.length) {
+      snowCountElement.textContent = "¡Todos los coleccionables desbloqueados! 🎉";
+  }
 }
 
-// Inicializa la lista al cargar la página
-updateSnowList();
+function unlockCollectible() {
+    if (unlockedCollectibles < COLLECTIBLES.length) {
+        unlockedCollectibles++;
+        localStorage.setItem("unlockedCollectibles", unlockedCollectibles);
+        
+        const c = COLLECTIBLES[unlockedCollectibles - 1];
+        alert(`🏆 ¡Coleccionable desbloqueado! ¡Has conseguido el ${c.name} ${c.icon}!`);
+        
+        updateSnowListAndCollectibles();
+    }
+}
+
+// Inicializa la lista y el grid al cargar la página
+updateSnowListAndCollectibles();
 
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -370,7 +461,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
       // 1. Posición aleatoria en la ventana
       const padding = 50; // margen
-      // window.innerHeight - document.querySelector('.nav-container').offsetHeight - padding
       const maxX = window.innerWidth - 50; 
       const maxY = window.innerHeight - 150; 
 
@@ -383,20 +473,25 @@ document.addEventListener("DOMContentLoaded", async () => {
       // 3. Listener de click
       sm.addEventListener("click", ()=>{
           if(collectedIDs.includes(id)) return;
+          if(unlockedCollectibles === COLLECTIBLES.length) return alert("Ya has desbloqueado todos los coleccionables. ¡Gracias por participar!");
 
           sm.classList.add("catched");
-          setTimeout(()=> sm.style.display="none", 400); // 400ms = 0.4s de CSS transition
+          setTimeout(()=> sm.style.display="none", 400);
 
           // Guardar el muñeco
-          snowmen.push("Muñeco #" + (collectedIDs.length + 1)); 
-          localStorage.setItem("snowmen", JSON.stringify(snowmen));
-
+          snowmen.push(`Muñeco #${collectedIDs.length + 1}`); 
           collectedIDs.push(id);
+          localStorage.setItem("snowmen", JSON.stringify(snowmen));
           localStorage.setItem("collectedSnowmenIDs", JSON.stringify(collectedIDs));
 
-          updateSnowList();
+          updateSnowListAndCollectibles();
 
-          alert("❄️ ¡Muñeco de nieve recogido! Llevas " + snowmen.length + " en total.");
+          alert("❄️ ¡Muñeco de nieve recogido!");
+          
+          // Lógica principal: Desbloquear cada 5 muñecos
+          if (collectedIDs.length % SNOWMEN_PER_COLLECTIBLE === 0) {
+              unlockCollectible();
+          }
       });
   });
 
@@ -503,7 +598,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   // -------------------------
   // Logout
   // -------------------------
-  // Definida como global para el HTML, pero la llamada es del listener
   window.logout = async function() {
     try { await supabase.auth.signOut(); } catch(e){ console.warn(e); }
     localStorage.removeItem("currentUser");
@@ -518,7 +612,6 @@ document.addEventListener("DOMContentLoaded", async () => {
   // -------------------------
   const petBtn = document.getElementById("enviarPeticionBtn");
   if (petBtn) petBtn.addEventListener("click", async () => {
-    // Verificar si el usuario está logueado
     if (!currentUser) return alert("Debes iniciar sesión para enviar una petición.");
     
     if (sendingPetition) return;
@@ -526,13 +619,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!contenido) return alert("Escribe algo antes de enviar.");
     sendingPetition = true;
     petBtn.disabled = true;
-    petBtn.textContent = "Enviando..."; // Añadido feedback visual
+    petBtn.textContent = "Enviando..."; 
     try {
       const created_at = new Date().toISOString();
       const { error } = await supabase.from("peticiones").insert([{ usuario: currentUser.username, contenido, created_at }]);
       if (!error) {
         document.getElementById("peticionInput").value = "";
-        alert("✅ Petición enviada con éxito."); // Añadido feedback
+        alert("✅ Petición enviada con éxito."); 
       } else {
         alert("❌ Error al enviar la petición: " + error.message);
       }
@@ -540,13 +633,12 @@ document.addEventListener("DOMContentLoaded", async () => {
     } finally {
       sendingPetition = false;
       petBtn.disabled = false;
-      petBtn.textContent = "Enviar Petición 🎁"; // Restaurar texto
+      petBtn.textContent = "Enviar Petición 🎁";
     }
   });
 
   const repBtn = document.getElementById("enviarReporteBtn");
   if (repBtn) repBtn.addEventListener("click", async () => {
-    // Verificar si el usuario está logueado
     if (!currentUser) return alert("Debes iniciar sesión para enviar un reporte.");
     
     if (sendingReport) return;
@@ -554,14 +646,14 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (!descripcion) return alert("Describe el reporte antes de enviar.");
     sendingReport = true;
     repBtn.disabled = true;
-    repBtn.textContent = "Enviando..."; // Añadido feedback visual
+    repBtn.textContent = "Enviando..."; 
     try {
       const tipo = document.getElementById("tipoReporte")?.value || "otro";
       const created_at = new Date().toISOString();
       const { error } = await supabase.from("reportes").insert([{ usuario: currentUser.username, tipo, descripcion, created_at }]);
       if (!error) {
         document.getElementById("reporteInput").value = "";
-        alert("✅ Reporte enviado con éxito."); // Añadido feedback
+        alert("✅ Reporte enviado con éxito.");
       } else {
         alert("❌ Error al enviar el reporte: " + error.message);
       }
@@ -569,7 +661,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     } finally {
       sendingReport = false;
       repBtn.disabled = false;
-      repBtn.textContent = "Enviar Reporte 🎅"; // Restaurar texto
+      repBtn.textContent = "Enviar Reporte 🎅";
     }
   });
 
