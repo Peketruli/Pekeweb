@@ -123,40 +123,26 @@
   <!-- Drawer (hidden) -->
   <div id="drawerRoot" style="display:none"></div>
 
-  <script>
-/********** App: estructura inicial y helpers **********/
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============================
+   🔌 CONFIGURA TU SUPABASE AQUÍ
+   ============================ */
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+
+/********** App: estructura inicial **********/
 const INITIAL_STRUCTURE = {
   Letras: ['Historia del arte','Latin','Geografia', 'Frances'],
   Ciencias: ['Mate','Física','Química','Biología','Tecnología'],
   Orokorrak: ['Zientzia orokorra','Giza mate','Economia', 'Fisiologia'],
   ParaTodos: ['Historia de españa','Lengua','Inglés','Euskera','Filosofía']
 };
-const STORAGE_KEY = 'pekeos_apuntes_v1';
 
-function uid(){ return Date.now().toString(36)+'_'+Math.floor(Math.random()*9999) }
-function nowISO(){ return new Date().toISOString() }
-function prettyDate(iso){ const d = new Date(iso); return d.toLocaleString(); }
-
-function loadState(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(!raw){
-      const subjects = {};
-      Object.values(INITIAL_STRUCTURE).flat().forEach(s=>subjects[s]=[]);
-      return { branches: INITIAL_STRUCTURE, subjects };
-    }
-    return JSON.parse(raw);
-  }catch(e){
-    console.error(e);
-    return { branches: INITIAL_STRUCTURE, subjects: {} };
-  }
-}
-
-function saveState(state){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) }
-
-let state = loadState();
 let currentBranch = '';
 let currentSubject = '';
+let allNotes = []; // <- viene de Supabase
 let editingNote = null;
 
 /********** UI refs **********/
@@ -170,13 +156,98 @@ const notesList = document.getElementById('notesList');
 
 const searchInput = document.getElementById('searchInput');
 const sortSelect = document.getElementById('sortSelect');
-
 const drawerRoot = document.getElementById('drawerRoot');
 
-/********** Render **********/
+/****************************************
+  🔥 Cargar notas desde Supabase
+****************************************/
+async function loadNotes() {
+  const { data, error } = await db
+    .from('notes')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error(error);
+    return;
+  }
+
+  allNotes = data;
+  renderNotes();
+}
+
+/****************************************
+  🔥 Añadir nota
+****************************************/
+async function addNote(payload) {
+  const { error } = await db.from("notes").insert({
+    subject: currentSubject,
+    title: payload.title,
+    content: payload.content,
+    author: payload.author
+  });
+
+  if (error) return alert("ERROR: " + error.message);
+
+  loadNotes(); // recargar
+}
+
+/****************************************
+  🔥 Actualizar nota
+****************************************/
+async function updateNote(id, patch) {
+  const { error } = await db
+    .from("notes")
+    .update({
+      title: patch.title,
+      content: patch.content,
+      author: patch.author,
+      updated_at: new Date().toISOString()
+    })
+    .eq("id", id);
+
+  if (error) alert(error.message);
+  loadNotes();
+}
+
+/****************************************
+  🔥 Borrar nota
+****************************************/
+async function deleteNote(id) {
+  if (!confirm("¿Eliminar apunte definitivamente?")) return;
+
+  const { error } = await db
+    .from("notes")
+    .delete()
+    .eq("id", id);
+
+  if (error) alert(error.message);
+  loadNotes();
+}
+
+/****************************************
+  🔥 Like
+****************************************/
+async function toggleLike(id) {
+  const note = allNotes.find(n => n.id === id);
+  const newLikes = (note.likes || 0) + 1;
+
+  const { error } = await db
+    .from("notes")
+    .update({ likes: newLikes })
+    .eq("id", id);
+
+  if (error) alert(error.message);
+
+  loadNotes();
+}
+
+/****************************************
+  Render de ramas
+****************************************/
 function renderBranches(){
   branchesContainer.innerHTML = '';
-  Object.keys(state.branches).forEach(b=>{
+  Object.keys(INITIAL_STRUCTURE).forEach(b=>{
     const btn = document.createElement('button');
     btn.className = 'branch-btn' + (b===currentBranch ? ' active' : '');
     btn.textContent = b;
@@ -185,35 +256,45 @@ function renderBranches(){
   });
 }
 
+/****************************************
+  Render de asignaturas
+****************************************/
 function renderSubjects(){
   subjectsContainer.innerHTML = '';
   if(!currentBranch){
     subjectsContainer.innerHTML = '<div class="small">Elige una rama para ver asignaturas.</div>';
     return;
   }
-  const list = state.branches[currentBranch];
-  list.forEach(s=>{
+  INITIAL_STRUCTURE[currentBranch].forEach(s=>{
     const el = document.createElement('div');
     el.className = 'subject' + (s===currentSubject ? ' active' : '');
     el.textContent = s;
-    el.onclick = ()=>{ currentSubject=s; render(); }
+    el.onclick = ()=>{ currentSubject=s; render(); loadNotes(); }
     subjectsContainer.appendChild(el);
   });
 }
 
+/****************************************
+  Render de notas
+****************************************/
 function getFilteredNotes(){
   if(!currentSubject) return [];
-  const all = (state.subjects[currentSubject] || []).slice();
+  const notes = allNotes.filter(n => n.subject === currentSubject);
+
   const q = searchInput.value.trim().toLowerCase();
-  let filtered = all.filter(n => {
+  let filtered = notes.filter(n=>{
     if(!q) return true;
-    return n.title.toLowerCase().includes(q)
-        || n.content.toLowerCase().includes(q)
-        || (n.author||'').toLowerCase().includes(q);
+    return (
+      n.title.toLowerCase().includes(q) ||
+      n.content.toLowerCase().includes(q) ||
+      (n.author||'').toLowerCase().includes(q)
+    );
   });
-  if(sortSelect.value==='newest') filtered.sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
-  if(sortSelect.value==='oldest') filtered.sort((a,b)=> new Date(a.createdAt)-new Date(b.createdAt));
+
+  if(sortSelect.value==='newest') filtered.sort((a,b)=> new Date(b.created_at)-new Date(a.created_at));
+  if(sortSelect.value==='oldest') filtered.sort((a,b)=> new Date(a.created_at)-new Date(b.created_at));
   if(sortSelect.value==='top') filtered.sort((a,b)=> (b.likes||0)-(a.likes||0));
+
   return filtered;
 }
 
@@ -224,13 +305,15 @@ function renderNotes(){
     notesCount.textContent='';
     return;
   }
+
   subjectTitle.textContent=currentSubject;
 
   const notes = getFilteredNotes();
-  notesCount.textContent = (state.subjects[currentSubject]||[]).length + ' apuntes';
+  notesCount.textContent = notes.length + " apuntes";
 
-  if(notes.length===0){
-    notesList.innerHTML='<div class="small" style="padding:18px;background:#fff;border-radius:10px">No hay apuntes aún.</div>';
+  if(notes.length === 0){
+    notesList.innerHTML =
+      '<div class="small" style="padding:18px;background:#fff;border-radius:10px">No hay apuntes aún.</div>';
     return;
   }
 
@@ -240,7 +323,7 @@ function renderNotes(){
 
     wrap.innerHTML = `
       <h3>${n.title}</h3>
-      <div class="meta">por ${n.author} · ${prettyDate(n.createdAt)}</div>
+      <div class="meta">por ${n.author} · ${new Date(n.created_at).toLocaleString()}</div>
       <div class="content">${n.content}</div>
     `;
 
@@ -249,7 +332,7 @@ function renderNotes(){
 
     const like = document.createElement('button');
     like.className='btn ghost';
-    like.textContent = `👍 ${n.likes||0}`;
+    like.textContent = `👍 ${n.likes || 0}`;
     like.onclick = ()=>toggleLike(n.id);
 
     const edit = document.createElement('button');
@@ -266,63 +349,17 @@ function renderNotes(){
     actions.appendChild(like);
     actions.appendChild(edit);
     actions.appendChild(del);
-    wrap.appendChild(actions);
 
+    wrap.appendChild(actions);
     notesList.appendChild(wrap);
   });
 }
 
-function render(){
-  renderBranches();
-  renderSubjects();
-  renderNotes();
-}
-
-/********** CRUD **********/
-function addNote(payload){
-  const note = {
-    id: uid(),
-    title: payload.title,
-    content: payload.content,
-    author: payload.author,
-    attachments: payload.attachments,
-    createdAt: nowISO(),
-    updatedAt: nowISO(),
-    likes:0
-  };
-  state.subjects[currentSubject].unshift(note);
-  saveState(state);
-  render();
-}
-
-function updateNote(id, patch){
-  state.subjects[currentSubject] = state.subjects[currentSubject].map(n =>
-    n.id===id ? {...n, ...patch, updatedAt: nowISO()} : n
-  );
-  saveState(state);
-  render();
-}
-
-function deleteNote(id){
-  if(!confirm("¿Eliminar apunte?")) return;
-  state.subjects[currentSubject] =
-    state.subjects[currentSubject].filter(n=>n.id!==id);
-  saveState(state);
-  render();
-}
-
-function toggleLike(id){
-  state.subjects[currentSubject] =
-    state.subjects[currentSubject].map(n =>
-      n.id===id ? {...n, likes:(n.likes||0)+1} : n
-    );
-  saveState(state);
-  render();
-}
-
-/********** Drawer **********/
+/****************************************
+  Drawer
+****************************************/
 function openDrawer(note=null){
-  editingNote=note;
+  editingNote = note;
   drawerRoot.style.display='block';
 
   drawerRoot.innerHTML = `
@@ -335,20 +372,22 @@ function openDrawer(note=null){
           <label>Título</label>
           <input type="text" id="f_title" value="${note?note.title:''}">
         </div>
+
         <div class="field">
           <label>Contenido</label>
           <textarea id="f_content">${note?note.content:''}</textarea>
         </div>
+
         <div class="field">
           <label>Autor</label>
           <input type="text" id="f_author" value="${note?note.author:'Alumno'}">
         </div>
+
         <button class="btn primary" type="submit">Guardar</button>
         <button class="btn" type="button" onclick="closeDrawer()">Cancelar</button>
       </form>
     </div>
-  </div>
-  `;
+  </div>`;
 
   document.querySelector('.drawer-back').onclick = ()=>closeDrawer();
 
@@ -357,11 +396,12 @@ function openDrawer(note=null){
     const payload = {
       title: document.getElementById('f_title').value.trim(),
       content: document.getElementById('f_content').value.trim(),
-      author: document.getElementById('f_author').value.trim(),
-      attachments: note?.attachments || []
+      author: document.getElementById('f_author').value.trim()
     };
-    if(editingNote) updateNote(editingNote.id,payload);
+
+    if(editingNote) updateNote(editingNote.id, payload);
     else addNote(payload);
+
     closeDrawer();
   };
 }
@@ -369,20 +409,23 @@ function openDrawer(note=null){
 function closeDrawer(){
   drawerRoot.style.display='none';
   drawerRoot.innerHTML='';
-  editingNote=null;
+  editingNote = null;
 }
 
-/********** Events **********/
+/****************************************
+  Events
+****************************************/
+searchInput.oninput = ()=>renderNotes();
+sortSelect.onchange = ()=>renderNotes();
 addNoteBtn.onclick = ()=> {
   if(!currentSubject) return alert("Elige una asignatura primero");
   openDrawer();
 };
 
-searchInput.oninput = ()=>renderNotes();
-sortSelect.onchange = ()=>renderNotes();
-
-/********** Init **********/
-currentBranch = Object.keys(state.branches)[0];
+/****************************************
+  Init
+****************************************/
+currentBranch = Object.keys(INITIAL_STRUCTURE)[0];
 render();
 </script>
 </body>
