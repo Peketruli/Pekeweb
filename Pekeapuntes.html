@@ -124,371 +124,266 @@
   <div id="drawerRoot" style="display:none"></div>
 
   <script>
-  /********** App: estructura inicial y helpers **********/
-  const INITIAL_STRUCTURE = {
-    Letras: ['Historia del arte','Latin','Geografia'],
-    Ciencias: ['Mate','Física','Química','Biología','Tecnología'],
-    Orokorrak: ['Zientzia orokorra','Giza mate','Economia'],
-    ParaTodos: ['Historia de españa','Lengua','Inglés','Euskera','Filosofía']
+/********** App: estructura inicial y helpers **********/
+const INITIAL_STRUCTURE = {
+  Letras: ['Historia del arte','Latin','Geografia'],
+  Ciencias: ['Mate','Física','Química','Biología','Tecnología'],
+  Orokorrak: ['Zientzia orokorra','Giza mate','Economia'],
+  ParaTodos: ['Historia de españa','Lengua','Inglés','Euskera','Filosofía']
+};
+const STORAGE_KEY = 'pekeos_apuntes_v1';
+
+function uid(){ return Date.now().toString(36)+'_'+Math.floor(Math.random()*9999) }
+function nowISO(){ return new Date().toISOString() }
+function prettyDate(iso){ const d = new Date(iso); return d.toLocaleString(); }
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(!raw){
+      const subjects = {};
+      Object.values(INITIAL_STRUCTURE).flat().forEach(s=>subjects[s]=[]);
+      return { branches: INITIAL_STRUCTURE, subjects };
+    }
+    return JSON.parse(raw);
+  }catch(e){
+    console.error(e);
+    return { branches: INITIAL_STRUCTURE, subjects: {} };
+  }
+}
+
+function saveState(state){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) }
+
+let state = loadState();
+let currentBranch = '';
+let currentSubject = '';
+let editingNote = null;
+
+/********** UI refs **********/
+const branchesContainer = document.getElementById('branchesContainer');
+const subjectsContainer = document.getElementById('subjectsContainer');
+
+const subjectTitle = document.getElementById('subjectTitle');
+const notesCount = document.getElementById('notesCount');
+const addNoteBtn = document.getElementById('addNoteBtn');
+const notesList = document.getElementById('notesList');
+
+const searchInput = document.getElementById('searchInput');
+const sortSelect = document.getElementById('sortSelect');
+
+const drawerRoot = document.getElementById('drawerRoot');
+
+/********** Render **********/
+function renderBranches(){
+  branchesContainer.innerHTML = '';
+  Object.keys(state.branches).forEach(b=>{
+    const btn = document.createElement('button');
+    btn.className = 'branch-btn' + (b===currentBranch ? ' active' : '');
+    btn.textContent = b;
+    btn.onclick = ()=>{ currentBranch=b; currentSubject=''; render(); }
+    branchesContainer.appendChild(btn);
+  });
+}
+
+function renderSubjects(){
+  subjectsContainer.innerHTML = '';
+  if(!currentBranch){
+    subjectsContainer.innerHTML = '<div class="small">Elige una rama para ver asignaturas.</div>';
+    return;
+  }
+  const list = state.branches[currentBranch];
+  list.forEach(s=>{
+    const el = document.createElement('div');
+    el.className = 'subject' + (s===currentSubject ? ' active' : '');
+    el.textContent = s;
+    el.onclick = ()=>{ currentSubject=s; render(); }
+    subjectsContainer.appendChild(el);
+  });
+}
+
+function getFilteredNotes(){
+  if(!currentSubject) return [];
+  const all = (state.subjects[currentSubject] || []).slice();
+  const q = searchInput.value.trim().toLowerCase();
+  let filtered = all.filter(n => {
+    if(!q) return true;
+    return n.title.toLowerCase().includes(q)
+        || n.content.toLowerCase().includes(q)
+        || (n.author||'').toLowerCase().includes(q);
+  });
+  if(sortSelect.value==='newest') filtered.sort((a,b)=> new Date(b.createdAt)-new Date(a.createdAt));
+  if(sortSelect.value==='oldest') filtered.sort((a,b)=> new Date(a.createdAt)-new Date(b.createdAt));
+  if(sortSelect.value==='top') filtered.sort((a,b)=> (b.likes||0)-(a.likes||0));
+  return filtered;
+}
+
+function renderNotes(){
+  notesList.innerHTML = '';
+  if(!currentSubject){
+    subjectTitle.textContent='Selecciona una asignatura';
+    notesCount.textContent='';
+    return;
+  }
+  subjectTitle.textContent=currentSubject;
+
+  const notes = getFilteredNotes();
+  notesCount.textContent = (state.subjects[currentSubject]||[]).length + ' apuntes';
+
+  if(notes.length===0){
+    notesList.innerHTML='<div class="small" style="padding:18px;background:#fff;border-radius:10px">No hay apuntes aún.</div>';
+    return;
+  }
+
+  notes.forEach(n=>{
+    const wrap = document.createElement('div');
+    wrap.className='note';
+
+    wrap.innerHTML = `
+      <h3>${n.title}</h3>
+      <div class="meta">por ${n.author} · ${prettyDate(n.createdAt)}</div>
+      <div class="content">${n.content}</div>
+    `;
+
+    const actions = document.createElement('div');
+    actions.className='actions';
+
+    const like = document.createElement('button');
+    like.className='btn ghost';
+    like.textContent = `👍 ${n.likes||0}`;
+    like.onclick = ()=>toggleLike(n.id);
+
+    const edit = document.createElement('button');
+    edit.className='btn';
+    edit.textContent='Editar';
+    edit.onclick = ()=>openDrawer(n);
+
+    const del = document.createElement('button');
+    del.className='btn';
+    del.style.color='#b91c1c';
+    del.textContent='Eliminar';
+    del.onclick = ()=>deleteNote(n.id);
+
+    actions.appendChild(like);
+    actions.appendChild(edit);
+    actions.appendChild(del);
+    wrap.appendChild(actions);
+
+    notesList.appendChild(wrap);
+  });
+}
+
+function render(){
+  renderBranches();
+  renderSubjects();
+  renderNotes();
+}
+
+/********** CRUD **********/
+function addNote(payload){
+  const note = {
+    id: uid(),
+    title: payload.title,
+    content: payload.content,
+    author: payload.author,
+    attachments: payload.attachments,
+    createdAt: nowISO(),
+    updatedAt: nowISO(),
+    likes:0
   };
-  const STORAGE_KEY = 'pekeos_apuntes_v1';
-
-  function uid(){ return Date.now().toString(36)+'_'+Math.floor(Math.random()*9999) }
-
-  function nowISO(){ return new Date().toISOString() }
-  function prettyDate(iso){ const d = new Date(iso); return d.toLocaleString(); }
-
-  // load/save
-  function loadState(){
-    try{
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if(!raw){
-        // create empty subjects
-        const subjects = {};
-        Object.values(INITIAL_STRUCTURE).flat().forEach(s=>subjects[s]=[]);
-        return { branches: INITIAL_STRUCTURE, subjects };
-      }
-      return JSON.parse(raw);
-    }catch(e){
-      console.error(e);
-      return { branches: INITIAL_STRUCTURE, subjects: {} };
-    }
-  }
-  function saveState(state){ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)) }
-
-  let state = loadState();
-  let currentBranch = '';
-  let currentSubject = '';
-  let editingNote = null;
-
-  /********** UI references **********/
-  const branchesContainer = document.getElementById('branchesContainer');
-  const subjectsContainer = document.getElementById('subjectsContainer');
-  const branchSelect = document.getElementById('branchSelect');
-  const newSubjectInput = document.getElementById('newSubjectInput');
-  const createSubjectBtn = document.getElementById('createSubjectBtn');
-
-  const subjectTitle = document.getElementById('subjectTitle');
-  const notesCount = document.getElementById('notesCount');
-  const addNoteBtn = document.getElementById('addNoteBtn');
-  const notesList = document.getElementById('notesList');
-
-  const searchInput = document.getElementById('searchInput');
-  const sortSelect = document.getElementById('sortSelect');
-
-  const drawerRoot = document.getElementById('drawerRoot');
-
-  /********** Render functions **********/
-  function renderBranches(){
-    branchesContainer.innerHTML = '';
-    Object.keys(state.branches).forEach(b=>{
-      const btn = document.createElement('button');
-      btn.className = 'branch-btn' + (b===currentBranch ? ' active' : '');
-      btn.textContent = b;
-      btn.onclick = ()=>{ currentBranch = b; currentSubject=''; render(); }
-      branchesContainer.appendChild(btn);
-    });
-
-    // fill branch select
-    branchSelect.innerHTML = '';
-    Object.keys(state.branches).forEach(b=>{
-      const opt = document.createElement('option'); opt.value=b; opt.textContent=b;
-      branchSelect.appendChild(opt);
-    });
-  }
-
-  function renderSubjects(){
-    subjectsContainer.innerHTML = '';
-    if(!currentBranch){
-      subjectsContainer.innerHTML = '<div class="small">Elige una rama para ver asignaturas.</div>';
-      return;
-    }
-    const list = state.branches[currentBranch] || [];
-    if(list.length===0){ subjectsContainer.innerHTML = '<div class="small">Sin asignaturas</div>'; return; }
-    list.forEach(s=>{
-      const wrap = document.createElement('div');
-      wrap.className = 'subject' + (s===currentSubject ? ' active':'');
-      wrap.textContent = s;
-      wrap.onclick = ()=>{ currentSubject = s; render(); }
-      subjectsContainer.appendChild(wrap);
-    });
-  }
-
-  function getFilteredNotes(){
-    if(!currentSubject) return [];
-    const all = (state.subjects[currentSubject] || []).slice();
-    const q = searchInput.value.trim().toLowerCase();
-    let filtered = all.filter(n => {
-      if(!q) return true;
-      return (n.title||'').toLowerCase().includes(q) || (n.content||'').toLowerCase().includes(q) || (n.author||'').toLowerCase().includes(q);
-    });
-    const sortBy = sortSelect.value;
-    if(sortBy==='newest') filtered.sort((a,b)=> new Date(b.createdAt) - new Date(a.createdAt));
-    if(sortBy==='oldest') filtered.sort((a,b)=> new Date(a.createdAt) - new Date(b.createdAt));
-    if(sortBy==='top') filtered.sort((a,b)=> (b.likes||0) - (a.likes||0));
-    return filtered;
-  }
-
-  function renderNotes(){
-    notesList.innerHTML = '';
-    if(!currentSubject){
-      subjectTitle.textContent = 'Selecciona una asignatura';
-      notesCount.textContent = '';
-      return;
-    }
-    subjectTitle.textContent = currentSubject;
-    const arr = state.subjects[currentSubject] || [];
-    notesCount.textContent = arr.length + ' apuntes';
-
-    const notes = getFilteredNotes();
-    if(notes.length===0){
-      notesList.innerHTML = '<div class="small" style="padding:18px;background:#fff;border-radius:10px">No hay apuntes aún.</div>';
-      return;
-    }
-
-    notes.forEach(n=>{
-      const el = document.createElement('div'); el.className='note';
-      const title = document.createElement('h3'); title.textContent = n.title || 'Sin título';
-      const meta = document.createElement('div'); meta.className='meta'; meta.textContent = `por ${n.author || 'Anon'} · ${prettyDate(n.createdAt)}`;
-      const content = document.createElement('div'); content.className='content'; content.textContent = n.content || '';
-
-      const actions = document.createElement('div'); actions.className='actions';
-      const likeBtn = document.createElement('button'); likeBtn.className='btn ghost'; likeBtn.textContent = `👍 ${n.likes||0}`; likeBtn.onclick = ()=>{ toggleLike(n.id) };
-      const editBtn = document.createElement('button'); editBtn.className='btn'; editBtn.textContent='Editar'; editBtn.onclick = ()=>{ openDrawer(n) };
-      const delBtn = document.createElement('button'); delBtn.className='btn'; delBtn.style.color='#b91c1c'; delBtn.textContent='Eliminar'; delBtn.onclick = ()=>{ deleteNote(n.id) };
-
-      actions.appendChild(likeBtn); actions.appendChild(editBtn); actions.appendChild(delBtn);
-
-      el.appendChild(title); el.appendChild(meta); el.appendChild(content);
-
-      // attachments
-      if(n.attachments && n.attachments.length){
-        const attRow = document.createElement('div'); attRow.className='attachment-row';
-        n.attachments.forEach(a=>{
-          const aEl = document.createElement('div'); aEl.className='att';
-          if(a.type && a.type.startsWith('image/')){
-            const img = document.createElement('img'); img.src = a.data; img.style.maxWidth='100%'; img.style.maxHeight='100%'; img.alt = a.name;
-            aEl.appendChild(img);
-          } else if(a.type === 'application/pdf'){
-            aEl.textContent = a.name || 'PDF';
-          } else {
-            aEl.textContent = a.name || 'Archivo';
-          }
-          attRow.appendChild(aEl);
-        });
-        el.appendChild(attRow);
-      }
-
-      el.appendChild(actions);
-      notesList.appendChild(el);
-    });
-  }
-
-  function render(){
-    renderBranches();
-    renderSubjects();
-    renderNotes();
-    // update branch select default
-    branchSelect.value = currentBranch || Object.keys(state.branches)[0] || '';
-  }
-
-  /********** CRUD **********/
-  function ensureSubject(subject){
-    if(state.subjects[subject]) return;
-    state.subjects[subject] = [];
-    saveState(state);
-  }
-
-  function addNote(payload){
-    if(!currentSubject) return alert('Selecciona una asignatura primero');
-    const note = {
-      id: uid(),
-      title: payload.title || 'Sin título',
-      content: payload.content || '',
-      attachments: payload.attachments || [],
-      author: payload.author || 'Alumno',
-      createdAt: nowISO(),
-      updatedAt: nowISO(),
-      likes: 0
-    };
-    state.subjects[currentSubject] = [note, ...(state.subjects[currentSubject]||[]) ];
-    saveState(state);
-    render();
-  }
-
-  function updateNote(noteId, patch){
-    const arr = (state.subjects[currentSubject]||[]).map(n => n.id===noteId ? {...n, ...patch, updatedAt: nowISO()} : n);
-    state.subjects[currentSubject] = arr;
-    saveState(state);
-    render();
-  }
-
-  function deleteNote(noteId){
-    if(!confirm('¿Eliminar este apunte?')) return;
-    state.subjects[currentSubject] = (state.subjects[currentSubject]||[]).filter(n => n.id!==noteId);
-    saveState(state);
-    render();
-  }
-
-  function toggleLike(noteId){
-    const arr = (state.subjects[currentSubject]||[]).map(n => n.id===noteId ? {...n, likes:(n.likes||0)+1} : n);
-    state.subjects[currentSubject] = arr;
-    saveState(state);
-    render();
-  }
-
-  /********** Drawer (add/edit form) **********/
-  function openDrawer(note=null){
-    editingNote = note;
-    drawerRoot.innerHTML = '';
-    const back = document.createElement('div'); back.className='drawer-back';
-    const drawer = document.createElement('div'); drawer.className='drawer';
-    back.onclick = (e)=>{ if(e.target===back) closeDrawer(); }
-    drawer.onclick = (e)=>e.stopPropagation();
-
-    const title = document.createElement('div'); title.style.display='flex'; title.style.justifyContent='space-between'; title.style.alignItems='center';
-    const h = document.createElement('strong'); h.textContent = note ? 'Editar apunte' : 'Nuevo apunte';
-    const closeBtn = document.createElement('button'); closeBtn.className='btn'; closeBtn.textContent='Cerrar'; closeBtn.onclick = closeDrawer;
-    title.appendChild(h); title.appendChild(closeBtn);
-
-    // form fields
-    const form = document.createElement('form');
-
-    // Title
-    const fTitle = document.createElement('div'); fTitle.className='field';
-    const lTitle = document.createElement('label'); lTitle.textContent='Título';
-    const iTitle = document.createElement('input'); iTitle.type='text'; iTitle.value = note?.title || '';
-    fTitle.appendChild(lTitle); fTitle.appendChild(iTitle);
-
-    // Content
-    const fContent = document.createElement('div'); fContent.className='field';
-    const lContent = document.createElement('label'); lContent.textContent='Contenido';
-    const tContent = document.createElement('textarea'); tContent.value = note?.content || '';
-    fContent.appendChild(lContent); fContent.appendChild(tContent);
-
-    // Author
-    const fAuthor = document.createElement('div'); fAuthor.className='field';
-    const lAuthor = document.createElement('label'); lAuthor.textContent='Autor';
-    const iAuthor = document.createElement('input'); iAuthor.type='text'; iAuthor.value = note?.author || 'Alumno';
-    fAuthor.appendChild(lAuthor); fAuthor.appendChild(iAuthor);
-
-    // Files
-    const fFiles = document.createElement('div'); fFiles.className='field';
-    const lFiles = document.createElement('label'); lFiles.textContent='Adjuntar archivos (imagen / pdf)';
-    const iFiles = document.createElement('input'); iFiles.type='file'; iFiles.multiple = true;
-    const preview = document.createElement('div'); preview.style.display='flex'; preview.style.gap='8px'; preview.style.flexWrap='wrap'; preview.style.marginTop='8px';
-    fFiles.appendChild(lFiles); fFiles.appendChild(iFiles); fFiles.appendChild(preview);
-
-    // existing attachments if editing
-    let attachments = note?.attachments ? note.attachments.slice() : [];
-
-    function renderPreview(){
-      preview.innerHTML = '';
-      attachments.forEach((a, idx)=>{
-        const p = document.createElement('div'); p.className='att';
-        p.style.position='relative';
-        if(a.type && a.type.startsWith('image/')){
-          const img = document.createElement('img'); img.src=a.data; img.style.maxWidth='100%'; img.style.maxHeight='100%';
-          p.appendChild(img);
-        } else if(a.type==='application/pdf'){
-          p.textContent = a.name || 'PDF';
-        } else {
-          p.textContent = a.name || 'Archivo';
-        }
-        const rem = document.createElement('button'); rem.className='btn'; rem.textContent='×';
-        rem.style.position='absolute'; rem.style.top='-6px'; rem.style.right='-6px'; rem.style.background='#ef4444'; rem.style.color='white'; rem.style.borderRadius='12px'; rem.style.width='22px'; rem.style.height='22px'; rem.onclick = ()=>{ attachments.splice(idx,1); renderPreview(); };
-        p.appendChild(rem);
-        preview.appendChild(p);
-      });
-    }
-    renderPreview();
-
-    iFiles.onchange = async (e)=>{
-      const files = Array.from(e.target.files || []);
-      for(const f of files){
-        const data = await readFileAsDataURL(f);
-        attachments.push({ name: f.name, type: f.type, data });
-      }
-      renderPreview();
-      iFiles.value = '';
-    };
-
-    // submit
-    const submitRow = document.createElement('div'); submitRow.style.display='flex'; submitRow.style.gap='8px';
-    const saveBtn = document.createElement('button'); saveBtn.className='btn primary'; saveBtn.textContent='Guardar';
-    const cancelBtn = document.createElement('button'); cancelBtn.className='btn'; cancelBtn.textContent='Cancelar';
-    saveBtn.type='submit';
-    cancelBtn.type='button'; cancelBtn.onclick = closeDrawer;
-    submitRow.appendChild(saveBtn); submitRow.appendChild(cancelBtn);
-
-    form.appendChild(fTitle); form.appendChild(fContent); form.appendChild(fAuthor); form.appendChild(fFiles); form.appendChild(submitRow);
-
-    form.onsubmit = (ev)=>{
-      ev.preventDefault();
-      const payload = {
-        title: iTitle.value.trim(),
-        content: tContent.value.trim(),
-        author: iAuthor.value.trim(),
-        attachments
-      };
-      if(editingNote){
-        updateNote(editingNote.id, payload);
-      } else {
-        addNote(payload);
-      }
-      closeDrawer();
-    };
-
-    drawer.appendChild(title);
-    drawer.appendChild(document.createElement('hr'));
-    drawer.appendChild(form);
-    back.appendChild(drawer);
-    drawerRoot.appendChild(back);
-    drawerRoot.style.display='block';
-  }
-
-  function closeDrawer(){
-    editingNote = null;
-    drawerRoot.innerHTML = ''; drawerRoot.style.display='none';
-  }
-
-  function readFileAsDataURL(file){
-    return new Promise((res, rej)=>{
-      const r = new FileReader();
-      r.onload = ()=>res(r.result);
-      r.onerror = rej;
-      r.readAsDataURL(file);
-    });
-  }
-
-  /********** Events **********/
-  createSubjectBtn.onclick = ()=>{
-    const name = newSubjectInput.value.trim();
-    const branch = branchSelect.value || Object.keys(state.branches)[0];
-    if(!name) return alert('Nombre de asignatura vacío');
-    if(!state.branches[branch]) state.branches[branch] = [];
-    state.branches[branch].push(name);
-    state.subjects[name] = [];
-    newSubjectInput.value = '';
-    saveState(state);
-    currentBranch = branch;
-    currentSubject = name;
-    render();
-  };
-
-  addNoteBtn.onclick = ()=> {
-    if(!currentSubject) return alert('Selecciona una asignatura primero');
-    openDrawer(null);
-  };
-
-  searchInput.oninput = ()=> renderNotes();
-  sortSelect.onchange = ()=> renderNotes();
-
-  /********** Init default selection **********/
-  // If branch none, pick first
-  if(!currentBranch) currentBranch = Object.keys(state.branches)[0] || '';
+  state.subjects[currentSubject].unshift(note);
+  saveState(state);
   render();
+}
 
-  </script>
+function updateNote(id, patch){
+  state.subjects[currentSubject] = state.subjects[currentSubject].map(n =>
+    n.id===id ? {...n, ...patch, updatedAt: nowISO()} : n
+  );
+  saveState(state);
+  render();
+}
+
+function deleteNote(id){
+  if(!confirm("¿Eliminar apunte?")) return;
+  state.subjects[currentSubject] =
+    state.subjects[currentSubject].filter(n=>n.id!==id);
+  saveState(state);
+  render();
+}
+
+function toggleLike(id){
+  state.subjects[currentSubject] =
+    state.subjects[currentSubject].map(n =>
+      n.id===id ? {...n, likes:(n.likes||0)+1} : n
+    );
+  saveState(state);
+  render();
+}
+
+/********** Drawer **********/
+function openDrawer(note=null){
+  editingNote=note;
+  drawerRoot.style.display='block';
+
+  drawerRoot.innerHTML = `
+  <div class="drawer-back">
+    <div class="drawer" onclick="event.stopPropagation()">
+      <strong>${note?'Editar':'Nuevo'} apunte</strong>
+      <hr>
+      <form id="noteForm">
+        <div class="field">
+          <label>Título</label>
+          <input type="text" id="f_title" value="${note?note.title:''}">
+        </div>
+        <div class="field">
+          <label>Contenido</label>
+          <textarea id="f_content">${note?note.content:''}</textarea>
+        </div>
+        <div class="field">
+          <label>Autor</label>
+          <input type="text" id="f_author" value="${note?note.author:'Alumno'}">
+        </div>
+        <button class="btn primary" type="submit">Guardar</button>
+        <button class="btn" type="button" onclick="closeDrawer()">Cancelar</button>
+      </form>
+    </div>
+  </div>
+  `;
+
+  document.querySelector('.drawer-back').onclick = ()=>closeDrawer();
+
+  document.getElementById('noteForm').onsubmit = (e)=>{
+    e.preventDefault();
+    const payload = {
+      title: document.getElementById('f_title').value.trim(),
+      content: document.getElementById('f_content').value.trim(),
+      author: document.getElementById('f_author').value.trim(),
+      attachments: note?.attachments || []
+    };
+    if(editingNote) updateNote(editingNote.id,payload);
+    else addNote(payload);
+    closeDrawer();
+  };
+}
+
+function closeDrawer(){
+  drawerRoot.style.display='none';
+  drawerRoot.innerHTML='';
+  editingNote=null;
+}
+
+/********** Events **********/
+addNoteBtn.onclick = ()=> {
+  if(!currentSubject) return alert("Elige una asignatura primero");
+  openDrawer();
+};
+
+searchInput.oninput = ()=>renderNotes();
+sortSelect.onchange = ()=>renderNotes();
+
+/********** Init **********/
+currentBranch = Object.keys(state.branches)[0];
+render();
+</script>
 </body>
 </html>
