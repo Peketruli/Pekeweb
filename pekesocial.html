@@ -1,149 +1,548 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>PekeSocial</title>
-<style>
-  body { font-family: Arial; background:#f2f2f2; margin:0; padding:0; }
-  header { background:#ff4da6; color:white; padding:15px; font-size:24px; font-weight:bold; text-align:center; }
-  .card { background:white; padding:15px; margin:15px; border-radius:12px; box-shadow:0 3px 10px rgba(0,0,0,0.1); }
-  input, textarea { width:100%; padding:10px; margin-top:8px; border:1px solid #ccc; border-radius:8px; }
-  button { margin-top:10px; padding:10px 15px; background:#ff4da6; color:white; border:none; border-radius:10px; font-size:16px; cursor:pointer; }
-  .post { border-bottom:1px solid #ddd; padding-bottom:12px; margin-bottom:12px; }
-  .hidden { display:none; }
-</style>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PekeSocial — PekeOS</title>
+
+  <!-- supabase client (ESM) -->
+  <script type="module" src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm"></script>
+
+  <style>
+    :root{
+      --primary:#4A78FF; --bg:#f6f8ff; --card:#fff; --muted:#6b7280;
+      --radius:12px;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,system-ui,Segoe UI,Arial;background:linear-gradient(180deg,var(--bg),#eef2ff);color:#111}
+    .wrap{max-width:1100px;margin:24px auto;padding:18px}
+    header{display:flex;align-items:center;gap:12px}
+    .logo{width:48px;height:48px;border-radius:10px;background:var(--primary);color:#fff;display:grid;place-items:center;font-weight:700}
+    .card{background:var(--card);border-radius:var(--radius);padding:14px;box-shadow:0 8px 20px rgba(20,25,40,0.06);margin-top:16px}
+    .grid{display:grid;grid-template-columns:320px 1fr 320px;gap:16px}
+    .sidebar, .right{overflow:auto}
+    .hidden{display:none}
+    .btn{background:var(--primary);color:#fff;border:0;padding:8px 12px;border-radius:10px;cursor:pointer}
+    .btn.ghost{background:transparent;border:1px solid rgba(0,0,0,0.06);color:var(--primary)}
+    input,textarea,select{width:100%;padding:10px;border-radius:10px;border:1px solid rgba(0,0,0,0.06);margin-bottom:8px}
+    .post-card{padding:12px;border-radius:12px;background:#fff;margin-bottom:12px}
+    .avatar{width:44px;height:44px;border-radius:50%;background:linear-gradient(90deg,#c7d2fe,#4A78FF);display:inline-block;background-size:cover;background-position:center}
+    .muted{color:var(--muted);font-size:13px}
+    .fab{position:fixed;right:28px;bottom:28px;width:62px;height:62px;border-radius:50%;background:var(--primary);display:grid;place-items:center;color:#fff;font-size:28px;box-shadow:0 12px 30px rgba(74,120,255,0.28);cursor:pointer}
+    .row{display:flex;gap:8px;align-items:center}
+    .small{font-size:13px;color:var(--muted)}
+    @media (max-width:980px){.grid{grid-template-columns:1fr}.right{display:none}}
+    /* small utilities */
+    .center{display:flex;align-items:center;justify-content:center}
+  </style>
 </head>
 <body>
-<header>PekeSocial</header>
+  <div class="wrap">
+    <header>
+      <div class="logo">PS</div>
+      <h1>PekeSocial</h1>
+    </header>
 
-<!-- LOGIN / REGISTER -->
-<div id="auth" class="card">
-  <h2>Entrar a PekeSocial</h2>
-  <input id="email" placeholder="Email" />
-  <input id="pass" type="password" placeholder="Contraseña" />
-  <button onclick="register()">Registrarme</button>
-  <button onclick="login()">Entrar</button>
-  <p id="authMsg"></p>
-</div>
+    <div id="appRoot">
+      <!-- AUTH VIEW -->
+      <div id="viewAuth" class="card">
+        <h2>Accede o regístrate</h2>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <input id="email" placeholder="Email" autocomplete="username"/>
+          <input id="password" type="password" placeholder="Contraseña (min. 6)" autocomplete="current-password"/>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn" id="btnLogin">Entrar</button>
+          <button class="btn ghost" id="btnSign">Registrarme</button>
+        </div>
+        <p class="muted">Se enviará un correo de verificación. Revisa spam si no llega.</p>
+        <div id="authLogs" class="small muted"></div>
+      </div>
 
-<!-- COMPLETE PROFILE -->
-<div id="profileSetup" class="card hidden">
-  <h2>Completa tu Perfil</h2>
-  <input id="username" placeholder="Nombre de usuario" />
-  <textarea id="bio" placeholder="Biografía"></textarea>
-  <button onclick="saveProfile()">Guardar Perfil</button>
-  <p id="profileMsg"></p>
-</div>
+      <!-- PROFILE SETUP -->
+      <div id="viewProfile" class="card hidden">
+        <h2>Completa tu perfil</h2>
+        <p class="muted">Este paso es obligatorio para entrar a PekeSocial</p>
+        <input id="username" placeholder="Nombre de usuario (sin espacios)" />
+        <input id="display_name" placeholder="Nombre para mostrar" />
+        <textarea id="bio" placeholder="Biografía corta"></textarea>
+        <label class="small">Avatar (opcional)</label>
+        <input type="file" id="avatarFile" accept="image/*" />
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn" id="btnSaveProfile">Guardar y entrar</button>
+          <button class="btn ghost" id="btnSkipProfile">Omitir (completar luego)</button>
+        </div>
+        <div id="profileLogs" class="small muted"></div>
+      </div>
 
-<!-- FEED -->
-<div id="feed" class="hidden">
-  <div class="card">
-    <h2>Crear Post</h2>
-    <textarea id="postContent" placeholder="¿Qué quieres contar?"></textarea>
-    <button onclick="publishPost()">Publicar</button>
-    <p id="postMsg"></p>
+      <!-- APP VIEW -->
+      <div id="viewApp" class="hidden">
+        <div class="grid">
+          <div class="sidebar">
+            <div class="card">
+              <div style="display:flex;gap:12px;align-items:center">
+                <div id="leftAvatar" class="avatar"></div>
+                <div>
+                  <div id="leftName" style="font-weight:700">Usuario</div>
+                  <div id="leftHandle" class="muted">@handle</div>
+                </div>
+              </div>
+              <div style="margin-top:12px">
+                <button class="btn ghost" id="btnLogout">Cerrar sesión</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <h4 class="muted">Sugerencias</h4>
+              <div id="suggestions"></div>
+            </div>
+          </div>
+
+          <main>
+            <div class="card">
+              <div style="display:flex;gap:12px;align-items:flex-start">
+                <div class="avatar" id="composerAvatar"></div>
+                <textarea id="newText" placeholder="¿Qué está pasando?"></textarea>
+              </div>
+              <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px">
+                <input type="file" id="newImage" accept="image/*" />
+                <button class="btn ghost" id="btnPreview">Vista previa</button>
+                <button class="btn" id="btnPost">Publicar</button>
+              </div>
+            </div>
+
+            <div id="feed"></div>
+          </main>
+
+          <div class="right">
+            <div class="card">
+              <h4 class="muted">Notificaciones</h4>
+              <div id="notifications"></div>
+            </div>
+
+            <div class="card" style="margin-top:12px">
+              <h4 class="muted">Tus estadísticas</h4>
+              <div>Posts: <span id="statPosts">0</span></div>
+              <div>Seguidores: <span id="statFollowers">0</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="fab" id="openComposer">+</div>
   </div>
-  <div class="card">
-    <h2>Últimos posts</h2>
-    <div id="posts"></div>
-  </div>
-</div>
 
-<script>
-const supabase = window.supabase.createClient("https://jdvwlfogkzrzovepzjqa.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI");
+<script type="module">
+  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
 
-async function register() {
-  const email = document.getElementById("email").value;
-  const pass = document.getElementById("pass").value;
-  let { error } = await supabase.auth.signUp({ email, password: pass });
-  document.getElementById("authMsg").innerText = error ? error.message : "Revisa tu email para verificar la cuenta";
-}
+  // ----------------- CONFIGURE BEFORE USE -----------------
+  const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'    // <-- REPLACE
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'                  // <-- REPLACE
+  const AVATAR_BUCKET = 'avatars'
+  const POSTS_BUCKET = 'posts'
+  // --------------------------------------------------------
 
-async function login() {
-  const email = document.getElementById("email").value;
-  const pass = document.getElementById("pass").value;
-  let { error } = await supabase.auth.signInWithPassword({ email, password: pass });
-  document.getElementById("authMsg").innerText = error ? error.message : "Entrando...";
-  checkUser();
-}
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true } })
 
-async function checkUser() {
-  const { data } = await supabase.auth.getSession();
-  if (!data.session) return;
-  loadProfile();
-}
+  // Elements
+  const viewAuth = document.getElementById('viewAuth')
+  const viewProfile = document.getElementById('viewProfile')
+  const viewApp = document.getElementById('viewApp')
+  const authLogs = document.getElementById('authLogs')
+  const profileLogs = document.getElementById('profileLogs')
+  const btnLogin = document.getElementById('btnLogin')
+  const btnSign = document.getElementById('btnSign')
+  const btnSaveProfile = document.getElementById('btnSaveProfile')
+  const btnSkipProfile = document.getElementById('btnSkipProfile')
+  const btnLogout = document.getElementById('btnLogout')
+  const btnPost = document.getElementById('btnPost')
+  const btnPreview = document.getElementById('btnPreview')
+  const feedEl = document.getElementById('feed')
+  const suggestionsEl = document.getElementById('suggestions')
+  const notificationsEl = document.getElementById('notifications')
+  const leftAvatar = document.getElementById('leftAvatar')
+  const leftName = document.getElementById('leftName')
+  const leftHandle = document.getElementById('leftHandle')
+  const composerAvatar = document.getElementById('composerAvatar')
 
-async function loadProfile() {
-  const { data: userData } = await supabase.auth.getUser();
-  const id = userData.user.id;
+  // State
+  let session = null
+  let me = null
+  let realtimeChannels = []
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("username, bio")
-    .eq("id", id)
-    .single();
+  // Helpers
+  function show(v){ viewAuth.classList.add('hidden'); viewProfile.classList.add('hidden'); viewApp.classList.add('hidden'); v.classList.remove('hidden') }
+  function dbg(msg){ console.log('[PekeSocial]',msg); }
+  function toast(msg){ alert(msg) }
 
-  if (!profile.username) {
-    document.getElementById("auth").classList.add("hidden");
-    document.getElementById("profileSetup").classList.remove("hidden");
-  } else {
-    startFeed();
+  // ---------- AUTH flow ----------
+  btnLogin.onclick = async () => {
+    const email = document.getElementById('email').value.trim()
+    const password = document.getElementById('password').value
+    if(!email || !password) return authLogs.innerText = 'Email y contraseña son necesarios'
+    authLogs.innerText = 'Iniciando...'
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if(error){ authLogs.innerText = error.message; return dbg('signin err:'+error.message) }
+    authLogs.innerText = 'Sesión iniciada. Esperando...'
+    // short delay to let supabase persist session after redirect flows
+    setTimeout(checkAndEnter, 600)
   }
-}
 
-async function saveProfile() {
-  const { data: userData } = await supabase.auth.getUser();
-  const id = userData.user.id;
+  btnSign.onclick = async () => {
+    const email = document.getElementById('email').value.trim()
+    const password = document.getElementById('password').value
+    if(!email || !password) return authLogs.innerText = 'Email y contraseña son necesarios'
+    authLogs.innerText = 'Registrando...'
+    const { data, error } = await supabase.auth.signUp({ email, password })
+    if(error) { authLogs.innerText = error.message; dbg(error); return }
+    authLogs.innerText = 'Correo de verificación enviado. Revisa tu email.'
+    dbg('signup data:'); dbg(data)
+  }
 
-  const username = document.getElementById("username").value;
-  const bio = document.getElementById("bio").value;
+  btnLogout.onclick = async ()=>{ await supabase.auth.signOut(); location.reload(); }
 
-  const { error } = await supabase
-    .from("profiles")
-    .update({ username, bio })
-    .eq("id", id);
+  // When page loads, check session (handles redirect from verification links)
+  window.addEventListener('load', async ()=>{
+    dbg('page loaded — checking session')
+    await checkAndEnter()
+  })
 
-  document.getElementById("profileMsg").innerText = error ? error.message : "Perfil guardado";
-  if (!error) startFeed();
-}
+  // Auth state change listener
+  supabase.auth.onAuthStateChange((event, s) => {
+    dbg('onAuthStateChange', event, s?.session ? 'has-session' : 'no-session')
+    if(s?.session){
+      session = s.session
+      me = session.user
+      // small delay to avoid racing with redirect session hydration
+      setTimeout(enterApp, 250)
+    }
+    if(event === 'SIGNED_OUT'){ session = null; me = null; show(viewAuth) }
+  })
 
-function startFeed() {
-  document.getElementById("auth").classList.add("hidden");
-  document.getElementById("profileSetup").classList.add("hidden");
-  document.getElementById("feed").classList.remove("hidden");
-  loadPosts();
-}
+  async function checkAndEnter(){
+    const s = await supabase.auth.getSession()
+    session = s.data.session
+    dbg('getSession result', session ? 'session exists':'no session')
+    if(!session){ show(viewAuth); return }
+    me = session.user
+    dbg('user id', me.id)
+    // call enterApp which checks profile existence
+    await enterApp()
+  }
 
-async function publishPost() {
-  const { data: userData } = await supabase.auth.getUser();
-  const author = userData.user.id;
-  const content = document.getElementById("postContent").value;
+  // ---------- PROFILE helpers ----------
+  async function ensureProfile(uid){
+    // returns profile row or null
+    try{
+      const res = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
+      // maybeSingle returns { data, error } style; handle both
+      if(res && res.data !== undefined) return res.data
+      // fallback: older client response shape
+      if(res && res.length && res[0]) return res[0]
+      return null
+    }catch(e){
+      dbg('ensureProfile error', e)
+      return null
+    }
+  }
 
-  let { error } = await supabase
-    .from("postsApp")
-    .insert({ content, author });
+  btnSaveProfile.onclick = async ()=>{
+    const username = document.getElementById('username').value.trim()
+    const display_name = document.getElementById('display_name').value.trim()
+    const bio = document.getElementById('bio').value.trim()
+    const avatarFile = document.getElementById('avatarFile').files[0]
+    if(!username) return profileLogs.innerText = 'El username es obligatorio'
+    if(/\s/.test(username)) return profileLogs.innerText = 'El username no puede contener espacios'
 
-  document.getElementById("postMsg").innerText = error ? error.message : "Publicado";
-  loadPosts();
-}
+    // check unique
+    const { data: existing } = await supabase.from('profiles').select('id').eq('username', username).limit(1)
+    if(existing && existing.length>0) return profileLogs.innerText = 'Ese username ya está en uso'
 
-async function loadPosts() {
-  const { data: posts } = await supabase
-    .from("postsApp")
-    .select("*")
-    .order("created_at", { ascending: false });
+    let avatar_path = null
+    if(avatarFile){
+      const path = `avatars/${me.id}/${Date.now()}_${avatarFile.name}`
+      const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, avatarFile, { upsert: false })
+      if(upErr){ console.error(upErr); profileLogs.innerText = 'Error subiendo avatar'; return }
+      const { data: pub } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path)
+      avatar_path = pub.publicUrl
+    }
 
-  let html = "";
-  posts.forEach(p => {
-    html += `<div class='post'><strong>${p.content}</strong><br><small>${p.created_at}</small></div>`;
-  });
+    // upsert profile (insert or update)
+    const payload = { id: me.id, username, display_name, bio, avatar_path }
+    const { error } = await supabase.from('profiles').upsert([payload], { onConflict: 'id' })
+    if(error){ profileLogs.innerText = 'Error guardando perfil: '+error.message; dbg(error); return }
+    profileLogs.innerText = 'Perfil guardado. Entrando...'
+    await enterApp()
+  }
 
-  document.getElementById("posts").innerHTML = html;
-}
+  btnSkipProfile.onclick = async ()=>{
+    // allow skipping (profile may be completed later)
+    await enterApp()
+  }
 
-checkUser();
+  // ---------- ENTER APP (robust, with logs) ----------
+  async function enterApp(){
+    dbg('>>> enterApp called')
+    const s = await supabase.auth.getSession()
+    session = s.data.session
+    dbg('session', !!session)
+    if(!session){ dbg('no session -> show auth'); show(viewAuth); return }
+    me = session.user
+    dbg('current user id', me.id)
+
+    // check profile existence
+    const profile = await ensureProfile(me.id)
+    dbg('profile result', profile)
+    if(!profile){
+      // no profile: show profile setup
+      profileLogs.innerText = 'Necesitamos que completes tu perfil.'
+      show(viewProfile)
+      return
+    }
+
+    // fill UI
+    leftName.textContent = profile.display_name || profile.username
+    leftHandle.textContent = '@'+profile.username
+    if(profile.avatar_path) leftAvatar.style.backgroundImage = `url(${profile.avatar_path})`
+    composerAvatar.style.backgroundImage = profile.avatar_path ? `url(${profile.avatar_path})` : ''
+    show(viewApp)
+
+    // initial data loads
+    await loadFeed()
+    await renderSuggestions()
+    await renderNotifications()
+    await loadStats()
+    subscribeRealtime()
+  }
+
+  // ---------- FEED (fetch posts, then fetch profiles separately to avoid FK issues) ----------
+  async function loadFeed(){
+    dbg('loading feed...')
+    // 1) fetch posts
+    const { data: posts, error } = await supabase
+      .from('postsApp')
+      .select('id,content,image_path,created_at,author')
+      .order('created_at', { ascending: false })
+      .limit(50)
+    if(error){ dbg('loadFeed error', error); return }
+    if(!posts) { feedEl.innerHTML = '<div class="card">No hay posts</div>'; return }
+
+    // 2) collect author ids and fetch their profiles
+    const authorIds = [...new Set(posts.map(p => p.author).filter(Boolean))]
+    let profilesMap = {}
+    if(authorIds.length){
+      const { data: profiles } = await supabase.from('profiles').select('id,username,display_name,avatar_path').in('id', authorIds)
+      if(profiles && profiles.length){
+        profiles.forEach(pr => profilesMap[pr.id] = pr)
+      }
+    }
+
+    // 3) render posts
+    feedEl.innerHTML = ''
+    posts.forEach(p => {
+      const pr = profilesMap[p.author] || {}
+      const el = document.createElement('div'); el.className = 'post-card'
+      el.innerHTML = `
+        <div style="display:flex;gap:12px;align-items:center">
+          <div style="width:44px;height:44px;border-radius:50%;background-image:url('${pr.avatar_path||''}');background-size:cover;background-position:center"></div>
+          <div>
+            <div style="font-weight:700">${pr.display_name || pr.username || 'Usuario'}</div>
+            <div class="muted">@${pr.username||''} · ${new Date(p.created_at).toLocaleString()}</div>
+          </div>
+        </div>
+        <div style="margin-top:10px">${escapeHtml(p.content || '')}</div>
+        ${p.image_path?`<img src="${p.image_path}" style="width:100%;max-height:420px;object-fit:cover;border-radius:8px;margin-top:8px"/>`:''}
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
+          <button class="btn ghost" onclick="window.react('${p.id}','like')">👍</button>
+          <button class="btn ghost" onclick="window.react('${p.id}','laugh')">😂</button>
+          <button class="btn ghost" onclick="window.openProfile('${p.author}')">Ver perfil</button>
+        </div>
+        <div id="comments_${p.id}" style="margin-top:10px"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <input id="cinput_${p.id}" placeholder="Escribe un comentario..." style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.06)"/>
+          <button class="btn" onclick="window.addComment('${p.id}')">Comentar</button>
+        </div>
+      `
+      feedEl.appendChild(el)
+      loadComments(p.id) // async load comments per post
+    })
+
+    document.getElementById('statPosts').textContent = posts.length
+  }
+
+  // ---------- COMMENTS ----------
+  window.addComment = async (postId) => {
+    const input = document.getElementById('cinput_'+postId)
+    const txt = input.value.trim()
+    if(!txt) return
+    const { error } = await supabase.from('comments').insert([{ post_id: postId, author: me.id, content: txt }])
+    if(error){ toast('Error al comentar: '+error.message); dbg(error); return }
+    input.value = ''
+  }
+
+  async function loadComments(postId){
+    const { data } = await supabase.from('comments').select('id,content,created_at,author').eq('post_id', postId).order('created_at', { ascending: true })
+    const container = document.getElementById('comments_'+postId)
+    if(!container) return
+    container.innerHTML = ''
+    if(!data || data.length===0) return
+    // fetch authors profiles of comments
+    const commAuthorIds = [...new Set(data.map(c=>c.author).filter(Boolean))]
+    let commentProfiles = {}
+    if(commAuthorIds.length){
+      const { data: cps } = await supabase.from('profiles').select('id,username,display_name').in('id', commAuthorIds)
+      if(cps) cps.forEach(x=>commentProfiles[x.id]=x)
+    }
+    data.forEach(c=>{
+      const cp = commentProfiles[c.author] || {}
+      const d = document.createElement('div'); d.className='post-card'; d.style.padding='8px'
+      d.innerHTML = `<div style="font-weight:700">${cp.display_name || cp.username || 'Usuario'} <span class='muted' style='font-size:12px'>· ${new Date(c.created_at).toLocaleString()}</span></div><div>${escapeHtml(c.content)}</div>`
+      container.appendChild(d)
+    })
+  }
+
+  // ---------- REACTIONS (toggle) ----------
+  window.react = async (postId, type) => {
+    // try insert; if duplicate -> delete (toggle)
+    try{
+      const { error } = await supabase.from('reactions').insert([{ post_id: postId, author: me.id, reaction_type: type }])
+      if(error){
+        // Supabase error message contains code for unique violation; we try delete then
+        dbg('reaction insert error', error)
+        if(error.code === '23505' || (error.message && error.message.includes('duplicate'))){
+          await supabase.from('reactions').delete().match({ post_id: postId, author: me.id, reaction_type: type })
+        } else {
+          toast('Error reaccionando: '+error.message)
+        }
+      }
+    }catch(e){ dbg('react exception', e) }
+  }
+
+  // ---------- POST CREATION (with optional image) ----------
+  btnPost.onclick = async ()=>{
+    const text = document.getElementById('newText').value.trim()
+    const file = document.getElementById('newImage').files[0]
+    let image_path = null
+    if(file){
+      const path = `posts/${me.id}/${Date.now()}_${file.name}`
+      const { error: upErr } = await supabase.storage.from(POSTS_BUCKET).upload(path, file)
+      if(upErr){ dbg('upload error', upErr); return toast('Error subiendo imagen') }
+      const { data: pub } = supabase.storage.from(POSTS_BUCKET).getPublicUrl(path)
+      image_path = pub.publicUrl
+    }
+    const payload = { author: me.id, content: text, image_path }
+    const { error } = await supabase.from('postsApp').insert([payload])
+    if(error){ toast('Error publicando: '+error.message); dbg(error); return }
+    document.getElementById('newText').value = ''
+    document.getElementById('newImage').value = ''
+    // feed will refresh via realtime; fallback to refresh now
+    setTimeout(loadFeed, 300)
+  }
+
+  // preview
+  btnPreview.onclick = ()=>{
+    const txt = document.getElementById('newText').value.trim()
+    const f = document.getElementById('newImage').files[0]
+    const w = window.open('','postPreview','width=640,height=480')
+    w.document.body.style.fontFamily = 'Inter, Arial'
+    w.document.body.innerHTML = `<div style="padding:20px">${txt ? '<p>'+escapeHtml(txt)+'</p>' : '<p>(sin texto)</p>'}</div>`
+    if(f){
+      const r = new FileReader()
+      r.onload = ()=>{ const img = w.document.createElement('img'); img.src = r.result; img.style.maxWidth='100%'; w.document.body.appendChild(img) }
+      r.readAsDataURL(f)
+    }
+  }
+
+  // ---------- SUGGESTIONS ----------
+  async function renderSuggestions(){
+    const { data } = await supabase.from('profiles').select('id,username,display_name,avatar_path').limit(12)
+    suggestionsEl.innerHTML = ''
+    if(!data) return
+    data.filter(u => u.id !== me.id).forEach(u=>{
+      const el = document.createElement('div'); el.className='post-card'; el.style.display='flex'; el.style.alignItems='center'
+      el.innerHTML = `<div style="width:44px;height:44px;border-radius:50%;background-image:url('${u.avatar_path||''}');background-size:cover"></div>
+        <div style="margin-left:8px"><strong>${u.display_name||u.username}</strong><div class='muted'>@${u.username}</div></div>`
+      const btn = document.createElement('button'); btn.className='btn ghost'; btn.style.marginLeft='auto'; btn.textContent='Seguir'
+      btn.onclick = async ()=>{ await supabase.from('followers').insert([{ user_id: u.id, follower_id: me.id }]); toast('Sigues a '+(u.display_name||u.username)); loadStats(); }
+      el.appendChild(btn); suggestionsEl.appendChild(el)
+    })
+  }
+
+  // ---------- NOTIFICATIONS ----------
+  async function renderNotifications(){
+    if(!me) return
+    const { data } = await supabase.from('notifications').select('id,type,actor_id,post_id,created_at,read').eq('user_id', me.id).order('created_at', { ascending: false }).limit(30)
+    notificationsEl.innerHTML = ''
+    if(!data) return
+    data.forEach(n=>{
+      const d = document.createElement('div'); d.className='post-card'; d.style.padding='8px'
+      d.innerHTML = `<div class="muted" style="font-size:13px">${n.type}</div><div class="muted" style="font-size:12px">${new Date(n.created_at).toLocaleString()}</div>`
+      notificationsEl.appendChild(d)
+    })
+  }
+
+  // ---------- STATS ----------
+  async function loadStats(){
+    if(!me) return
+    const [{ count: postsCount }] = (await supabase.from('postsApp').select('id', { count: 'exact' })).data || [{count:0}]
+    // followers count
+    const { count: fcount } = await supabase.from('followers').select('id', { count: 'exact' }).eq('user_id', me.id)
+    document.getElementById('statPosts').textContent = postsCount ?? 0
+    document.getElementById('statFollowers').textContent = fcount ?? 0
+  }
+
+  // ---------- REALTIME SUBSCRIPTIONS ----------
+  function subscribeRealtime(){
+    dbg('subscribeRealtime — creating channels')
+    // clear previous channels
+    realtimeChannels.forEach(ch => ch.unsubscribe())
+    realtimeChannels = []
+
+    const postsCh = supabase.channel('postsApp-ch')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'postsApp' }, (payload) => {
+        dbg('realtime postsApp', payload.event)
+        loadFeed()
+      }).subscribe()
+    realtimeChannels.push(postsCh)
+
+    const commentsCh = supabase.channel('comments-ch')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, payload => {
+        dbg('realtime comment insert'); loadFeed()
+      }).subscribe()
+    realtimeChannels.push(commentsCh)
+
+    const reactionsCh = supabase.channel('reactions-ch')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reactions' }, payload => {
+        dbg('realtime reaction'); loadFeed()
+      }).subscribe()
+    realtimeChannels.push(reactionsCh)
+
+    // notifications targeted to this user
+    if(me?.id){
+      const notifCh = supabase.channel('notifications-ch')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${me.id}` }, payload => {
+          dbg('realtime notification'); renderNotifications()
+        }).subscribe()
+      realtimeChannels.push(notifCh)
+    }
+  }
+
+  // ---------- UTIL ----------
+  function escapeHtml(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
+
+  // ---------- SHORTCUTS / WINDOW HELPERS ----------
+  window.openProfile = async (userId) => {
+    const { data } = await supabase.from('profiles').select('id,username,display_name,avatar_path,bio').eq('id', userId).single()
+    if(!data) return toast('Perfil no encontrado')
+    alert(`${data.display_name || data.username}\n@${data.username}\n\n${data.bio || ''}`)
+  }
+
+  // expose react/addComment (already assigned)
+
+  // ---------- debug helper: force reload feed (useful during dev) ----------
+  window._reloadFeed = loadFeed
 </script>
 </body>
 </html>
