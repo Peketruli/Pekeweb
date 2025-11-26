@@ -174,11 +174,17 @@ textarea {
   </div>
 </div>
 
+<!-- SUPABASE -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script>
-/* ------------------ JAVASCRIPT ------------------ */
+/* ------------------ CONFIG SUPABASE ------------------ */
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";   // ← pega tu URL aquí
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";   // ← pega tu anon key aquí
 
-/* RAMAS + ASIGNATURAS */
+const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ------------------ RAMAS y ASIGNATURAS ------------------ */
 const data = {
   "Letras": ["Latín", "Frances", "Historia del arte"],
   "Ciencias": ["Biología", "Química", "Física", "Mates", "Tecnologia"],
@@ -189,7 +195,6 @@ const data = {
 let currentBranch = null;
 let currentSubject = null;
 
-/* Inicializar panel */
 function loadBranches() {
   const container = document.getElementById("branchList");
   container.innerHTML = "";
@@ -205,11 +210,9 @@ function loadBranches() {
 function selectBranch(branch, element) {
   currentBranch = branch;
 
-  // marcar activo
   [...document.querySelectorAll("#branchList div")].forEach(d => d.classList.remove("active"));
   element.classList.add("active");
 
-  // cargar asignaturas
   const subjects = data[branch];
   const container = document.getElementById("subjectList");
   container.innerHTML = "";
@@ -234,26 +237,42 @@ function selectSubject(subject, element) {
   loadNotes();
 }
 
-/* NOTAS (localStorage) */
-function loadNotes() {
-  const notes = JSON.parse(localStorage.getItem("notes_" + currentSubject) || "[]");
+/* ------------------ CARGAR NOTAS DESDE SUPABASE ------------------ */
+async function loadNotes() {
   const container = document.getElementById("notesList");
+  container.innerHTML = "Cargando...";
+
   const search = document.getElementById("searchInput").value.toLowerCase();
+
+  let { data: notes, error } = await supabase
+    .from("apuntes")
+    .select("*")
+    .eq("subject", currentSubject)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    container.innerHTML = "Error cargando apuntes.";
+    console.error(error);
+    return;
+  }
+
+  notes = notes.filter(n =>
+    n.title.toLowerCase().includes(search) ||
+    n.content.toLowerCase().includes(search)
+  );
 
   container.innerHTML = "";
 
-  notes
-    .filter(n => n.title.toLowerCase().includes(search) || n.content.toLowerCase().includes(search))
-    .forEach(note => {
-      const div = document.createElement("div");
-      div.innerHTML = `<strong>${note.title}</strong><br>${note.content}`;
-      container.appendChild(div);
-    });
+  notes.forEach(note => {
+    const div = document.createElement("div");
+    div.innerHTML = `<strong>${note.title}</strong><br>${note.content}`;
+    container.appendChild(div);
+  });
 }
 
 document.getElementById("searchInput").oninput = loadNotes;
 
-/* MODAL */
+/* ------------------ MODAL ------------------ */
 function openModal() {
   document.getElementById("modalBg").style.display = "block";
 }
@@ -263,16 +282,26 @@ function closeModal() {
 
 document.getElementById("addNoteBtn").onclick = openModal;
 
-function saveNote() {
+/* ------------------ GUARDAR NOTA EN SUPABASE ------------------ */
+async function saveNote() {
   const title = document.getElementById("noteTitle").value.trim();
   const content = document.getElementById("noteContent").value.trim();
 
   if (!title || !content) return alert("Rellena todos los campos.");
 
-  const notes = JSON.parse(localStorage.getItem("notes_" + currentSubject) || "[]");
-  notes.unshift({ title, content });
+  const { error } = await supabase
+    .from("apuntes")
+    .insert({
+      subject: currentSubject,
+      title,
+      content
+    });
 
-  localStorage.setItem("notes_" + currentSubject, JSON.stringify(notes));
+  if (error) {
+    alert("Error guardando apunte.");
+    console.error(error);
+    return;
+  }
 
   closeModal();
   loadNotes();
@@ -281,10 +310,9 @@ function saveNote() {
   document.getElementById("noteContent").value = "";
 }
 
-/* INICIO */
+/* ------------------ INICIO ------------------ */
 loadBranches();
 
 </script>
-
 </body>
 </html>
