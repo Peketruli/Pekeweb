@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>PekeOS — Apuntes</title>
+  <title>PekeOS — Apuntes (Supabase)</title>
   <style>
     :root{
       --bg:#f7f7fb; --card:#fff; --muted:#6b7280; --accent:#4f46e5;
       --radius:14px; --shadow: 0 6px 18px rgba(50,50,93,0.08);
-      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+      font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
     }
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:#0f172a;-webkit-font-smoothing:antialiased}
@@ -27,15 +27,10 @@
     .subject:hover{background:#fbfbfe}
     .subject.active{background:linear-gradient(90deg,#eef2ff, #f8fafc);border-color:#e6e9ff}
 
-    .add-sub{display:flex;gap:8px;margin-top:8px}
-    .add-sub select,.add-sub input{flex:1;padding:8px;border-radius:8px;border:1px solid #e6e7ee}
     .btn{padding:8px 12px;border-radius:10px;border:0;cursor:pointer}
     .btn.primary{background:var(--accent);color:#fff}
     .btn.ghost{background:transparent;border:1px solid #e6e7ee}
 
-    /* Main */
-    .toolbar{display:flex;gap:8px;align-items:center;justify-content:space-between}
-    .search{display:flex;gap:8px;align-items:center}
     .search input{padding:8px 10px;border-radius:10px;border:1px solid #e6e7ee}
     .notes-list{margin-top:12px;display:flex;flex-direction:column;gap:12px}
     .note{padding:12px;border-radius:12px;border:1px solid #f0f2ff;background:#fff}
@@ -43,21 +38,16 @@
     .meta{font-size:12px;color:var(--muted)}
     .note .content{margin-top:8px;white-space:pre-wrap;color:#111827}
     .note .actions{display:flex;gap:8px;margin-top:10px}
-    .attachment-row{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
-    .att{width:100px;height:76px;border-radius:8px;border:1px solid #eee;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:12px;background:#fbfbff;padding:6px;text-align:center}
 
     /* Drawer modal */
     .drawer-back{position:fixed;inset:0;background:rgba(9,10,15,0.35);display:flex;align-items:flex-start;justify-content:flex-end;padding:28px;z-index:60}
     .drawer{width:420px;background:var(--card);border-radius:12px;padding:18px;box-shadow:0 20px 50px rgba(2,6,23,0.3);max-height:90vh;overflow:auto}
     .field{margin-bottom:12px}
     .field label{display:block;font-size:13px;margin-bottom:6px;color:#111827}
-    .field input[type="text"], .field textarea, .field input[type="file"], .field select{
-      width:100%;padding:10px;border-radius:8px;border:1px solid #e6e7ee;font-size:14px
-    }
+    .field input[type="text"], .field textarea{width:100%;padding:10px;border-radius:8px;border:1px solid #e6e7ee;font-size:14px}
     .field textarea{min-height:160px;resize:vertical}
     .small{font-size:12px;color:var(--muted)}
 
-    /* Responsive */
     @media (max-width:880px){
       .grid{grid-template-columns:1fr;gap:12px}
       .drawer{width:100%;border-radius:12px}
@@ -68,23 +58,31 @@
   <div class="wrap">
     <header>
       <div>
-        <h1>Apuntes</h1>
+        <h1>PekeOS — Apuntes</h1>
         <div class="sub">Comparte y consulta apuntes organizados por rama y asignatura</div>
+      </div>
+      <div class="sub" id="status">Cargando...</div>
+    </header>
 
-   <aside class="panel" aria-label="Ramas y asignaturas">
-  <div>
-    <strong>Ramas</strong>
-    <div class="branches" id="branchesContainer"></div>
-  </div>
+    <div class="grid">
+      <!-- LEFT -->
+      <aside class="panel" aria-label="Ramas y asignaturas">
+        <div>
+          <strong>Ramas</strong>
+          <div class="branches" id="branchesContainer"></div>
+        </div>
 
-  <div style="margin-top:14px">
-    <strong>Asignaturas</strong>
-    <div class="subjects" id="subjectsContainer"></div>
-  </div>
-  </aside>
+        <div style="margin-top:14px">
+          <strong>Asignaturas</strong>
+          <div class="subjects" id="subjectsContainer"></div>
+        </div>
 
+        <div style="margin-top:14px;font-size:13px;color:var(--muted)">
+          Consejo: los apuntes se almacenan en Supabase. Revisa la consola si hay errores.
+        </div>
+      </aside>
 
-      <!-- RIGHT: main -->
+      <!-- RIGHT -->
       <main class="panel">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
           <div>
@@ -105,320 +103,300 @@
           </div>
         </div>
 
-        <div id="notesList" class="notes-list">
-          <!-- notas -->
-        </div>
+        <div id="notesList" class="notes-list"></div>
       </main>
     </div>
   </div>
 
-  <!-- Drawer (hidden) -->
   <div id="drawerRoot" style="display:none"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>
-/* ============================
-   🔌 CONFIGURA TU SUPABASE AQUÍ
-   ============================ */
-const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
-const db = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
+  <!-- Supabase client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-/********** App: estructura inicial **********/
-const INITIAL_STRUCTURE = {
-  Letras: ['Historia del arte','Latin','Geografia', 'Frances'],
-  Ciencias: ['Mate','Física','Química','Biología','Tecnología'],
-  Orokorrak: ['Zientzia orokorra','Giza mate','Economia', 'Fisiologia'],
-  ParaTodos: ['Historia de españa','Lengua','Inglés','Euskera','Filosofía']
-};
+  <script>
+  /*******************************
+   *  CONFIGURA ESTO ANTES DE USAR
+   *******************************/
+  const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";      // ej: https://xxxxx.supabase.co
+  const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";         // anon public key
+  /*******************************/
 
-let currentBranch = '';
-let currentSubject = '';
-let allNotes = []; // <- viene de Supabase
-let editingNote = null;
-
-/********** UI refs **********/
-const branchesContainer = document.getElementById('branchesContainer');
-const subjectsContainer = document.getElementById('subjectsContainer');
-
-const subjectTitle = document.getElementById('subjectTitle');
-const notesCount = document.getElementById('notesCount');
-const addNoteBtn = document.getElementById('addNoteBtn');
-const notesList = document.getElementById('notesList');
-
-const searchInput = document.getElementById('searchInput');
-const sortSelect = document.getElementById('sortSelect');
-const drawerRoot = document.getElementById('drawerRoot');
-
-/****************************************
-  🔥 Cargar notas desde Supabase
-****************************************/
-async function loadNotes() {
-  const { data, error } = await db
-    .from('notes')
-    .select('*')
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    console.error(error);
-    return;
+  // Seguridad: no continúe si no están configuradas las variables
+  if (!SUPABASE_URL || !SUPABASE_ANON || SUPABASE_URL.includes("PON_AQUI")) {
+    document.getElementById('status').textContent = 'Pega SUPABASE_URL y SUPABASE_ANON en el script.';
+    console.warn('Falta SUPABASE_URL o SUPABASE_ANON en el archivo HTML.');
   }
 
-  allNotes = data;
-  renderNotes();
-}
+  const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON);
 
-/****************************************
-  🔥 Añadir nota
-****************************************/
-async function addNote(payload) {
-  const { error } = await db.from("notes").insert({
-    subject: currentSubject,
-    title: payload.title,
-    content: payload.content,
-    author: payload.author
-  });
-
-  if (error) return alert("ERROR: " + error.message);
-
-  loadNotes(); // recargar
-}
-
-/****************************************
-  🔥 Actualizar nota
-****************************************/
-async function updateNote(id, patch) {
-  const { error } = await db
-    .from("notes")
-    .update({
-      title: patch.title,
-      content: patch.content,
-      author: patch.author,
-      updated_at: new Date().toISOString()
-    })
-    .eq("id", id);
-
-  if (error) alert(error.message);
-  loadNotes();
-}
-
-/****************************************
-  🔥 Borrar nota
-****************************************/
-async function deleteNote(id) {
-  if (!confirm("¿Eliminar apunte definitivamente?")) return;
-
-  const { error } = await db
-    .from("notes")
-    .delete()
-    .eq("id", id);
-
-  if (error) alert(error.message);
-  loadNotes();
-}
-
-/****************************************
-  🔥 Like
-****************************************/
-async function toggleLike(id) {
-  const note = allNotes.find(n => n.id === id);
-  const newLikes = (note.likes || 0) + 1;
-
-  const { error } = await db
-    .from("notes")
-    .update({ likes: newLikes })
-    .eq("id", id);
-
-  if (error) alert(error.message);
-
-  loadNotes();
-}
-
-/****************************************
-  Render de ramas
-****************************************/
-function renderBranches(){
-  branchesContainer.innerHTML = '';
-  Object.keys(INITIAL_STRUCTURE).forEach(b=>{
-    const btn = document.createElement('button');
-    btn.className = 'branch-btn' + (b===currentBranch ? ' active' : '');
-    btn.textContent = b;
-    btn.onclick = ()=>{ currentBranch=b; currentSubject=''; render(); }
-    branchesContainer.appendChild(btn);
-  });
-}
-
-/****************************************
-  Render de asignaturas
-****************************************/
-function renderSubjects(){
-  subjectsContainer.innerHTML = '';
-  if(!currentBranch){
-    subjectsContainer.innerHTML = '<div class="small">Elige una rama para ver asignaturas.</div>';
-    return;
-  }
-  INITIAL_STRUCTURE[currentBranch].forEach(s=>{
-    const el = document.createElement('div');
-    el.className = 'subject' + (s===currentSubject ? ' active' : '');
-    el.textContent = s;
-    el.onclick = ()=>{ currentSubject=s; render(); loadNotes(); }
-    subjectsContainer.appendChild(el);
-  });
-}
-
-/****************************************
-  Render de notas
-****************************************/
-function getFilteredNotes(){
-  if(!currentSubject) return [];
-  const notes = allNotes.filter(n => n.subject === currentSubject);
-
-  const q = searchInput.value.trim().toLowerCase();
-  let filtered = notes.filter(n=>{
-    if(!q) return true;
-    return (
-      n.title.toLowerCase().includes(q) ||
-      n.content.toLowerCase().includes(q) ||
-      (n.author||'').toLowerCase().includes(q)
-    );
-  });
-
-  if(sortSelect.value==='newest') filtered.sort((a,b)=> new Date(b.created_at)-new Date(a.created_at));
-  if(sortSelect.value==='oldest') filtered.sort((a,b)=> new Date(a.created_at)-new Date(b.created_at));
-  if(sortSelect.value==='top') filtered.sort((a,b)=> (b.likes||0)-(a.likes||0));
-
-  return filtered;
-}
-
-function renderNotes(){
-  notesList.innerHTML = '';
-  if(!currentSubject){
-    subjectTitle.textContent='Selecciona una asignatura';
-    notesCount.textContent='';
-    return;
-  }
-
-  subjectTitle.textContent=currentSubject;
-
-  const notes = getFilteredNotes();
-  notesCount.textContent = notes.length + " apuntes";
-
-  if(notes.length === 0){
-    notesList.innerHTML =
-      '<div class="small" style="padding:18px;background:#fff;border-radius:10px">No hay apuntes aún.</div>';
-    return;
-  }
-
-  notes.forEach(n=>{
-    const wrap = document.createElement('div');
-    wrap.className='note';
-
-    wrap.innerHTML = `
-      <h3>${n.title}</h3>
-      <div class="meta">por ${n.author} · ${new Date(n.created_at).toLocaleString()}</div>
-      <div class="content">${n.content}</div>
-    `;
-
-    const actions = document.createElement('div');
-    actions.className='actions';
-
-    const like = document.createElement('button');
-    like.className='btn ghost';
-    like.textContent = `👍 ${n.likes || 0}`;
-    like.onclick = ()=>toggleLike(n.id);
-
-    const edit = document.createElement('button');
-    edit.className='btn';
-    edit.textContent='Editar';
-    edit.onclick = ()=>openDrawer(n);
-
-    const del = document.createElement('button');
-    del.className='btn';
-    del.style.color='#b91c1c';
-    del.textContent='Eliminar';
-    del.onclick = ()=>deleteNote(n.id);
-
-    actions.appendChild(like);
-    actions.appendChild(edit);
-    actions.appendChild(del);
-
-    wrap.appendChild(actions);
-    notesList.appendChild(wrap);
-  });
-}
-
-/****************************************
-  Drawer
-****************************************/
-function openDrawer(note=null){
-  editingNote = note;
-  drawerRoot.style.display='block';
-
-  drawerRoot.innerHTML = `
-  <div class="drawer-back">
-    <div class="drawer" onclick="event.stopPropagation()">
-      <strong>${note?'Editar':'Nuevo'} apunte</strong>
-      <hr>
-      <form id="noteForm">
-        <div class="field">
-          <label>Título</label>
-          <input type="text" id="f_title" value="${note?note.title:''}">
-        </div>
-
-        <div class="field">
-          <label>Contenido</label>
-          <textarea id="f_content">${note?note.content:''}</textarea>
-        </div>
-
-        <div class="field">
-          <label>Autor</label>
-          <input type="text" id="f_author" value="${note?note.author:'Alumno'}">
-        </div>
-
-        <button class="btn primary" type="submit">Guardar</button>
-        <button class="btn" type="button" onclick="closeDrawer()">Cancelar</button>
-      </form>
-    </div>
-  </div>`;
-
-  document.querySelector('.drawer-back').onclick = ()=>closeDrawer();
-
-  document.getElementById('noteForm').onsubmit = (e)=>{
-    e.preventDefault();
-    const payload = {
-      title: document.getElementById('f_title').value.trim(),
-      content: document.getElementById('f_content').value.trim(),
-      author: document.getElementById('f_author').value.trim()
-    };
-
-    if(editingNote) updateNote(editingNote.id, payload);
-    else addNote(payload);
-
-    closeDrawer();
+  // Estructura inicial (rama -> asignaturas)
+  const INITIAL_STRUCTURE = {
+    Letras: ['Historia','Lengua','Inglés','Euskera','Filosofía'],
+    Ciencias: ['Matemáticas','Física','Química','Biología','Tecnología'],
+    Orokorrak: ['Tutoría','Educación Física','Opcionales','Orientación']
   };
-}
 
-function closeDrawer(){
-  drawerRoot.style.display='none';
-  drawerRoot.innerHTML='';
-  editingNote = null;
-}
+  // Estado local
+  let currentBranch = '';
+  let currentSubject = '';
+  let allNotes = []; // notas traídas de Supabase
+  let editingNote = null;
 
-/****************************************
-  Events
-****************************************/
-searchInput.oninput = ()=>renderNotes();
-sortSelect.onchange = ()=>renderNotes();
-addNoteBtn.onclick = ()=> {
-  if(!currentSubject) return alert("Elige una asignatura primero");
-  openDrawer();
-};
+  // Refs DOM
+  const statusEl = document.getElementById('status');
+  const branchesContainer = document.getElementById('branchesContainer');
+  const subjectsContainer = document.getElementById('subjectsContainer');
+  const subjectTitle = document.getElementById('subjectTitle');
+  const notesCount = document.getElementById('notesCount');
+  const notesList = document.getElementById('notesList');
+  const searchInput = document.getElementById('searchInput');
+  const sortSelect = document.getElementById('sortSelect');
+  const addNoteBtn = document.getElementById('addNoteBtn');
+  const drawerRoot = document.getElementById('drawerRoot');
 
-/****************************************
-  Init
-****************************************/
-currentBranch = Object.keys(INITIAL_STRUCTURE)[0];
-render();
-</script>
+  // Utilidades
+  function prettyDate(iso){ if(!iso) return ''; return new Date(iso).toLocaleString(); }
+  function safeTextElem(tag, text){ const el=document.createElement(tag); el.textContent = text; return el; }
+
+  /************** Render ramas y asignaturas **************/
+  function renderBranches(){
+    branchesContainer.innerHTML = '';
+    Object.keys(INITIAL_STRUCTURE).forEach(b=>{
+      const btn = document.createElement('button');
+      btn.className = 'branch-btn' + (b===currentBranch ? ' active' : '');
+      btn.textContent = b;
+      btn.onclick = ()=>{ currentBranch=b; currentSubject=''; render(); }
+      branchesContainer.appendChild(btn);
+    });
+  }
+
+  function renderSubjects(){
+    subjectsContainer.innerHTML = '';
+    if(!currentBranch){
+      subjectsContainer.appendChild(safeTextElem('div','Elige una rama para ver asignaturas.'));
+      return;
+    }
+    const list = INITIAL_STRUCTURE[currentBranch] || [];
+    list.forEach(s=>{
+      const el = document.createElement('div');
+      el.className = 'subject' + (s===currentSubject ? ' active' : '');
+      el.textContent = s;
+      el.onclick = ()=>{ currentSubject=s; render(); loadNotes(); }
+      subjectsContainer.appendChild(el);
+    });
+  }
+
+  /************** Supabase: cargar / CRUD **************/
+  async function loadNotes(){
+    try{
+      statusEl.textContent = 'Cargando apuntes...';
+      const { data, error } = await supabase
+        .from('notes')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Supabase load error', error);
+        statusEl.textContent = 'Error cargando apuntes (ver consola).';
+        return;
+      }
+
+      allNotes = Array.isArray(data) ? data : [];
+      statusEl.textContent = 'Conectado';
+      renderNotes();
+    } catch(err){
+      console.error(err);
+      statusEl.textContent = 'Error inesperado (ver consola).';
+    }
+  }
+
+  async function addNote(payload){
+    if(!currentSubject) return alert('Selecciona una asignatura primero.');
+    const { error } = await supabase
+      .from('notes')
+      .insert([{
+        subject: currentSubject,
+        title: payload.title || '(Sin título)',
+        content: payload.content || '',
+        author: payload.author || 'Alumno'
+      }]);
+    if(error) return alert('Error creando: ' + error.message);
+    await loadNotes();
+  }
+
+  async function updateNote(id, patch){
+    const { error } = await supabase
+      .from('notes')
+      .update({
+        title: patch.title,
+        content: patch.content,
+        author: patch.author,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id);
+    if(error) return alert('Error actualizando: ' + error.message);
+    await loadNotes();
+  }
+
+  async function deleteNote(id){
+    if(!confirm('Eliminar apunte?')) return;
+    const { error } = await supabase
+      .from('notes')
+      .delete()
+      .eq('id', id);
+    if(error) return alert('Error borrando: ' + error.message);
+    await loadNotes();
+  }
+
+  async function toggleLike(id){
+    const note = allNotes.find(n => n.id === id);
+    const newLikes = (note?.likes || 0) + 1;
+    const { error } = await supabase
+      .from('notes')
+      .update({ likes: newLikes })
+      .eq('id', id);
+    if(error) return alert('Error actualizando like: ' + error.message);
+    await loadNotes();
+  }
+
+  /************** Render notas (seguro) **************/
+  function getFilteredNotes(){
+    if(!currentSubject) return [];
+    const notes = allNotes.filter(n => n.subject === currentSubject);
+    const q = searchInput.value.trim().toLowerCase();
+    let filtered = notes.filter(n => {
+      if(!q) return true;
+      return (n.title||'').toLowerCase().includes(q)
+        || (n.content||'').toLowerCase().includes(q)
+        || (n.author||'').toLowerCase().includes(q);
+    });
+    if(sortSelect.value === 'newest') filtered.sort((a,b)=> new Date(b.created_at) - new Date(a.created_at));
+    if(sortSelect.value === 'oldest') filtered.sort((a,b)=> new Date(a.created_at) - new Date(b.created_at));
+    if(sortSelect.value === 'top') filtered.sort((a,b)=> (b.likes||0) - (a.likes||0));
+    return filtered;
+  }
+
+  function renderNotes(){
+    notesList.innerHTML = '';
+    if(!currentSubject){
+      subjectTitle.textContent = 'Selecciona una asignatura';
+      notesCount.textContent = '';
+      return;
+    }
+    subjectTitle.textContent = currentSubject;
+
+    const notes = getFilteredNotes();
+    notesCount.textContent = notes.length + ' apuntes';
+
+    if(notes.length === 0){
+      notesList.appendChild(safeTextElem('div','No hay apuntes aún.'));
+      return;
+    }
+
+    notes.forEach(n=>{
+      const wrapper = document.createElement('div'); wrapper.className='note';
+      // title
+      const h = document.createElement('h3'); h.textContent = n.title || '(Sin título)';
+      wrapper.appendChild(h);
+      // meta
+      const meta = document.createElement('div'); meta.className='meta';
+      meta.textContent = `por ${n.author || 'Anon'} · ${prettyDate(n.created_at)}`;
+      wrapper.appendChild(meta);
+      // content
+      const content = document.createElement('div'); content.className = 'content';
+      content.textContent = n.content || '';
+      wrapper.appendChild(content);
+      // actions
+      const actions = document.createElement('div'); actions.className='actions';
+      const likeBtn = document.createElement('button'); likeBtn.className='btn ghost'; likeBtn.textContent = `👍 ${n.likes || 0}`; likeBtn.onclick = ()=>toggleLike(n.id);
+      const editBtn = document.createElement('button'); editBtn.className='btn'; editBtn.textContent='Editar'; editBtn.onclick = ()=>openDrawer(n);
+      const delBtn = document.createElement('button'); delBtn.className='btn'; delBtn.style.color = '#b91c1c'; delBtn.textContent='Eliminar'; delBtn.onclick = ()=>deleteNote(n.id);
+      actions.appendChild(likeBtn); actions.appendChild(editBtn); actions.appendChild(delBtn);
+      wrapper.appendChild(actions);
+
+      notesList.appendChild(wrapper);
+    });
+  }
+
+  /************** Drawer (crear/editar) **************/
+  function openDrawer(note = null){
+    editingNote = note;
+    drawerRoot.style.display = 'block';
+    drawerRoot.innerHTML = `
+      <div class="drawer-back">
+        <div class="drawer" onclick="event.stopPropagation()">
+          <strong>${note ? 'Editar' : 'Nuevo'} apunte</strong>
+          <hr>
+          <form id="noteForm">
+            <div class="field">
+              <label>Título</label>
+              <input type="text" id="f_title" value="${note ? escapeHtml(note.title) : ''}">
+            </div>
+            <div class="field">
+              <label>Contenido</label>
+              <textarea id="f_content">${note ? escapeHtml(note.content) : ''}</textarea>
+            </div>
+            <div class="field">
+              <label>Autor</label>
+              <input type="text" id="f_author" value="${note ? escapeHtml(note.author) : 'Alumno'}">
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn primary" type="submit">Guardar</button>
+              <button class="btn" type="button" id="cancelBtn">Cancelar</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+    document.querySelector('.drawer-back').onclick = closeDrawer;
+    document.getElementById('cancelBtn').onclick = closeDrawer;
+
+    document.getElementById('noteForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = {
+        title: document.getElementById('f_title').value.trim(),
+        content: document.getElementById('f_content').value.trim(),
+        author: document.getElementById('f_author').value.trim()
+      };
+      if (editingNote) await updateNote(editingNote.id, payload);
+      else await addNote(payload);
+      closeDrawer();
+    };
+  }
+
+  function closeDrawer(){
+    editingNote = null;
+    drawerRoot.style.display = 'none';
+    drawerRoot.innerHTML = '';
+  }
+
+  // small helper to avoid injecting unescaped values in attributes (used only when building drawer's HTML)
+  function escapeHtml(str = ''){
+    return String(str).replace(/&/g, '&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /************** Events **************/
+  searchInput.addEventListener('input', renderNotes);
+  sortSelect.addEventListener('change', renderNotes);
+  addNoteBtn.addEventListener('click', () => {
+    if(!currentSubject) return alert('Elige una asignatura primero');
+    openDrawer(null);
+  });
+
+  /************** Init **************/
+  (async function init(){
+    try{
+      currentBranch = Object.keys(INITIAL_STRUCTURE)[0];
+      renderBranches();
+      renderSubjects();
+      // try to load notes once (silently)
+      await loadNotes();
+      statusEl.textContent = 'Listo';
+    } catch(err){
+      console.error('init error', err);
+      statusEl.textContent = 'Error (ver consola)';
+    }
+  })();
+  </script>
 </body>
 </html>
