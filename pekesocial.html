@@ -134,415 +134,142 @@
     <div class="fab" id="openComposer">+</div>
   </div>
 
-<script type="module">
-  import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js/+esm'
+<script>
+/* ------------------ CONFIG SUPABASE ------------------ */
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 
-  // ----------------- CONFIGURE BEFORE USE -----------------
-  const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'    // <-- REPLACE
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'                  // <-- REPLACE
-  const AVATAR_BUCKET = 'avatars'
-  const POSTS_BUCKET = 'posts'
-  // --------------------------------------------------------
+const db = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true } })
+/* ------------------ RAMAS y ASIGNATURAS ------------------ */
+const data = {
+  "Letras": ["Latín", "Frances", "Historia del arte"],
+  "Ciencias": ["Biología", "Química", "Física", "Mates", "Tecnologia"],
+  "Orokorrak": ["Fisiologia", "Geografía", "Empresa"],
+  "Obligatorias": ["Historia de España", "Inglés", "Euskera", "Lengua", "Filosofía"]
+};
 
-  // Elements
-  const viewAuth = document.getElementById('viewAuth')
-  const viewProfile = document.getElementById('viewProfile')
-  const viewApp = document.getElementById('viewApp')
-  const authLogs = document.getElementById('authLogs')
-  const profileLogs = document.getElementById('profileLogs')
-  const btnLogin = document.getElementById('btnLogin')
-  const btnSign = document.getElementById('btnSign')
-  const btnSaveProfile = document.getElementById('btnSaveProfile')
-  const btnSkipProfile = document.getElementById('btnSkipProfile')
-  const btnLogout = document.getElementById('btnLogout')
-  const btnPost = document.getElementById('btnPost')
-  const btnPreview = document.getElementById('btnPreview')
-  const feedEl = document.getElementById('feed')
-  const suggestionsEl = document.getElementById('suggestions')
-  const notificationsEl = document.getElementById('notifications')
-  const leftAvatar = document.getElementById('leftAvatar')
-  const leftName = document.getElementById('leftName')
-  const leftHandle = document.getElementById('leftHandle')
-  const composerAvatar = document.getElementById('composerAvatar')
+let currentBranch = null;
+let currentSubject = null;
 
-  // State
-  let session = null
-  let me = null
-  let realtimeChannels = []
+function loadBranches() {
+  const container = document.getElementById("branchList");
+  container.innerHTML = "";
 
-  // Helpers
-  function show(v){ viewAuth.classList.add('hidden'); viewProfile.classList.add('hidden'); viewApp.classList.add('hidden'); v.classList.remove('hidden') }
-  function dbg(msg){ console.log('[PekeSocial]',msg); }
-  function toast(msg){ alert(msg) }
+  Object.keys(data).forEach(branch => {
+    const div = document.createElement("div");
+    div.textContent = branch;
+    div.onclick = () => selectBranch(branch, div);
+    container.appendChild(div);
+  });
+}
 
-  // ---------- AUTH flow ----------
-  btnLogin.onclick = async () => {
-    const email = document.getElementById('email').value.trim()
-    const password = document.getElementById('password').value
-    if(!email || !password) return authLogs.innerText = 'Email y contraseña son necesarios'
-    authLogs.innerText = 'Iniciando...'
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if(error){ authLogs.innerText = error.message; return dbg('signin err:'+error.message) }
-    authLogs.innerText = 'Sesión iniciada. Esperando...'
-    // short delay to let supabase persist session after redirect flows
-    setTimeout(checkAndEnter, 600)
+function selectBranch(branch, element) {
+  currentBranch = branch;
+
+  [...document.querySelectorAll("#branchList div")].forEach(d => d.classList.remove("active"));
+  element.classList.add("active");
+
+  const subjects = data[branch];
+  const container = document.getElementById("subjectList");
+  container.innerHTML = "";
+
+  subjects.forEach(sub => {
+    const div = document.createElement("div");
+    div.textContent = sub;
+    div.onclick = () => selectSubject(sub, div);
+    container.appendChild(div);
+  });
+}
+
+function selectSubject(subject, element) {
+  currentSubject = subject;
+
+  [...document.querySelectorAll("#subjectList div")].forEach(d => d.classList.remove("active"));
+  element.classList.add("active");
+
+  document.getElementById("subjectTitle").textContent = subject;
+  document.getElementById("addNoteBtn").style.display = "block";
+
+  loadNotes();
+}
+
+/* ------------------ CARGAR NOTAS ------------------ */
+async function loadNotes() {
+  const container = document.getElementById("notesList");
+  container.innerHTML = "Cargando...";
+
+  const search = document.getElementById("searchInput").value.toLowerCase();
+
+  let { data: notes, error } = await db
+    .from("apuntes")
+    .select("*")
+    .eq("subject", currentSubject)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    container.innerHTML = "Error cargando apuntes.";
+    console.error(error);
+    return;
   }
 
-  btnSign.onclick = async () => {
-    const email = document.getElementById('email').value.trim()
-    const password = document.getElementById('password').value
-    if(!email || !password) return authLogs.innerText = 'Email y contraseña son necesarios'
-    authLogs.innerText = 'Registrando...'
-    const { data, error } = await supabase.auth.signUp({ email, password })
-    if(error) { authLogs.innerText = error.message; dbg(error); return }
-    authLogs.innerText = 'Correo de verificación enviado. Revisa tu email.'
-    dbg('signup data:'); dbg(data)
+  notes = notes.filter(n =>
+    n.title.toLowerCase().includes(search) ||
+    n.content.toLowerCase().includes(search)
+  );
+
+  container.innerHTML = "";
+
+  notes.forEach(note => {
+    const div = document.createElement("div");
+    div.innerHTML = `<strong>${note.title}</strong><br>${note.content}`;
+    container.appendChild(div);
+  });
+}
+
+document.getElementById("searchInput").oninput = loadNotes;
+
+/* ------------------ MODAL ------------------ */
+function openModal() {
+  document.getElementById("modalBg").style.display = "block";
+}
+function closeModal() {
+  document.getElementById("modalBg").style.display = "none";
+}
+
+document.getElementById("addNoteBtn").onclick = openModal;
+
+/* ------------------ GUARDAR NOTA ------------------ */
+async function saveNote() {
+  const title = document.getElementById("noteTitle").value.trim();
+  const content = document.getElementById("noteContent").value.trim();
+
+  if (!title || !content) return alert("Rellena todos los campos.");
+
+  const { error } = await db
+    .from("apuntes")
+    .insert({
+      subject: currentSubject,
+      title,
+      content
+    });
+
+  if (error) {
+    alert("Error guardando apunte.");
+    console.error(error);
+    return;
   }
 
-  btnLogout.onclick = async ()=>{ await supabase.auth.signOut(); location.reload(); }
+  closeModal();
+  loadNotes();
 
-  // When page loads, check session (handles redirect from verification links)
-  window.addEventListener('load', async ()=>{
-    dbg('page loaded — checking session')
-    await checkAndEnter()
-  })
+  document.getElementById("noteTitle").value = "";
+  document.getElementById("noteContent").value = "";
+}
 
-  // Auth state change listener
-  supabase.auth.onAuthStateChange((event, s) => {
-    dbg('onAuthStateChange', event, s?.session ? 'has-session' : 'no-session')
-    if(s?.session){
-      session = s.session
-      me = session.user
-      // small delay to avoid racing with redirect session hydration
-      setTimeout(enterApp, 250)
-    }
-    if(event === 'SIGNED_OUT'){ session = null; me = null; show(viewAuth) }
-  })
+/* ------------------ INICIO ------------------ */
+loadBranches();
 
-  async function checkAndEnter(){
-    const s = await supabase.auth.getSession()
-    session = s.data.session
-    dbg('getSession result', session ? 'session exists':'no session')
-    if(!session){ show(viewAuth); return }
-    me = session.user
-    dbg('user id', me.id)
-    // call enterApp which checks profile existence
-    await enterApp()
-  }
-
-  // ---------- PROFILE helpers ----------
-  async function ensureProfile(uid){
-    // returns profile row or null
-    try{
-      const res = await supabase.from('profiles').select('*').eq('id', uid).maybeSingle()
-      // maybeSingle returns { data, error } style; handle both
-      if(res && res.data !== undefined) return res.data
-      // fallback: older client response shape
-      if(res && res.length && res[0]) return res[0]
-      return null
-    }catch(e){
-      dbg('ensureProfile error', e)
-      return null
-    }
-  }
-
-  btnSaveProfile.onclick = async ()=>{
-    const username = document.getElementById('username').value.trim()
-    const display_name = document.getElementById('display_name').value.trim()
-    const bio = document.getElementById('bio').value.trim()
-    const avatarFile = document.getElementById('avatarFile').files[0]
-    if(!username) return profileLogs.innerText = 'El username es obligatorio'
-    if(/\s/.test(username)) return profileLogs.innerText = 'El username no puede contener espacios'
-
-    // check unique
-    const { data: existing } = await supabase.from('profiles').select('id').eq('username', username).limit(1)
-    if(existing && existing.length>0) return profileLogs.innerText = 'Ese username ya está en uso'
-
-    let avatar_path = null
-    if(avatarFile){
-      const path = `avatars/${me.id}/${Date.now()}_${avatarFile.name}`
-      const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, avatarFile, { upsert: false })
-      if(upErr){ console.error(upErr); profileLogs.innerText = 'Error subiendo avatar'; return }
-      const { data: pub } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path)
-      avatar_path = pub.publicUrl
-    }
-
-    // upsert profile (insert or update)
-    const payload = { id: me.id, username, display_name, bio, avatar_path }
-    const { error } = await supabase.from('profiles').upsert([payload], { onConflict: 'id' })
-    if(error){ profileLogs.innerText = 'Error guardando perfil: '+error.message; dbg(error); return }
-    profileLogs.innerText = 'Perfil guardado. Entrando...'
-    await enterApp()
-  }
-
-  btnSkipProfile.onclick = async ()=>{
-    // allow skipping (profile may be completed later)
-    await enterApp()
-  }
-
-  // ---------- ENTER APP (robust, with logs) ----------
-  async function enterApp(){
-    dbg('>>> enterApp called')
-    const s = await supabase.auth.getSession()
-    session = s.data.session
-    dbg('session', !!session)
-    if(!session){ dbg('no session -> show auth'); show(viewAuth); return }
-    me = session.user
-    dbg('current user id', me.id)
-
-    // check profile existence
-    const profile = await ensureProfile(me.id)
-    dbg('profile result', profile)
-    if(!profile){
-      // no profile: show profile setup
-      profileLogs.innerText = 'Necesitamos que completes tu perfil.'
-      show(viewProfile)
-      return
-    }
-
-    // fill UI
-    leftName.textContent = profile.display_name || profile.username
-    leftHandle.textContent = '@'+profile.username
-    if(profile.avatar_path) leftAvatar.style.backgroundImage = `url(${profile.avatar_path})`
-    composerAvatar.style.backgroundImage = profile.avatar_path ? `url(${profile.avatar_path})` : ''
-    show(viewApp)
-
-    // initial data loads
-    await loadFeed()
-    await renderSuggestions()
-    await renderNotifications()
-    await loadStats()
-    subscribeRealtime()
-  }
-
-  // ---------- FEED (fetch posts, then fetch profiles separately to avoid FK issues) ----------
-  async function loadFeed(){
-    dbg('loading feed...')
-    // 1) fetch posts
-    const { data: posts, error } = await supabase
-      .from('postsApp')
-      .select('id,content,image_path,created_at,author')
-      .order('created_at', { ascending: false })
-      .limit(50)
-    if(error){ dbg('loadFeed error', error); return }
-    if(!posts) { feedEl.innerHTML = '<div class="card">No hay posts</div>'; return }
-
-    // 2) collect author ids and fetch their profiles
-    const authorIds = [...new Set(posts.map(p => p.author).filter(Boolean))]
-    let profilesMap = {}
-    if(authorIds.length){
-      const { data: profiles } = await supabase.from('profiles').select('id,username,display_name,avatar_path').in('id', authorIds)
-      if(profiles && profiles.length){
-        profiles.forEach(pr => profilesMap[pr.id] = pr)
-      }
-    }
-
-    // 3) render posts
-    feedEl.innerHTML = ''
-    posts.forEach(p => {
-      const pr = profilesMap[p.author] || {}
-      const el = document.createElement('div'); el.className = 'post-card'
-      el.innerHTML = `
-        <div style="display:flex;gap:12px;align-items:center">
-          <div style="width:44px;height:44px;border-radius:50%;background-image:url('${pr.avatar_path||''}');background-size:cover;background-position:center"></div>
-          <div>
-            <div style="font-weight:700">${pr.display_name || pr.username || 'Usuario'}</div>
-            <div class="muted">@${pr.username||''} · ${new Date(p.created_at).toLocaleString()}</div>
-          </div>
-        </div>
-        <div style="margin-top:10px">${escapeHtml(p.content || '')}</div>
-        ${p.image_path?`<img src="${p.image_path}" style="width:100%;max-height:420px;object-fit:cover;border-radius:8px;margin-top:8px"/>`:''}
-        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-          <button class="btn ghost" onclick="window.react('${p.id}','like')">👍</button>
-          <button class="btn ghost" onclick="window.react('${p.id}','laugh')">😂</button>
-          <button class="btn ghost" onclick="window.openProfile('${p.author}')">Ver perfil</button>
-        </div>
-        <div id="comments_${p.id}" style="margin-top:10px"></div>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <input id="cinput_${p.id}" placeholder="Escribe un comentario..." style="flex:1;padding:8px;border-radius:8px;border:1px solid rgba(0,0,0,0.06)"/>
-          <button class="btn" onclick="window.addComment('${p.id}')">Comentar</button>
-        </div>
-      `
-      feedEl.appendChild(el)
-      loadComments(p.id) // async load comments per post
-    })
-
-    document.getElementById('statPosts').textContent = posts.length
-  }
-
-  // ---------- COMMENTS ----------
-  window.addComment = async (postId) => {
-    const input = document.getElementById('cinput_'+postId)
-    const txt = input.value.trim()
-    if(!txt) return
-    const { error } = await supabase.from('comments').insert([{ post_id: postId, author: me.id, content: txt }])
-    if(error){ toast('Error al comentar: '+error.message); dbg(error); return }
-    input.value = ''
-  }
-
-  async function loadComments(postId){
-    const { data } = await supabase.from('comments').select('id,content,created_at,author').eq('post_id', postId).order('created_at', { ascending: true })
-    const container = document.getElementById('comments_'+postId)
-    if(!container) return
-    container.innerHTML = ''
-    if(!data || data.length===0) return
-    // fetch authors profiles of comments
-    const commAuthorIds = [...new Set(data.map(c=>c.author).filter(Boolean))]
-    let commentProfiles = {}
-    if(commAuthorIds.length){
-      const { data: cps } = await supabase.from('profiles').select('id,username,display_name').in('id', commAuthorIds)
-      if(cps) cps.forEach(x=>commentProfiles[x.id]=x)
-    }
-    data.forEach(c=>{
-      const cp = commentProfiles[c.author] || {}
-      const d = document.createElement('div'); d.className='post-card'; d.style.padding='8px'
-      d.innerHTML = `<div style="font-weight:700">${cp.display_name || cp.username || 'Usuario'} <span class='muted' style='font-size:12px'>· ${new Date(c.created_at).toLocaleString()}</span></div><div>${escapeHtml(c.content)}</div>`
-      container.appendChild(d)
-    })
-  }
-
-  // ---------- REACTIONS (toggle) ----------
-  window.react = async (postId, type) => {
-    // try insert; if duplicate -> delete (toggle)
-    try{
-      const { error } = await supabase.from('reactions').insert([{ post_id: postId, author: me.id, reaction_type: type }])
-      if(error){
-        // Supabase error message contains code for unique violation; we try delete then
-        dbg('reaction insert error', error)
-        if(error.code === '23505' || (error.message && error.message.includes('duplicate'))){
-          await supabase.from('reactions').delete().match({ post_id: postId, author: me.id, reaction_type: type })
-        } else {
-          toast('Error reaccionando: '+error.message)
-        }
-      }
-    }catch(e){ dbg('react exception', e) }
-  }
-
-  // ---------- POST CREATION (with optional image) ----------
-  btnPost.onclick = async ()=>{
-    const text = document.getElementById('newText').value.trim()
-    const file = document.getElementById('newImage').files[0]
-    let image_path = null
-    if(file){
-      const path = `posts/${me.id}/${Date.now()}_${file.name}`
-      const { error: upErr } = await supabase.storage.from(POSTS_BUCKET).upload(path, file)
-      if(upErr){ dbg('upload error', upErr); return toast('Error subiendo imagen') }
-      const { data: pub } = supabase.storage.from(POSTS_BUCKET).getPublicUrl(path)
-      image_path = pub.publicUrl
-    }
-    const payload = { author: me.id, content: text, image_path }
-    const { error } = await supabase.from('postsApp').insert([payload])
-    if(error){ toast('Error publicando: '+error.message); dbg(error); return }
-    document.getElementById('newText').value = ''
-    document.getElementById('newImage').value = ''
-    // feed will refresh via realtime; fallback to refresh now
-    setTimeout(loadFeed, 300)
-  }
-
-  // preview
-  btnPreview.onclick = ()=>{
-    const txt = document.getElementById('newText').value.trim()
-    const f = document.getElementById('newImage').files[0]
-    const w = window.open('','postPreview','width=640,height=480')
-    w.document.body.style.fontFamily = 'Inter, Arial'
-    w.document.body.innerHTML = `<div style="padding:20px">${txt ? '<p>'+escapeHtml(txt)+'</p>' : '<p>(sin texto)</p>'}</div>`
-    if(f){
-      const r = new FileReader()
-      r.onload = ()=>{ const img = w.document.createElement('img'); img.src = r.result; img.style.maxWidth='100%'; w.document.body.appendChild(img) }
-      r.readAsDataURL(f)
-    }
-  }
-
-  // ---------- SUGGESTIONS ----------
-  async function renderSuggestions(){
-    const { data } = await supabase.from('profiles').select('id,username,display_name,avatar_path').limit(12)
-    suggestionsEl.innerHTML = ''
-    if(!data) return
-    data.filter(u => u.id !== me.id).forEach(u=>{
-      const el = document.createElement('div'); el.className='post-card'; el.style.display='flex'; el.style.alignItems='center'
-      el.innerHTML = `<div style="width:44px;height:44px;border-radius:50%;background-image:url('${u.avatar_path||''}');background-size:cover"></div>
-        <div style="margin-left:8px"><strong>${u.display_name||u.username}</strong><div class='muted'>@${u.username}</div></div>`
-      const btn = document.createElement('button'); btn.className='btn ghost'; btn.style.marginLeft='auto'; btn.textContent='Seguir'
-      btn.onclick = async ()=>{ await supabase.from('followers').insert([{ user_id: u.id, follower_id: me.id }]); toast('Sigues a '+(u.display_name||u.username)); loadStats(); }
-      el.appendChild(btn); suggestionsEl.appendChild(el)
-    })
-  }
-
-  // ---------- NOTIFICATIONS ----------
-  async function renderNotifications(){
-    if(!me) return
-    const { data } = await supabase.from('notifications').select('id,type,actor_id,post_id,created_at,read').eq('user_id', me.id).order('created_at', { ascending: false }).limit(30)
-    notificationsEl.innerHTML = ''
-    if(!data) return
-    data.forEach(n=>{
-      const d = document.createElement('div'); d.className='post-card'; d.style.padding='8px'
-      d.innerHTML = `<div class="muted" style="font-size:13px">${n.type}</div><div class="muted" style="font-size:12px">${new Date(n.created_at).toLocaleString()}</div>`
-      notificationsEl.appendChild(d)
-    })
-  }
-
-  // ---------- STATS ----------
-  async function loadStats(){
-    if(!me) return
-    const [{ count: postsCount }] = (await supabase.from('postsApp').select('id', { count: 'exact' })).data || [{count:0}]
-    // followers count
-    const { count: fcount } = await supabase.from('followers').select('id', { count: 'exact' }).eq('user_id', me.id)
-    document.getElementById('statPosts').textContent = postsCount ?? 0
-    document.getElementById('statFollowers').textContent = fcount ?? 0
-  }
-
-  // ---------- REALTIME SUBSCRIPTIONS ----------
-  function subscribeRealtime(){
-    dbg('subscribeRealtime — creating channels')
-    // clear previous channels
-    realtimeChannels.forEach(ch => ch.unsubscribe())
-    realtimeChannels = []
-
-    const postsCh = supabase.channel('postsApp-ch')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'postsApp' }, (payload) => {
-        dbg('realtime postsApp', payload.event)
-        loadFeed()
-      }).subscribe()
-    realtimeChannels.push(postsCh)
-
-    const commentsCh = supabase.channel('comments-ch')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'comments' }, payload => {
-        dbg('realtime comment insert'); loadFeed()
-      }).subscribe()
-    realtimeChannels.push(commentsCh)
-
-    const reactionsCh = supabase.channel('reactions-ch')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'reactions' }, payload => {
-        dbg('realtime reaction'); loadFeed()
-      }).subscribe()
-    realtimeChannels.push(reactionsCh)
-
-    // notifications targeted to this user
-    if(me?.id){
-      const notifCh = supabase.channel('notifications-ch')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${me.id}` }, payload => {
-          dbg('realtime notification'); renderNotifications()
-        }).subscribe()
-      realtimeChannels.push(notifCh)
-    }
-  }
-
-  // ---------- UTIL ----------
-  function escapeHtml(s){ if(!s) return ''; return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }
-
-  // ---------- SHORTCUTS / WINDOW HELPERS ----------
-  window.openProfile = async (userId) => {
-    const { data } = await supabase.from('profiles').select('id,username,display_name,avatar_path,bio').eq('id', userId).single()
-    if(!data) return toast('Perfil no encontrado')
-    alert(`${data.display_name || data.username}\n@${data.username}\n\n${data.bio || ''}`)
-  }
-
-  // expose react/addComment (already assigned)
-
-  // ---------- debug helper: force reload feed (useful during dev) ----------
-  window._reloadFeed = loadFeed
 </script>
 </body>
 </html>
