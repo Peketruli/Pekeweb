@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D con Mapa</title>
+    <title>Prototipo 2D v3</title>
     
     <style>
         body {
@@ -13,7 +13,7 @@
         }
         canvas {
             display: block;
-            background-color: #333; /* Un gris oscuro para el suelo */
+            background-color: #333; /* Suelo */
             margin: 0 auto; 
         }
     </style>
@@ -29,51 +29,71 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // --- 2. EL MAPA ---
+        // --- 2. EL MAPA (DISEÑO NUEVO) ---
         // (0,0) es la esquina superior izquierda
+        
+        // Un objeto para guardar los tamaños y no usar "números mágicos"
+        const mapData = {
+            wallSize: 20,
+            spawnPadding: 40,
+            midWidth: 300,
+            siteWidth: 300,
+            tSpawnWidth: 200,
+        };
 
         const walls = [
             // --- Paredes Exteriores ---
-            { x: 0, y: 0, width: canvas.width, height: 20 }, // Arriba
-            { x: 0, y: canvas.height - 20, width: canvas.width, height: 20 }, // Abajo
-            { x: 0, y: 0, width: 20, height: canvas.height }, // Izquierda
-            { x: canvas.width - 20, y: 0, width: 20, height: canvas.height }, // Derecha
+            { x: 0, y: 0, width: canvas.width, height: mapData.wallSize }, // Arriba
+            { x: 0, y: canvas.height - mapData.wallSize, width: canvas.width, height: mapData.wallSize }, // Abajo
+            { x: 0, y: 0, width: mapData.wallSize, height: canvas.height }, // Izquierda
+            { x: canvas.width - mapData.wallSize, y: 0, width: mapData.wallSize, height: canvas.height }, // Derecha
 
-            // --- Estructura Central (Pasillos) ---
-            // Pared larga vertical (divide A y Mid)
-            { x: 300, y: 100, width: 20, height: canvas.height - 200 }, 
-            // Pared larga vertical (divide B y Mid)
-            { x: canvas.width - 320, y: 100, width: 20, height: canvas.height - 200 },
+            // --- Salida Spawn T ---
+            { x: canvas.width - mapData.tSpawnWidth, y: mapData.wallSize, 
+              width: mapData.wallSize, height: canvas.height / 2 - 100 },
+            { x: canvas.width - mapData.tSpawnWidth, y: canvas.height / 2 + 100, 
+              width: mapData.wallSize, height: canvas.height / 2 - 100 - mapData.wallSize },
 
-            // --- Coberturas Sitio A ---
-            { x: 120, y: 150, width: 80, height: 20 },
-            { x: 120, y: 250, width: 80, height: 20 },
+            // --- Estructura de "Medio" ---
+            { x: mapData.midWidth, y: mapData.wallSize, 
+              width: mapData.wallSize, height: canvas.height / 2 - 150 }, // Pared superior de Mid (lado AT)
+            { x: mapData.midWidth, y: canvas.height / 2 + 150, 
+              width: mapData.wallSize, height: canvas.height / 2 - 150 - mapData.wallSize }, // Pared inferior de Mid (lado AT)
+
+            // --- Divisores de Carriles (Horizontales) ---
+            { x: mapData.midWidth + mapData.wallSize, y: canvas.height / 2 - 100, 
+              width: canvas.width - mapData.midWidth - mapData.tSpawnWidth - mapData.wallSize, height: mapData.wallSize }, // Divide A y Mid
+            { x: mapData.midWidth + mapData.wallSize, y: canvas.height / 2 + 100, 
+              width: canvas.width - mapData.midWidth - mapData.tSpawnWidth - mapData.wallSize, height: mapData.wallSize }, // Divide B y Mid
             
+            // --- Coberturas Sitio A ---
+            { x: mapData.siteWidth - 100, y: 100, width: 80, height: 20 },
+            { x: mapData.siteWidth - 100, y: 200, width: 20, height: 80 },
+
             // --- Coberturas Sitio B ---
-            { x: canvas.width - 200, y: canvas.height - 170, width: 80, height: 20 },
-            { x: canvas.width - 200, y: canvas.height - 270, width: 80, height: 20 }
+            { x: mapData.siteWidth - 100, y: canvas.height - 120, width: 80, height: 20 },
+            { x: mapData.siteWidth - 100, y: canvas.height - 280, width: 20, height: 80 }
         ];
 
         const zones = [
             // Zona de Spawn AT (Azul)
-            { x: 40, y: canvas.height / 2 - 75, width: 150, height: 150, 
+            { x: mapData.spawnPadding, y: canvas.height / 2 - 75, width: 150, height: 150, 
               color: 'rgba(0, 150, 255, 0.3)', name: 'Spawn AT' },
             
             // Zona de Spawn T (Roja)
-            { x: canvas.width - 190, y: canvas.height / 2 - 75, width: 150, height: 150, 
+            { x: canvas.width - mapData.tSpawnWidth + mapData.spawnPadding, y: canvas.height / 2 - 75, width: 150, height: 150, 
               color: 'rgba(255, 100, 0, 0.3)', name: 'Spawn T' },
             
-            // Sitio de Bomba A (Naranja)
-            { x: 40, y: 40, width: 240, height: 200, 
+            // Sitio de Bomba A (Naranja) - Arriba Izquierda
+            { x: mapData.spawnPadding, y: mapData.spawnPadding, width: mapData.siteWidth, height: 200, 
               color: 'rgba(255, 69, 0, 0.3)', name: 'Sitio A' },
             
-            // Sitio de Bomba B (Naranja)
-            { x: canvas.width - 300, y: canvas.height - 240, width: 280, height: 200, 
+            // Sitio de Bomba B (Naranja) - Abajo Izquierda (¡NUEVA POSICIÓN!)
+            { x: mapData.spawnPadding, y: canvas.height - 240, width: mapData.siteWidth, height: 200, 
               color: 'rgba(255, 69, 0, 0.3)', name: 'Sitio B' }
         ];
 
         // --- 3. EL JUGADOR ---
-        // Lo ponemos dentro del Spawn AT
         let player = {
             x: 115,  // Centro del Spawn AT
             y: canvas.height / 2, // Centro del Spawn AT
@@ -96,7 +116,7 @@
             const bullet = {
                 x: player.x,
                 y: player.y,
-                size: 5,
+                size: 5, // Damos a la bala un "tamaño" para la colisión
                 color: 'yellow',
                 speed: 10,
                 angle: player.angle 
@@ -104,135 +124,127 @@
             bullets.push(bullet);
         });
 
-        // --- 6. FUNCIÓN DE COLISIÓN (NUEVO) ---
-        /**
-         * Comprueba si el jugador (rect1) choca con una pared (rect2)
-         * El jugador se mide desde su CENTRO
-         * La pared se mide desde su esquina SUPERIOR IZQUIERDA
-         */
-        function checkCollision(player, wall) {
-            const playerLeft = player.x - player.size / 2;
-            const playerRight = player.x + player.size / 2;
-            const playerTop = player.y - player.size / 2;
-            const playerBottom = player.y + player.size / 2;
+        // --- 6. FUNCIÓN DE COLISIÓN ---
+        // Esta función ahora sirve para el JUGADOR y para las BALAS
+        // Comprueba si un objeto (obj) choca con una pared (wall)
+        function checkCollision(obj, wall) {
+            // Coordenadas del objeto (medido desde su centro)
+            const objLeft = obj.x - obj.size / 2;
+            const objRight = obj.x + obj.size / 2;
+            const objTop = obj.y - obj.size / 2;
+            const objBottom = obj.y + obj.size / 2;
 
+            // Coordenadas de la pared (medido desde esquina sup-izq)
             const wallLeft = wall.x;
             const wallRight = wall.x + wall.width;
             const wallTop = wall.y;
             const wallBottom = wall.y + wall.height;
 
-            // Fórmula de colisión AABB (Axis-Aligned Bounding Box)
+            // Fórmula de colisión AABB
             return (
-                playerRight > wallLeft &&
-                playerLeft < wallRight &&
-                playerBottom > wallTop &&
-                playerTop < wallBottom
+                objRight > wallLeft &&
+                objLeft < wallRight &&
+                objBottom > wallTop &&
+                objTop < wallBottom
             );
         }
 
         // --- 7. FUNCIÓN DE ACTUALIZACIÓN (MODIFICADA) ---
         function update() {
-            // Guardamos la posición anterior para revertirla si hay colisión
+            // --- Lógica del Jugador ---
             const oldX = player.x;
             const oldY = player.y;
 
-            // --- Mover jugador EJE X ---
-            if (keys['a'] || keys['A']) {
-                player.x -= player.speed;
-            }
-            if (keys['d'] || keys['D']) {
-                player.x += player.speed;
-            }
-
-            // --- Comprobar colisiones en EJE X ---
+            if (keys['a'] || keys['A']) { player.x -= player.speed; }
+            if (keys['d'] || keys['D']) { player.x += player.speed; }
+            // Comprobar colisión X del jugador
             for (const wall of walls) {
                 if (checkCollision(player, wall)) {
-                    player.x = oldX; // Chocó, volvemos a la posición X anterior
+                    player.x = oldX; 
                     break; 
                 }
             }
 
-            // --- Mover jugador EJE Y ---
-            if (keys['w'] || keys['W']) {
-                player.y -= player.speed;
-            }
-            if (keys['s'] || keys['S']) {
-                player.y += player.speed;
-            }
-
-            // --- Comprobar colisiones en EJE Y ---
+            if (keys['w'] || keys['W']) { player.y -= player.speed; }
+            if (keys['s'] || keys['S']) { player.y += player.speed; }
+            // Comprobar colisión Y del jugador
             for (const wall of walls) {
                 if (checkCollision(player, wall)) {
-                    player.y = oldY; // Chocó, volvemos a la posición Y anterior
+                    player.y = oldY; 
                     break;
                 }
             }
-            // (Esta técnica de separar ejes X e Y permite "deslizarse" por las paredes)
-
-            // --- Apuntar jugador ---
+            
             player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
 
-            // --- Mover balas ---
+            // --- Lógica de Balas (¡NUEVO!) ---
             for (let i = bullets.length - 1; i >= 0; i--) {
                 let bullet = bullets[i];
+                
+                // Mover la bala
                 bullet.x += Math.cos(bullet.angle) * bullet.speed;
                 bullet.y += Math.sin(bullet.angle) * bullet.speed;
+
+                let bulletHit = false;
+
+                // --- Comprobar colisión de la bala con CADA pared ---
+                for (const wall of walls) {
+                    if (checkCollision(bullet, wall)) {
+                        bullets.splice(i, 1); // ¡Destruir la bala!
+                        bulletHit = true;
+                        break; // Dejar de comprobar paredes para esta bala
+                    }
+                }
+
+                if (bulletHit) continue; // Si la bala chocó, pasar a la siguiente bala
 
                 // Borrar balas si salen de la pantalla
                 if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
                     bullets.splice(i, 1);
                 }
-                
-                // (Opcional: Colisión de balas con paredes)
-                // (Habría que hacer un bucle for (const wall of walls) y checkCollision)
             }
         }
 
-        // --- 8. FUNCIÓN DE DIBUJADO (MODIFICADA) ---
+        // --- 8. FUNCIÓN DE DIBUJADO ---
         function draw() {
-            // Limpiamos todo
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // --- Dibujar Zonas (primero, para que estén de fondo) ---
+            // Dibujar Zonas
             for (const zone of zones) {
                 ctx.fillStyle = zone.color;
                 ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
-                
-                // Dibujar texto de la zona
                 ctx.fillStyle = 'white';
                 ctx.font = '20px Arial';
                 ctx.textAlign = 'center';
                 ctx.fillText(zone.name, zone.x + zone.width / 2, zone.y + zone.height / 2);
             }
 
-            // --- Dibujar Paredes ---
-            ctx.fillStyle = '#999'; // Gris para las paredes
+            // Dibujar Paredes
+            ctx.fillStyle = '#999';
             for (const wall of walls) {
                 ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
             }
 
-            // --- Dibujar Jugador ---
+            // Dibujar Jugador
             ctx.save();
             ctx.translate(player.x, player.y);
             ctx.rotate(player.angle);
-            
             ctx.fillStyle = player.color;
             ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
-            
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 3;
             ctx.beginPath();
             ctx.moveTo(0, 0);
-            ctx.lineTo(player.size, 0); // "Cañón" del arma
+            ctx.lineTo(player.size, 0);
             ctx.stroke();
-            
             ctx.restore();
 
-            // --- Dibujar Balas ---
+            // Dibujar Balas
             for (const bullet of bullets) {
                 ctx.fillStyle = bullet.color;
                 ctx.beginPath();
-                ctx.arc(bullet.x, bullet.y, bullet.size / 2, 0, Math.PI * 2);
+                // Dibujamos la bala como un círculo, pero la colisión la trata como un cuadrado
+                ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); 
                 ctx.fill();
             }
         }
