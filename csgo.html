@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Prototipo Mínimo (Partida Directa)</title>
+    <title>CSGO 2D - Prototipo Mínimo con Armas</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     
@@ -29,84 +29,212 @@
 
     <script>
         //==============================================================
-        // CONSTANTES GLOBALES MÍNIMAS
+        // CONSTANTES GLOBALES
         //==============================================================
         const GAME_WIDTH = 1200;
         const GAME_HEIGHT = 800;
         const PLAYER_SPEED = 300;
-        
+
+        // CONSTANTES DEL ARMA (Pistola básica)
+        const FIRE_RATE = 150; // Tiempo mínimo entre disparos en milisegundos (ms)
+        const BULLET_SPEED = 800; // Velocidad de la bala
+        const MAX_AMMO_IN_MAGAZINE = 12; // Capacidad del cargador
+        const RELOAD_TIME = 1500; // Tiempo de recarga en ms
+        const RECOIL_AMOUNT = 50; // Fuerza del retroceso al disparar
+
+
         //==============================================================
-        // CLASE ESCENA: JUEGO MÍNIMO
+        // CLASE ESCENA: JUEGO MÍNIMO CON ARMAS
         //==============================================================
         class GameScene extends Phaser.Scene {
             constructor() {
                 super('GameScene');
                 this.player = null;
                 this.keys = null;
+                this.bullets = null;
+                
+                // Variables del Sistema de Armas
+                this.currentAmmo = MAX_AMMO_IN_MAGAZINE;
+                this.lastShotTime = 0;
+                this.isReloading = false;
             }
 
             create() {
                 // 1. Configuración Visual Mínima
                 this.cameras.main.setBackgroundColor('#34495e'); 
+                // Fondo del mapa
                 this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
                 
-                // 2. Creación del Personaje (Rectángulo Verde)
-                // Lo creamos en el centro del mapa
+                // 2. Creación del Personaje
                 const spawnX = GAME_WIDTH / 2;
                 const spawnY = GAME_HEIGHT / 2;
                 
                 this.player = this.add.rectangle(spawnX, spawnY, 32, 32, 0x2ecc71); 
                 this.physics.add.existing(this.player); 
                 
-                this.player.body.setCollideWorldBounds(true); // Evita que salga del mapa
+                this.player.body.setCollideWorldBounds(true);
                 this.player.body.setDrag(100);
                 this.player.body.setCircle(16);
                 this.player.setOrigin(0.5, 0.5);
+                
+                // Visualización del apuntado (línea negra pequeña)
+                let sightLine = this.add.graphics().lineStyle(2, 0x000000, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
+                this.player.add(sightLine); 
 
-                // 3. Configuración de la Cámara (Centrada en el jugador)
+                // 3. Configuración de la Cámara
                 this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-                this.cameras.main.setZoom(1.5); // Zoom para mejor visibilidad
+                this.cameras.main.setZoom(1.5); 
                 
                 // 4. Configuración de Controles
+                this.setupControls();
+                
+                // 5. Configuración del Sistema de Balas
+                this.setupBullets();
+                
+                // 6. HUD (Información de Munición) - Fijo en pantalla
+                this.ammoText = this.add.text(10, 10, this.getAmmoStatus(), {
+                    fontSize: '28px',
+                    fill: '#ecf0f1'
+                }).setScrollFactor(0); 
+
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 50, 'W/A/S/D: Mover | Click: Disparar | R: Recargar', {
+                    fontSize: '24px',
+                    fill: '#f1c40f'
+                }).setOrigin(0.5).setScrollFactor(0); 
+            }
+            
+            // --- Handlers de Setup ---
+
+            setupControls() {
                 this.keys = this.input.keyboard.addKeys({
                     up: Phaser.Input.Keyboard.KeyCodes.W,
                     down: Phaser.Input.Keyboard.KeyCodes.S,
                     left: Phaser.Input.Keyboard.KeyCodes.A,
-                    right: Phaser.Input.Keyboard.KeyCodes.D
+                    right: Phaser.Input.Keyboard.KeyCodes.D,
+                    reload: Phaser.Input.Keyboard.KeyCodes.R
+                });
+                this.input.on('pointerdown', this.handleShoot, this);
+                
+                this.input.keyboard.on('keydown-R', this.startReload, this);
+            }
+
+            setupBullets() {
+                this.bullets = this.physics.add.group({
+                    classType: Phaser.GameObjects.Arc,
+                    maxSize: 50, 
+                    runChildUpdate: true,
+                    createCallback: (bullet) => {
+                        bullet.setOrigin(0.5).setRadius(4).setFillStyle(0xe74c3c);
+                        bullet.body.allowGravity = false;
+                        bullet.body.setCircle(4);
+                        bullet.body.setCollideWorldBounds(true);
+                        bullet.body.onWorldBounds = true;
+                    }
                 });
                 
-                // Mensaje de ayuda (fijo en la pantalla)
-                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 50, 'Usa W/A/S/D para moverte.', {
-                    fontSize: '24px',
-                    fill: '#f1c40f'
-                }).setOrigin(0.5).setScrollFactor(0); 
+                this.physics.world.on('worldbounds', (body) => {
+                    if (body.gameObject.parentContainer === this.bullets) {
+                        body.gameObject.setActive(false).setVisible(false).body.stop();
+                    }
+                });
+            }
+            
+            getAmmoStatus() {
+                return this.isReloading ? 
+                    `RECARGANDO... (${(RELOAD_TIME / 1000).toFixed(1)}s)` : 
+                    `MUNICIÓN: ${this.currentAmmo} / ${MAX_AMMO_IN_MAGAZINE}`;
             }
 
             // --- Bucle Principal de Actualización ---
             update(time, delta) {
                 this.handleMovement();
+                this.handleAiming();
+                this.ammoText.setText(this.getAmmoStatus());
             }
+
+            // --- Lógica de Movimiento ---
 
             handleMovement() {
                 this.player.body.setVelocity(0);
                 let moving = false;
                 
-                // Movimiento básico W/A/S/D
                 if (this.keys.up.isDown) { this.player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
                 else if (this.keys.down.isDown) { this.player.body.setVelocityY(PLAYER_SPEED); moving = true; }
                 if (this.keys.left.isDown) { this.player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
                 else if (this.keys.right.isDown) { this.player.body.setVelocityX(PLAYER_SPEED); moving = true; }
 
-                // Normalizar velocidad para movimiento diagonal constante
                 if (moving) { 
                     this.player.body.velocity.normalize().scale(PLAYER_SPEED); 
                 }
+            }
+
+            // --- Lógica de Apuntado ---
+
+            handleAiming() {
+                let pointer = this.input.activePointer;
+                let angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+                this.player.rotation = angle;
+            }
+
+            // --- Lógica de Disparo ---
+
+            handleShoot(pointer) {
+                let currentTime = this.time.now;
+                
+                if (this.isReloading || currentTime < this.lastShotTime + FIRE_RATE || this.currentAmmo <= 0) {
+                    return;
+                }
+
+                this.lastShotTime = currentTime;
+                this.currentAmmo--;
+                
+                let bullet = this.bullets.get(this.player.x, this.player.y);
+                if (bullet) {
+                    bullet.setActive(true).setVisible(true);
+                    
+                    // Dispersión (spread)
+                    const spreadAngle = Phaser.Math.Between(-2, 2) * Phaser.Math.DEG_TO_RAD;
+                    const finalAngle = this.player.rotation + spreadAngle;
+
+                    let direction = new Phaser.Math.Vector2().setToPolar(finalAngle, 1); 
+                    bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
+                    
+                    // Aplicar Recoil (Retroceso)
+                    this.player.body.setVelocityX(-direction.x * RECOIL_AMOUNT);
+                    this.player.body.setVelocityY(-direction.y * RECOIL_AMOUNT);
+
+                    // Reciclaje de bala por distancia
+                    bullet.update = () => {
+                        if (Phaser.Math.Distance.Between(bullet.x, bullet.y, this.player.x, this.player.y) > 1200) {
+                            bullet.setActive(false).setVisible(false).body.stop();
+                        }
+                    };
+                }
+                
+                if (this.currentAmmo === 0) {
+                    this.startReload();
+                }
+            }
+            
+            // --- Lógica de Recarga ---
+
+            startReload() {
+                if (this.isReloading || this.currentAmmo === MAX_AMMO_IN_MAGAZINE) {
+                    return;
+                }
+                
+                this.isReloading = true;
+                this.time.delayedCall(RELOAD_TIME, () => {
+                    this.currentAmmo = MAX_AMMO_IN_MAGAZINE;
+                    this.isReloading = false;
+                    this.ammoText.setText(this.getAmmoStatus());
+                }, [], this);
             }
         }
 
 
         //==============================================================
-        // INICIALIZACIÓN DE PHASER (SIN MENÚ)
+        // INICIALIZACIÓN DE PHASER
         //==============================================================
         const gameConfig = {
             type: Phaser.AUTO,
@@ -116,7 +244,6 @@
                 default: 'arcade',
                 arcade: {
                     gravity: { y: 0 } 
-                    // debug: true // Descomenta esta línea para ver la hitbox (círculo)
                 }
             },
             scene: [GameScene], // Solo cargamos la escena de juego
