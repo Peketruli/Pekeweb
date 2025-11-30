@@ -2,11 +2,9 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Prototipo Multijugador Supabase (Corregido)</title>
+    <title>CSGO 2D - Menú Básico</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
-    
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <style>
         body { 
@@ -18,338 +16,235 @@
             align-items: center;
             height: 100vh;
             overflow: hidden;
-            font-family: Arial, sans-serif;
+            font-family: 'Arial', sans-serif;
         }
         #game-container {
             border: 2px solid #555;
             box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
         }
-        #info-panel {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: rgba(0, 0, 0, 0.7);
+        /* Estilo para los botones que se renderizarán en el DOM (Menú) */
+        .menu-button {
+            width: 250px;
+            padding: 15px;
+            margin: 10px;
+            font-size: 20px;
+            font-weight: bold;
             color: #fff;
-            padding: 10px;
+            background-color: #2c3e50; /* Azul oscuro CS:GO */
+            border: 2px solid #3498db;
             border-radius: 5px;
-            z-index: 1000;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .menu-button:hover {
+            background-color: #34495e;
+            transform: scale(1.02);
         }
     </style>
 </head>
 <body>
     <div id="game-container">
         </div>
-    
-    <div id="info-panel">
-        <p>Mi ID: <span id="my-id"></span></p>
-        <p>Jugadores: <span id="player-count">1</span></p>
-        <p>Sala: <span id="room-name"></span></p>
-        <p>Mueve: **WASD** | Apunta/Dispara: **Ratón**</p>
-    </div>
 
-// ======================================================================================
-// Bloque de JavaScript Corregido y Verificado
-// ======================================================================================
-<script>
-    //==============================================================
-    // *** CONFIGURACIÓN SUPABASE (¡MODIFICA ESTO!) ***
-    //==============================================================
-    const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'; 
-    const SUPABASE_ANON_KEY = 'TU_CLAVE_AeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TINON_SUPABASE'; 
-    
-    //==============================================================
-    // CONSTANTES Y VARIABLES DE JUEGO
-    //==============================================================
-    const GAME_WIDTH = 1200;
-    const GAME_HEIGHT = 800;
-    const PLAYER_SPEED = 300;
-    const BULLET_SPEED = 800;
-    const FIRE_RATE = 150; 
-    const ROOM_NAME = 'csgo_2d_match_1';
-    const BROADCAST_INTERVAL = 33; 
-    
-    let lastMoveBroadcastTime = 0;
-    let lastShotTime = 0;
-    let playerID = `player_${Math.random().toString(36).substring(2, 9)}`; 
+    <script>
+        //==============================================================
+        // CONSTANTES GLOBALES
+        //==============================================================
+        const GAME_WIDTH = 1200;
+        const GAME_HEIGHT = 800;
+        const PLAYER_SPEED = 300;
+        const BULLET_SPEED = 800;
+        const FIRE_RATE = 150; 
 
-    // Variables de Juego Globales
-    let player; 
-    let keys;
-    let bullets;
-    let remotePlayers = {};
-    let roomChannel;
-    let supabaseClient;
-
-    // Configuración de Phaser
-    const config = {
-        type: Phaser.AUTO,
-        width: GAME_WIDTH,
-        height: GAME_HEIGHT,
-        physics: {
-            default: 'arcade',
-            arcade: {
-                // debug: true, 
-                gravity: { y: 0 } 
+        //==============================================================
+        // CLASE ESCENA: MENU PRINCIPAL
+        //==============================================================
+        class MainMenu extends Phaser.Scene {
+            constructor() {
+                super('MainMenu');
             }
-        },
-        scene: {
-            preload: preload,
-            create: create,
-            update: update,
-            shoot: shoot 
-        },
-        parent: 'game-container'
-    };
 
-    let game = new Phaser.Game(config);
+            create() {
+                this.cameras.main.setBackgroundColor('#2c3e50'); // Fondo azul oscuro
 
-    //==============================================================
-    // PHASER FASES
-    //==============================================================
-    function preload () {}
+                this.add.text(GAME_WIDTH / 2, 150, 'CS:GO 2D', {
+                    fontSize: '64px',
+                    fill: '#ecf0f1',
+                    fontFamily: 'Arial Black'
+                }).setOrigin(0.5);
 
-    function create () {
-        
-        // 1. VERIFICACIÓN CRÍTICA DE SUPABASE Y VISUALIZACIÓN
-        try {
-            if (typeof supabase === 'undefined' || SUPABASE_URL.includes('https://jdvwlfogkzrzovepzjqa.supabase.co')) {
-                 alert('⚠️ ¡ERROR CRÍTICO! ⚠️ \n\n1. Asegúrate de que las variables SUPABASE_URL y ANNON_KEY estén reemplazadas. \n2. Asegúrate de que el archivo se abre con un servidor (http://localhost:8000).');
-                 throw new Error("Credenciales de Supabase no configuradas o SDK no cargado.");
-            }
-            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            // Esto asegura que el código solo continúa si supabaseClient se inicializa
-            
-            // Si llegamos aquí, el motor de Phaser debe dibujar
-            document.getElementById('info-panel').style.backgroundColor = 'rgba(0, 50, 0, 0.7)';
-        } catch (e) {
-            document.getElementById('info-panel').style.backgroundColor = 'rgba(100, 0, 0, 0.7)';
-            document.getElementById('player-count').textContent = 'ERROR';
-            return; // Detener la ejecución si hay un error crítico
-        }
-
-
-        // 2. Crear el Jugador Local (Rectángulo Blanco)
-        document.getElementById('my-id').textContent = playerID;
-        document.getElementById('room-name').textContent = ROOM_NAME;
-
-        player = this.add.rectangle(400, 300, 32, 32, 0xFFFFFF);
-        this.physics.add.existing(player); 
-        player.body.setCollideWorldBounds(true);
-        player.setOrigin(0.5, 0.5);
-        player.body.setSize(30, 30);
-        
-        let sightLine = this.add.graphics().lineStyle(2, 0x00FF00, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
-        player.add(sightLine); 
-
-        // 3. Control de Teclado (WASD)
-        keys = this.input.keyboard.addKeys({
-            up: Phaser.Input.Keyboard.KeyCodes.W,
-            down: Phaser.Input.Keyboard.KeyCodes.S,
-            left: Phaser.Input.Keyboard.KeyCodes.A,
-            right: Phaser.Input.Keyboard.KeyCodes.D
-        });
-
-        // 4. Crear el Grupo de Balas
-        bullets = this.physics.add.group({
-            classType: Phaser.GameObjects.Arc,
-            runChildUpdate: true,
-            maxSize: 50, 
-            createCallback: (bullet) => {
-                bullet.setOrigin(0.5, 0.5);
-                bullet.setRadius(4); 
-                bullet.setFillStyle(0xFF0000); 
-                bullet.body.allowGravity = false;
-            }
-        });
-
-        // 5. Configurar Disparo y Cámara
-        this.input.on('pointerdown', function (pointer) { if (pointer.primaryDown) { this.scene.shoot(pointer); } });
-        this.cameras.main.startFollow(player, true, 0.1, 0.1);
-        this.cameras.main.setZoom(1.5);
-        
-        // 6. ¡Conexión a Supabase!
-        joinOrCreateRoom.call(this);
-    }
-
-    function update (time, delta) {
-        player.body.setVelocity(0);
-        let moving = false;
-        
-        // Lógica de Movimiento WASD
-        if (keys.up.isDown) { player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
-        else if (keys.down.isDown) { player.body.setVelocityY(PLAYER_SPEED); moving = true; }
-        if (keys.left.isDown) { player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
-        else if (keys.right.isDown) { player.body.setVelocityX(PLAYER_SPEED); moving = true; }
-
-        if (moving) { player.body.velocity.normalize().scale(PLAYER_SPEED); }
-
-        // Lógica de Apuntado (Rotación)
-        let pointer = this.input.activePointer;
-        let angle = Phaser.Math.Angle.Between(player.x, player.y, pointer.worldX, pointer.worldY);
-        player.rotation = angle;
-
-        // -------------------------------------------------------------
-        // LÓGICA MULTIJUGADOR: BROADCAST DE MOVIMIENTO
-        // -------------------------------------------------------------
-        if ((moving || Math.abs(player.rotation - (player.lastRotation || 0)) > 0.05) && roomChannel && time > lastMoveBroadcastTime + BROADCAST_INTERVAL) {
-            lastMoveBroadcastTime = time;
-            player.lastRotation = player.rotation;
-            
-            roomChannel.send({
-                type: 'broadcast',
-                event: 'player_move',
-                payload: {
-                    id: playerID, 
-                    x: player.x, 
-                    y: player.y, 
-                    rot: player.rotation 
-                }
-            });
-        }
-        
-        // Actualización de etiquetas de nombre remotas
-        for (const id in remotePlayers) {
-            if (remotePlayers[id] && remotePlayers[id].nameTag) {
-                remotePlayers[id].nameTag.x = remotePlayers[id].x;
-                remotePlayers[id].nameTag.y = remotePlayers[id].y - 20;
-            }
-        }
-    }
-
-    function shoot (pointer) {
-        let currentTime = this.time.now;
-
-        if (currentTime > lastShotTime + FIRE_RATE) {
-            lastShotTime = currentTime;
-            
-            let bullet = bullets.get(player.x, player.y);
-            if (bullet) {
-                bullet.setActive(true).setVisible(true);
-
-                let direction = new Phaser.Math.Vector2().setToPolar(player.rotation, 1); 
-                bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
+                // Crear los botones usando HTML DOM y posicionarlos sobre el canvas
+                const container = document.getElementById('game-container');
+                const canvas = this.game.canvas;
                 
-                bullet.update = function () {
-                    if (Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y) > 1200) {
-                        this.setActive(false).setVisible(false).body.stop();
+                // Función para añadir y posicionar botones HTML
+                const addButton = (text, yOffset, sceneKey) => {
+                    let button = document.createElement('button');
+                    button.textContent = text;
+                    button.className = 'menu-button';
+                    
+                    // Posicionamiento
+                    button.style.position = 'absolute';
+                    button.style.left = (canvas.offsetLeft + GAME_WIDTH / 2 - 125) + 'px';
+                    button.style.top = (canvas.offsetTop + GAME_HEIGHT / 2 + yOffset) + 'px';
+                    
+                    button.onclick = () => {
+                        // Limpiar los botones al cambiar de escena
+                        container.removeChild(onlineButton);
+                        container.removeChild(offlineButton);
+                        // Iniciar la escena de juego
+                        this.scene.start(sceneKey); 
+                    };
+
+                    container.appendChild(button);
+                    return button;
+                };
+
+                const onlineButton = addButton('JUGAR ONLINE (5v5)', -50, 'GameScene');
+                const offlineButton = addButton('PRACTICA / OFFLINE', 50, 'GameScene');
+
+                this.onlineButton = onlineButton;
+                this.offlineButton = offlineButton;
+            }
+
+            // Limpiar botones si la escena se detiene de otra forma
+            shutdown() {
+                 const container = document.getElementById('game-container');
+                 if (this.onlineButton.parentNode === container) container.removeChild(this.onlineButton);
+                 if (this.offlineButton.parentNode === container) container.removeChild(this.offlineButton);
+            }
+        }
+
+        //==============================================================
+        // CLASE ESCENA: JUEGO PRINCIPAL
+        //==============================================================
+        class GameScene extends Phaser.Scene {
+            constructor() {
+                super('GameScene');
+                this.player = null;
+                this.keys = null;
+                this.bullets = null;
+                this.lastShotTime = 0;
+            }
+
+            create() {
+                this.cameras.main.setBackgroundColor('#34495e'); // Fondo de juego
+                this.createPlayer();
+                this.setupControls();
+                this.setupBullets();
+                this.setupCamera();
+            }
+
+            // --- Creación del Jugador ---
+            createPlayer() {
+                // Jugador de color verde (para diferenciar)
+                this.player = this.add.rectangle(400, 300, 32, 32, 0x2ecc71); // Verde esmeralda
+                this.physics.add.existing(this.player); 
+                this.player.body.setCollideWorldBounds(true);
+                this.player.setOrigin(0.5, 0.5);
+                
+                // Línea de mira
+                let sightLine = this.add.graphics().lineStyle(2, 0x000000, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
+                this.player.add(sightLine); 
+            }
+
+            // --- Controles de Jugador ---
+            setupControls() {
+                this.keys = this.input.keyboard.addKeys({
+                    up: Phaser.Input.Keyboard.KeyCodes.W,
+                    down: Phaser.Input.Keyboard.KeyCodes.S,
+                    left: Phaser.Input.Keyboard.KeyCodes.A,
+                    right: Phaser.Input.Keyboard.KeyCodes.D
+                });
+                this.input.on('pointerdown', this.handleShoot, this);
+            }
+
+            // --- Balas ---
+            setupBullets() {
+                this.bullets = this.physics.add.group({
+                    classType: Phaser.GameObjects.Arc,
+                    maxSize: 50, 
+                    runChildUpdate: true,
+                    createCallback: (bullet) => {
+                        bullet.setOrigin(0.5).setRadius(4).setFillStyle(0xe74c3c); // Rojo sangre
+                        bullet.body.allowGravity = false;
+                        bullet.body.setCircle(4);
+                    }
+                });
+            }
+
+            // --- Cámara ---
+            setupCamera() {
+                this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+                this.cameras.main.setZoom(1.5);
+            }
+
+            // --- Bucle de Actualización ---
+            update(time, delta) {
+                this.handleMovement();
+                this.handleAiming();
+            }
+
+            handleMovement() {
+                this.player.body.setVelocity(0);
+                let moving = false;
+                
+                if (this.keys.up.isDown) { this.player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
+                else if (this.keys.down.isDown) { this.player.body.setVelocityY(PLAYER_SPEED); moving = true; }
+                if (this.keys.left.isDown) { this.player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
+                else if (this.keys.right.isDown) { this.player.body.setVelocityX(PLAYER_SPEED); moving = true; }
+
+                if (moving) { this.player.body.velocity.normalize().scale(PLAYER_SPEED); }
+            }
+
+            handleAiming() {
+                let pointer = this.input.activePointer;
+                let angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+                this.player.rotation = angle;
+            }
+
+            handleShoot(pointer) {
+                let currentTime = this.time.now;
+
+                if (currentTime > this.lastShotTime + FIRE_RATE) {
+                    this.lastShotTime = currentTime;
+                    
+                    let bullet = this.bullets.get(this.player.x, this.player.y);
+                    if (bullet) {
+                        bullet.setActive(true).setVisible(true);
+
+                        let direction = new Phaser.Math.Vector2().setToPolar(this.player.rotation, 1); 
+                        bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
+                        
+                        // Reciclaje de balas
+                        bullet.update = () => {
+                            if (Phaser.Math.Distance.Between(bullet.x, bullet.y, this.player.x, this.player.y) > 1200) {
+                                bullet.setActive(false).setVisible(false).body.stop();
+                            }
+                        };
                     }
                 }
-
-                if (roomChannel) {
-                    roomChannel.send({
-                        type: 'broadcast',
-                        event: 'player_shoot',
-                        payload: {
-                            id: playerID, 
-                            x_start: player.x, 
-                            y_start: player.y,
-                            rot: player.rotation
-                        }
-                    });
-                }
             }
         }
-    }
 
-
-    //==============================================================
-    // FUNCIONES SUPABASE REALTIME
-    //==============================================================
-
-    async function joinOrCreateRoom() {
-        
-        roomChannel = supabaseClient.channel(ROOM_NAME, {
-            config: {
-                presence: { key: playerID }
-            }
-        });
-
-        // 1. Escuchar la Presencia (Conexión/Desconexión)
-        roomChannel.on('presence', { event: 'sync' }, () => {
-            const presenceState = roomChannel.presenceState();
-            const playerKeys = Object.keys(presenceState);
-            
-            document.getElementById('player-count').textContent = playerKeys.length;
-
-            for (const id in remotePlayers) {
-                if (!playerKeys.includes(id)) {
-                    remotePlayers[id].destroy();
-                    remotePlayers[id].nameTag.destroy();
-                    delete remotePlayers[id];
-                    alert(`¡Jugador ${id} se ha desconectado!`);
+        //==============================================================
+        // INICIALIZACIÓN DE PHASER
+        //==============================================================
+        const gameConfig = {
+            type: Phaser.AUTO,
+            width: GAME_WIDTH,
+            height: GAME_HEIGHT,
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    gravity: { y: 0 } 
                 }
-            }
-        }).subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-                await roomChannel.track({ key: playerID, x: player.x, y: player.y });
-                // Mensaje de éxito de conexión, si el personaje se ve, significa que el código de arriba funcionó.
-            } else if (status === 'TIMED_OUT') {
-                alert('ERROR DE CONEXIÓN: La conexión a Supabase ha fallado (Timeout). Verifica tu red.');
-            }
-        });
+            },
+            scene: [MainMenu, GameScene], // Listado de escenas
+            parent: 'game-container'
+        };
 
-        // 2. Escuchar Broadcasts
-        roomChannel.on('broadcast', { event: 'player_move' }, (payload) => {
-            handleRemoteMove.call(this, payload.payload);
-        });
-
-        roomChannel.on('broadcast', { event: 'player_shoot' }, (payload) => {
-            handleRemoteShoot.call(this, payload.payload);
-        });
-    }
-    
-    // Funciones handleRemoteMove y handleRemoteShoot (Sin cambios en su lógica interna)
-    function handleRemoteMove(data) {
-        if (data.id === playerID) return;
-
-        let remotePlayer = remotePlayers[data.id];
-
-        if (!remotePlayer) {
-            remotePlayer = this.add.rectangle(data.x, data.y, 32, 32, 0x0000FF);
-            this.physics.add.existing(remotePlayer); 
-            remotePlayer.setOrigin(0.5, 0.5);
-            remotePlayer.body.setImmovable(true);
-            remotePlayers[data.id] = remotePlayer;
-            
-            remotePlayer.nameTag = this.add.text(data.x, data.y - 20, data.id, { fontSize: '10px', fill: '#00BFFF' }).setOrigin(0.5);
-        }
-
-        this.tweens.add({
-            targets: remotePlayer,
-            x: data.x,
-            y: data.y,
-            rotation: data.rot,
-            duration: BROADCAST_INTERVAL * 2, 
-            ease: 'Linear'
-        });
-        
-        this.tweens.add({
-            targets: remotePlayer.nameTag,
-            x: data.x,
-            y: data.y - 20,
-            duration: BROADCAST_INTERVAL * 2, 
-            ease: 'Linear'
-        });
-    }
-
-    function handleRemoteShoot(data) {
-        if (data.id === playerID) return;
-
-        let bullet = this.scene.bullets.get(data.x_start, data.y_start);
-        
-        if (bullet) {
-            bullet.setActive(true).setVisible(true);
-
-            let direction = new Phaser.Math.Vector2().setToPolar(data.rot, 1); 
-            bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
-            
-            bullet.update = function () {
-                if (Phaser.Math.Distance.Between(this.x, this.y, data.x_start, data.y_start) > 1200) {
-                    this.setActive(false).setVisible(false).body.stop();
-                }
-            }
-        }
-    }
-</script>
+        const game = new Phaser.Game(gameConfig);
+    </script>
 </body>
 </html>
