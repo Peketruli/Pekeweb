@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Solución Pantalla Negra</title>
+    <title>CSGO 2D - Base Funcional</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     
@@ -28,254 +28,138 @@
         </div>
 
     <script>
-        // COMPROBACIÓN DE CARGA DE PHASER: Si la librería no se cargó, esto fallará.
-        if (typeof Phaser === 'undefined') {
-            document.getElementById('game-container').innerHTML = 
-                "<h1>ERROR: No se pudo cargar la librería Phaser.</h1><p>Revisa tu conexión a internet o la ruta del script.</p>";
-            throw new Error("Phaser no está definido. Verifique el script src.");
-        }
-        
         //==============================================================
         // CONSTANTES GLOBALES
         //==============================================================
         const GAME_WIDTH = 1200;
         const GAME_HEIGHT = 800;
         const PLAYER_SPEED = 300;
-
-        // CONSTANTES DEL ARMA (Pistola básica)
-        const FIRE_RATE = 150; 
-        const BULLET_SPEED = 800; 
-        const MAX_AMMO_IN_MAGAZINE = 12; 
-        const RELOAD_TIME = 1500; 
-        const RECOIL_AMOUNT = 50; 
-
+        const BULLET_SPEED = 800;
 
         //==============================================================
-        // CLASE ESCENA: JUEGO CON MAPA Y ARMAS
+        // CLASE ESCENA: JUEGO (ÚNICA ESCENA)
         //==============================================================
         class GameScene extends Phaser.Scene {
             constructor() {
                 super('GameScene');
-                this.player = null;
-                this.keys = null;
-                this.bullets = null;
-                this.walls = null;
-                
-                this.currentAmmo = MAX_AMMO_IN_MAGAZINE;
-                this.lastShotTime = 0;
-                this.isReloading = false;
+                this.player = null; // Variable para nuestro jugador
+                this.keys = null;   // Variable para las teclas (W,A,S,D)
+                this.bullets = null; // Variable para el grupo de balas
             }
 
             create() {
-                // Configuración de fondo (azul oscuro)
-                this.cameras.main.setBackgroundColor('#34495e'); 
-                
-                this.createMap(); // Dibuja el mapa y las paredes
-                this.createPlayer(); // Crea el personaje
+                // 1. Fondo (Para que no se vea negro)
+                this.cameras.main.setBackgroundColor('#34495e');
+                this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
 
-                if (!this.player || !this.player.body) {
-                    console.error("Fallo: El objeto del jugador o su cuerpo de físicas no se inicializó correctamente.");
-                    return; // Detiene la ejecución si el jugador no existe
-                }
-
-                // Configuración de elementos del juego
-                this.setupControls();
-                this.setupBullets();
-                this.setupCollisions(); 
-                this.setupCamera();
-                this.setupHUD(); 
-            }
-            
-            // --- Lógica de Creación ---
-            createPlayer() {
-                const spawnX = GAME_WIDTH / 2;
-                const spawnY = GAME_HEIGHT / 2;
+                // 2. Creación del Personaje
+                this.player = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 32, 32, 0x2ecc71); // Rectángulo verde
+                this.physics.add.existing(this.player); // Añadir físicas
                 
-                this.player = this.add.rectangle(spawnX, spawnY, 32, 32, 0x2ecc71); 
-                this.physics.add.existing(this.player); 
-                
-                if (this.player.body) {
-                    this.player.body.setCollideWorldBounds(true);
-                    this.player.body.setDrag(100);
-                    this.player.body.setCircle(16);
-                }
+                this.player.body.setCollideWorldBounds(true); // No puede salir del mapa
                 this.player.setOrigin(0.5, 0.5);
-                
+                this.player.body.setCircle(16); // Hitbox circular
+
+                // Añadir una "mira" (línea) al jugador para saber dónde apunta
                 let sightLine = this.add.graphics().lineStyle(2, 0x000000, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
                 this.player.add(sightLine); 
-            }
 
-            createMap() {
-                // Fondo del área jugable (Gris claro)
-                this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
-                
-                this.walls = this.physics.add.staticGroup();
-
-                // Paredes para colisión (Gris oscuro)
-                this.walls.create(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 150, null).setSize(400, 50).setDisplaySize(400, 50).setTint(0x7f8c8d); 
-                this.walls.create(GAME_WIDTH / 2 + 300, GAME_HEIGHT / 2 + 100, null).setSize(50, 200).setDisplaySize(50, 200).setTint(0x7f8c8d); 
-            }
-
-            setupCamera() {
+                // 3. Configuración de la Cámara (Centrada en el jugador)
                 this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-                this.cameras.main.setZoom(1.5);
-            }
+                this.cameras.main.setZoom(1.5); // Zoom para ver mejor
 
-            setupHUD() {
-                this.ammoText = this.add.text(10, 10, this.getAmmoStatus(), {
-                    fontSize: '28px',
-                    fill: '#ecf0f1'
-                }).setScrollFactor(0); 
-
-                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 50, 'W/A/S/D: Mover | Click: Disparar | R: Recargar', {
-                    fontSize: '24px',
-                    fill: '#f1c40f'
-                }).setOrigin(0.5).setScrollFactor(0); 
-            }
-
-            // --- Lógica de Colisiones ---
-            setupCollisions() {
-                this.physics.add.collider(this.player, this.walls);
-                this.physics.add.collider(this.bullets, this.walls, this.bulletHitWall, null, this);
-            }
-            
-            bulletHitWall(bullet, wall) {
-                bullet.setActive(false).setVisible(false).body.stop();
-            }
-
-            // --- Lógica de Controles/Armas ---
-            setupControls() {
-                this.keys = this.input.keyboard.addKeys({
-                    up: Phaser.Input.Keyboard.KeyCodes.W,
-                    down: Phaser.Input.Keyboard.KeyCodes.S,
-                    left: Phaser.Input.Keyboard.KeyCodes.A,
-                    right: Phaser.Input.Keyboard.KeyCodes.D,
-                    reload: Phaser.Input.Keyboard.KeyCodes.R
-                });
+                // 4. Configuración de Controles (Movimiento y Disparo)
+                this.keys = this.input.keyboard.addKeys('W,A,S,D'); // Configurar W,A,S,D
+                
+                // Configurar el clic del ratón para disparar
                 this.input.on('pointerdown', this.handleShoot, this);
-                this.input.keyboard.on('keydown-R', this.startReload, this);
-            }
 
-            setupBullets() {
+                // 5. Configuración del Grupo de Balas
                 this.bullets = this.physics.add.group({
-                    classType: Phaser.GameObjects.Arc,
-                    maxSize: 50, 
+                    classType: Phaser.GameObjects.Arc, // Las balas serán círculos
+                    maxSize: 30, 
                     runChildUpdate: true,
                     createCallback: (bullet) => {
-                        bullet.setOrigin(0.5).setRadius(4).setFillStyle(0xe74c3c);
+                        bullet.setOrigin(0.5).setRadius(4).setFillStyle(0xe74c3c); // Rojas
                         bullet.body.allowGravity = false;
                         bullet.body.setCircle(4);
-                        bullet.body.setCollideWorldBounds(true);
-                        bullet.body.onWorldBounds = true;
                     }
                 });
-                
-                this.physics.world.on('worldbounds', (body) => {
-                    if (body.gameObject.parentContainer === this.bullets) {
-                        body.gameObject.setActive(false).setVisible(false).body.stop();
-                    }
-                });
-            }
-            
-            getAmmoStatus() {
-                return this.isReloading ? 
-                    `RECARGANDO... (${(RELOAD_TIME / 1000).toFixed(1)}s)` : 
-                    `MUNICIÓN: ${this.currentAmmo} / ${MAX_AMMO_IN_MAGAZINE}`;
             }
 
-            // --- Bucle Principal de Actualización ---
+            // --- Bucle Principal (Se llama 60 veces por segundo) ---
             update(time, delta) {
-                if (this.player && this.player.body) {
-                    this.handleMovement();
-                    this.handleAiming();
-                    this.ammoText.setText(this.getAmmoStatus());
-                }
+                this.handleMovement();
+                this.handleAiming();
             }
 
+            // --- Lógica de Movimiento ---
             handleMovement() {
-                this.player.body.setVelocity(0);
+                this.player.body.setVelocity(0); // El jugador se detiene si no se presiona nada
                 let moving = false;
                 
-                if (this.keys.up.isDown) { this.player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
-                else if (this.keys.down.isDown) { this.player.body.setVelocityY(PLAYER_SPEED); moving = true; }
-                if (this.keys.left.isDown) { this.player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
-                else if (this.keys.right.isDown) { this.player.body.setVelocityX(PLAYER_SPEED); moving = true; }
+                // Vertical
+                if (this.keys.W.isDown) { this.player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
+                else if (this.keys.S.isDown) { this.player.body.setVelocityY(PLAYER_SPEED); moving = true; }
+                
+                // Horizontal
+                if (this.keys.A.isDown) { this.player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
+                else if (this.keys.D.isDown) { this.player.body.setVelocityX(PLAYER_SPEED); moving = true; }
 
+                // Normalizar velocidad (para que no vaya más rápido en diagonal)
                 if (moving) { 
                     this.player.body.velocity.normalize().scale(PLAYER_SPEED); 
                 }
             }
 
+            // --- Lógica de Apuntado ---
             handleAiming() {
+                // Rotar el jugador para que mire hacia el cursor del ratón
                 let pointer = this.input.activePointer;
-                let angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+                let angle = Phaser.Math.Angle.Between(
+                    this.player.x, 
+                    this.player.y, 
+                    pointer.worldX, // Coordenada X del ratón en el mundo del juego
+                    pointer.worldY  // Coordenada Y del ratón en el mundo del juego
+                );
                 this.player.rotation = angle;
             }
 
+            // --- Lógica de Disparo ---
             handleShoot(pointer) {
-                let currentTime = this.time.now;
-                
-                if (this.isReloading || currentTime < this.lastShotTime + FIRE_RATE || this.currentAmmo <= 0) {
-                    return;
-                }
-
-                this.lastShotTime = currentTime;
-                this.currentAmmo--;
-                
                 let bullet = this.bullets.get(this.player.x, this.player.y);
+                
                 if (bullet) {
                     bullet.setActive(true).setVisible(true);
-                    
-                    const spreadAngle = Phaser.Math.Between(-2, 2) * Phaser.Math.DEG_TO_RAD;
-                    const finalAngle = this.player.rotation + spreadAngle;
 
-                    let direction = new Phaser.Math.Vector2().setToPolar(finalAngle, 1); 
+                    // Dirección de la bala (basada en la rotación del jugador)
+                    let direction = new Phaser.Math.Vector2().setToPolar(this.player.rotation, 1); 
                     bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
                     
-                    this.player.body.setVelocityX(-direction.x * RECOIL_AMOUNT);
-                    this.player.body.setVelocityY(-direction.y * RECOIL_AMOUNT);
-
+                    // Reciclaje de balas (si se alejan mucho)
                     bullet.update = () => {
                         if (Phaser.Math.Distance.Between(bullet.x, bullet.y, this.player.x, this.player.y) > 1200) {
                             bullet.setActive(false).setVisible(false).body.stop();
                         }
                     };
                 }
-                
-                if (this.currentAmmo === 0) {
-                    this.startReload();
-                }
-            }
-            
-            startReload() {
-                if (this.isReloading || this.currentAmmo === MAX_AMMO_IN_MAGAZINE) {
-                    return;
-                }
-                
-                this.isReloading = true;
-                this.time.delayedCall(RELOAD_TIME, () => {
-                    this.currentAmmo = MAX_AMMO_IN_MAGAZINE;
-                    this.isReloading = false;
-                    this.ammoText.setText(this.getAmmoStatus());
-                }, [], this);
             }
         }
 
-
         //==============================================================
-        // INICIALIZACIÓN DE PHASER
+        // INICIALIZACIÓN DE PHASER (Carga directa de la escena)
         //==============================================================
         const gameConfig = {
             type: Phaser.AUTO,
             width: GAME_WIDTH,
             height: GAME_HEIGHT,
             physics: {
-                default: 'arcade',
+                default: 'arcade', // Habilita el motor de físicas
                 arcade: {
-                    gravity: { y: 0 } 
+                    gravity: { y: 0 } // Sin gravedad
                 }
             },
-            scene: [GameScene],
+            scene: [GameScene], // Carga la escena de juego directamente
             parent: 'game-container'
         };
 
