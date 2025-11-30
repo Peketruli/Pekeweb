@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Prototipo 5v5 Bots</title>
+    <title>CSGO 2D - Prototipo 5v5 Bots (Fix)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     
@@ -30,7 +30,7 @@
             font-size: 20px;
             font-weight: bold;
             color: #fff;
-            background-color: #2c3e50; /* Azul oscuro CS:GO */
+            background-color: #2c3e50;
             border: 2px solid #3498db;
             border-radius: 5px;
             cursor: pointer;
@@ -56,38 +56,34 @@
         const BULLET_SPEED = 800;
         const FIRE_RATE = 150; 
         
-        let players = {}; // Almacena el jugador local y todos los bots
+        let players = {}; 
         const TEAM_CT_COLOR = 0x3498db; // Azul
-        const TEAM_T_COLOR = 0xe74c3c; // Rojo
+        const TEAM_T_COLOR = 0xe74c3c; // Rojo (Terrorista)
 
         //==============================================================
-        // CLASE: ENTIDAD BOT
+        // CLASE: ENTIDAD BOT (CORREGIDA: Extiende Phaser.GameObjects.Rectangle)
         //==============================================================
-        class BotEntity extends Phaser.Physics.Arcade.Image {
+        class BotEntity extends Phaser.GameObjects.Rectangle {
             constructor(scene, x, y, team, playerID) {
-                // Usamos un sprite rectangular simple (puedes cambiar 'null' por una imagen si cargas una)
-                super(scene, x, y, null); 
+                // Llama al constructor del rectángulo
+                super(scene, x, y, 32, 32, team === 'CT' ? TEAM_CT_COLOR : TEAM_T_COLOR);
                 
-                scene.add.existing(this);
-                scene.physics.add.existing(this);
+                scene.add.existing(this); // Añadir a la lista de visualización
+                scene.physics.add.existing(this); // Añadir físicas (CRUCIAL)
                 
                 this.team = team;
                 this.playerID = playerID;
                 this.isBot = true;
                 this.isAlive = true;
                 this.hp = 100;
-                this.setBodySize(32, 32); // Definir el tamaño físico
-
-                // Representación Visual (rectángulo)
-                this.spriteRect = scene.add.rectangle(0, 0, 32, 32, team === 'CT' ? TEAM_CT_COLOR : TEAM_T_COLOR);
-                this.add(this.spriteRect); // Agregar el rectángulo como hijo del bot (imagen vacía)
 
                 this.setOrigin(0.5, 0.5);
-                this.setCollideWorldBounds(true);
+                this.body.setCollideWorldBounds(true);
                 this.body.setDrag(100);
+                this.body.setCircle(16); // Hitbox circular
 
                 // Etiquetas de nombre y HP
-                this.nameTag = scene.add.text(x, y - 20, `${team}-${playerID.substring(6)}`, { fontSize: '12px', fill: '#fff' }).setOrigin(0.5);
+                this.nameTag = scene.add.text(x, y - 20, `${team}-${playerID.substring(4)}`, { fontSize: '12px', fill: '#fff' }).setOrigin(0.5);
                 this.hpBar = scene.add.rectangle(x, y - 10, 30, 4, 0x27ae60).setOrigin(0.5); 
 
                 // Lógica de Movimiento Básico (IA)
@@ -101,7 +97,7 @@
             
             randomMovement() {
                 if (!this.isAlive) {
-                    this.body.setVelocity(0); // Detener si está muerto
+                    this.body.setVelocity(0);
                     return;
                 }
                 const speed = 100;
@@ -110,10 +106,10 @@
                 this.body.setVelocity(vec.x, vec.y);
             }
             
+            // preUpdate se usa para actualizar la posición de las etiquetas
             preUpdate(time, delta) {
-                // Es necesario llamar a super.preUpdate
-                super.preUpdate(time, delta);
-
+                // No llamamos a super.preUpdate porque Rectangle no tiene uno que afecte a físicas
+                
                 if (this.isAlive) {
                     // Actualizar posición de etiquetas y barra de HP
                     this.nameTag.setPosition(this.x, this.y - 20);
@@ -130,7 +126,6 @@
             destroy(fromScene) {
                 if (this.nameTag) this.nameTag.destroy();
                 if (this.hpBar) this.hpBar.destroy();
-                this.spriteRect.destroy();
                 super.destroy(fromScene);
             }
         }
@@ -166,8 +161,9 @@
                     button.style.top = (canvas.offsetTop + GAME_HEIGHT / 2 + yOffset) + 'px';
                     
                     button.onclick = () => {
-                        container.removeChild(onlineButton);
-                        container.removeChild(offlineButton);
+                        // Limpiar los botones DOM antes de cambiar de escena
+                        if (onlineButton.parentNode === container) container.removeChild(onlineButton);
+                        if (offlineButton.parentNode === container) container.removeChild(offlineButton);
                         this.scene.start(sceneKey); 
                     };
 
@@ -223,7 +219,6 @@
                     loop: true
                 });
 
-                // Simular un tiempo de espera y volver al menú
                 this.time.delayedCall(3000, () => {
                     this.scene.start('MainMenu'); 
                 });
@@ -252,7 +247,7 @@
             create() {
                 this.cameras.main.setBackgroundColor('#34495e'); 
                 
-                players = {}; // Resetear jugadores
+                players = {}; 
                 this.createMap(); 
                 this.createBotsAndPlayer(); 
                 this.setupControls();
@@ -263,6 +258,7 @@
 
             // --- Mapa y Paredes ---
             createMap() {
+                // Fondo del mapa
                 this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
                 this.walls = this.physics.add.staticGroup();
 
@@ -270,13 +266,6 @@
                 this.walls.create(GAME_WIDTH / 2, GAME_HEIGHT / 2, null).setSize(50, 400).setDisplaySize(50, 400).setTint(0x95a5a6); 
                 // Otro obstáculo
                 this.walls.create(GAME_WIDTH / 2 - 200, GAME_HEIGHT / 2 - 150, null).setSize(200, 30).setDisplaySize(200, 30).setTint(0x95a5a6);
-                
-                // Configurar el color de las paredes para que no sean invisibles
-                this.walls.children.each(wall => {
-                    if(wall.body.width > 20 && wall.body.height > 20) {
-                        wall.setAlpha(1); // Hacer visibles los obstáculos
-                    }
-                });
             }
 
             // --- Creación de Jugadores y Bots ---
@@ -285,10 +274,12 @@
                 const spawnCT = this.teamCTSpawnPoints[0];
                 const playerID = 'Player_Local';
                 
-                this.player = this.add.rectangle(spawnCT.x, spawnCT.y, 32, 32, 0x2ecc71); // Verde
+                this.player = this.add.rectangle(spawnCT.x, spawnCT.y, 32, 32, 0x2ecc71); // Verde (Jugador Local)
                 this.physics.add.existing(this.player); 
                 this.player.body.setCollideWorldBounds(true);
                 this.player.setOrigin(0.5, 0.5);
+                this.player.body.setCircle(16);
+
                 this.player.team = 'CT';
                 this.player.hp = 100;
                 this.player.isBot = false;
@@ -303,7 +294,7 @@
                 for (let i = 0; i < 9; i++) {
                     this.nextPlayerId++;
                     const team = i < 4 ? 'CT' : 'T'; 
-                    const spawnIndex = i % 3; // Usar los 3 puntos de spawn disponibles
+                    const spawnIndex = i % 3; 
                     
                     const spawnPoints = team === 'CT' ? this.teamCTSpawnPoints : this.teamTSpawnPoints;
                     const spawn = spawnPoints[spawnIndex];
@@ -316,7 +307,7 @@
 
             // --- Colisiones ---
             setupCollisions() {
-                // Colisión de todos los jugadores contra las paredes (para evitar que se salgan)
+                // Colisión de todos los jugadores (local + bots) contra las paredes
                 for (const id in players) {
                     this.physics.add.collider(players[id], this.walls);
                 }
@@ -336,32 +327,24 @@
             }
 
             bulletHitPlayer(bullet, victim) {
-                // 1. Chequeos básicos
                 if (bullet.active === false || victim.isAlive === false) return;
                 
-                // Evitar que una bala del jugador golpee al mismo jugador
-                // Nota: Necesitas asignar el tirador a la bala. Por ahora, asumimos que todas las balas son del jugador local.
-                if (victim === this.player && !victim.isBot) {
-                     // Solo permitimos que las balas golpeen al jugador si vienen de un bot (lógica pendiente)
+                // La bala del jugador local no debe golpearse a sí mismo
+                if (victim === this.player) {
                      return;
                 }
                 
-                // 2. Desactivar la bala
                 bullet.setActive(false).setVisible(false).body.stop();
                 
-                // 3. Aplicar daño (simplificado)
                 const damage = 30;
                 victim.hp -= damage;
                 
-                // 4. Lógica de Muerte
                 if (victim.hp <= 0) {
                     victim.isAlive = false;
                     
                     if (victim.isBot) {
-                        // Muerte de Bot
                         this.killBot(victim);
                     } else {
-                         // Muerte del Jugador Local
                          this.time.delayedCall(1000, () => this.scene.start('MainMenu'));
                          alert("¡HAS MUERTO! Volviendo al menú.");
                     }
@@ -376,7 +359,6 @@
                 bot.nameTag.setVisible(false);
                 bot.hpBar.setVisible(false);
                 
-                // Respawn después de 5 segundos
                 this.time.delayedCall(5000, () => this.respawnBot(bot), [], this);
             }
 
@@ -430,7 +412,7 @@
                     this.handleMovement();
                     this.handleAiming();
                 } else {
-                    this.player.body.setVelocity(0); // Detener al jugador si está muerto
+                    this.player.body.setVelocity(0); 
                 }
             }
 
@@ -487,6 +469,7 @@
                 default: 'arcade',
                 arcade: {
                     gravity: { y: 0 } 
+                    // debug: true // Descomenta para ver las hitboxes
                 }
             },
             scene: [MainMenu, LoadingScene, GameScene], 
