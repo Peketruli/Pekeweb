@@ -2,46 +2,83 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Prototipo Único</title>
+    <title>CSGO 2D - Prototipo Multijugador Supabase</title>
+    
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
     <style>
         body { 
             margin: 0; 
             padding: 0; 
-            background: #111; /* Fondo oscuro */
+            background: #111;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
-            overflow: hidden; /* Evita barras de desplazamiento */
+            overflow: hidden;
+            font-family: Arial, sans-serif;
         }
         #game-container {
-            border: 2px solid #333; /* Un borde para ver dónde está el juego */
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+            border: 2px solid #555;
+            box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
+        }
+        #info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
         }
     </style>
 </head>
 <body>
     <div id="game-container">
         </div>
+    
+    <div id="info-panel">
+        <p>Mi ID: <span id="my-id"></span></p>
+        <p>Jugadores: <span id="player-count">1</span></p>
+        <p>Sala: <span id="room-name"></span></p>
+        <p>Mueve: **WASD** | Apunta/Dispara: **Ratón**</p>
+    </div>
 
     <script>
         //==============================================================
-        // CONFIGURACIÓN GENERAL DEL JUEGO
+        // *** CONFIGURACIÓN SUPABASE (¡MODIFICA ESTO!) ***
+        //==============================================================
+        const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'; // Reemplaza
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'; // Reemplaza
+        
+        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+        //==============================================================
+        // CONSTANTES Y VARIABLES DE JUEGO
         //==============================================================
         const GAME_WIDTH = 1200;
         const GAME_HEIGHT = 800;
         const PLAYER_SPEED = 300;
         const BULLET_SPEED = 800;
-        const FIRE_RATE = 150; // Milisegundos entre disparos (Cadencia de Fuego)
+        const FIRE_RATE = 150; // ms entre disparos
+        const ROOM_NAME = 'csgo_2d_match_1';
+        
+        const BROADCAST_INTERVAL = 33; // 30 actualizaciones por segundo
+        let lastMoveBroadcastTime = 0;
 
-        // Variables globales de la escena
-        let player;
+        // Variables de Juego
+        let player; // Nuestro jugador local
         let keys;
         let bullets;
         let lastShotTime = 0;
         
+        let playerID = `player_${Math.random().toString(36).substring(2, 9)}`; // ID único de este cliente
+        let remotePlayers = {}; // Jugadores remotos (otros clientes)
+        let roomChannel; // Canal de Supabase Realtime
+
         // Configuración de Phaser
         const config = {
             type: Phaser.AUTO,
@@ -50,7 +87,7 @@
             physics: {
                 default: 'arcade',
                 arcade: {
-                    // debug: true, // Descomentar para ver cajas de colisión
+                    // debug: true, 
                     gravity: { y: 0 } 
                 }
             },
@@ -58,39 +95,35 @@
                 preload: preload,
                 create: create,
                 update: update,
-                // Añadimos la función de disparo como un método de la escena
                 shoot: shoot 
             },
-            parent: 'game-container' // ID del contenedor en el HTML
+            parent: 'game-container'
         };
 
         let game = new Phaser.Game(config);
 
-
         //==============================================================
-        // FASE 1: CARGA DE RECURSOS (PRELOAD)
+        // PHASER FASES
         //==============================================================
         function preload () {
-            // En un juego real, cargarías aquí imágenes, sonidos y el mapa de Tiled.
-            // Para este prototipo, no cargamos nada, ya que usamos figuras geométricas.
+            // No cargamos assets aquí; usamos formas geométricas (más robusto para un prototipo)
         }
 
-        //==============================================================
-        // FASE 1 & 2: INICIALIZACIÓN (CREATE)
-        //==============================================================
         function create () {
-            // 1. Crear el Jugador (Rectángulo Blanco)
-            player = this.add.rectangle(400, 300, 32, 32, 0xFFFFFF); // Blanco
+            // Actualizar panel de información
+            document.getElementById('my-id').textContent = playerID;
+            document.getElementById('room-name').textContent = ROOM_NAME;
+
+            // 1. Crear el Jugador Local (Rectángulo Blanco)
+            player = this.add.rectangle(400, 300, 32, 32, 0xFFFFFF);
             this.physics.add.existing(player); 
             player.body.setCollideWorldBounds(true);
-            player.setOrigin(0.5, 0.5); // Pivote central para rotación
+            player.setOrigin(0.5, 0.5);
+            player.body.setSize(30, 30); // Ajustar hitbox
             
-            // Dibuja una línea de mira para claridad visual
-            let sightLine = this.add.graphics();
-            sightLine.lineStyle(2, 0x00FF00, 0.8);
-            sightLine.strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
-            player.line = this.add.container(0, 0, [sightLine]);
-            player.add(player.line); // El objeto de la línea sigue al jugador
+            // Línea de mira (contenedor)
+            let sightLine = this.add.graphics().lineStyle(2, 0x00FF00, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
+            player.add(sightLine); 
 
             // 2. Control de Teclado (WASD)
             keys = this.input.keyboard.addKeys({
@@ -100,15 +133,15 @@
                 right: Phaser.Input.Keyboard.KeyCodes.D
             });
 
-            // 3. Crear el Grupo de Balas (para reciclaje eficiente)
+            // 3. Crear el Grupo de Balas
             bullets = this.physics.add.group({
-                classType: Phaser.GameObjects.Arc, // Círculo simple para la bala
+                classType: Phaser.GameObjects.Arc,
                 runChildUpdate: true,
-                maxSize: 30, 
+                maxSize: 50, 
                 createCallback: (bullet) => {
                     bullet.setOrigin(0.5, 0.5);
                     bullet.setRadius(4); 
-                    bullet.setFillStyle(0xFF0000); // Color rojo
+                    bullet.setFillStyle(0xFF0000); 
                     bullet.body.allowGravity = false;
                 }
             });
@@ -123,101 +156,195 @@
             // 5. Configurar la Cámara
             this.cameras.main.startFollow(player, true, 0.1, 0.1);
             this.cameras.main.setZoom(1.5);
+            
+            // 6. ¡Conexión a Supabase!
+            joinOrCreateRoom.call(this);
         }
 
-        //==============================================================
-        // FASE 1 & 2: BUCLE DE JUEGO (UPDATE)
-        //==============================================================
         function update (time, delta) {
-            // 1. Resetear la Velocidad
             player.body.setVelocity(0);
-
-            // 2. Lógica de Movimiento (WASD)
             let moving = false;
             
-            if (keys.up.isDown) {
-                player.body.setVelocityY(-PLAYER_SPEED);
-                moving = true;
-            } else if (keys.down.isDown) {
-                player.body.setVelocityY(PLAYER_SPEED);
-                moving = true;
-            }
+            // Lógica de Movimiento WASD
+            if (keys.up.isDown) { player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
+            else if (keys.down.isDown) { player.body.setVelocityY(PLAYER_SPEED); moving = true; }
+            if (keys.left.isDown) { player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
+            else if (keys.right.isDown) { player.body.setVelocityX(PLAYER_SPEED); moving = true; }
 
-            if (keys.left.isDown) {
-                player.body.setVelocityX(-PLAYER_SPEED);
-                moving = true;
-            } else if (keys.right.isDown) {
-                player.body.setVelocityX(PLAYER_SPEED);
-                moving = true;
-            }
+            // Normalización de velocidad diagonal
+            if (moving) { player.body.velocity.normalize().scale(PLAYER_SPEED); }
 
-            // Normalización: Asegura que la velocidad en diagonal sea igual a la horizontal/vertical
-            if (moving) {
-                player.body.velocity.normalize().scale(PLAYER_SPEED);
-            }
-
-            // 3. Lógica de Apuntado (Rotar al jugador hacia el ratón)
+            // Lógica de Apuntado (Rotación)
             let pointer = this.input.activePointer;
-
-            // Calcular el ángulo (en radianes)
-            let angle = Phaser.Math.Angle.Between(
-                player.x, 
-                player.y, 
-                pointer.worldX, // Coordenada del ratón ajustada a la cámara
-                pointer.worldY
-            );
-            
+            let angle = Phaser.Math.Angle.Between(player.x, player.y, pointer.worldX, pointer.worldY);
             player.rotation = angle;
+
+            // -------------------------------------------------------------
+            // LÓGICA MULTIJUGADOR: BROADCAST DE MOVIMIENTO
+            // -------------------------------------------------------------
+            if ((moving || player.rotation !== player.lastRotation) && roomChannel && time > lastMoveBroadcastTime + BROADCAST_INTERVAL) {
+                lastMoveBroadcastTime = time;
+                player.lastRotation = player.rotation; // Guardar la última rotación enviada
+                
+                roomChannel.send({
+                    type: 'broadcast',
+                    event: 'player_move',
+                    payload: {
+                        id: playerID, 
+                        x: player.x, 
+                        y: player.y, 
+                        rot: player.rotation 
+                    }
+                });
+            }
         }
 
-        //==============================================================
-        // FASE 2: FUNCIÓN DE DISPARO (SHOOT)
-        //==============================================================
         function shoot (pointer) {
             let currentTime = this.time.now;
 
-            // Control de cadencia de fuego
             if (currentTime > lastShotTime + FIRE_RATE) {
+                lastShotTime = currentTime;
                 
-                // Obtener una bala del grupo
+                // 1. Crear bala localmente (Client-Side Prediction)
                 let bullet = bullets.get(player.x, player.y);
-                
                 if (bullet) {
-                    lastShotTime = currentTime;
-                    bullet.setActive(true);
-                    bullet.setVisible(true);
+                    bullet.setActive(true).setVisible(true);
 
-                    // Dirección de la bala (basada en la rotación del jugador)
-                    let direction = new Phaser.Math.Vector2();
-                    direction.setToPolar(player.rotation, 1); 
-
-                    // Establecer la velocidad de la bala
+                    let direction = new Phaser.Math.Vector2().setToPolar(player.rotation, 1); 
                     bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
                     
-                    // Configurar la bala para que se desactive si se aleja mucho
-                    bullet.update = function (time, delta) {
-                        // Desactivar si sale de los límites
-                        if (Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y) > 1000) {
-                            this.setActive(false);
-                            this.setVisible(false);
-                            this.body.stop();
+                    // Lógica simple de reciclaje de balas
+                    bullet.update = function () {
+                        if (Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y) > 1200) {
+                            this.setActive(false).setVisible(false).body.stop();
                         }
+                    }
+
+                    // 2. Enviar el Broadcast del disparo
+                    if (roomChannel) {
+                        roomChannel.send({
+                            type: 'broadcast',
+                            event: 'player_shoot',
+                            payload: {
+                                id: playerID, 
+                                x_start: player.x, 
+                                y_start: player.y,
+                                rot: player.rotation
+                            }
+                        });
                     }
                 }
             }
         }
+
+
+       
+        async function joinOrCreateRoom() {
+            if (SUPABASE_URL.includes('https://jdvwlfogkzrzovepzjqa.supabase.co')) {
+                console.error("ERROR: Debes reemplazar SUPABASE_URL y SUPABASE_ANON_KEY con tus propias credenciales.");
+                document.getElementById('info-panel').style.border = '2px solid red';
+                return;
+            }
+
+            roomChannel = supabase.channel(ROOM_NAME, {
+                config: {
+                    presence: { key: playerID } // Usar la presencia para saber quién está conectado
+                }
+            });
+
+            // 1. Escuchar la Presencia (Conexión/Desconexión de otros)
+            roomChannel.on('presence', { event: 'sync' }, () => {
+                const presenceState = roomChannel.presenceState();
+                const playerKeys = Object.keys(presenceState);
+                
+                document.getElementById('player-count').textContent = playerKeys.length;
+
+                // Lógica para limpiar jugadores desconectados
+                for (const id in remotePlayers) {
+                    if (!playerKeys.includes(id)) {
+                        remotePlayers[id].destroy();
+                        remotePlayers[id].nameTag.destroy();
+                        delete remotePlayers[id];
+                    }
+                }
+            }).subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    await roomChannel.track({ key: playerID, x: player.x, y: player.y });
+                    console.log('¡Conexión Supabase Realtime establecida!');
+                }
+            });
+
+            // 2. Escuchar Broadcasts (Movimiento, disparos)
+            roomChannel.on('broadcast', { event: 'player_move' }, (payload) => {
+                handleRemoteMove.call(this, payload.payload);
+            });
+
+            roomChannel.on('broadcast', { event: 'player_shoot' }, (payload) => {
+                handleRemoteShoot.call(this, payload.payload);
+            });
+        }
         
-        //==============================================================
-        // PRÓXIMO PASO: ESTRUCTURA MULTIJUGADOR CON SUPABASE
-        //==============================================================
-        /*
-        Para integrar Supabase, necesitarías:
-        1. Incluir el SDK de Supabase: <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-        2. Configurar la conexión al cliente en JS.
-        3. En la función 'create', subscribirte a un canal de Realtime.
-        4. En la función 'update', si el jugador se mueve, hacer un 'channel.send({ type: 'broadcast', event: 'player_move', ... })' 
-        5. En 'create', escuchar el evento 'player_move' para actualizar las posiciones de los jugadores remotos (otros clientes).
-        */
+        /**
+         * Crea/actualiza el sprite de un jugador remoto y suaviza su movimiento.
+         */
+        function handleRemoteMove(data) {
+            if (data.id === playerID) return; // Ignorar mi propio broadcast
+
+            let remotePlayer = remotePlayers[data.id];
+
+            if (!remotePlayer) {
+                // Crear sprite remoto (Azul)
+                remotePlayer = this.add.rectangle(data.x, data.y, 32, 32, 0x0000FF);
+                this.physics.add.existing(remotePlayer); 
+                remotePlayer.setOrigin(0.5, 0.5);
+                remotePlayer.body.setImmovable(true); // No se mueve por colisiones
+                remotePlayers[data.id] = remotePlayer;
+                
+                // Etiqueta de nombre
+                remotePlayer.nameTag = this.add.text(data.x, data.y - 20, data.id, { fontSize: '10px', fill: '#00BFFF' }).setOrigin(0.5);
+                console.log(`Nuevo jugador unido: ${data.id}`);
+            }
+
+            // Interpolación (Tweening) para un movimiento suave
+            this.tweens.add({
+                targets: [remotePlayer, remotePlayer.nameTag],
+                x: data.x,
+                y: data.y,
+                rotation: remotePlayer.rotation,
+                duration: BROADCAST_INTERVAL * 2, 
+                ease: 'Linear',
+                onUpdate: () => {
+                    // Mantener la etiqueta de nombre centrada sobre el jugador
+                    remotePlayer.nameTag.setRotation(0); 
+                }
+            });
+            
+            // Actualizar rotación directamente
+            remotePlayer.rotation = data.rot;
+        }
+
+        /**
+         * Crea una bala localmente para un jugador remoto (simulación).
+         */
+        function handleRemoteShoot(data) {
+            if (data.id === playerID) return;
+
+            let bullet = this.scene.bullets.get(data.x_start, data.y_start);
+            
+            if (bullet) {
+                bullet.setActive(true).setVisible(true);
+
+                let direction = new Phaser.Math.Vector2().setToPolar(data.rot, 1); 
+                bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
+                
+                // Lógica de reciclaje de balas remotas
+                bullet.update = function () {
+                    if (Phaser.Math.Distance.Between(this.x, this.y, data.x_start, data.y_start) > 1200) {
+                        this.setActive(false).setVisible(false).body.stop();
+                    }
+                }
+            }
+        }
     </script>
 </body>
 </html>
