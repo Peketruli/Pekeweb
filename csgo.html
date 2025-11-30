@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Prototipo Multijugador Supabase</title>
+    <title>CSGO 2D - Prototipo Multijugador Supabase (Corregido)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     
@@ -51,10 +51,11 @@
         //==============================================================
         // *** CONFIGURACIÓN SUPABASE (¡MODIFICA ESTO!) ***
         //==============================================================
-        const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'; // Reemplaza
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'; // Reemplaza
+        // Reemplaza los siguientes valores con tus propias claves
+        const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'; 
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'; 
         
-        const supabase = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // El cliente de Supabase se inicializa más abajo
 
         //==============================================================
         // CONSTANTES Y VARIABLES DE JUEGO
@@ -63,21 +64,21 @@
         const GAME_HEIGHT = 800;
         const PLAYER_SPEED = 300;
         const BULLET_SPEED = 800;
-        const FIRE_RATE = 150; // ms entre disparos
+        const FIRE_RATE = 150; 
         const ROOM_NAME = 'csgo_2d_match_1';
+        const BROADCAST_INTERVAL = 33; 
         
-        const BROADCAST_INTERVAL = 33; // 30 actualizaciones por segundo
         let lastMoveBroadcastTime = 0;
+        let lastShotTime = 0;
+        let playerID = `player_${Math.random().toString(36).substring(2, 9)}`; 
 
-        // Variables de Juego
-        let player; // Nuestro jugador local
+        // Variables de Juego Globales
+        let player; 
         let keys;
         let bullets;
-        let lastShotTime = 0;
-        
-        let playerID = `player_${Math.random().toString(36).substring(2, 9)}`; // ID único de este cliente
-        let remotePlayers = {}; // Jugadores remotos (otros clientes)
-        let roomChannel; // Canal de Supabase Realtime
+        let remotePlayers = {};
+        let roomChannel;
+        let supabaseClient; // Declaración de la variable para el cliente de Supabase
 
         // Configuración de Phaser
         const config = {
@@ -106,26 +107,32 @@
         // PHASER FASES
         //==============================================================
         function preload () {
-            // No cargamos assets aquí; usamos formas geométricas (más robusto para un prototipo)
+            // No cargamos assets aquí; usamos formas geométricas
         }
 
         function create () {
+            // 1. Inicializar el cliente de Supabase (Se hace aquí para asegurar que el SDK esté cargado)
+            if (typeof supabase !== 'undefined') {
+                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            } else {
+                alert('ERROR CRÍTICO: El SDK de Supabase no se ha cargado. Revisa la etiqueta <script> en el HTML.');
+            }
+
             // Actualizar panel de información
             document.getElementById('my-id').textContent = playerID;
             document.getElementById('room-name').textContent = ROOM_NAME;
 
-            // 1. Crear el Jugador Local (Rectángulo Blanco)
+            // 2. Crear el Jugador Local (Rectángulo Blanco)
             player = this.add.rectangle(400, 300, 32, 32, 0xFFFFFF);
             this.physics.add.existing(player); 
             player.body.setCollideWorldBounds(true);
             player.setOrigin(0.5, 0.5);
-            player.body.setSize(30, 30); // Ajustar hitbox
+            player.body.setSize(30, 30);
             
-            // Línea de mira (contenedor)
             let sightLine = this.add.graphics().lineStyle(2, 0x00FF00, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
             player.add(sightLine); 
 
-            // 2. Control de Teclado (WASD)
+            // 3. Control de Teclado (WASD)
             keys = this.input.keyboard.addKeys({
                 up: Phaser.Input.Keyboard.KeyCodes.W,
                 down: Phaser.Input.Keyboard.KeyCodes.S,
@@ -133,7 +140,7 @@
                 right: Phaser.Input.Keyboard.KeyCodes.D
             });
 
-            // 3. Crear el Grupo de Balas
+            // 4. Crear el Grupo de Balas
             bullets = this.physics.add.group({
                 classType: Phaser.GameObjects.Arc,
                 runChildUpdate: true,
@@ -146,18 +153,18 @@
                 }
             });
 
-            // 4. Configurar Disparo con Ratón
+            // 5. Configurar Disparo con Ratón
             this.input.on('pointerdown', function (pointer) {
                 if (pointer.primaryDown) {
                     this.scene.shoot(pointer); 
                 }
             });
 
-            // 5. Configurar la Cámara
+            // 6. Configurar la Cámara
             this.cameras.main.startFollow(player, true, 0.1, 0.1);
             this.cameras.main.setZoom(1.5);
             
-            // 6. ¡Conexión a Supabase!
+            // 7. ¡Conexión a Supabase!
             joinOrCreateRoom.call(this);
         }
 
@@ -182,9 +189,10 @@
             // -------------------------------------------------------------
             // LÓGICA MULTIJUGADOR: BROADCAST DE MOVIMIENTO
             // -------------------------------------------------------------
-            if ((moving || player.rotation !== player.lastRotation) && roomChannel && time > lastMoveBroadcastTime + BROADCAST_INTERVAL) {
+            // Nota: Se envía broadcast si nos movemos O si la rotación cambió significativamente
+            if ((moving || Math.abs(player.rotation - (player.lastRotation || 0)) > 0.05) && roomChannel && time > lastMoveBroadcastTime + BROADCAST_INTERVAL) {
                 lastMoveBroadcastTime = time;
-                player.lastRotation = player.rotation; // Guardar la última rotación enviada
+                player.lastRotation = player.rotation;
                 
                 roomChannel.send({
                     type: 'broadcast',
@@ -197,6 +205,14 @@
                     }
                 });
             }
+            
+            // Actualización de etiquetas de nombre remotas
+            for (const id in remotePlayers) {
+                if (remotePlayers[id] && remotePlayers[id].nameTag) {
+                    remotePlayers[id].nameTag.x = remotePlayers[id].x;
+                    remotePlayers[id].nameTag.y = remotePlayers[id].y - 20;
+                }
+            }
         }
 
         function shoot (pointer) {
@@ -205,7 +221,6 @@
             if (currentTime > lastShotTime + FIRE_RATE) {
                 lastShotTime = currentTime;
                 
-                // 1. Crear bala localmente (Client-Side Prediction)
                 let bullet = bullets.get(player.x, player.y);
                 if (bullet) {
                     bullet.setActive(true).setVisible(true);
@@ -213,14 +228,13 @@
                     let direction = new Phaser.Math.Vector2().setToPolar(player.rotation, 1); 
                     bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
                     
-                    // Lógica simple de reciclaje de balas
                     bullet.update = function () {
                         if (Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y) > 1200) {
                             this.setActive(false).setVisible(false).body.stop();
                         }
                     }
 
-                    // 2. Enviar el Broadcast del disparo
+                    // Enviar el Broadcast del disparo
                     if (roomChannel) {
                         roomChannel.send({
                             type: 'broadcast',
@@ -238,21 +252,29 @@
         }
 
 
-       
+        //==============================================================
+        // FUNCIONES SUPABASE REALTIME (CON ALERTS)
+        //==============================================================
+
         async function joinOrCreateRoom() {
+            // VERIFICACIÓN DE CREDENCIALES (usando alert)
             if (SUPABASE_URL.includes('https://jdvwlfogkzrzovepzjqa.supabase.co')) {
-                console.error("ERROR: Debes reemplazar SUPABASE_URL y SUPABASE_ANON_KEY con tus propias credenciales.");
-                document.getElementById('info-panel').style.border = '2px solid red';
-                return;
+                alert('¡ERROR DE CONFIGURACIÓN! 🚨 Debes reemplazar SUPABASE_URL y SUPABASE_ANON_KEY con tus propias credenciales en el código.');
+                return; 
+            }
+            
+            if (!supabaseClient) {
+                 alert('ERROR: El cliente de Supabase no se ha inicializado correctamente.');
+                 return;
             }
 
-            roomChannel = supabase.channel(ROOM_NAME, {
+            roomChannel = supabaseClient.channel(ROOM_NAME, {
                 config: {
-                    presence: { key: playerID } // Usar la presencia para saber quién está conectado
+                    presence: { key: playerID }
                 }
             });
 
-            // 1. Escuchar la Presencia (Conexión/Desconexión de otros)
+            // 1. Escuchar la Presencia (Conexión/Desconexión)
             roomChannel.on('presence', { event: 'sync' }, () => {
                 const presenceState = roomChannel.presenceState();
                 const playerKeys = Object.keys(presenceState);
@@ -265,16 +287,19 @@
                         remotePlayers[id].destroy();
                         remotePlayers[id].nameTag.destroy();
                         delete remotePlayers[id];
+                        alert(`¡Jugador ${id} se ha desconectado!`);
                     }
                 }
             }).subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
                     await roomChannel.track({ key: playerID, x: player.x, y: player.y });
-                    console.log('¡Conexión Supabase Realtime establecida!');
+                    alert(`¡Conectado! Tu ID: ${playerID}. Abre otra ventana para probar.`);
+                } else if (status === 'TIMED_OUT') {
+                    alert('ERROR DE CONEXIÓN: La conexión a Supabase ha fallado (Timeout). Revisa tu red o las reglas de RLS en Supabase.');
                 }
             });
 
-            // 2. Escuchar Broadcasts (Movimiento, disparos)
+            // 2. Escuchar Broadcasts
             roomChannel.on('broadcast', { event: 'player_move' }, (payload) => {
                 handleRemoteMove.call(this, payload.payload);
             });
@@ -285,10 +310,10 @@
         }
         
         /**
-         * Crea/actualiza el sprite de un jugador remoto y suaviza su movimiento.
+         * Crea/actualiza el sprite de un jugador remoto.
          */
         function handleRemoteMove(data) {
-            if (data.id === playerID) return; // Ignorar mi propio broadcast
+            if (data.id === playerID) return; 
 
             let remotePlayer = remotePlayers[data.id];
 
@@ -297,30 +322,32 @@
                 remotePlayer = this.add.rectangle(data.x, data.y, 32, 32, 0x0000FF);
                 this.physics.add.existing(remotePlayer); 
                 remotePlayer.setOrigin(0.5, 0.5);
-                remotePlayer.body.setImmovable(true); // No se mueve por colisiones
+                remotePlayer.body.setImmovable(true);
                 remotePlayers[data.id] = remotePlayer;
                 
                 // Etiqueta de nombre
                 remotePlayer.nameTag = this.add.text(data.x, data.y - 20, data.id, { fontSize: '10px', fill: '#00BFFF' }).setOrigin(0.5);
-                console.log(`Nuevo jugador unido: ${data.id}`);
+                alert(`¡Nuevo jugador unido! ID: ${data.id}`);
             }
 
             // Interpolación (Tweening) para un movimiento suave
             this.tweens.add({
-                targets: [remotePlayer, remotePlayer.nameTag],
+                targets: remotePlayer,
                 x: data.x,
                 y: data.y,
-                rotation: remotePlayer.rotation,
+                rotation: data.rot,
                 duration: BROADCAST_INTERVAL * 2, 
-                ease: 'Linear',
-                onUpdate: () => {
-                    // Mantener la etiqueta de nombre centrada sobre el jugador
-                    remotePlayer.nameTag.setRotation(0); 
-                }
+                ease: 'Linear'
             });
             
-            // Actualizar rotación directamente
-            remotePlayer.rotation = data.rot;
+            // Sincronizar también la etiqueta
+            this.tweens.add({
+                targets: remotePlayer.nameTag,
+                x: data.x,
+                y: data.y - 20,
+                duration: BROADCAST_INTERVAL * 2, 
+                ease: 'Linear'
+            });
         }
 
         /**
@@ -337,7 +364,6 @@
                 let direction = new Phaser.Math.Vector2().setToPolar(data.rot, 1); 
                 bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
                 
-                // Lógica de reciclaje de balas remotas
                 bullet.update = function () {
                     if (Phaser.Math.Distance.Between(this.x, this.y, data.x_start, data.y_start) > 1200) {
                         this.setActive(false).setVisible(false).body.stop();
