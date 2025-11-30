@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Prototipo Mínimo con Armas</title>
+    <title>CSGO 2D - Prototipo con Mapa y Armas</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     
@@ -36,15 +36,15 @@
         const PLAYER_SPEED = 300;
 
         // CONSTANTES DEL ARMA (Pistola básica)
-        const FIRE_RATE = 150; // Tiempo mínimo entre disparos en milisegundos (ms)
-        const BULLET_SPEED = 800; // Velocidad de la bala
-        const MAX_AMMO_IN_MAGAZINE = 12; // Capacidad del cargador
-        const RELOAD_TIME = 1500; // Tiempo de recarga en ms
-        const RECOIL_AMOUNT = 50; // Fuerza del retroceso al disparar
+        const FIRE_RATE = 150; 
+        const BULLET_SPEED = 800; 
+        const MAX_AMMO_IN_MAGAZINE = 12; 
+        const RELOAD_TIME = 1500; 
+        const RECOIL_AMOUNT = 50; 
 
 
         //==============================================================
-        // CLASE ESCENA: JUEGO MÍNIMO CON ARMAS
+        // CLASE ESCENA: JUEGO CON MAPA Y ARMAS
         //==============================================================
         class GameScene extends Phaser.Scene {
             constructor() {
@@ -52,6 +52,7 @@
                 this.player = null;
                 this.keys = null;
                 this.bullets = null;
+                this.walls = null; // AÑADIDO: Para el grupo de paredes
                 
                 // Variables del Sistema de Armas
                 this.currentAmmo = MAX_AMMO_IN_MAGAZINE;
@@ -62,8 +63,8 @@
             create() {
                 // 1. Configuración Visual Mínima
                 this.cameras.main.setBackgroundColor('#34495e'); 
-                // Fondo del mapa
-                this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
+                
+                this.createMap(); // NUEVO: Dibuja el fondo y las paredes
                 
                 // 2. Creación del Personaje
                 const spawnX = GAME_WIDTH / 2;
@@ -77,7 +78,7 @@
                 this.player.body.setCircle(16);
                 this.player.setOrigin(0.5, 0.5);
                 
-                // Visualización del apuntado (línea negra pequeña)
+                // Visualización del apuntado
                 let sightLine = this.add.graphics().lineStyle(2, 0x000000, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
                 this.player.add(sightLine); 
 
@@ -85,11 +86,12 @@
                 this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
                 this.cameras.main.setZoom(1.5); 
                 
-                // 4. Configuración de Controles
+                // 4. Configuración de Controles y Balas
                 this.setupControls();
-                
-                // 5. Configuración del Sistema de Balas
                 this.setupBullets();
+                
+                // 5. Colisiones
+                this.setupCollisions(); // NUEVO: Aplica colisión de jugador y balas contra paredes
                 
                 // 6. HUD (Información de Munición) - Fijo en pantalla
                 this.ammoText = this.add.text(10, 10, this.getAmmoStatus(), {
@@ -103,7 +105,37 @@
                 }).setOrigin(0.5).setScrollFactor(0); 
             }
             
-            // --- Handlers de Setup ---
+            // --- Lógica del Mapa ---
+            createMap() {
+                // El área jugable es un rectángulo grande y gris claro
+                this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
+                
+                // Creamos un grupo estático para las paredes (los objetos estáticos no se mueven)
+                this.walls = this.physics.add.staticGroup();
+
+                // Pared central horizontal (Bloqueo)
+                this.walls.create(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 150, null).setSize(400, 50).setDisplaySize(400, 50).setTint(0x7f8c8d); 
+                
+                // Pared lateral vertical
+                this.walls.create(GAME_WIDTH / 2 + 300, GAME_HEIGHT / 2 + 100, null).setSize(50, 200).setDisplaySize(50, 200).setTint(0x7f8c8d); 
+            }
+
+            // --- Lógica de Colisiones ---
+            setupCollisions() {
+                // Colisión del jugador contra las paredes
+                this.physics.add.collider(this.player, this.walls);
+
+                // Colisión de las balas contra las paredes (llamando a la función para reciclar la bala)
+                this.physics.add.collider(this.bullets, this.walls, this.bulletHitWall, null, this);
+            }
+            
+            // Handler para cuando la bala golpea una pared
+            bulletHitWall(bullet, wall) {
+                // Desactiva la bala y la hace invisible, deteniendo su movimiento para reciclarla.
+                bullet.setActive(false).setVisible(false).body.stop();
+            }
+
+            // --- Handlers de Setup (Resto del Código, sin cambios) ---
 
             setupControls() {
                 this.keys = this.input.keyboard.addKeys({
@@ -114,7 +146,6 @@
                     reload: Phaser.Input.Keyboard.KeyCodes.R
                 });
                 this.input.on('pointerdown', this.handleShoot, this);
-                
                 this.input.keyboard.on('keydown-R', this.startReload, this);
             }
 
@@ -145,14 +176,12 @@
                     `MUNICIÓN: ${this.currentAmmo} / ${MAX_AMMO_IN_MAGAZINE}`;
             }
 
-            // --- Bucle Principal de Actualización ---
+            // --- Bucle Principal de Actualización (Resto del Código, sin cambios) ---
             update(time, delta) {
                 this.handleMovement();
                 this.handleAiming();
                 this.ammoText.setText(this.getAmmoStatus());
             }
-
-            // --- Lógica de Movimiento ---
 
             handleMovement() {
                 this.player.body.setVelocity(0);
@@ -168,15 +197,11 @@
                 }
             }
 
-            // --- Lógica de Apuntado ---
-
             handleAiming() {
                 let pointer = this.input.activePointer;
                 let angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
                 this.player.rotation = angle;
             }
-
-            // --- Lógica de Disparo ---
 
             handleShoot(pointer) {
                 let currentTime = this.time.now;
@@ -192,18 +217,15 @@
                 if (bullet) {
                     bullet.setActive(true).setVisible(true);
                     
-                    // Dispersión (spread)
                     const spreadAngle = Phaser.Math.Between(-2, 2) * Phaser.Math.DEG_TO_RAD;
                     const finalAngle = this.player.rotation + spreadAngle;
 
                     let direction = new Phaser.Math.Vector2().setToPolar(finalAngle, 1); 
                     bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
                     
-                    // Aplicar Recoil (Retroceso)
                     this.player.body.setVelocityX(-direction.x * RECOIL_AMOUNT);
                     this.player.body.setVelocityY(-direction.y * RECOIL_AMOUNT);
 
-                    // Reciclaje de bala por distancia
                     bullet.update = () => {
                         if (Phaser.Math.Distance.Between(bullet.x, bullet.y, this.player.x, this.player.y) > 1200) {
                             bullet.setActive(false).setVisible(false).body.stop();
@@ -216,8 +238,6 @@
                 }
             }
             
-            // --- Lógica de Recarga ---
-
             startReload() {
                 if (this.isReloading || this.currentAmmo === MAX_AMMO_IN_MAGAZINE) {
                     return;
@@ -244,9 +264,10 @@
                 default: 'arcade',
                 arcade: {
                     gravity: { y: 0 } 
+                    // debug: true // Descomenta esta línea para ver las hitboxes
                 }
             },
-            scene: [GameScene], // Solo cargamos la escena de juego
+            scene: [GameScene], 
             parent: 'game-container'
         };
 
