@@ -2,23 +2,19 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D (Todo en Uno)</title>
+    <title>Prototipo 2D con Mapa</title>
     
     <style>
-        /* Quitamos márgenes y ponemos un fondo oscuro */
         body {
             margin: 0;
             padding: 0;
             background-color: #222;
-            /* Ocultamos el scroll para que el juego ocupe todo */
             overflow: hidden; 
         }
-
-        /* El lienzo del juego */
         canvas {
             display: block;
-            background-color: #000; /* Fondo negro para el juego */
-            margin: 0 auto; /* Centrado (aunque ocupará todo) */
+            background-color: #333; /* Un gris oscuro para el suelo */
+            margin: 0 auto; 
         }
     </style>
 </head>
@@ -28,82 +24,119 @@
 
     <script>
         // --- 1. CONFIGURACIÓN INICIAL ---
-
-        // Obtenemos el "lienzo" (canvas) del HTML
         const canvas = document.getElementById('gameCanvas');
-        // Obtenemos el "contexto" 2D, que es la herramienta para dibujar
         const ctx = canvas.getContext('2d');
-
-        // Hacemos que el lienzo ocupe toda la ventana
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
-        // --- 2. EL JUGADOR ---
+        // --- 2. EL MAPA ---
+        // (0,0) es la esquina superior izquierda
 
+        const walls = [
+            // --- Paredes Exteriores ---
+            { x: 0, y: 0, width: canvas.width, height: 20 }, // Arriba
+            { x: 0, y: canvas.height - 20, width: canvas.width, height: 20 }, // Abajo
+            { x: 0, y: 0, width: 20, height: canvas.height }, // Izquierda
+            { x: canvas.width - 20, y: 0, width: 20, height: canvas.height }, // Derecha
+
+            // --- Estructura Central (Pasillos) ---
+            // Pared larga vertical (divide A y Mid)
+            { x: 300, y: 100, width: 20, height: canvas.height - 200 }, 
+            // Pared larga vertical (divide B y Mid)
+            { x: canvas.width - 320, y: 100, width: 20, height: canvas.height - 200 },
+
+            // --- Coberturas Sitio A ---
+            { x: 120, y: 150, width: 80, height: 20 },
+            { x: 120, y: 250, width: 80, height: 20 },
+            
+            // --- Coberturas Sitio B ---
+            { x: canvas.width - 200, y: canvas.height - 170, width: 80, height: 20 },
+            { x: canvas.width - 200, y: canvas.height - 270, width: 80, height: 20 }
+        ];
+
+        const zones = [
+            // Zona de Spawn AT (Azul)
+            { x: 40, y: canvas.height / 2 - 75, width: 150, height: 150, 
+              color: 'rgba(0, 150, 255, 0.3)', name: 'Spawn AT' },
+            
+            // Zona de Spawn T (Roja)
+            { x: canvas.width - 190, y: canvas.height / 2 - 75, width: 150, height: 150, 
+              color: 'rgba(255, 100, 0, 0.3)', name: 'Spawn T' },
+            
+            // Sitio de Bomba A (Naranja)
+            { x: 40, y: 40, width: 240, height: 200, 
+              color: 'rgba(255, 69, 0, 0.3)', name: 'Sitio A' },
+            
+            // Sitio de Bomba B (Naranja)
+            { x: canvas.width - 300, y: canvas.height - 240, width: 280, height: 200, 
+              color: 'rgba(255, 69, 0, 0.3)', name: 'Sitio B' }
+        ];
+
+        // --- 3. EL JUGADOR ---
+        // Lo ponemos dentro del Spawn AT
         let player = {
-            x: canvas.width / 2,  // Posición inicial X (centro)
-            y: canvas.height / 2, // Posición inicial Y (centro)
-            size: 20,             // Tamaño (20 píxeles)
-            color: 'blue',        // Color
-            speed: 4,             // Velocidad de movimiento
-            angle: 0              // Ángulo al que mira (en radianes)
+            x: 115,  // Centro del Spawn AT
+            y: canvas.height / 2, // Centro del Spawn AT
+            size: 20,
+            color: 'cyan', // Color de AT
+            speed: 4,
+            angle: 0
         };
 
-        // --- 3. ALMACENES (Arrays) ---
+        // --- 4. ALMACENES Y ESTADO ---
+        let bullets = [];
+        let keys = {};
+        let mouse = { x: 0, y: 0 };
 
-        let bullets = []; // Un array para guardar todas las balas
-        let keys = {};    // Un objeto para guardar qué teclas están pulsadas
-
-        // --- 4. SEGUIMIENTO DE RATÓN Y TECLADO ---
-
-        let mouse = {
-            x: 0,
-            y: 0
-        };
-
-        // Cuando el ratón se mueve, guardamos su posición
-        window.addEventListener('mousemove', (e) => {
-            mouse.x = e.clientX;
-            mouse.y = e.clientY;
-        });
-
-        // Cuando pulsamos una tecla, la guardamos
-        window.addEventListener('keydown', (e) => {
-            keys[e.key] = true;
-        });
-
-        // Cuando soltamos una tecla, la borramos
-        window.addEventListener('keyup', (e) => {
-            delete keys[e.key];
-        });
-
-        // Cuando hacemos clic, disparamos
+        // --- 5. SEGUIMIENTO DE EVENTOS ---
+        window.addEventListener('mousemove', (e) => { mouse.x = e.clientX; mouse.y = e.clientY; });
+        window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+        window.addEventListener('keyup', (e) => { delete keys[e.key]; });
         window.addEventListener('mousedown', (e) => {
-            // Creamos una nueva bala
             const bullet = {
                 x: player.x,
                 y: player.y,
                 size: 5,
                 color: 'yellow',
                 speed: 10,
-                // La bala debe salir en la dirección que mira el jugador
                 angle: player.angle 
             };
-            // Añadimos la bala al array
             bullets.push(bullet);
         });
 
+        // --- 6. FUNCIÓN DE COLISIÓN (NUEVO) ---
+        /**
+         * Comprueba si el jugador (rect1) choca con una pared (rect2)
+         * El jugador se mide desde su CENTRO
+         * La pared se mide desde su esquina SUPERIOR IZQUIERDA
+         */
+        function checkCollision(player, wall) {
+            const playerLeft = player.x - player.size / 2;
+            const playerRight = player.x + player.size / 2;
+            const playerTop = player.y - player.size / 2;
+            const playerBottom = player.y + player.size / 2;
 
-        // --- 5. FUNCIÓN DE ACTUALIZACIÓN (Lógica) ---
+            const wallLeft = wall.x;
+            const wallRight = wall.x + wall.width;
+            const wallTop = wall.y;
+            const wallBottom = wall.y + wall.height;
 
+            // Fórmula de colisión AABB (Axis-Aligned Bounding Box)
+            return (
+                playerRight > wallLeft &&
+                playerLeft < wallRight &&
+                playerBottom > wallTop &&
+                playerTop < wallBottom
+            );
+        }
+
+        // --- 7. FUNCIÓN DE ACTUALIZACIÓN (MODIFICADA) ---
         function update() {
-            // --- Mover jugador ---
-            if (keys['w'] || keys['W']) {
-                player.y -= player.speed;
-            }
-            if (keys['s'] || keys['S']) {
-                player.y += player.speed;
-            }
+            // Guardamos la posición anterior para revertirla si hay colisión
+            const oldX = player.x;
+            const oldY = player.y;
+
+            // --- Mover jugador EJE X ---
             if (keys['a'] || keys['A']) {
                 player.x -= player.speed;
             }
@@ -111,56 +144,91 @@
                 player.x += player.speed;
             }
 
+            // --- Comprobar colisiones en EJE X ---
+            for (const wall of walls) {
+                if (checkCollision(player, wall)) {
+                    player.x = oldX; // Chocó, volvemos a la posición X anterior
+                    break; 
+                }
+            }
+
+            // --- Mover jugador EJE Y ---
+            if (keys['w'] || keys['W']) {
+                player.y -= player.speed;
+            }
+            if (keys['s'] || keys['S']) {
+                player.y += player.speed;
+            }
+
+            // --- Comprobar colisiones en EJE Y ---
+            for (const wall of walls) {
+                if (checkCollision(player, wall)) {
+                    player.y = oldY; // Chocó, volvemos a la posición Y anterior
+                    break;
+                }
+            }
+            // (Esta técnica de separar ejes X e Y permite "deslizarse" por las paredes)
+
             // --- Apuntar jugador ---
-            // Calculamos el ángulo entre el jugador y el ratón
             player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
 
             // --- Mover balas ---
             for (let i = bullets.length - 1; i >= 0; i--) {
                 let bullet = bullets[i];
-                
-                // Movemos la bala usando trigonometría (coseno para X, seno para Y)
                 bullet.x += Math.cos(bullet.angle) * bullet.speed;
                 bullet.y += Math.sin(bullet.angle) * bullet.speed;
 
-                // Opcional: Borrar balas si salen de la pantalla
+                // Borrar balas si salen de la pantalla
                 if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
                     bullets.splice(i, 1);
                 }
+                
+                // (Opcional: Colisión de balas con paredes)
+                // (Habría que hacer un bucle for (const wall of walls) y checkCollision)
             }
         }
 
-        // --- 6. FUNCIÓN DE DIBUJADO (Gráficos) ---
-
+        // --- 8. FUNCIÓN DE DIBUJADO (MODIFICADA) ---
         function draw() {
-            // Limpiamos el lienzo en cada frame
+            // Limpiamos todo
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // --- Dibujar jugador ---
-            // Guardamos el estado del canvas (para poder rotarlo)
+            // --- Dibujar Zonas (primero, para que estén de fondo) ---
+            for (const zone of zones) {
+                ctx.fillStyle = zone.color;
+                ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
+                
+                // Dibujar texto de la zona
+                ctx.fillStyle = 'white';
+                ctx.font = '20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(zone.name, zone.x + zone.width / 2, zone.y + zone.height / 2);
+            }
+
+            // --- Dibujar Paredes ---
+            ctx.fillStyle = '#999'; // Gris para las paredes
+            for (const wall of walls) {
+                ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+            }
+
+            // --- Dibujar Jugador ---
             ctx.save();
-            // Movemos el punto de origen (0,0) al centro del jugador
             ctx.translate(player.x, player.y);
-            // Rotamos el canvas según el ángulo del jugador
             ctx.rotate(player.angle);
             
-            // Dibujamos el cuerpo del jugador (un cuadrado)
             ctx.fillStyle = player.color;
             ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
             
-            // Dibujamos el "cañón" (una línea para saber dónde apunta)
             ctx.strokeStyle = 'white';
             ctx.lineWidth = 3;
             ctx.beginPath();
-            ctx.moveTo(0, 0); // Desde el centro
-            ctx.lineTo(player.size, 0); // Hacia adelante
+            ctx.moveTo(0, 0);
+            ctx.lineTo(player.size, 0); // "Cañón" del arma
             ctx.stroke();
-
-            // Restauramos el canvas a su estado original
+            
             ctx.restore();
 
-
-            // --- Dibujar balas ---
+            // --- Dibujar Balas ---
             for (const bullet of bullets) {
                 ctx.fillStyle = bullet.color;
                 ctx.beginPath();
@@ -169,17 +237,14 @@
             }
         }
 
-        // --- 7. EL BUCLE DEL JUEGO ---
-
-        // Esta función se llama a sí misma unas 60 veces por segundo
+        // --- 9. EL BUCLE DEL JUEGO ---
         function gameLoop() {
-            update(); // Actualiza la lógica
-            draw();   // Dibuja los gráficos
-            requestAnimationFrame(gameLoop); // Pide al navegador que vuelva a llamar a gameLoop
+            update(); // Lógica
+            draw();   // Gráficos
+            requestAnimationFrame(gameLoop);
         }
 
-        // ¡Empezamos el juego!
-        gameLoop();
+        gameLoop(); // ¡Empezar!
     </script>
 </body>
 </html>
