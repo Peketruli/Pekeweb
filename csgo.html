@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Prototipo 5v5 Bots (Minimal)</title>
+    <title>CSGO 2D - Prototipo 5v5 Bots (Base Funcional)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     
@@ -57,21 +57,43 @@
         const FIRE_RATE = 150; 
         
         let players = {}; 
-        const TEAM_CT_COLOR = 0x3498db;
-        const TEAM_T_COLOR = 0xe74c3c;
+        const TEAM_CT_COLOR = 0x3498db; // Azul
+        const TEAM_T_COLOR = 0xe74c3c; // Rojo (Terrorista)
 
         //==============================================================
-        // CLASE: ENTIDAD BOT (VACIADA PARA ESTA PRUEBA)
+        // CLASE: ENTIDAD BOT (Preparada para futura expansión)
         //==============================================================
-        // Esta clase es innecesaria en la versión MÍNIMA, pero la dejamos como placeholder.
         class BotEntity extends Phaser.GameObjects.Rectangle {
-             constructor(scene, x, y, team, playerID) {
-                 super(scene, x, y, 32, 32, 0x000000); 
-                 scene.add.existing(this);
-             }
-             randomMovement() {}
-             preUpdate() {}
-             destroy() {}
+            constructor(scene, x, y, team, playerID) {
+                super(scene, x, y, 32, 32, team === 'CT' ? TEAM_CT_COLOR : TEAM_T_COLOR);
+                
+                scene.add.existing(this);
+                scene.physics.add.existing(this); 
+                
+                this.team = team;
+                this.playerID = playerID;
+                this.isBot = true;
+                this.isAlive = true;
+                this.hp = 100;
+
+                this.setOrigin(0.5, 0.5);
+                this.body.setCollideWorldBounds(true);
+                this.body.setDrag(100);
+                this.body.setCircle(16);
+
+                // Placeholder para etiquetas
+                this.nameTag = { setPosition: () => {}, setVisible: () => {}, destroy: () => {} };
+                this.hpBar = { setPosition: () => {}, setVisible: () => {}, destroy: () => {} };
+            }
+            
+            // Lógica de IA deshabilitada por ahora
+            randomMovement() {} 
+            preUpdate(time, delta) {}
+            destroy(fromScene) {
+                if (this.nameTag) this.nameTag.destroy();
+                if (this.hpBar) this.hpBar.destroy();
+                super.destroy(fromScene);
+            }
         }
 
 
@@ -170,52 +192,181 @@
         }
 
         //==============================================================
-        // CLASE ESCENA: JUEGO PRINCIPAL (VERSIÓN MÍNIMA - DEPURACIÓN)
+        // CLASE ESCENA: JUEGO PRINCIPAL (Base Funcional)
         //==============================================================
         class GameScene extends Phaser.Scene {
             constructor() {
                 super('GameScene');
-                // Mantener las variables para evitar errores de referencia en el código global
                 this.player = null;
                 this.keys = null;
                 this.bullets = null;
                 this.lastShotTime = 0;
+                
+                this.teamCTSpawnPoints = [
+                    {x: 100, y: 100}, {x: 150, y: 150}, {x: 100, y: 200}
+                ]; 
+                this.teamTSpawnPoints = [
+                    {x: GAME_WIDTH - 100, y: GAME_HEIGHT - 100}, {x: GAME_WIDTH - 150, y: GAME_HEIGHT - 150}, {x: GAME_WIDTH - 100, y: GAME_HEIGHT - 200}
+                ];
+                this.nextPlayerId = 0;
+                players = {}; 
             }
 
             create() {
-                // 1. Cambiar color de fondo (debería ser visible)
-                this.cameras.main.setBackgroundColor('#004d40'); // Color Verde oscuro
-
-                // 2. Mostrar mensaje de confirmación
-                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2, '¡CARGA EXITOSA!', {
-                    fontSize: '64px',
-                    fill: '#e0f2f1',
-                    fontFamily: 'Arial Black'
-                }).setOrigin(0.5);
-
-                console.log("GameScene loaded successfully.");
+                this.cameras.main.setBackgroundColor('#34495e'); 
                 
-                // 3. Volver al menú después de 3 segundos
-                this.time.delayedCall(3000, () => {
-                    this.scene.start('MainMenu'); 
+                this.createMap(); 
+                this.createPlayer(); 
+                this.setupControls();
+                this.setupBullets();
+                this.setupCollisions(); 
+                this.setupCamera();
+                
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 50, 'Usa W/A/S/D para moverte. Click para disparar.', {
+                    fontSize: '18px',
+                    fill: '#f1c40f'
+                }).setOrigin(0.5).setScrollFactor(0); // ScrollFactor(0) mantiene el texto fijo en la pantalla
+            }
+
+            // --- Mapa y Paredes ---
+            createMap() {
+                this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
+                this.walls = this.physics.add.staticGroup();
+
+                // Pared central (Obstáculo principal)
+                this.walls.create(GAME_WIDTH / 2, GAME_HEIGHT / 2, null).setSize(50, 400).setDisplaySize(50, 400).setTint(0x95a5a6); 
+                // Obstáculo secundario
+                this.walls.create(GAME_WIDTH / 2 - 200, GAME_HEIGHT / 2 - 150, null).setSize(200, 30).setDisplaySize(200, 30).setTint(0x95a5a6);
+            }
+
+            // --- Creación del Jugador ---
+            createPlayer() {
+                const spawnCT = this.teamCTSpawnPoints[0];
+                const playerID = 'Player_Local';
+                
+                this.player = this.add.rectangle(spawnCT.x, spawnCT.y, 32, 32, 0x2ecc71); // Jugador Local (Verde)
+                this.physics.add.existing(this.player); 
+                
+                this.player.body.setCollideWorldBounds(true);
+                this.player.body.setDrag(100);
+                this.player.body.setCircle(16);
+
+                this.player.setOrigin(0.5, 0.5);
+                this.player.isAlive = true;
+                this.player.team = 'CT';
+                this.player.hp = 100;
+
+                players[playerID] = this.player;
+                
+                let sightLine = this.add.graphics().lineStyle(2, 0x000000, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
+                this.player.add(sightLine); 
+            }
+            
+            // --- Colisiones ---
+            setupCollisions() {
+                this.physics.add.collider(this.player, this.walls);
+
+                this.allPlayersGroup = this.physics.add.group(Object.values(players));
+                
+                this.physics.add.collider(this.bullets, this.walls, this.bulletHitWall, null, this);
+                this.physics.add.overlap(this.bullets, this.allPlayersGroup, this.bulletHitPlayer, null, this);
+            }
+
+            // --- Handlers de Colisión ---
+            bulletHitWall(bullet, wall) {
+                bullet.setActive(false).setVisible(false).body.stop();
+            }
+
+            bulletHitPlayer(bullet, victim) {
+                if (bullet.active === false) return;
+                if (victim === this.player) return; 
+                
+                bullet.setActive(false).setVisible(false).body.stop();
+                // console.log("Bala golpeó un objetivo."); 
+            }
+
+            // --- Controles y Disparo ---
+            setupControls() {
+                this.keys = this.input.keyboard.addKeys({
+                    up: Phaser.Input.Keyboard.KeyCodes.W,
+                    down: Phaser.Input.Keyboard.KeyCodes.S,
+                    left: Phaser.Input.Keyboard.KeyCodes.A,
+                    right: Phaser.Input.Keyboard.KeyCodes.D
+                });
+                this.input.on('pointerdown', this.handleShoot, this);
+            }
+
+            setupBullets() {
+                this.bullets = this.physics.add.group({
+                    classType: Phaser.GameObjects.Arc,
+                    maxSize: 50, 
+                    runChildUpdate: true,
+                    createCallback: (bullet) => {
+                        bullet.setOrigin(0.5).setRadius(4).setFillStyle(0xe74c3c); // Bala roja
+                        bullet.body.allowGravity = false;
+                        bullet.body.setCircle(4);
+                    }
                 });
             }
 
-            // Funciones vacías para evitar errores si el código intenta llamarlas
-            update(time, delta) {}
-            handleMovement() {}
-            handleAiming() {}
-            handleShoot(pointer) {}
-            setupControls() {}
-            setupBullets() {}
-            setupCamera() {}
-            createMap() {}
-            createBotsAndPlayer() {}
-            setupCollisions() {}
-            bulletHitWall(bullet, wall) {}
-            bulletHitPlayer(bullet, victim) {}
+            setupCamera() {
+                this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+                this.cameras.main.setZoom(1.5);
+            }
+
+            // --- Bucle Principal ---
+            update(time, delta) {
+                if (this.player.isAlive) {
+                    this.handleMovement();
+                    this.handleAiming();
+                } else {
+                    this.player.body.setVelocity(0); 
+                }
+            }
+
+            handleMovement() {
+                this.player.body.setVelocity(0);
+                let moving = false;
+                
+                if (this.keys.up.isDown) { this.player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
+                else if (this.keys.down.isDown) { this.player.body.setVelocityY(PLAYER_SPEED); moving = true; }
+                if (this.keys.left.isDown) { this.player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
+                else if (this.keys.right.isDown) { this.player.body.setVelocityX(PLAYER_SPEED); moving = true; }
+
+                if (moving) { this.player.body.velocity.normalize().scale(PLAYER_SPEED); }
+            }
+
+            handleAiming() {
+                let pointer = this.input.activePointer;
+                let angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
+                this.player.rotation = angle;
+            }
+
+            handleShoot(pointer) {
+                let currentTime = this.time.now;
+
+                if (currentTime > this.lastShotTime + FIRE_RATE) {
+                    this.lastShotTime = currentTime;
+                    
+                    let bullet = this.bullets.get(this.player.x, this.player.y);
+                    if (bullet) {
+                        bullet.setActive(true).setVisible(true);
+
+                        let direction = new Phaser.Math.Vector2().setToPolar(this.player.rotation, 1); 
+                        bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
+                        
+                        bullet.update = () => {
+                            if (Phaser.Math.Distance.Between(bullet.x, bullet.y, this.player.x, this.player.y) > 1200) {
+                                bullet.setActive(false).setVisible(false).body.stop();
+                            }
+                        };
+                    }
+                }
+            }
+            
             killBot(bot) {}
             respawnBot(bot) {}
+            createBotsAndPlayer() {} // Se usa createPlayer() en su lugar por ahora.
         }
 
 
@@ -230,6 +381,7 @@
                 default: 'arcade',
                 arcade: {
                     gravity: { y: 0 } 
+                    // debug: true // Descomenta para ver las hitboxes
                 }
             },
             scene: [MainMenu, LoadingScene, GameScene], 
