@@ -47,330 +47,309 @@
         <p>Mueve: **WASD** | Apunta/Dispara: **Ratón**</p>
     </div>
 
-    <script>
-        //==============================================================
-        // *** CONFIGURACIÓN SUPABASE (¡MODIFICA ESTO!) ***
-        //==============================================================
-        // Reemplaza los siguientes valores con tus propias claves
-        const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'; 
-        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI'; 
+// ======================================================================================
+// Bloque de JavaScript Corregido y Verificado
+// ======================================================================================
+<script>
+    //==============================================================
+    // *** CONFIGURACIÓN SUPABASE (¡MODIFICA ESTO!) ***
+    //==============================================================
+    const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'; 
+    const SUPABASE_ANON_KEY = 'TU_CLAVE_AeyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TINON_SUPABASE'; 
+    
+    //==============================================================
+    // CONSTANTES Y VARIABLES DE JUEGO
+    //==============================================================
+    const GAME_WIDTH = 1200;
+    const GAME_HEIGHT = 800;
+    const PLAYER_SPEED = 300;
+    const BULLET_SPEED = 800;
+    const FIRE_RATE = 150; 
+    const ROOM_NAME = 'csgo_2d_match_1';
+    const BROADCAST_INTERVAL = 33; 
+    
+    let lastMoveBroadcastTime = 0;
+    let lastShotTime = 0;
+    let playerID = `player_${Math.random().toString(36).substring(2, 9)}`; 
+
+    // Variables de Juego Globales
+    let player; 
+    let keys;
+    let bullets;
+    let remotePlayers = {};
+    let roomChannel;
+    let supabaseClient;
+
+    // Configuración de Phaser
+    const config = {
+        type: Phaser.AUTO,
+        width: GAME_WIDTH,
+        height: GAME_HEIGHT,
+        physics: {
+            default: 'arcade',
+            arcade: {
+                // debug: true, 
+                gravity: { y: 0 } 
+            }
+        },
+        scene: {
+            preload: preload,
+            create: create,
+            update: update,
+            shoot: shoot 
+        },
+        parent: 'game-container'
+    };
+
+    let game = new Phaser.Game(config);
+
+    //==============================================================
+    // PHASER FASES
+    //==============================================================
+    function preload () {}
+
+    function create () {
         
-        // El cliente de Supabase se inicializa más abajo
+        // 1. VERIFICACIÓN CRÍTICA DE SUPABASE Y VISUALIZACIÓN
+        try {
+            if (typeof supabase === 'undefined' || SUPABASE_URL.includes('https://jdvwlfogkzrzovepzjqa.supabase.co')) {
+                 alert('⚠️ ¡ERROR CRÍTICO! ⚠️ \n\n1. Asegúrate de que las variables SUPABASE_URL y ANNON_KEY estén reemplazadas. \n2. Asegúrate de que el archivo se abre con un servidor (http://localhost:8000).');
+                 throw new Error("Credenciales de Supabase no configuradas o SDK no cargado.");
+            }
+            supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+            // Esto asegura que el código solo continúa si supabaseClient se inicializa
+            
+            // Si llegamos aquí, el motor de Phaser debe dibujar
+            document.getElementById('info-panel').style.backgroundColor = 'rgba(0, 50, 0, 0.7)';
+        } catch (e) {
+            document.getElementById('info-panel').style.backgroundColor = 'rgba(100, 0, 0, 0.7)';
+            document.getElementById('player-count').textContent = 'ERROR';
+            return; // Detener la ejecución si hay un error crítico
+        }
 
-        //==============================================================
-        // CONSTANTES Y VARIABLES DE JUEGO
-        //==============================================================
-        const GAME_WIDTH = 1200;
-        const GAME_HEIGHT = 800;
-        const PLAYER_SPEED = 300;
-        const BULLET_SPEED = 800;
-        const FIRE_RATE = 150; 
-        const ROOM_NAME = 'csgo_2d_match_1';
-        const BROADCAST_INTERVAL = 33; 
+
+        // 2. Crear el Jugador Local (Rectángulo Blanco)
+        document.getElementById('my-id').textContent = playerID;
+        document.getElementById('room-name').textContent = ROOM_NAME;
+
+        player = this.add.rectangle(400, 300, 32, 32, 0xFFFFFF);
+        this.physics.add.existing(player); 
+        player.body.setCollideWorldBounds(true);
+        player.setOrigin(0.5, 0.5);
+        player.body.setSize(30, 30);
         
-        let lastMoveBroadcastTime = 0;
-        let lastShotTime = 0;
-        let playerID = `player_${Math.random().toString(36).substring(2, 9)}`; 
+        let sightLine = this.add.graphics().lineStyle(2, 0x00FF00, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
+        player.add(sightLine); 
 
-        // Variables de Juego Globales
-        let player; 
-        let keys;
-        let bullets;
-        let remotePlayers = {};
-        let roomChannel;
-        let supabaseClient; // Declaración de la variable para el cliente de Supabase
+        // 3. Control de Teclado (WASD)
+        keys = this.input.keyboard.addKeys({
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A,
+            right: Phaser.Input.Keyboard.KeyCodes.D
+        });
 
-        // Configuración de Phaser
-        const config = {
-            type: Phaser.AUTO,
-            width: GAME_WIDTH,
-            height: GAME_HEIGHT,
-            physics: {
-                default: 'arcade',
-                arcade: {
-                    // debug: true, 
-                    gravity: { y: 0 } 
-                }
-            },
-            scene: {
-                preload: preload,
-                create: create,
-                update: update,
-                shoot: shoot 
-            },
-            parent: 'game-container'
-        };
-
-        let game = new Phaser.Game(config);
-
-        //==============================================================
-        // PHASER FASES
-        //==============================================================
-        function preload () {
-            // No cargamos assets aquí; usamos formas geométricas
-        }
-
-        function create () {
-            // 1. Inicializar el cliente de Supabase (Se hace aquí para asegurar que el SDK esté cargado)
-            if (typeof supabase !== 'undefined') {
-                supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-            } else {
-                alert('ERROR CRÍTICO: El SDK de Supabase no se ha cargado. Revisa la etiqueta <script> en el HTML.');
+        // 4. Crear el Grupo de Balas
+        bullets = this.physics.add.group({
+            classType: Phaser.GameObjects.Arc,
+            runChildUpdate: true,
+            maxSize: 50, 
+            createCallback: (bullet) => {
+                bullet.setOrigin(0.5, 0.5);
+                bullet.setRadius(4); 
+                bullet.setFillStyle(0xFF0000); 
+                bullet.body.allowGravity = false;
             }
+        });
 
-            // Actualizar panel de información
-            document.getElementById('my-id').textContent = playerID;
-            document.getElementById('room-name').textContent = ROOM_NAME;
+        // 5. Configurar Disparo y Cámara
+        this.input.on('pointerdown', function (pointer) { if (pointer.primaryDown) { this.scene.shoot(pointer); } });
+        this.cameras.main.startFollow(player, true, 0.1, 0.1);
+        this.cameras.main.setZoom(1.5);
+        
+        // 6. ¡Conexión a Supabase!
+        joinOrCreateRoom.call(this);
+    }
 
-            // 2. Crear el Jugador Local (Rectángulo Blanco)
-            player = this.add.rectangle(400, 300, 32, 32, 0xFFFFFF);
-            this.physics.add.existing(player); 
-            player.body.setCollideWorldBounds(true);
-            player.setOrigin(0.5, 0.5);
-            player.body.setSize(30, 30);
+    function update (time, delta) {
+        player.body.setVelocity(0);
+        let moving = false;
+        
+        // Lógica de Movimiento WASD
+        if (keys.up.isDown) { player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
+        else if (keys.down.isDown) { player.body.setVelocityY(PLAYER_SPEED); moving = true; }
+        if (keys.left.isDown) { player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
+        else if (keys.right.isDown) { player.body.setVelocityX(PLAYER_SPEED); moving = true; }
+
+        if (moving) { player.body.velocity.normalize().scale(PLAYER_SPEED); }
+
+        // Lógica de Apuntado (Rotación)
+        let pointer = this.input.activePointer;
+        let angle = Phaser.Math.Angle.Between(player.x, player.y, pointer.worldX, pointer.worldY);
+        player.rotation = angle;
+
+        // -------------------------------------------------------------
+        // LÓGICA MULTIJUGADOR: BROADCAST DE MOVIMIENTO
+        // -------------------------------------------------------------
+        if ((moving || Math.abs(player.rotation - (player.lastRotation || 0)) > 0.05) && roomChannel && time > lastMoveBroadcastTime + BROADCAST_INTERVAL) {
+            lastMoveBroadcastTime = time;
+            player.lastRotation = player.rotation;
             
-            let sightLine = this.add.graphics().lineStyle(2, 0x00FF00, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
-            player.add(sightLine); 
-
-            // 3. Control de Teclado (WASD)
-            keys = this.input.keyboard.addKeys({
-                up: Phaser.Input.Keyboard.KeyCodes.W,
-                down: Phaser.Input.Keyboard.KeyCodes.S,
-                left: Phaser.Input.Keyboard.KeyCodes.A,
-                right: Phaser.Input.Keyboard.KeyCodes.D
-            });
-
-            // 4. Crear el Grupo de Balas
-            bullets = this.physics.add.group({
-                classType: Phaser.GameObjects.Arc,
-                runChildUpdate: true,
-                maxSize: 50, 
-                createCallback: (bullet) => {
-                    bullet.setOrigin(0.5, 0.5);
-                    bullet.setRadius(4); 
-                    bullet.setFillStyle(0xFF0000); 
-                    bullet.body.allowGravity = false;
+            roomChannel.send({
+                type: 'broadcast',
+                event: 'player_move',
+                payload: {
+                    id: playerID, 
+                    x: player.x, 
+                    y: player.y, 
+                    rot: player.rotation 
                 }
-            });
-
-            // 5. Configurar Disparo con Ratón
-            this.input.on('pointerdown', function (pointer) {
-                if (pointer.primaryDown) {
-                    this.scene.shoot(pointer); 
-                }
-            });
-
-            // 6. Configurar la Cámara
-            this.cameras.main.startFollow(player, true, 0.1, 0.1);
-            this.cameras.main.setZoom(1.5);
-            
-            // 7. ¡Conexión a Supabase!
-            joinOrCreateRoom.call(this);
-        }
-
-        function update (time, delta) {
-            player.body.setVelocity(0);
-            let moving = false;
-            
-            // Lógica de Movimiento WASD
-            if (keys.up.isDown) { player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
-            else if (keys.down.isDown) { player.body.setVelocityY(PLAYER_SPEED); moving = true; }
-            if (keys.left.isDown) { player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
-            else if (keys.right.isDown) { player.body.setVelocityX(PLAYER_SPEED); moving = true; }
-
-            // Normalización de velocidad diagonal
-            if (moving) { player.body.velocity.normalize().scale(PLAYER_SPEED); }
-
-            // Lógica de Apuntado (Rotación)
-            let pointer = this.input.activePointer;
-            let angle = Phaser.Math.Angle.Between(player.x, player.y, pointer.worldX, pointer.worldY);
-            player.rotation = angle;
-
-            // -------------------------------------------------------------
-            // LÓGICA MULTIJUGADOR: BROADCAST DE MOVIMIENTO
-            // -------------------------------------------------------------
-            // Nota: Se envía broadcast si nos movemos O si la rotación cambió significativamente
-            if ((moving || Math.abs(player.rotation - (player.lastRotation || 0)) > 0.05) && roomChannel && time > lastMoveBroadcastTime + BROADCAST_INTERVAL) {
-                lastMoveBroadcastTime = time;
-                player.lastRotation = player.rotation;
-                
-                roomChannel.send({
-                    type: 'broadcast',
-                    event: 'player_move',
-                    payload: {
-                        id: playerID, 
-                        x: player.x, 
-                        y: player.y, 
-                        rot: player.rotation 
-                    }
-                });
-            }
-            
-            // Actualización de etiquetas de nombre remotas
-            for (const id in remotePlayers) {
-                if (remotePlayers[id] && remotePlayers[id].nameTag) {
-                    remotePlayers[id].nameTag.x = remotePlayers[id].x;
-                    remotePlayers[id].nameTag.y = remotePlayers[id].y - 20;
-                }
-            }
-        }
-
-        function shoot (pointer) {
-            let currentTime = this.time.now;
-
-            if (currentTime > lastShotTime + FIRE_RATE) {
-                lastShotTime = currentTime;
-                
-                let bullet = bullets.get(player.x, player.y);
-                if (bullet) {
-                    bullet.setActive(true).setVisible(true);
-
-                    let direction = new Phaser.Math.Vector2().setToPolar(player.rotation, 1); 
-                    bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
-                    
-                    bullet.update = function () {
-                        if (Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y) > 1200) {
-                            this.setActive(false).setVisible(false).body.stop();
-                        }
-                    }
-
-                    // Enviar el Broadcast del disparo
-                    if (roomChannel) {
-                        roomChannel.send({
-                            type: 'broadcast',
-                            event: 'player_shoot',
-                            payload: {
-                                id: playerID, 
-                                x_start: player.x, 
-                                y_start: player.y,
-                                rot: player.rotation
-                            }
-                        });
-                    }
-                }
-            }
-        }
-
-
-        //==============================================================
-        // FUNCIONES SUPABASE REALTIME (CON ALERTS)
-        //==============================================================
-
-        async function joinOrCreateRoom() {
-            // VERIFICACIÓN DE CREDENCIALES (usando alert)
-            if (SUPABASE_URL.includes('https://jdvwlfogkzrzovepzjqa.supabase.co')) {
-                alert('¡ERROR DE CONFIGURACIÓN! 🚨 Debes reemplazar SUPABASE_URL y SUPABASE_ANON_KEY con tus propias credenciales en el código.');
-                return; 
-            }
-            
-            if (!supabaseClient) {
-                 alert('ERROR: El cliente de Supabase no se ha inicializado correctamente.');
-                 return;
-            }
-
-            roomChannel = supabaseClient.channel(ROOM_NAME, {
-                config: {
-                    presence: { key: playerID }
-                }
-            });
-
-            // 1. Escuchar la Presencia (Conexión/Desconexión)
-            roomChannel.on('presence', { event: 'sync' }, () => {
-                const presenceState = roomChannel.presenceState();
-                const playerKeys = Object.keys(presenceState);
-                
-                document.getElementById('player-count').textContent = playerKeys.length;
-
-                // Lógica para limpiar jugadores desconectados
-                for (const id in remotePlayers) {
-                    if (!playerKeys.includes(id)) {
-                        remotePlayers[id].destroy();
-                        remotePlayers[id].nameTag.destroy();
-                        delete remotePlayers[id];
-                        alert(`¡Jugador ${id} se ha desconectado!`);
-                    }
-                }
-            }).subscribe(async (status) => {
-                if (status === 'SUBSCRIBED') {
-                    await roomChannel.track({ key: playerID, x: player.x, y: player.y });
-                    alert(`¡Conectado! Tu ID: ${playerID}. Abre otra ventana para probar.`);
-                } else if (status === 'TIMED_OUT') {
-                    alert('ERROR DE CONEXIÓN: La conexión a Supabase ha fallado (Timeout). Revisa tu red o las reglas de RLS en Supabase.');
-                }
-            });
-
-            // 2. Escuchar Broadcasts
-            roomChannel.on('broadcast', { event: 'player_move' }, (payload) => {
-                handleRemoteMove.call(this, payload.payload);
-            });
-
-            roomChannel.on('broadcast', { event: 'player_shoot' }, (payload) => {
-                handleRemoteShoot.call(this, payload.payload);
             });
         }
         
-        /**
-         * Crea/actualiza el sprite de un jugador remoto.
-         */
-        function handleRemoteMove(data) {
-            if (data.id === playerID) return; 
-
-            let remotePlayer = remotePlayers[data.id];
-
-            if (!remotePlayer) {
-                // Crear sprite remoto (Azul)
-                remotePlayer = this.add.rectangle(data.x, data.y, 32, 32, 0x0000FF);
-                this.physics.add.existing(remotePlayer); 
-                remotePlayer.setOrigin(0.5, 0.5);
-                remotePlayer.body.setImmovable(true);
-                remotePlayers[data.id] = remotePlayer;
-                
-                // Etiqueta de nombre
-                remotePlayer.nameTag = this.add.text(data.x, data.y - 20, data.id, { fontSize: '10px', fill: '#00BFFF' }).setOrigin(0.5);
-                alert(`¡Nuevo jugador unido! ID: ${data.id}`);
+        // Actualización de etiquetas de nombre remotas
+        for (const id in remotePlayers) {
+            if (remotePlayers[id] && remotePlayers[id].nameTag) {
+                remotePlayers[id].nameTag.x = remotePlayers[id].x;
+                remotePlayers[id].nameTag.y = remotePlayers[id].y - 20;
             }
-
-            // Interpolación (Tweening) para un movimiento suave
-            this.tweens.add({
-                targets: remotePlayer,
-                x: data.x,
-                y: data.y,
-                rotation: data.rot,
-                duration: BROADCAST_INTERVAL * 2, 
-                ease: 'Linear'
-            });
-            
-            // Sincronizar también la etiqueta
-            this.tweens.add({
-                targets: remotePlayer.nameTag,
-                x: data.x,
-                y: data.y - 20,
-                duration: BROADCAST_INTERVAL * 2, 
-                ease: 'Linear'
-            });
         }
+    }
 
-        /**
-         * Crea una bala localmente para un jugador remoto (simulación).
-         */
-        function handleRemoteShoot(data) {
-            if (data.id === playerID) return;
+    function shoot (pointer) {
+        let currentTime = this.time.now;
 
-            let bullet = this.scene.bullets.get(data.x_start, data.y_start);
+        if (currentTime > lastShotTime + FIRE_RATE) {
+            lastShotTime = currentTime;
             
+            let bullet = bullets.get(player.x, player.y);
             if (bullet) {
                 bullet.setActive(true).setVisible(true);
 
-                let direction = new Phaser.Math.Vector2().setToPolar(data.rot, 1); 
+                let direction = new Phaser.Math.Vector2().setToPolar(player.rotation, 1); 
                 bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
                 
                 bullet.update = function () {
-                    if (Phaser.Math.Distance.Between(this.x, this.y, data.x_start, data.y_start) > 1200) {
+                    if (Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y) > 1200) {
                         this.setActive(false).setVisible(false).body.stop();
                     }
                 }
+
+                if (roomChannel) {
+                    roomChannel.send({
+                        type: 'broadcast',
+                        event: 'player_shoot',
+                        payload: {
+                            id: playerID, 
+                            x_start: player.x, 
+                            y_start: player.y,
+                            rot: player.rotation
+                        }
+                    });
+                }
             }
         }
-    </script>
+    }
+
+
+    //==============================================================
+    // FUNCIONES SUPABASE REALTIME
+    //==============================================================
+
+    async function joinOrCreateRoom() {
+        
+        roomChannel = supabaseClient.channel(ROOM_NAME, {
+            config: {
+                presence: { key: playerID }
+            }
+        });
+
+        // 1. Escuchar la Presencia (Conexión/Desconexión)
+        roomChannel.on('presence', { event: 'sync' }, () => {
+            const presenceState = roomChannel.presenceState();
+            const playerKeys = Object.keys(presenceState);
+            
+            document.getElementById('player-count').textContent = playerKeys.length;
+
+            for (const id in remotePlayers) {
+                if (!playerKeys.includes(id)) {
+                    remotePlayers[id].destroy();
+                    remotePlayers[id].nameTag.destroy();
+                    delete remotePlayers[id];
+                    alert(`¡Jugador ${id} se ha desconectado!`);
+                }
+            }
+        }).subscribe(async (status) => {
+            if (status === 'SUBSCRIBED') {
+                await roomChannel.track({ key: playerID, x: player.x, y: player.y });
+                // Mensaje de éxito de conexión, si el personaje se ve, significa que el código de arriba funcionó.
+            } else if (status === 'TIMED_OUT') {
+                alert('ERROR DE CONEXIÓN: La conexión a Supabase ha fallado (Timeout). Verifica tu red.');
+            }
+        });
+
+        // 2. Escuchar Broadcasts
+        roomChannel.on('broadcast', { event: 'player_move' }, (payload) => {
+            handleRemoteMove.call(this, payload.payload);
+        });
+
+        roomChannel.on('broadcast', { event: 'player_shoot' }, (payload) => {
+            handleRemoteShoot.call(this, payload.payload);
+        });
+    }
+    
+    // Funciones handleRemoteMove y handleRemoteShoot (Sin cambios en su lógica interna)
+    function handleRemoteMove(data) {
+        if (data.id === playerID) return;
+
+        let remotePlayer = remotePlayers[data.id];
+
+        if (!remotePlayer) {
+            remotePlayer = this.add.rectangle(data.x, data.y, 32, 32, 0x0000FF);
+            this.physics.add.existing(remotePlayer); 
+            remotePlayer.setOrigin(0.5, 0.5);
+            remotePlayer.body.setImmovable(true);
+            remotePlayers[data.id] = remotePlayer;
+            
+            remotePlayer.nameTag = this.add.text(data.x, data.y - 20, data.id, { fontSize: '10px', fill: '#00BFFF' }).setOrigin(0.5);
+        }
+
+        this.tweens.add({
+            targets: remotePlayer,
+            x: data.x,
+            y: data.y,
+            rotation: data.rot,
+            duration: BROADCAST_INTERVAL * 2, 
+            ease: 'Linear'
+        });
+        
+        this.tweens.add({
+            targets: remotePlayer.nameTag,
+            x: data.x,
+            y: data.y - 20,
+            duration: BROADCAST_INTERVAL * 2, 
+            ease: 'Linear'
+        });
+    }
+
+    function handleRemoteShoot(data) {
+        if (data.id === playerID) return;
+
+        let bullet = this.scene.bullets.get(data.x_start, data.y_start);
+        
+        if (bullet) {
+            bullet.setActive(true).setVisible(true);
+
+            let direction = new Phaser.Math.Vector2().setToPolar(data.rot, 1); 
+            bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
+            
+            bullet.update = function () {
+                if (Phaser.Math.Distance.Between(this.x, this.y, data.x_start, data.y_start) > 1200) {
+                    this.setActive(false).setVisible(false).body.stop();
+                }
+            }
+        }
+    }
+</script>
 </body>
 </html>
