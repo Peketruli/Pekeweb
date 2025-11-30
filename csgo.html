@@ -1,354 +1,223 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>CSGO 2D — Disparos y combate</title>
-<style>
-  html,body{height:100%;margin:0;background:#0b0f14;color:#fff;font-family:Inter,Arial,sans-serif;}
-  canvas{display:block;cursor:crosshair}
-  #hud{position:fixed;left:12px;top:12px;background:rgba(0,0,0,0.5);padding:8px;border-radius:8px}
-  #tips{position:fixed;right:12px;top:12px;background:rgba(0,0,0,0.45);padding:8px;border-radius:8px;font-size:13px}
-</style>
+    <meta charset="UTF-8">
+    <title>CSGO 2D - Prototipo Único</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    
+    <style>
+        body { 
+            margin: 0; 
+            padding: 0; 
+            background: #111; /* Fondo oscuro */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden; /* Evita barras de desplazamiento */
+        }
+        #game-container {
+            border: 2px solid #333; /* Un borde para ver dónde está el juego */
+            box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+        }
+    </style>
 </head>
 <body>
-<canvas id="game"></canvas>
-<div id="hud">Cargando mapa...</div>
-<div id="tips">WASD mover • Click disparar • Esc pausar</div>
-<script>
-const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
-const hud = document.getElementById('hud');
-let W = innerWidth, H = innerHeight;
-function resize(){ W = canvas.width = innerWidth; H = canvas.height = innerHeight; }
-addEventListener('resize', resize); resize();
+    <div id="game-container">
+        </div>
 
-// ===== MAPA BASE =====
-const TILE = 48;
-const MAP_GRID = [
-  "#############################################",
-  "#.T...........#####..........#..............#",
-  "#.T.................#........#..............#",
-  "###########...#.....#####....#..............#",
-  "#.............#.........#....#..............#",
-  "#......#####..#.........#...................#",
-  "#......####...#######.........##............#",
-  "#......###.........#########.......###......#",
-  "#......####............#.....#..............#",
-  "#......######..........#.....#..............#",
-  "#......##########...####.....#..............#",
-  "#......######................#..............#",
-  "#...............##..####.....#####.......####",
-  "#...............##....##....................#",
-  "#...............###...##....................#",
-  "#...............####..##..............B.....#",
-  "#...............####........................#",
-  "#.........##########..##....................#",
-  "######.................#....................#",
-  "#....#.................#....................#",
-  "#..A...................#....................#",
-  "###....................#....................#",
-  "#......................#....................#",
-  "#......................#..................C.#",
-  "#.........................................C.#",
-  "#############################################"
-];
+    <script>
+        //==============================================================
+        // CONFIGURACIÓN GENERAL DEL JUEGO
+        //==============================================================
+        const GAME_WIDTH = 1200;
+        const GAME_HEIGHT = 800;
+        const PLAYER_SPEED = 300;
+        const BULLET_SPEED = 800;
+        const FIRE_RATE = 150; // Milisegundos entre disparos (Cadencia de Fuego)
 
-const MAP_W = MAP_GRID[0].length * TILE;
-const MAP_H = MAP_GRID.length * TILE;
+        // Variables globales de la escena
+        let player;
+        let keys;
+        let bullets;
+        let lastShotTime = 0;
+        
+        // Configuración de Phaser
+        const config = {
+            type: Phaser.AUTO,
+            width: GAME_WIDTH,
+            height: GAME_HEIGHT,
+            physics: {
+                default: 'arcade',
+                arcade: {
+                    // debug: true, // Descomentar para ver cajas de colisión
+                    gravity: { y: 0 } 
+                }
+            },
+            scene: {
+                preload: preload,
+                create: create,
+                update: update,
+                // Añadimos la función de disparo como un método de la escena
+                shoot: shoot 
+            },
+            parent: 'game-container' // ID del contenedor en el HTML
+        };
 
-// ===== FUNCIONES AUXILIARES =====
-function findTile(ch){
-  for(let y=0;y<MAP_GRID.length;y++)
-    for(let x=0;x<MAP_GRID[y].length;x++)
-      if(MAP_GRID[y][x]===ch)
-        return {x:x*TILE+TILE/2,y:y*TILE+TILE/2};
-  return null;
-}
+        let game = new Phaser.Game(config);
 
-const walls = [];
-for(let y=0;y<MAP_GRID.length;y++)
-  for(let x=0;x<MAP_GRID[y].length;x++)
-    if(MAP_GRID[y][x]==="#")
-      walls.push({x:x*TILE,y:y*TILE,w:TILE,h:TILE});
 
-function collidesAt(px,py,r){
-  for(const w of walls)
-    if(px+r>w.x && px-r<w.x+w.w && py+r>w.y && py-r<w.y+w.h)
-      return true;
-  return false;
-}
-
-function canSee(a,b){
-  const steps = Math.ceil(Math.hypot(b.x-a.x,b.y-a.y)/16);
-  for(let i=1;i<steps;i++){
-    const x=a.x+(b.x-a.x)*i/steps;
-    const y=a.y+(b.y-a.y)*i/steps;
-    if(collidesAt(x,y,4)) return false;
-  }
-  return true;
-}
-
-// ===== ENTIDADES =====
-class Entity {
-  constructor(x,y,team,name,color){
-    this.x=x; this.y=y;
-    this.size=10;
-    this.team=team;
-    this.name=name;
-    this.color=color;
-    this.hp=100;
-    this.alive=true;
-    this.speed=team==='T'?1.4:1.2;
-    this.hasBomb=false;
-    this.state='idle';
-    this.target=null;
-    this.cooldown=0;
-  }
-  draw(ctx){
-    if(!this.alive)return;
-    ctx.fillStyle=this.color;
-    ctx.beginPath();
-    ctx.arc(this.x,this.y,this.size,0,Math.PI*2);
-    ctx.fill();
-    ctx.fillStyle="#fff";
-    ctx.font="10px Arial";
-    ctx.textAlign="center";
-    ctx.fillText(this.name,this.x,this.y+20);
-  }
-  moveTowards(tx,ty,speed){
-    const dx=tx-this.x,dy=ty-this.y;
-    const dist=Math.hypot(dx,dy);
-    if(dist<1)return;
-    const nx=this.x+(dx/dist)*speed;
-    const ny=this.y+(dy/dist)*speed;
-    if(!collidesAt(nx,this.y,this.size))this.x=nx;
-    if(!collidesAt(this.x,ny,this.size))this.y=ny;
-  }
-}
-
-const spawnT=findTile('T');
-const spawnCT=findTile('C');
-const siteApos=findTile('A');
-const siteBpos=findTile('B');
-
-const player=new Entity(spawnCT.x,spawnCT.y,'CT','Tú','#3fe8d0');
-player.speed=3;
-
-const allies=[], enemies=[];
-for(let i=0;i<4;i++)
-  allies.push(new Entity(spawnCT.x+Math.random()*60-30,spawnCT.y+Math.random()*60-30,'CT',['Alpha','Bravo','Charlie','Delta'][i],'#66d1ff'));
-for(let i=0;i<5;i++){
-  const e=new Entity(spawnT.x+Math.random()*60-30,spawnT.y+Math.random()*60-30,'T','T-'+(i+1),'#ff8a7a');
-  if(i===0)e.hasBomb=true;
-  enemies.push(e);
-}
-
-const bullets=[];
-const bomb={planted:false,x:0,y:0,timer:0,site:null};
-
-// ===== INPUT / CÁMARA =====
-let mouseX=0,mouseY=0,camX=0,camY=0;
-addEventListener('mousemove',e=>{
-  const rect=canvas.getBoundingClientRect();
-  mouseX=e.clientX-rect.left;
-  mouseY=e.clientY-rect.top;
-});
-addEventListener('mousedown',()=>shoot());
-function updateCamera(){
-  camX=player.x-W/2;
-  camY=player.y-H/2;
-  camX=Math.max(0,Math.min(camX,MAP_W-W));
-  camY=Math.max(0,Math.min(camY,MAP_H-H));
-}
-
-function shoot(){
-  if(!player.alive)return;
-  const worldMouseX=mouseX+camX;
-  const worldMouseY=mouseY+camY;
-  const dx=worldMouseX-player.x,dy=worldMouseY-player.y;
-  const len=Math.hypot(dx,dy);
-  const dirX=dx/len,dirY=dy/len;
-  bullets.push({x:player.x,y:player.y,vx:dirX*8,vy:dirY*8,life:80,team:player.team});
-}
-
-// ===== IA =====
-function updateAI(bot){
-  if(!bot.alive)return;
-
-  const enemiesList = bot.team==='T' ? [...allies,player] : enemies;
-  const visible = enemiesList.filter(e=>e.alive && canSee(bot,e));
-
-  // Disparo si ve enemigo
-  if(visible.length>0){
-    const target = visible[0];
-    if(bot.cooldown<=0){
-      const dx=target.x-bot.x,dy=target.y-bot.y;
-      const len=Math.hypot(dx,dy);
-      const dirX=dx/len,dirY=dy/len;
-      bullets.push({x:bot.x,y:bot.y,vx:dirX*8,vy:dirY*8,life:80,team:bot.team});
-      bot.cooldown=30;
-    }
-  }else{
-    // Movimiento
-    if(bot.team==='T'){
-      if(!bot.target){
-        bot.target = bot.hasBomb ? (Math.random()<0.5?siteApos:siteBpos) : siteBpos;
-      }
-      bot.moveTowards(bot.target.x,bot.target.y,bot.speed);
-      if(bot.hasBomb && Math.hypot(bot.x-bot.target.x,bot.y-bot.target.y)<40){
-        bomb.planted=true;
-        bomb.x=bot.x; bomb.y=bot.y; bomb.timer=600; bomb.site=bot.target===siteApos?'A':'B';
-        bot.hasBomb=false;
-      }
-    }else if(bot.team==='CT'){
-      if(bomb.planted){
-        bot.moveTowards(bomb.x,bomb.y,bot.speed);
-        if(Math.hypot(bot.x-bomb.x,bot.y-bomb.y)<30){
-          bomb.planted=false;
-          bomb.timer=0;
+        //==============================================================
+        // FASE 1: CARGA DE RECURSOS (PRELOAD)
+        //==============================================================
+        function preload () {
+            // En un juego real, cargarías aquí imágenes, sonidos y el mapa de Tiled.
+            // Para este prototipo, no cargamos nada, ya que usamos figuras geométricas.
         }
-      }else{
-        const site = Math.random()<0.5?siteApos:siteBpos;
-        bot.moveTowards(site.x,site.y,bot.speed*0.5);
-      }
-    }
-  }
 
-  if(bot.cooldown>0)bot.cooldown--;
-}
+        //==============================================================
+        // FASE 1 & 2: INICIALIZACIÓN (CREATE)
+        //==============================================================
+        function create () {
+            // 1. Crear el Jugador (Rectángulo Blanco)
+            player = this.add.rectangle(400, 300, 32, 32, 0xFFFFFF); // Blanco
+            this.physics.add.existing(player); 
+            player.body.setCollideWorldBounds(true);
+            player.setOrigin(0.5, 0.5); // Pivote central para rotación
+            
+            // Dibuja una línea de mira para claridad visual
+            let sightLine = this.add.graphics();
+            sightLine.lineStyle(2, 0x00FF00, 0.8);
+            sightLine.strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
+            player.line = this.add.container(0, 0, [sightLine]);
+            player.add(player.line); // El objeto de la línea sigue al jugador
 
-// ===== BALAS =====
-function updateBullets(){
-  for(const b of bullets){
-    b.x+=b.vx; b.y+=b.vy; b.life--;
-    for(const arr of [allies,enemies,[player]]){
-      for(const e of arr){
-        if(e.alive && e.team!==b.team && Math.hypot(e.x-b.x,e.y-b.y)<e.size){
-          e.hp-=34; b.life=0;
-          if(e.hp<=0)e.alive=false;
+            // 2. Control de Teclado (WASD)
+            keys = this.input.keyboard.addKeys({
+                up: Phaser.Input.Keyboard.KeyCodes.W,
+                down: Phaser.Input.Keyboard.KeyCodes.S,
+                left: Phaser.Input.Keyboard.KeyCodes.A,
+                right: Phaser.Input.Keyboard.KeyCodes.D
+            });
+
+            // 3. Crear el Grupo de Balas (para reciclaje eficiente)
+            bullets = this.physics.add.group({
+                classType: Phaser.GameObjects.Arc, // Círculo simple para la bala
+                runChildUpdate: true,
+                maxSize: 30, 
+                createCallback: (bullet) => {
+                    bullet.setOrigin(0.5, 0.5);
+                    bullet.setRadius(4); 
+                    bullet.setFillStyle(0xFF0000); // Color rojo
+                    bullet.body.allowGravity = false;
+                }
+            });
+
+            // 4. Configurar Disparo con Ratón
+            this.input.on('pointerdown', function (pointer) {
+                if (pointer.primaryDown) {
+                    this.scene.shoot(pointer); 
+                }
+            });
+
+            // 5. Configurar la Cámara
+            this.cameras.main.startFollow(player, true, 0.1, 0.1);
+            this.cameras.main.setZoom(1.5);
         }
-      }
-    }
-  }
-  for(let i=bullets.length-1;i>=0;i--) if(bullets[i].life<=0) bullets.splice(i,1);
-}
 
-// ===== INPUT =====
-const keys={};
-addEventListener('keydown',e=>keys[e.key.toLowerCase()]=true);
-addEventListener('keyup',e=>keys[e.key.toLowerCase()]=false);
+        //==============================================================
+        // FASE 1 & 2: BUCLE DE JUEGO (UPDATE)
+        //==============================================================
+        function update (time, delta) {
+            // 1. Resetear la Velocidad
+            player.body.setVelocity(0);
 
-// ===== UPDATE / DRAW =====
-function update(){
-  let mvx=0,mvy=0;
-  if(keys['w'])mvy-=player.speed;
-  if(keys['s'])mvy+=player.speed;
-  if(keys['a'])mvx-=player.speed;
-  if(keys['d'])mvx+=player.speed;
-  if(mvx&&mvy){mvx*=Math.SQRT1_2;mvy*=Math.SQRT1_2;}
-  const nx=player.x+mvx,ny=player.y+mvy;
-  if(!collidesAt(nx,player.y,player.size))player.x=nx;
-  if(!collidesAt(player.x,ny,player.size))player.y=ny;
+            // 2. Lógica de Movimiento (WASD)
+            let moving = false;
+            
+            if (keys.up.isDown) {
+                player.body.setVelocityY(-PLAYER_SPEED);
+                moving = true;
+            } else if (keys.down.isDown) {
+                player.body.setVelocityY(PLAYER_SPEED);
+                moving = true;
+            }
 
-  for(const a of allies)updateAI(a);
-  for(const e of enemies)updateAI(e);
-  updateBullets();
+            if (keys.left.isDown) {
+                player.body.setVelocityX(-PLAYER_SPEED);
+                moving = true;
+            } else if (keys.right.isDown) {
+                player.body.setVelocityX(PLAYER_SPEED);
+                moving = true;
+            }
 
-  if(bomb.planted){
-    bomb.timer--;
-    if(bomb.timer<=0){
-      bomb.planted=false;
-      console.log("💥 Bomba explotó");
-    }
-  }
+            // Normalización: Asegura que la velocidad en diagonal sea igual a la horizontal/vertical
+            if (moving) {
+                player.body.velocity.normalize().scale(PLAYER_SPEED);
+            }
 
-  updateCamera();
-  draw();
-  requestAnimationFrame(update);
-}
+            // 3. Lógica de Apuntado (Rotar al jugador hacia el ratón)
+            let pointer = this.input.activePointer;
 
-function draw(){
-  ctx.fillStyle='#0b0f14';
-  ctx.fillRect(0,0,W,H);
-  ctx.save();
-  ctx.translate(-camX,-camY);
+            // Calcular el ángulo (en radianes)
+            let angle = Phaser.Math.Angle.Between(
+                player.x, 
+                player.y, 
+                pointer.worldX, // Coordenada del ratón ajustada a la cámara
+                pointer.worldY
+            );
+            
+            player.rotation = angle;
+        }
 
-  // === MAPA ===
-  for(let y=0;y<MAP_GRID.length;y++){
-    for(let x=0;x<MAP_GRID[y].length;x++){
-      const c=MAP_GRID[y][x];
-      ctx.fillStyle=c==="#"?"#333":(c==="A"||c==="B"?"#3a3a2f":"#1e1e1e");
-      ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
-    }
-  }
+        //==============================================================
+        // FASE 2: FUNCIÓN DE DISPARO (SHOOT)
+        //==============================================================
+        function shoot (pointer) {
+            let currentTime = this.time.now;
 
-  // === Bomba ===
-  if(bomb.planted){
-    ctx.fillStyle="yellow";
-    ctx.beginPath();
-    ctx.arc(bomb.x,bomb.y,10,0,Math.PI*2);
-    ctx.fill();
-  }
+            // Control de cadencia de fuego
+            if (currentTime > lastShotTime + FIRE_RATE) {
+                
+                // Obtener una bala del grupo
+                let bullet = bullets.get(player.x, player.y);
+                
+                if (bullet) {
+                    lastShotTime = currentTime;
+                    bullet.setActive(true);
+                    bullet.setVisible(true);
 
-  // === Entidades ===
-  for(const e of enemies)e.draw(ctx);
-  for(const a of allies)a.draw(ctx);
-  player.draw(ctx);
-  for(const b of bullets){
-    ctx.fillStyle='orange';
-    ctx.beginPath();
-    ctx.arc(b.x,b.y,3,0,Math.PI*2);
-    ctx.fill();
-  }
+                    // Dirección de la bala (basada en la rotación del jugador)
+                    let direction = new Phaser.Math.Vector2();
+                    direction.setToPolar(player.rotation, 1); 
 
-  // === CONO DE VISIÓN ===
-  const worldMouseX = mouseX + camX;
-  const worldMouseY = mouseY + camY;
-  const angle = Math.atan2(worldMouseY - player.y, worldMouseX - player.x);
-  const FOV = Math.PI / 2; // 90º de visión hacia cada lado (180º total)
-  const viewDistance = 4000;
-
-  // Máscara oscura sobre todo
-  ctx.save();
-  ctx.globalCompositeOperation = 'source-atop';
-  ctx.fillStyle = 'rgba(0,0,0,1)';
-  ctx.fillRect(camX, camY, W, H);
-
-  // Crear cono visible
-  const gradient = ctx.createRadialGradient(player.x, player.y, 0, player.x, player.y, viewDistance);
-  gradient.addColorStop(0, 'rgba(255,255,255,100000)');
-  gradient.addColorStop(2, 'rgba(255,255,255,1)');
-  ctx.globalCompositeOperation = 'destination-out';
-  ctx.beginPath();
-  ctx.moveTo(player.x, player.y);
-  ctx.arc(player.x, player.y, viewDistance, angle - FOV/2, angle + FOV/2);
-  ctx.closePath();
-  ctx.fillStyle = gradient;
-  ctx.fill();
-
-  // Castear rayos que bloquean la visión con paredes
-  ctx.globalCompositeOperation = 'destination-out';
-  for(let i=-FOV/2; i<=FOV/2; i+=Math.PI/180){
-    let rayAngle = angle + i;
-    let rayX = player.x, rayY = player.y;
-    for(let d=0; d<viewDistance; d+=8){
-      const x = rayX + Math.cos(rayAngle)*d;
-      const y = rayY + Math.sin(rayAngle)*d;
-      if(collidesAt(x,y,4)) break;
-      ctx.fillRect(x,y,8,8);
-    }
-  }
-  ctx.restore();
-  ctx.restore();
-
-  // === HUD ===
-  hud.innerHTML = bomb.planted ? 
-    `💣 Bomba plantada en ${bomb.site} — ${(bomb.timer/60).toFixed(1)}s` :
-    `HP: ${player.hp} | CT vivos: ${allies.filter(a=>a.alive).length+1} | T vivos: ${enemies.filter(e=>e.alive).length}`;
-}
-  
-requestAnimationFrame(update);
-</script>
+                    // Establecer la velocidad de la bala
+                    bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
+                    
+                    // Configurar la bala para que se desactive si se aleja mucho
+                    bullet.update = function (time, delta) {
+                        // Desactivar si sale de los límites
+                        if (Phaser.Math.Distance.Between(this.x, this.y, player.x, player.y) > 1000) {
+                            this.setActive(false);
+                            this.setVisible(false);
+                            this.body.stop();
+                        }
+                    }
+                }
+            }
+        }
+        
+        //==============================================================
+        // PRÓXIMO PASO: ESTRUCTURA MULTIJUGADOR CON SUPABASE
+        //==============================================================
+        /*
+        Para integrar Supabase, necesitarías:
+        1. Incluir el SDK de Supabase: <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+        2. Configurar la conexión al cliente en JS.
+        3. En la función 'create', subscribirte a un canal de Realtime.
+        4. En la función 'update', si el jugador se mueve, hacer un 'channel.send({ type: 'broadcast', event: 'player_move', ... })' 
+        5. En 'create', escuchar el evento 'player_move' para actualizar las posiciones de los jugadores remotos (otros clientes).
+        */
+    </script>
 </body>
 </html>
