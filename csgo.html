@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Prototipo 5v5 Bots (Funcional)</title>
+    <title>CSGO 2D - Prototipo Mínimo (Partida Directa)</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     
@@ -16,29 +16,10 @@
             align-items: center;
             height: 100vh;
             overflow: hidden;
-            font-family: 'Arial', sans-serif;
         }
         #game-container {
             border: 2px solid #555;
             box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
-        }
-        /* Estilo para los botones que se renderizarán en el DOM (Menú) */
-        .menu-button {
-            width: 250px;
-            padding: 15px;
-            margin: 10px;
-            font-size: 20px;
-            font-weight: bold;
-            color: #fff;
-            background-color: #2c3e50;
-            border: 2px solid #3498db;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: background-color 0.2s, transform 0.1s;
-        }
-        .menu-button:hover {
-            background-color: #34495e;
-            transform: scale(1.02);
         }
     </style>
 </head>
@@ -48,432 +29,84 @@
 
     <script>
         //==============================================================
-        // CONSTANTES GLOBALES Y ESTRUCTURAS DE DATOS
+        // CONSTANTES GLOBALES MÍNIMAS
         //==============================================================
         const GAME_WIDTH = 1200;
         const GAME_HEIGHT = 800;
         const PLAYER_SPEED = 300;
-        const BULLET_SPEED = 800;
-        const FIRE_RATE = 150; 
         
-        let players = {}; 
-        const TEAM_CT_COLOR = 0x3498db; // Azul
-        const TEAM_T_COLOR = 0xe74c3c; // Rojo (Terrorista)
-
         //==============================================================
-        // CLASE: ENTIDAD BOT (CORREGIDA: Lógica de Etiquetas y HP restaurada y simplificada)
-        //==============================================================
-        class BotEntity extends Phaser.GameObjects.Rectangle {
-            constructor(scene, x, y, team, playerID) {
-                // Llama al constructor del rectángulo
-                super(scene, x, y, 32, 32, team === 'CT' ? TEAM_CT_COLOR : TEAM_T_COLOR);
-                
-                scene.add.existing(this); // Añadir a la lista de visualización
-                scene.physics.add.existing(this); // Añadir físicas (CRUCIAL)
-                
-                this.team = team;
-                this.playerID = playerID;
-                this.isBot = true;
-                this.isAlive = true;
-                this.hp = 100;
-
-                this.setOrigin(0.5, 0.5);
-                this.body.setCollideWorldBounds(true);
-                this.body.setDrag(100);
-                this.body.setCircle(16); // Hitbox circular
-
-                // Etiquetas de nombre y HP
-                this.nameTag = scene.add.text(x, y - 20, `${team}-${playerID.substring(4)}`, { fontSize: '12px', fill: '#fff' }).setOrigin(0.5);
-                this.hpBar = scene.add.rectangle(x, y - 10, 30, 4, 0x27ae60).setOrigin(0.5); 
-
-                // Lógica de Movimiento Básico (IA)
-                scene.time.addEvent({
-                    delay: 1000, 
-                    callback: this.randomMovement,
-                    callbackScope: this,
-                    loop: true
-                });
-            }
-            
-            randomMovement() {
-                if (!this.isAlive) {
-                    this.body.setVelocity(0);
-                    return;
-                }
-                const speed = 100;
-                const angle = Phaser.Math.Between(0, 360);
-                const vec = this.scene.physics.velocityFromAngle(angle, speed);
-                this.body.setVelocity(vec.x, vec.y);
-            }
-            
-            // preUpdate se usa para actualizar la posición de las etiquetas
-            preUpdate(time, delta) {
-                if (this.isAlive) {
-                    // Actualizar posición de etiquetas y barra de HP
-                    this.nameTag.setPosition(this.x, this.y - 20);
-                    this.hpBar.setPosition(this.x, this.y - 10);
-                    
-                    // Actualizar barra de HP
-                    this.hpBar.width = (this.hp / 100) * 30; 
-                    this.hpBar.fillColor = this.hp > 50 ? 0x2ecc71 : this.hp > 20 ? 0xf39c12 : 0xe74c3c;
-                    this.hpBar.setVisible(true);
-                    this.nameTag.setVisible(true);
-                } else {
-                    this.hpBar.setVisible(false);
-                    this.nameTag.setVisible(false);
-                }
-            }
-            
-            destroy(fromScene) {
-                if (this.nameTag) this.nameTag.destroy();
-                if (this.hpBar) this.hpBar.destroy();
-                super.destroy(fromScene);
-            }
-        }
-
-
-        //==============================================================
-        // CLASE ESCENA: MENU PRINCIPAL
-        //==============================================================
-        class MainMenu extends Phaser.Scene {
-            constructor() {
-                super('MainMenu');
-            }
-
-            create() {
-                this.cameras.main.setBackgroundColor('#2c3e50');
-
-                this.add.text(GAME_WIDTH / 2, 150, 'CS:GO 2D', {
-                    fontSize: '64px',
-                    fill: '#ecf0f1',
-                    fontFamily: 'Arial Black'
-                }).setOrigin(0.5);
-
-                const container = document.getElementById('game-container');
-                const canvas = this.game.canvas;
-                
-                const addButton = (text, yOffset, sceneKey) => {
-                    let button = document.createElement('button');
-                    button.textContent = text;
-                    button.className = 'menu-button';
-                    
-                    button.style.position = 'absolute';
-                    button.style.left = (canvas.offsetLeft + GAME_WIDTH / 2 - 125) + 'px';
-                    button.style.top = (canvas.offsetTop + GAME_HEIGHT / 2 + yOffset) + 'px';
-                    
-                    button.onclick = () => {
-                        // Limpiar los botones DOM antes de cambiar de escena
-                        if (onlineButton.parentNode === container) container.removeChild(onlineButton);
-                        if (offlineButton.parentNode === container) container.removeChild(offlineButton);
-                        this.scene.start(sceneKey); 
-                    };
-
-                    container.appendChild(button);
-                    return button;
-                };
-
-                // Crear los botones
-                const onlineButton = addButton('JUGAR ONLINE (5v5)', -50, 'LoadingScene');
-                const offlineButton = addButton('PRACTICA / OFFLINE', 50, 'GameScene');
-
-                this.onlineButton = onlineButton;
-                this.offlineButton = offlineButton;
-            }
-
-            shutdown() {
-                 const container = document.getElementById('game-container');
-                 if (this.onlineButton && this.onlineButton.parentNode === container) container.removeChild(this.onlineButton);
-                 if (this.offlineButton && this.offlineButton.parentNode === container) container.removeChild(this.offlineButton);
-            }
-        }
-
-        //==============================================================
-        // CLASE ESCENA: CARGA (ONLINE)
-        //==============================================================
-        class LoadingScene extends Phaser.Scene {
-            constructor() {
-                super('LoadingScene');
-            }
-
-            create() {
-                this.cameras.main.setBackgroundColor('#1c2a35');
-                
-                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 50, 'BUSCANDO PARTIDA...', {
-                    fontSize: '32px',
-                    fill: '#f39c12',
-                    fontFamily: 'Arial'
-                }).setOrigin(0.5);
-
-                const workingText = this.add.text(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 50, 'Trabajando...', {
-                    fontSize: '48px',
-                    fill: '#ecf0f1',
-                    fontFamily: 'Arial Black'
-                }).setOrigin(0.5);
-
-                let dots = 0;
-                this.time.addEvent({
-                    delay: 500,
-                    callback: () => {
-                        dots = (dots + 1) % 4;
-                        let text = 'Trabajando' + '.'.repeat(dots);
-                        workingText.setText(text);
-                    },
-                    loop: true
-                });
-
-                // Simulación de espera y vuelta al menú
-                this.time.delayedCall(3000, () => {
-                    this.scene.start('MainMenu'); 
-                });
-            }
-        }
-
-        //==============================================================
-        // CLASE ESCENA: JUEGO PRINCIPAL (Funcional 5v5 Bots)
+        // CLASE ESCENA: JUEGO MÍNIMO
         //==============================================================
         class GameScene extends Phaser.Scene {
             constructor() {
                 super('GameScene');
                 this.player = null;
                 this.keys = null;
-                this.bullets = null;
-                this.lastShotTime = 0;
-                this.walls = null;
-                this.allPlayersGroup = null;
-                
-                this.teamCTSpawnPoints = [
-                    {x: 100, y: 100}, {x: 150, y: 150}, {x: 100, y: 200}
-                ]; 
-                this.teamTSpawnPoints = [
-                    {x: GAME_WIDTH - 100, y: GAME_HEIGHT - 100}, {x: GAME_WIDTH - 150, y: GAME_HEIGHT - 150}, {x: GAME_WIDTH - 100, y: GAME_HEIGHT - 200}
-                ];
-                this.nextPlayerId = 0;
-                players = {}; 
             }
 
             create() {
+                // 1. Configuración Visual Mínima
                 this.cameras.main.setBackgroundColor('#34495e'); 
-                
-                this.createMap(); 
-                this.createBotsAndPlayer(); 
-                this.setupControls();
-                this.setupBullets();
-                this.setupCollisions(); 
-                this.setupCamera();
-                
-                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 50, 'Usa W/A/S/D para moverte. Click para disparar. ¡Hay 9 bots!', {
-                    fontSize: '18px',
-                    fill: '#f1c40f'
-                }).setOrigin(0.5).setScrollFactor(0);
-            }
-
-            // --- Mapa y Paredes ---
-            createMap() {
                 this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
-                this.walls = this.physics.add.staticGroup();
-
-                // Pared central (Obstáculo principal)
-                this.walls.create(GAME_WIDTH / 2, GAME_HEIGHT / 2, null).setSize(50, 400).setDisplaySize(50, 400).setTint(0x95a5a6); 
-                // Obstáculo secundario
-                this.walls.create(GAME_WIDTH / 2 - 200, GAME_HEIGHT / 2 - 150, null).setSize(200, 30).setDisplaySize(200, 30).setTint(0x95a5a6);
-            }
-            
-            // --- Creación de Jugadores y Bots ---
-            createBotsAndPlayer() {
-                // 1. Crear el jugador local (CT)
-                const spawnCT = this.teamCTSpawnPoints[0];
-                const playerID = 'Player_Local';
                 
-                // Jugador Local: Rectángulo verde
-                this.player = this.add.rectangle(spawnCT.x, spawnCT.y, 32, 32, 0x2ecc71); 
+                // 2. Creación del Personaje (Rectángulo Verde)
+                // Lo creamos en el centro del mapa
+                const spawnX = GAME_WIDTH / 2;
+                const spawnY = GAME_HEIGHT / 2;
+                
+                this.player = this.add.rectangle(spawnX, spawnY, 32, 32, 0x2ecc71); 
                 this.physics.add.existing(this.player); 
                 
-                this.player.body.setCollideWorldBounds(true);
-                this.player.setOrigin(0.5, 0.5);
-                this.player.body.setCircle(16);
+                this.player.body.setCollideWorldBounds(true); // Evita que salga del mapa
                 this.player.body.setDrag(100);
+                this.player.body.setCircle(16);
+                this.player.setOrigin(0.5, 0.5);
 
-                this.player.team = 'CT';
-                this.player.hp = 100;
-                this.player.isBot = false;
-                this.player.isAlive = true;
-
-                players[playerID] = this.player;
+                // 3. Configuración de la Cámara (Centrada en el jugador)
+                this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+                this.cameras.main.setZoom(1.5); // Zoom para mejor visibilidad
                 
-                // Línea de puntería
-                let sightLine = this.add.graphics().lineStyle(2, 0x000000, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
-                this.player.add(sightLine); 
-                
-                // 2. Crear los 9 Bots restantes (4 CT, 5 T)
-                this.nextPlayerId = this.nextPlayerId || 0; 
-                
-                for (let i = 0; i < 9; i++) {
-                    this.nextPlayerId++;
-                    const team = i < 4 ? 'CT' : 'T'; 
-                    const spawnIndex = i % 3; 
-                    
-                    const spawnPoints = team === 'CT' ? this.teamCTSpawnPoints : this.teamTSpawnPoints;
-                    const spawn = spawnPoints[spawnIndex];
-
-                    const botID = `Bot_${this.nextPlayerId}`;
-                    const bot = new BotEntity(this, spawn.x, spawn.y, team, botID);
-                    players[botID] = bot;
-                }
-            }
-            
-            // --- Colisiones ---
-            setupCollisions() {
-                // 1. Colisión de todos los jugadores (local + bots) contra las paredes
-                for (const id in players) {
-                    this.physics.add.collider(players[id], this.walls);
-                }
-                
-                // 2. Grupo de todos los jugadores (usado para colisión de balas)
-                this.allPlayersGroup = this.physics.add.group(Object.values(players));
-                
-                // 3. Colisión de Balas
-                this.physics.add.collider(this.bullets, this.walls, this.bulletHitWall, null, this);
-                this.physics.add.overlap(this.bullets, this.allPlayersGroup, this.bulletHitPlayer, null, this);
-            }
-
-            // --- Handlers de Colisión ---
-            bulletHitWall(bullet, wall) {
-                bullet.setActive(false).setVisible(false).body.stop();
-            }
-
-            bulletHitPlayer(bullet, victim) {
-                if (bullet.active === false || victim.isAlive === false) return;
-                
-                // La bala del jugador local no debe golpearse a sí mismo
-                if (victim === this.player) return;
-                
-                bullet.setActive(false).setVisible(false).body.stop();
-                
-                const damage = 30;
-                victim.hp -= damage;
-                
-                if (victim.hp <= 0) {
-                    victim.isAlive = false;
-                    
-                    if (victim.isBot) {
-                        this.killBot(victim);
-                    } else {
-                        // El jugador local muere, volvemos al menú
-                        this.player.body.setEnable(false);
-                        this.player.setVisible(false);
-                        this.time.delayedCall(1000, () => this.scene.start('MainMenu'));
-                        alert("¡HAS MUERTO! Volviendo al menú.");
-                    }
-                }
-            }
-            
-            // --- Lógica de Bot ---
-            killBot(bot) {
-                bot.body.setVelocity(0, 0);
-                bot.body.setEnable(false);
-                bot.setVisible(false);
-                // Las etiquetas se ocultan en el preUpdate del BotEntity
-                
-                this.time.delayedCall(5000, () => this.respawnBot(bot), [], this);
-            }
-
-            respawnBot(bot) {
-                const spawnPoints = bot.team === 'CT' ? this.teamCTSpawnPoints : this.teamTSpawnPoints;
-                const spawn = Phaser.Utils.Array.GetRandom(spawnPoints);
-                
-                bot.x = spawn.x;
-                bot.y = spawn.y;
-                bot.hp = 100;
-                bot.isAlive = true;
-                
-                bot.setVisible(true);
-                bot.body.setEnable(true);
-                bot.body.reset(spawn.x, spawn.y);
-            }
-
-            // --- Controles y Disparo ---
-            setupControls() {
+                // 4. Configuración de Controles
                 this.keys = this.input.keyboard.addKeys({
                     up: Phaser.Input.Keyboard.KeyCodes.W,
                     down: Phaser.Input.Keyboard.KeyCodes.S,
                     left: Phaser.Input.Keyboard.KeyCodes.A,
                     right: Phaser.Input.Keyboard.KeyCodes.D
                 });
-                this.input.on('pointerdown', this.handleShoot, this);
+                
+                // Mensaje de ayuda (fijo en la pantalla)
+                this.add.text(GAME_WIDTH / 2, GAME_HEIGHT - 50, 'Usa W/A/S/D para moverte.', {
+                    fontSize: '24px',
+                    fill: '#f1c40f'
+                }).setOrigin(0.5).setScrollFactor(0); 
             }
 
-            setupBullets() {
-                this.bullets = this.physics.add.group({
-                    classType: Phaser.GameObjects.Arc,
-                    maxSize: 50, 
-                    runChildUpdate: true,
-                    createCallback: (bullet) => {
-                        bullet.setOrigin(0.5).setRadius(4).setFillStyle(0xe74c3c); // Bala roja
-                        bullet.body.allowGravity = false;
-                        bullet.body.setCircle(4);
-                    }
-                });
-            }
-
-            setupCamera() {
-                this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-                this.cameras.main.setZoom(1.5);
-            }
-
-            // --- Bucle Principal ---
+            // --- Bucle Principal de Actualización ---
             update(time, delta) {
-                if (this.player.isAlive) {
-                    this.handleMovement();
-                    this.handleAiming();
-                } else {
-                    this.player.body.setVelocity(0); 
-                }
+                this.handleMovement();
             }
 
             handleMovement() {
                 this.player.body.setVelocity(0);
                 let moving = false;
                 
+                // Movimiento básico W/A/S/D
                 if (this.keys.up.isDown) { this.player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
                 else if (this.keys.down.isDown) { this.player.body.setVelocityY(PLAYER_SPEED); moving = true; }
                 if (this.keys.left.isDown) { this.player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
                 else if (this.keys.right.isDown) { this.player.body.setVelocityX(PLAYER_SPEED); moving = true; }
 
-                if (moving) { this.player.body.velocity.normalize().scale(PLAYER_SPEED); }
-            }
-
-            handleAiming() {
-                let pointer = this.input.activePointer;
-                let angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, pointer.worldX, pointer.worldY);
-                this.player.rotation = angle;
-            }
-
-            handleShoot(pointer) {
-                let currentTime = this.time.now;
-
-                if (currentTime > this.lastShotTime + FIRE_RATE) {
-                    this.lastShotTime = currentTime;
-                    
-                    let bullet = this.bullets.get(this.player.x, this.player.y);
-                    if (bullet) {
-                        bullet.setActive(true).setVisible(true);
-
-                        let direction = new Phaser.Math.Vector2().setToPolar(this.player.rotation, 1); 
-                        bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
-                        
-                        bullet.update = () => {
-                            if (Phaser.Math.Distance.Between(bullet.x, bullet.y, this.player.x, this.player.y) > 1200) {
-                                bullet.setActive(false).setVisible(false).body.stop();
-                            }
-                        };
-                    }
+                // Normalizar velocidad para movimiento diagonal constante
+                if (moving) { 
+                    this.player.body.velocity.normalize().scale(PLAYER_SPEED); 
                 }
             }
         }
 
 
         //==============================================================
-        // INICIALIZACIÓN DE PHASER
+        // INICIALIZACIÓN DE PHASER (SIN MENÚ)
         //==============================================================
         const gameConfig = {
             type: Phaser.AUTO,
@@ -483,10 +116,10 @@
                 default: 'arcade',
                 arcade: {
                     gravity: { y: 0 } 
-                    // debug: true // Descomenta para ver las hitboxes
+                    // debug: true // Descomenta esta línea para ver la hitbox (círculo)
                 }
             },
-            scene: [MainMenu, LoadingScene, GameScene], 
+            scene: [GameScene], // Solo cargamos la escena de juego
             parent: 'game-container'
         };
 
