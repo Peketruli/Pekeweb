@@ -2,168 +2,184 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Base Funcional</title>
-    
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    <title>Prototipo 2D (Todo en Uno)</title>
     
     <style>
-        body { 
-            margin: 0; 
-            padding: 0; 
-            background: #111;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            overflow: hidden;
+        /* Quitamos márgenes y ponemos un fondo oscuro */
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #222;
+            /* Ocultamos el scroll para que el juego ocupe todo */
+            overflow: hidden; 
         }
-        #game-container {
-            border: 2px solid #555;
-            box-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
+
+        /* El lienzo del juego */
+        canvas {
+            display: block;
+            background-color: #000; /* Fondo negro para el juego */
+            margin: 0 auto; /* Centrado (aunque ocupará todo) */
         }
     </style>
 </head>
 <body>
-    <div id="game-container">
-        </div>
+    
+    <canvas id="gameCanvas"></canvas>
 
     <script>
-        //==============================================================
-        // CONSTANTES GLOBALES
-        //==============================================================
-        const GAME_WIDTH = 1200;
-        const GAME_HEIGHT = 800;
-        const PLAYER_SPEED = 300;
-        const BULLET_SPEED = 800;
+        // --- 1. CONFIGURACIÓN INICIAL ---
 
-        //==============================================================
-        // CLASE ESCENA: JUEGO (ÚNICA ESCENA)
-        //==============================================================
-        class GameScene extends Phaser.Scene {
-            constructor() {
-                super('GameScene');
-                this.player = null; // Variable para nuestro jugador
-                this.keys = null;   // Variable para las teclas (W,A,S,D)
-                this.bullets = null; // Variable para el grupo de balas
+        // Obtenemos el "lienzo" (canvas) del HTML
+        const canvas = document.getElementById('gameCanvas');
+        // Obtenemos el "contexto" 2D, que es la herramienta para dibujar
+        const ctx = canvas.getContext('2d');
+
+        // Hacemos que el lienzo ocupe toda la ventana
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // --- 2. EL JUGADOR ---
+
+        let player = {
+            x: canvas.width / 2,  // Posición inicial X (centro)
+            y: canvas.height / 2, // Posición inicial Y (centro)
+            size: 20,             // Tamaño (20 píxeles)
+            color: 'blue',        // Color
+            speed: 4,             // Velocidad de movimiento
+            angle: 0              // Ángulo al que mira (en radianes)
+        };
+
+        // --- 3. ALMACENES (Arrays) ---
+
+        let bullets = []; // Un array para guardar todas las balas
+        let keys = {};    // Un objeto para guardar qué teclas están pulsadas
+
+        // --- 4. SEGUIMIENTO DE RATÓN Y TECLADO ---
+
+        let mouse = {
+            x: 0,
+            y: 0
+        };
+
+        // Cuando el ratón se mueve, guardamos su posición
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+
+        // Cuando pulsamos una tecla, la guardamos
+        window.addEventListener('keydown', (e) => {
+            keys[e.key] = true;
+        });
+
+        // Cuando soltamos una tecla, la borramos
+        window.addEventListener('keyup', (e) => {
+            delete keys[e.key];
+        });
+
+        // Cuando hacemos clic, disparamos
+        window.addEventListener('mousedown', (e) => {
+            // Creamos una nueva bala
+            const bullet = {
+                x: player.x,
+                y: player.y,
+                size: 5,
+                color: 'yellow',
+                speed: 10,
+                // La bala debe salir en la dirección que mira el jugador
+                angle: player.angle 
+            };
+            // Añadimos la bala al array
+            bullets.push(bullet);
+        });
+
+
+        // --- 5. FUNCIÓN DE ACTUALIZACIÓN (Lógica) ---
+
+        function update() {
+            // --- Mover jugador ---
+            if (keys['w'] || keys['W']) {
+                player.y -= player.speed;
+            }
+            if (keys['s'] || keys['S']) {
+                player.y += player.speed;
+            }
+            if (keys['a'] || keys['A']) {
+                player.x -= player.speed;
+            }
+            if (keys['d'] || keys['D']) {
+                player.x += player.speed;
             }
 
-            create() {
-                // 1. Fondo (Para que no se vea negro)
-                this.cameras.main.setBackgroundColor('#34495e');
-                this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
+            // --- Apuntar jugador ---
+            // Calculamos el ángulo entre el jugador y el ratón
+            player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
 
-                // 2. Creación del Personaje
-                this.player = this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, 32, 32, 0x2ecc71); // Rectángulo verde
-                this.physics.add.existing(this.player); // Añadir físicas
+            // --- Mover balas ---
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                let bullet = bullets[i];
                 
-                this.player.body.setCollideWorldBounds(true); // No puede salir del mapa
-                this.player.setOrigin(0.5, 0.5);
-                this.player.body.setCircle(16); // Hitbox circular
+                // Movemos la bala usando trigonometría (coseno para X, seno para Y)
+                bullet.x += Math.cos(bullet.angle) * bullet.speed;
+                bullet.y += Math.sin(bullet.angle) * bullet.speed;
 
-                // Añadir una "mira" (línea) al jugador para saber dónde apunta
-                let sightLine = this.add.graphics().lineStyle(2, 0x000000, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
-                this.player.add(sightLine); 
-
-                // 3. Configuración de la Cámara (Centrada en el jugador)
-                this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-                this.cameras.main.setZoom(1.5); // Zoom para ver mejor
-
-                // 4. Configuración de Controles (Movimiento y Disparo)
-                this.keys = this.input.keyboard.addKeys('W,A,S,D'); // Configurar W,A,S,D
-                
-                // Configurar el clic del ratón para disparar
-                this.input.on('pointerdown', this.handleShoot, this);
-
-                // 5. Configuración del Grupo de Balas
-                this.bullets = this.physics.add.group({
-                    classType: Phaser.GameObjects.Arc, // Las balas serán círculos
-                    maxSize: 30, 
-                    runChildUpdate: true,
-                    createCallback: (bullet) => {
-                        bullet.setOrigin(0.5).setRadius(4).setFillStyle(0xe74c3c); // Rojas
-                        bullet.body.allowGravity = false;
-                        bullet.body.setCircle(4);
-                    }
-                });
-            }
-
-            // --- Bucle Principal (Se llama 60 veces por segundo) ---
-            update(time, delta) {
-                this.handleMovement();
-                this.handleAiming();
-            }
-
-            // --- Lógica de Movimiento ---
-            handleMovement() {
-                this.player.body.setVelocity(0); // El jugador se detiene si no se presiona nada
-                let moving = false;
-                
-                // Vertical
-                if (this.keys.W.isDown) { this.player.body.setVelocityY(-PLAYER_SPEED); moving = true; } 
-                else if (this.keys.S.isDown) { this.player.body.setVelocityY(PLAYER_SPEED); moving = true; }
-                
-                // Horizontal
-                if (this.keys.A.isDown) { this.player.body.setVelocityX(-PLAYER_SPEED); moving = true; } 
-                else if (this.keys.D.isDown) { this.player.body.setVelocityX(PLAYER_SPEED); moving = true; }
-
-                // Normalizar velocidad (para que no vaya más rápido en diagonal)
-                if (moving) { 
-                    this.player.body.velocity.normalize().scale(PLAYER_SPEED); 
-                }
-            }
-
-            // --- Lógica de Apuntado ---
-            handleAiming() {
-                // Rotar el jugador para que mire hacia el cursor del ratón
-                let pointer = this.input.activePointer;
-                let angle = Phaser.Math.Angle.Between(
-                    this.player.x, 
-                    this.player.y, 
-                    pointer.worldX, // Coordenada X del ratón en el mundo del juego
-                    pointer.worldY  // Coordenada Y del ratón en el mundo del juego
-                );
-                this.player.rotation = angle;
-            }
-
-            // --- Lógica de Disparo ---
-            handleShoot(pointer) {
-                let bullet = this.bullets.get(this.player.x, this.player.y);
-                
-                if (bullet) {
-                    bullet.setActive(true).setVisible(true);
-
-                    // Dirección de la bala (basada en la rotación del jugador)
-                    let direction = new Phaser.Math.Vector2().setToPolar(this.player.rotation, 1); 
-                    bullet.body.setVelocity(direction.x * BULLET_SPEED, direction.y * BULLET_SPEED);
-                    
-                    // Reciclaje de balas (si se alejan mucho)
-                    bullet.update = () => {
-                        if (Phaser.Math.Distance.Between(bullet.x, bullet.y, this.player.x, this.player.y) > 1200) {
-                            bullet.setActive(false).setVisible(false).body.stop();
-                        }
-                    };
+                // Opcional: Borrar balas si salen de la pantalla
+                if (bullet.x < 0 || bullet.x > canvas.width || bullet.y < 0 || bullet.y > canvas.height) {
+                    bullets.splice(i, 1);
                 }
             }
         }
 
-        //==============================================================
-        // INICIALIZACIÓN DE PHASER (Carga directa de la escena)
-        //==============================================================
-        const gameConfig = {
-            type: Phaser.AUTO,
-            width: GAME_WIDTH,
-            height: GAME_HEIGHT,
-            physics: {
-                default: 'arcade', // Habilita el motor de físicas
-                arcade: {
-                    gravity: { y: 0 } // Sin gravedad
-                }
-            },
-            scene: [GameScene], // Carga la escena de juego directamente
-            parent: 'game-container'
-        };
+        // --- 6. FUNCIÓN DE DIBUJADO (Gráficos) ---
 
-        const game = new Phaser.Game(gameConfig);
+        function draw() {
+            // Limpiamos el lienzo en cada frame
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // --- Dibujar jugador ---
+            // Guardamos el estado del canvas (para poder rotarlo)
+            ctx.save();
+            // Movemos el punto de origen (0,0) al centro del jugador
+            ctx.translate(player.x, player.y);
+            // Rotamos el canvas según el ángulo del jugador
+            ctx.rotate(player.angle);
+            
+            // Dibujamos el cuerpo del jugador (un cuadrado)
+            ctx.fillStyle = player.color;
+            ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
+            
+            // Dibujamos el "cañón" (una línea para saber dónde apunta)
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, 0); // Desde el centro
+            ctx.lineTo(player.size, 0); // Hacia adelante
+            ctx.stroke();
+
+            // Restauramos el canvas a su estado original
+            ctx.restore();
+
+
+            // --- Dibujar balas ---
+            for (const bullet of bullets) {
+                ctx.fillStyle = bullet.color;
+                ctx.beginPath();
+                ctx.arc(bullet.x, bullet.y, bullet.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // --- 7. EL BUCLE DEL JUEGO ---
+
+        // Esta función se llama a sí misma unas 60 veces por segundo
+        function gameLoop() {
+            update(); // Actualiza la lógica
+            draw();   // Dibuja los gráficos
+            requestAnimationFrame(gameLoop); // Pide al navegador que vuelva a llamar a gameLoop
+        }
+
+        // ¡Empezamos el juego!
+        gameLoop();
     </script>
 </body>
 </html>
