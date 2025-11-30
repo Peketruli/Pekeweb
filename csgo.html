@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>CSGO 2D - Prototipo con Mapa y Armas</title>
+    <title>CSGO 2D - Solución Pantalla Negra</title>
     
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
     
@@ -28,6 +28,13 @@
         </div>
 
     <script>
+        // COMPROBACIÓN DE CARGA DE PHASER: Si la librería no se cargó, esto fallará.
+        if (typeof Phaser === 'undefined') {
+            document.getElementById('game-container').innerHTML = 
+                "<h1>ERROR: No se pudo cargar la librería Phaser.</h1><p>Revisa tu conexión a internet o la ruta del script.</p>";
+            throw new Error("Phaser no está definido. Verifique el script src.");
+        }
+        
         //==============================================================
         // CONSTANTES GLOBALES
         //==============================================================
@@ -52,48 +59,69 @@
                 this.player = null;
                 this.keys = null;
                 this.bullets = null;
-                this.walls = null; // AÑADIDO: Para el grupo de paredes
+                this.walls = null;
                 
-                // Variables del Sistema de Armas
                 this.currentAmmo = MAX_AMMO_IN_MAGAZINE;
                 this.lastShotTime = 0;
                 this.isReloading = false;
             }
 
             create() {
-                // 1. Configuración Visual Mínima
+                // Configuración de fondo (azul oscuro)
                 this.cameras.main.setBackgroundColor('#34495e'); 
                 
-                this.createMap(); // NUEVO: Dibuja el fondo y las paredes
-                
-                // 2. Creación del Personaje
+                this.createMap(); // Dibuja el mapa y las paredes
+                this.createPlayer(); // Crea el personaje
+
+                if (!this.player || !this.player.body) {
+                    console.error("Fallo: El objeto del jugador o su cuerpo de físicas no se inicializó correctamente.");
+                    return; // Detiene la ejecución si el jugador no existe
+                }
+
+                // Configuración de elementos del juego
+                this.setupControls();
+                this.setupBullets();
+                this.setupCollisions(); 
+                this.setupCamera();
+                this.setupHUD(); 
+            }
+            
+            // --- Lógica de Creación ---
+            createPlayer() {
                 const spawnX = GAME_WIDTH / 2;
                 const spawnY = GAME_HEIGHT / 2;
                 
                 this.player = this.add.rectangle(spawnX, spawnY, 32, 32, 0x2ecc71); 
                 this.physics.add.existing(this.player); 
                 
-                this.player.body.setCollideWorldBounds(true);
-                this.player.body.setDrag(100);
-                this.player.body.setCircle(16);
+                if (this.player.body) {
+                    this.player.body.setCollideWorldBounds(true);
+                    this.player.body.setDrag(100);
+                    this.player.body.setCircle(16);
+                }
                 this.player.setOrigin(0.5, 0.5);
                 
-                // Visualización del apuntado
                 let sightLine = this.add.graphics().lineStyle(2, 0x000000, 0.8).strokeLineShape(new Phaser.Geom.Line(0, 0, 30, 0));
                 this.player.add(sightLine); 
+            }
 
-                // 3. Configuración de la Cámara
+            createMap() {
+                // Fondo del área jugable (Gris claro)
+                this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
+                
+                this.walls = this.physics.add.staticGroup();
+
+                // Paredes para colisión (Gris oscuro)
+                this.walls.create(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 150, null).setSize(400, 50).setDisplaySize(400, 50).setTint(0x7f8c8d); 
+                this.walls.create(GAME_WIDTH / 2 + 300, GAME_HEIGHT / 2 + 100, null).setSize(50, 200).setDisplaySize(50, 200).setTint(0x7f8c8d); 
+            }
+
+            setupCamera() {
                 this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
-                this.cameras.main.setZoom(1.5); 
-                
-                // 4. Configuración de Controles y Balas
-                this.setupControls();
-                this.setupBullets();
-                
-                // 5. Colisiones
-                this.setupCollisions(); // NUEVO: Aplica colisión de jugador y balas contra paredes
-                
-                // 6. HUD (Información de Munición) - Fijo en pantalla
+                this.cameras.main.setZoom(1.5);
+            }
+
+            setupHUD() {
                 this.ammoText = this.add.text(10, 10, this.getAmmoStatus(), {
                     fontSize: '28px',
                     fill: '#ecf0f1'
@@ -104,39 +132,18 @@
                     fill: '#f1c40f'
                 }).setOrigin(0.5).setScrollFactor(0); 
             }
-            
-            // --- Lógica del Mapa ---
-            createMap() {
-                // El área jugable es un rectángulo grande y gris claro
-                this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0xbdc3c7);
-                
-                // Creamos un grupo estático para las paredes (los objetos estáticos no se mueven)
-                this.walls = this.physics.add.staticGroup();
-
-                // Pared central horizontal (Bloqueo)
-                this.walls.create(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 150, null).setSize(400, 50).setDisplaySize(400, 50).setTint(0x7f8c8d); 
-                
-                // Pared lateral vertical
-                this.walls.create(GAME_WIDTH / 2 + 300, GAME_HEIGHT / 2 + 100, null).setSize(50, 200).setDisplaySize(50, 200).setTint(0x7f8c8d); 
-            }
 
             // --- Lógica de Colisiones ---
             setupCollisions() {
-                // Colisión del jugador contra las paredes
                 this.physics.add.collider(this.player, this.walls);
-
-                // Colisión de las balas contra las paredes (llamando a la función para reciclar la bala)
                 this.physics.add.collider(this.bullets, this.walls, this.bulletHitWall, null, this);
             }
             
-            // Handler para cuando la bala golpea una pared
             bulletHitWall(bullet, wall) {
-                // Desactiva la bala y la hace invisible, deteniendo su movimiento para reciclarla.
                 bullet.setActive(false).setVisible(false).body.stop();
             }
 
-            // --- Handlers de Setup (Resto del Código, sin cambios) ---
-
+            // --- Lógica de Controles/Armas ---
             setupControls() {
                 this.keys = this.input.keyboard.addKeys({
                     up: Phaser.Input.Keyboard.KeyCodes.W,
@@ -176,11 +183,13 @@
                     `MUNICIÓN: ${this.currentAmmo} / ${MAX_AMMO_IN_MAGAZINE}`;
             }
 
-            // --- Bucle Principal de Actualización (Resto del Código, sin cambios) ---
+            // --- Bucle Principal de Actualización ---
             update(time, delta) {
-                this.handleMovement();
-                this.handleAiming();
-                this.ammoText.setText(this.getAmmoStatus());
+                if (this.player && this.player.body) {
+                    this.handleMovement();
+                    this.handleAiming();
+                    this.ammoText.setText(this.getAmmoStatus());
+                }
             }
 
             handleMovement() {
@@ -264,10 +273,9 @@
                 default: 'arcade',
                 arcade: {
                     gravity: { y: 0 } 
-                    // debug: true // Descomenta esta línea para ver las hitboxes
                 }
             },
-            scene: [GameScene], 
+            scene: [GameScene],
             parent: 'game-container'
         };
 
