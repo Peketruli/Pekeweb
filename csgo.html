@@ -2,39 +2,61 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v13 - 3 Armas y Recoil</title>
+    <title>Prototipo 2D v14 - La Bomba</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
         canvas { display: block; background-color: #111; margin: 0 auto; cursor: crosshair; }
+        
+        /* --- Tienda (Sin cambios) --- */
         #shopMenu { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(30, 30, 30, 0.9); border: 2px solid #ccc; border-radius: 10px; padding: 20px; color: white; z-index: 10; }
         #shopMenu h2 { margin-top: 0; border-bottom: 1px solid #555; padding-bottom: 10px; }
-        .shop-category { margin-bottom: 15px; }
-        .shop-category h3 { color: #aaa; margin-bottom: 5px; }
+        .shop-category { margin-bottom: 15px; } .shop-category h3 { color: #aaa; margin-bottom: 5px; }
         .shop-item { display: block; width: 100%; padding: 10px; margin-bottom: 5px; background-color: #555; color: white; border: 1px solid #777; cursor: pointer; font-size: 16px; text-align: left; }
         .shop-item:hover { background-color: #777; }
+
+        /* --- (NUEVO) HUD de Progreso y Mensajes --- */
+        #progress-container {
+            display: none; /* Oculto por defecto */
+            position: absolute;
+            bottom: 20%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            height: 30px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border: 2px solid white;
+            border-radius: 5px;
+            z-index: 20;
+        }
+        #progress-bar {
+            width: 0%; /* Empieza en 0 */
+            height: 100%;
+            background-color: #4CAF50; /* Verde */
+            transition: width 0.1s linear; /* Suaviza la barra */
+        }
+        #game-message {
+            display: none; /* Oculto */
+            position: absolute;
+            top: 30%;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 48px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px black;
+            z-index: 20;
+        }
     </style>
 </head>
 <body>
     
-    <div id="shopMenu">
-        <h2>Tienda (Pulsa 'B' para cerrar)</h2>
-        <div class="shop-category">
-            <h3>Pistolas</h3>
-            <button class="shop-item" data-item="deagle" data-cost="700">Deagle ($700)</button>
-        </div>
-        <div class="shop-category">
-            <h3>Rifles</h3>
-            <button class="shop-item" data-item="ak47" data-cost="2700">AK-47 ($2700)</button>
-            <button class="shop-item" data-item="m4a1" data-cost="3100">M4A1-S ($3100)</button>
-            <button class="shop-item" data-item="awp" data-cost="4750">AWP ($4750)</button>
-        </div>
-        <div class="shop-category">
-            <h3>Equipo</h3>
-            <button class="shop-item" data-item="kevlar" data-cost="650">Chaleco ($650)</button>
-            <button class="shop-item" data-item="full_armor" data-cost="1000">Chaleco + Casco ($1000)</button>
-        </div>
+    <div id="shopMenu"> </div>
+
+    <div id="progress-container">
+        <div id="progress-bar"></div>
     </div>
+    <div id="game-message"></div>
 
     <canvas id="gameCanvas"></canvas>
 
@@ -45,71 +67,40 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
+        // (NUEVO) Elementos del HUD
         const shopMenuElement = document.getElementById('shopMenu');
         const shopButtons = document.querySelectorAll('.shop-item');
+        const progressContainerEl = document.getElementById('progress-container');
+        const progressBarEl = document.getElementById('progress-bar');
+        const gameMessageEl = document.getElementById('game-message');
 
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
         let camera = { x: 0, y: 0 };
 
-        // --- (NUEVO) ESTADÍSTICAS DE ARMAS MEJORADAS ---
-        const weaponData = {
-            'knife': {
-                name: 'Cuchillo',
-                type: 'melee',
-                damage: 50,
-                fireRate: 500, // ms entre "disparos"
-                range: 40, // Rango del cuchillo (en píxeles)
-                automatic: false,
-                recoil: 0,
-                spread: 0
-            },
-            'pistol': {
-                name: 'Pistola (Glock)',
-                type: 'secondary',
-                damage: 25,
-                fireRate: 200, 
-                automatic: false,
-                recoil: 0.0,
-                spread: 0.05
-            },
-            'deagle': {
-                name: 'Deagle',
-                type: 'secondary',
-                damage: 60,
-                fireRate: 400, 
-                automatic: false,
-                recoil: 0.1, // Mucho retroceso
-                spread: 0.03
-            },
-            'ak47': {
-                name: 'AK-47',
-                type: 'primary',
-                damage: 34,
-                fireRate: 100, // 600 RPM
-                automatic: true,
-                recoil: 0.03, // Aumenta con cada disparo
-                spread: 0.01 // Precisa en el primer disparo
-            },
-            'm4a1': {
-                name: 'M4A1-S',
-                type: 'primary',
-                damage: 30,
-                fireRate: 110,
-                automatic: true,
-                recoil: 0.02, // Menos retroceso
-                spread: 0.01
-            },
-            'awp': {
-                name: 'AWP',
-                type: 'primary',
-                damage: 110,
-                fireRate: 1500, // 1.5s de espera
-                automatic: false,
-                recoil: 0.0,
-                spread: 0.0 // Perfectamente precisa
-            }
+        // (NUEVO) Constantes del juego
+        const GAME_TIMES = {
+            PLANT: 3000,   // 3 segundos para plantar
+            DEFUSE: 5000,  // 5 segundos para desactivar
+            BOMB_FUSE: 30000 // 30 segundos de mecha
         };
+        
+        // (NUEVO) Objeto de estado del juego
+        let game = {
+            bomb: {
+                state: 'unplanted', // 'unplanted', 'planted', 'exploded', 'defused'
+                x: 0, y: 0,
+                plantTime: 0,
+                timerId: null // Guardará el setTimeout
+            },
+            isPlanting: false,
+            isDefusing: false,
+            plantStartTime: 0,
+            defuseStartTime: 0,
+            messageTimerId: null
+        };
+
+        const weaponData = { /* ... (Datos de armas sin cambios) ... */ 'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 }, 'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05 }, 'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03 }, 'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01 }, 'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01 }, 'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0 } };
 
         // --- 2. EL MAPA (Tu diseño) ---
         const walls = [ /* Tu array de paredes de 48 líneas va aquí... */ { x: 1696, y: 1311, width: 85, height: 632 }, { x: 1682, y: 1, width: 99, height: 579 }, { x: 1658, y: 774, width: 578, height: 381 }, { x: 1885, y: 429, width: 350, height: 355 }, { x: 1954, y: 1367, width: 328, height: 231 }, { x: 1841, y: 107, width: 395, height: 119 }, { x: 1402, y: 532, width: 135, height: 463 }, { x: 899, y: 209, width: 496, height: 337 }, { x: 881, y: 204, width: 523, height: 423 }, { x: 839, y: 119, width: 59, height: 507 }, { x: -1, y: 2, width: 345, height: 617 }, { x: 542, y: 293, width: 31, height: 22 }, { x: 571, y: 204, width: 33, height: 21 }, { x: 609, y: 268, width: 34, height: 23 }, { x: 493, y: 181, width: 19, height: 166 }, { x: 512, y: 347, width: 133, height: 24 }, { x: 494, y: 348, width: 356, height: 276 }, { x: 493, y: 340, width: 19, height: 15 }, { x: 491, y: 9, width: 26, height: 50 }, { x: 491, y: 3, width: 25, height: 9 }, { x: 594, y: 142, width: 24, height: 12 }, { x: 656, y: 182, width: 66, height: 35 }, { x: 761, y: 106, width: 21, height: 189 }, { x: 1, y: 3, width: 1520, height: 9 }, { x: 1522, y: 5, width: 1453, height: 6 }, { x: 2978, y: 7, width: 10, height: 3 }, { x: 2972, y: 5, width: 17, height: 6 }, { x: 2980, y: 9, width: 5, height: 728 }, { x: 2983, y: 738, width: 3, height: 610 }, { x: 2981, y: 739, width: 4, height: 615 }, { x: 2981, y: 1353, width: 3, height: 627 }, { x: 1465, y: 1943, width: 1520, height: 35 }, { x: -2, y: 1943, width: 1469, height: 35 }, { x: 0, y: 1225, width: 12, height: 720 }, { x: 4, y: 661, width: 8, height: 566 }, { x: 2, y: 604, width: 9, height: 59 }, { x: 1353, y: 1259, width: 200, height: 108 }, { x: 1159, y: 1035, width: 135, height: 123 }, { x: 1339, y: 1367, width: 67, height: 433 }, { x: 533, y: 1479, width: 115, height: 332 }, { x: 815, y: 1333, width: 355, height: 107 }, { x: 535, y: 1129, width: 143, height: 100 }, { x: 767, y: 826, width: 217, height: 236 }, { x: 1137, y: 692, width: 73, height: 55 }, { x: 501, y: 715, width: 58, height: 68 }, { x: 142, y: 1606, width: 405, height: 205 }, { x: 834, y: 1603, width: 40, height: 31 }, { x: 940, y: 1547, width: 260, height: 63 }, { x: 1115, y: 1662, width: 28, height: 76 }, { x: 943, y: 1706, width: 8, height: 31 }, { x: 875, y: 1767, width: 43, height: 29 }, { x: 898, y: 1656, width: 43, height: 15 }, { x: 1046, y: 1812, width: 40, height: 29 }, { x: 838, y: 1873, width: 33, height: 21 }, { x: 989, y: 1840, width: 94, height: 105 }, { x: 1190, y: 1783, width: 66, height: 36 } ];
@@ -123,16 +114,10 @@
             speed: 4,
             angle: 0,
             health: 100,
-            money: 16000, // Más dinero para probar
-            // (NUEVO) Inventario de 3 armas
-            inventory: { 
-                primary: null, // 'ak47', 'm4a1', etc.
-                secondary: 'pistol',
-                melee: 'knife',
-                kevlar: false, 
-                helmet: false 
-            },
-            activeWeapon: 'secondary', // (NUEVO) Slot activo ('primary', 'secondary', 'melee')
+            money: 16000, 
+            inventory: { primary: null, secondary: 'pistol', melee: 'knife', kevlar: false, helmet: false },
+            activeWeapon: 'secondary',
+            hasBomb: true, // (NUEVO) El jugador es T y tiene la bomba
             lastShotTime: 0,
             recoil: 0.0,
             hasFiredSemi: false 
@@ -151,247 +136,245 @@
             mouse.x = e.clientX + camera.x;
             mouse.y = e.clientY + camera.y;
         });
-        window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+        window.addEventListener('keydown', (e) => { 
+            keys[e.key] = true; 
+            
+            // (NUEVO) Iniciar acción de Plantar/Desactivar
+            if (e.key === 'e' && !isShopOpen) {
+                // ¿Estamos plantando?
+                if (player.hasBomb && game.bomb.state === 'unplanted' && !game.isPlanting) {
+                    if (checkInBombSite()) {
+                        game.isPlanting = true;
+                        game.plantStartTime = Date.now();
+                    }
+                }
+                // ¿Estamos desactivando?
+                if (!player.hasBomb && game.bomb.state === 'planted' && !game.isDefusing) {
+                    if (checkNearBomb()) {
+                        game.isDefusing = true;
+                        game.defuseStartTime = Date.now();
+                    }
+                }
+            }
+        });
         window.addEventListener('keyup', (e) => {
             delete keys[e.key];
             
-            // --- (NUEVO) Cambio de Arma ---
-            if (!isShopOpen) { // No cambiar de arma si la tienda está abierta
-                if (e.key === '1') {
-                    // Solo cambia si TIENES un arma principal
-                    if (player.inventory.primary) {
-                        player.activeWeapon = 'primary';
-                        player.recoil = 0; // Resetea recoil al cambiar
-                    }
-                } else if (e.key === '2') {
-                    player.activeWeapon = 'secondary';
-                    player.recoil = 0;
-                } else if (e.key === '3') {
-                    player.activeWeapon = 'melee';
-                    player.recoil = 0;
-                }
+            // (NUEVO) Cancelar acción de Plantar/Desactivar
+            if (e.key === 'e') {
+                game.isPlanting = false;
+                game.isDefusing = false;
+                hideProgress();
             }
 
-            // Abrir tienda
+            if (!isShopOpen) {
+                if (e.key === '1') { if (player.inventory.primary) { player.activeWeapon = 'primary'; player.recoil = 0; } }
+                else if (e.key === '2') { player.activeWeapon = 'secondary'; player.recoil = 0; }
+                else if (e.key === '3') { player.activeWeapon = 'melee'; player.recoil = 0; }
+            }
+
             if (e.key === 'b' || e.key === 'B') {
                 let inSpawn = false;
-                for (const zone of zones) {
-                    if (zone.name === 'Spawn AT' && checkZoneCollision(player, zone)) {
-                        inSpawn = true;
-                        break;
-                    }
-                }
+                for (const zone of zones) { if (zone.name === 'Spawn AT' && checkZoneCollision(player, zone)) { inSpawn = true; break; } }
                 if (inSpawn) isShopOpen = !isShopOpen;
                 else isShopOpen = false;
             }
         });
 
         window.addEventListener('mousedown', (e) => {
-            if (isShopOpen) return; 
+            if (isShopOpen || game.isPlanting || game.isDefusing) return; // No disparar si está ocupado
             mouse.isDown = true;
             player.hasFiredSemi = false; 
         });
-        window.addEventListener('mouseup', (e) => {
-            mouse.isDown = false;
-        });
+        window.addEventListener('mouseup', (e) => { mouse.isDown = false; });
         
-        // (NUEVO) Lógica de compra mejorada
-        shopButtons.forEach(button => {
-            button.addEventListener('click', () => {
-                const itemName = button.dataset.item;
-                const cost = parseInt(button.dataset.cost);
-                
-                if (player.money >= cost) {
-                    player.money -= cost;
-                    buyItem(itemName);
-                    isShopOpen = false; 
-                } else {
-                    console.log("Dinero insuficiente");
-                }
-            });
-        });
-
-        function buyItem(itemName) {
-            console.log("Comprado: " + itemName);
-            player.recoil = 0.0;
-            const itemData = weaponData[itemName];
-            
-            if (itemData) {
-                // Si es un arma, la equipa en su slot
-                if (itemData.type === 'primary') {
-                    player.inventory.primary = itemName;
-                    player.activeWeapon = 'primary'; // La equipa al comprar
-                } else if (itemData.type === 'secondary') {
-                    player.inventory.secondary = itemName;
-                    player.activeWeapon = 'secondary';
-                }
-            } else {
-                // Si no es un arma, es equipo
-                switch (itemName) {
-                    case 'kevlar':
-                        player.inventory.kevlar = true;
-                        player.inventory.helmet = false; 
-                        break;
-                    case 'full_armor':
-                        player.inventory.kevlar = true;
-                        player.inventory.helmet = true;
-                        break;
-                }
-            }
-        }
+        shopButtons.forEach(button => { /* ... (Lógica de tienda sin cambios) ... */ button.addEventListener('click', () => { const itemName = button.dataset.item; const cost = parseInt(button.dataset.cost); if (player.money >= cost) { player.money -= cost; buyItem(itemName); isShopOpen = false; } else { console.log("Dinero insuficiente"); } }); });
+        function buyItem(itemName) { /* ... (Lógica de tienda sin cambios) ... */ console.log("Comprado: " + itemName); player.recoil = 0.0; const itemData = weaponData[itemName]; if (itemData) { if (itemData.type === 'primary') { player.inventory.primary = itemName; player.activeWeapon = 'primary'; } else if (itemData.type === 'secondary') { player.inventory.secondary = itemName; player.activeWeapon = 'secondary'; } } else { switch (itemName) { case 'kevlar': player.inventory.kevlar = true; player.inventory.helmet = false; break; case 'full_armor': player.inventory.kevlar = true; player.inventory.helmet = true; break; } } }
 
         // --- 6. FUNCIONES DE COLISIÓN ---
         function checkCollision(obj, wall) { /* ... (Sin cambios) ... */ const objLeft = obj.x - obj.size / 2; const objRight = obj.x + obj.size / 2; const objTop = obj.y - obj.size / 2; const objBottom = obj.y + obj.size / 2; const wallLeft = wall.x; const wallRight = wall.x + wall.width; const wallTop = wall.y; const wallBottom = wall.y + wall.height; return (objRight > wallLeft && objLeft < wallRight && objBottom > wallTop && objTop < wallBottom); }
         function checkZoneCollision(player, zone) { /* ... (Sin cambios) ... */ const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
         function checkObjectCollision(obj1, obj2) { /* ... (Sin cambios) ... */ const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
-        
+
         // --- 7. LÓGICA DE IA ---
         function getZoneCenter(name) { /* ... (Sin cambios) ... */ for (const zone of zones) { if (zone.name === name) { return { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 }; } } return { x: 2666, y: 1097 }; }
         function spawnBot() { /* ... (Sin cambios) ... */ const spawnPoint = getZoneCenter('Spawn T'); const bot = { x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'red', speed: 2.5, angle: 0, health: 100, state: 'seeking', lastShotTime: 0, shootCooldown: 500 }; bots.push(bot); }
         function canSeePlayer(bot) { /* ... (Sin cambios) ... */ const angle = Math.atan2(player.y - bot.y, player.x - bot.x); const distance = Math.hypot(player.x - bot.x, player.y - bot.y); if (distance > 1000) return false; for (let i = 0.1; i < 1; i += 0.1) { const testPoint = { x: bot.x + (player.x - bot.x) * i, y: bot.y + (player.y - bot.y) * i, size: 2 }; for (const wall of walls) { if (checkCollision(testPoint, wall)) { return false; } } } return true; }
         function updateBots() { /* ... (Sin cambios) ... */ for (let i = bots.length - 1; i >= 0; i--) { const bot = bots[i]; if (bot.health <= 0) { player.money += 300; bots.splice(i, 1); console.log("Bot eliminado, +$300"); setTimeout(spawnBot, 3000); continue; } const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x); if (canSeePlayer(bot)) { bot.state = 'attacking'; bot.angle = angleToPlayer; if (Date.now() - bot.lastShotTime > bot.shootCooldown) { const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: 10 }; botBullets.push(bullet); bot.lastShotTime = Date.now(); } } else { bot.state = 'seeking'; bot.angle = angleToPlayer; const oldX = bot.x; const oldY = bot.y; bot.x += Math.cos(bot.angle) * bot.speed; for (const wall of walls) { if (checkCollision(bot, wall)) { bot.x = oldX; break; } } bot.y += Math.sin(bot.angle) * bot.speed; for (const wall of walls) { if (checkCollision(bot, wall)) { bot.y = oldY; break; } } } } }
 
-        // --- (NUEVO) FUNCIONES DE DISPARO REFACTORIZADAS ---
+        // --- 8. LÓGICA DE ARMAS ---
+        function useWeapon() { /* ... (Sin cambios) ... */ const weaponName = player.inventory[player.activeWeapon]; if (!weaponName) return; const weapon = weaponData[weaponName]; if (Date.now() - player.lastShotTime < weapon.fireRate) return; if (!weapon.automatic && player.hasFiredSemi) return; player.lastShotTime = Date.now(); player.hasFiredSemi = true; if (weapon.type === 'melee') { useMelee(weapon); } else { shootBullet(weapon); } }
+        function useMelee(weapon) { /* ... (Sin cambios) ... */ const attackLine = { x: player.x + Math.cos(player.angle) * weapon.range / 2, y: player.y + Math.sin(player.angle) * weapon.range / 2, size: weapon.range }; for (const bot of bots) { if (checkObjectCollision(attackLine, bot)) { bot.health -= weapon.damage; console.log("¡Cuchillada!"); break; } } }
+        function shootBullet(weapon) { /* ... (Sin cambios) ... */ const totalSpread = weapon.spread + player.recoil; const spread = (Math.random() - 0.5) * totalSpread; const bulletAngle = player.angle + spread; player.recoil += weapon.recoil; const bullet = { x: player.x, y: player.y, size: 5, color: 'yellow', speed: 15, angle: bulletAngle, damage: weapon.damage }; bullets.push(bullet); }
         
-        function useWeapon() {
-            // 1. Obtener el nombre del arma activa (ej: 'ak47', 'knife')
-            const weaponName = player.inventory[player.activeWeapon];
-            if (!weaponName) return; // No tiene arma en ese slot
-            
-            const weapon = weaponData[weaponName];
-            
-            // 2. Comprobar Cooldown
-            if (Date.now() - player.lastShotTime < weapon.fireRate) return;
-            
-            // 3. Comprobar semi-auto
-            if (!weapon.automatic && player.hasFiredSemi) return;
-            
-            // 4. Registrar el "disparo"
-            player.lastShotTime = Date.now();
-            player.hasFiredSemi = true; 
-
-            // 5. Decidir qué hacer: ¿cuchillo o bala?
-            if (weapon.type === 'melee') {
-                useMelee(weapon);
-            } else {
-                shootBullet(weapon);
-            }
-        }
+        // --- (NUEVO) LÓGICA DE LA BOMBA ---
         
-        function useMelee(weapon) {
-            // Dibuja una línea de ataque para el cuchillo
-            const attackLine = {
-                x: player.x + Math.cos(player.angle) * weapon.range / 2,
-                y: player.y + Math.sin(player.angle) * weapon.range / 2,
-                size: weapon.range
-            };
-            
-            // Comprueba si golpea a un bot
-            for (const bot of bots) {
-                if (checkObjectCollision(attackLine, bot)) {
-                    bot.health -= weapon.damage;
-                    console.log("¡Cuchillada!");
-                    // (Opcional: solo golpear a uno y parar)
-                    break;
+        function checkInBombSite() {
+            for (const zone of zones) {
+                if (zone.name === 'Sitio A' || zone.name === 'Sitio B') {
+                    if (checkZoneCollision(player, zone)) {
+                        return true;
+                    }
                 }
             }
+            return false;
         }
         
-        function shootBullet(weapon) {
-            // Calcular retroceso/dispersión
-            const totalSpread = weapon.spread + player.recoil;
-            const spread = (Math.random() - 0.5) * totalSpread;
-            const bulletAngle = player.angle + spread;
+        function checkNearBomb() {
+            if (game.bomb.state !== 'planted') return false;
+            const distance = Math.hypot(player.x - game.bomb.x, player.y - game.bomb.y);
+            return distance < 75; // Rango para desactivar (en píxeles)
+        }
+
+        function updatePlanting() {
+            if (!game.isPlanting) return;
+            if (!checkInBombSite()) { // Si se mueve fuera del site
+                game.isPlanting = false;
+                hideProgress();
+                return;
+            }
             
-            // Acumular retroceso
-            player.recoil += weapon.recoil;
+            const progress = Date.now() - game.plantStartTime;
+            showProgress(progress, GAME_TIMES.PLANT);
             
-            // Crear la bala
-            const bullet = {
-                x: player.x,
-                y: player.y,
-                size: 5, 
-                color: 'yellow',
-                speed: 15,
-                angle: bulletAngle,
-                damage: weapon.damage
-            };
-            bullets.push(bullet);
+            if (progress >= GAME_TIMES.PLANT) {
+                plantBomb();
+            }
         }
         
-        // --- 8. FUNCIÓN DE ACTUALIZACIÓN (Lógica) ---
+        function updateDefusing() {
+            if (!game.isDefusing) return;
+            if (!checkNearBomb()) { // Si se aleja de la bomba
+                game.isDefusing = false;
+                hideProgress();
+                return;
+            }
+            
+            const progress = Date.now() - game.defuseStartTime;
+            showProgress(progress, GAME_TIMES.DEFUSE);
+            
+            if (progress >= GAME_TIMES.DEFUSE) {
+                defuseBomb();
+            }
+        }
+
+        function plantBomb() {
+            console.log("¡Bomba Plantada!");
+            game.isPlanting = false;
+            hideProgress();
+            player.hasBomb = false;
+            
+            game.bomb.state = 'planted';
+            game.bomb.x = player.x;
+            game.bomb.y = player.y;
+            game.bomb.plantTime = Date.now();
+            
+            // Inicia el temporizador de explosión
+            game.bomb.timerId = setTimeout(bombExplode, GAME_TIMES.BOMB_FUSE);
+        }
+        
+        function defuseBomb() {
+            console.log("¡Bomba Desactivada!");
+            clearTimeout(game.bomb.timerId); // ¡Crucial! Detiene la explosión
+            game.isDefusing = false;
+            hideProgress();
+            
+            game.bomb.state = 'defused';
+            showMessage("¡Bomba Desactivada!", 3000);
+            setTimeout(resetRound, 3000);
+        }
+        
+        function bombExplode() {
+            console.log("¡BOOM!");
+            game.bomb.state = 'exploded';
+            showMessage("¡Los Terroristas Ganan!", 3000);
+            setTimeout(resetRound, 3000);
+        }
+        
+        function resetRound() {
+            console.log("--- Nueva Ronda ---");
+            game.bomb.state = 'unplanted';
+            game.bomb.timerId = null;
+            player.hasBomb = true;
+            
+            // (Opcional: resetear vida/posición)
+            player.health = 100;
+            const spawnPoint = getZoneCenter('Spawn AT');
+            player.x = spawnPoint.x;
+            player.y = spawnPoint.y;
+            
+            // Resetear bots
+            bots.forEach(bot => bot.health = 0); // Mata a los bots restantes
+            updateBots(); // Limpia y prepara nuevos spawns
+        }
+
+        function showProgress(progress, max) {
+            progressContainerEl.style.display = 'block';
+            const percentage = Math.min((progress / max) * 100, 100);
+            progressBarEl.style.width = percentage + '%';
+        }
+        
+        function hideProgress() {
+            progressContainerEl.style.display = 'none';
+            progressBarEl.style.width = '0%';
+        }
+        
+        function showMessage(text, duration) {
+            gameMessageEl.textContent = text;
+            gameMessageEl.style.display = 'block';
+            
+            clearTimeout(game.messageTimerId); // Limpia mensajes anteriores
+            game.messageTimerId = setTimeout(() => {
+                gameMessageEl.style.display = 'none';
+            }, duration);
+        }
+
+
+        // --- 9. FUNCIÓN DE ACTUALIZACIÓN (Lógica) ---
         function update() {
             if (isShopOpen) return; // Pausa el juego
 
-            // --- (NUEVO) Lógica de Disparo y Retroceso ---
-            if (mouse.isDown) {
+            // Lógica de Disparo y Retroceso
+            if (mouse.isDown && !game.isPlanting && !game.isDefusing) {
                 useWeapon(); // Intenta usar el arma activa
             } else {
-                // (NUEVO) Recuperación de retroceso más rápida
-                if (player.recoil > 0) {
-                    player.recoil -= 0.02; // Velocidad de recuperación
-                }
+                if (player.recoil > 0) player.recoil -= 0.02; // Recuperación de retroceso
                 if (player.recoil < 0) player.recoil = 0;
             }
 
             // Lógica del Jugador
-            const oldX = player.x; const oldY = player.y;
-            if (keys['a'] || keys['A']) { player.x -= player.speed; }
-            if (keys['d'] || keys['D']) { player.x += player.speed; }
-            for (const wall of walls) { if (checkCollision(player, wall)) { player.x = oldX; break; } }
-            if (keys['w'] || keys['W']) { player.y -= player.speed; }
-            if (keys['s'] || keys['S']) { player.y += player.speed; }
-            for (const wall of walls) { if (checkCollision(player, wall)) { player.y = oldY; break; } }
-            player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-
-            // Lógica de Balas del JUGADOR
-            for (let i = bullets.length - 1; i >= 0; i--) {
-                let bullet = bullets[i];
-                bullet.x += Math.cos(bullet.angle) * bullet.speed;
-                bullet.y += Math.sin(bullet.angle) * bullet.speed;
-                let bulletHit = false;
-                for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } }
-                if (bulletHit) continue; 
-                for (const bot of bots) {
-                    if (checkObjectCollision(bullet, bot)) {
-                        bot.health -= bullet.damage;
-                        bullets.splice(i, 1); bulletHit = true; break;
-                    }
-                }
-                if (bulletHit) continue;
-                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); }
+            // (NUEVO) No moverse si está plantando/desactivando
+            if (!game.isPlanting && !game.isDefusing) {
+                const oldX = player.x; const oldY = player.y;
+                if (keys['a'] || keys['A']) { player.x -= player.speed; }
+                if (keys['d'] || keys['D']) { player.x += player.speed; }
+                for (const wall of walls) { if (checkCollision(player, wall)) { player.x = oldX; break; } }
+                if (keys['w'] || keys['W']) { player.y -= player.speed; }
+                if (keys['s'] || keys['S']) { player.y += player.speed; }
+                for (const wall of walls) { if (checkCollision(player, wall)) { player.y = oldY; break; } }
+                player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
             }
             
+            // (NUEVO) Lógica de progreso de bomba
+            updatePlanting();
+            updateDefusing();
+
+            // Lógica de Balas del JUGADOR
+            for (let i = bullets.length - 1; i >= 0; i--) { /* ... (Sin cambios) ... */ let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (const bot of bots) { if (checkObjectCollision(bullet, bot)) { bot.health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
             // Lógica de Balas del BOT
-            for (let i = botBullets.length - 1; i >= 0; i--) {
-                let bullet = botBullets[i];
-                bullet.x += Math.cos(bullet.angle) * bullet.speed;
-                bullet.y += Math.sin(bullet.angle) * bullet.speed;
-                let bulletHit = false;
-                for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } }
-                if (bulletHit) continue;
-                if (checkObjectCollision(bullet, player)) {
-                    player.health -= bullet.damage; 
-                    botBullets.splice(i, 1); bulletHit = true;
-                    if (player.health <= 0) console.log("¡HAS MUERTO!");
-                }
-                if (bulletHit) continue;
-                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); }
-            }
+            for (let i = botBullets.length - 1; i >= 0; i--) { /* ... (Sin cambios) ... */ let bullet = botBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (checkObjectCollision(bullet, player)) { player.health -= bullet.damage; botBullets.splice(i, 1); bulletHit = true; if (player.health <= 0) console.log("¡HAS MUERTO!"); } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } }
             
             // Actualizar IA
             updateBots();
             
             // Lógica de la Cámara
-            camera.x = player.x - canvas.width / 2;
-            camera.y = player.y - canvas.height / 2;
-            if (camera.x < 0) camera.x = 0;
-            if (camera.y < 0) camera.y = 0;
+            camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2;
+            if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0;
             if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width;
             if (camera.y + canvas.height > world.height) camera.y = world.height - canvas.height;
         }
 
-        // --- 9. FUNCIÓN DE DIBUJADO (Gráficos) ---
+        // --- 10. FUNCIÓN DE DIBUJADO (Gráficos) ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.save();
@@ -403,6 +386,15 @@
             ctx.fillStyle = '#999';
             for (const wall of walls) { ctx.fillRect(wall.x, wall.y, wall.width, wall.height); }
 
+            // (NUEVO) Dibujar la bomba plantada
+            if (game.bomb.state === 'planted') {
+                // Flash rojo
+                const time = Date.now();
+                const flash = Math.abs(Math.sin(time / 100)); // Flashea 3 veces por seg
+                ctx.fillStyle = `rgb(255, ${flash * 100}, ${flash * 100})`;
+                ctx.fillRect(game.bomb.x - 10, game.bomb.y - 10, 20, 20); // Dibuja la bomba
+            }
+
             // Dibujar Balas
             ctx.fillStyle = 'yellow';
             for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
@@ -410,14 +402,7 @@
             for (const bullet of botBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
 
             // Dibujar Bots
-            for (const bot of bots) {
-                ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
-                ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
-                ctx.strokeStyle = 'black'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bot.size, 0); ctx.stroke();
-                ctx.restore();
-                ctx.fillStyle = 'red'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size, 5);
-                ctx.fillStyle = 'green'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size * (bot.health / 100), 5);
-            }
+            for (const bot of bots) { /* ... (Sin cambios) ... */ ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle); ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size); ctx.strokeStyle = 'black'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bot.size, 0); ctx.stroke(); ctx.restore(); ctx.fillStyle = 'red'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size, 5); ctx.fillStyle = 'green'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size * (bot.health / 100), 5); }
 
             // Dibujar Jugador
             ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
@@ -426,25 +411,25 @@
             ctx.restore(); 
             ctx.restore(); // Restaura la cámara
 
-            // --- (NUEVO) Dibujar HUD Mejorado ---
+            // Dibujar HUD
             ctx.fillStyle = 'white'; ctx.font = '24px Arial';
             ctx.fillText(`Vida: ${player.health}`, 20, 30);
             ctx.fillText(`Dinero: $${player.money}`, 20, 60); 
-            
-            // Mostrar nombre del arma activa
             const activeWeaponName = player.inventory[player.activeWeapon];
             const weaponNameStr = activeWeaponName ? weaponData[activeWeaponName].name : "Manos";
             ctx.fillText(`Arma: ${weaponNameStr}`, 20, 90); 
+            // (NUEVO) Mostrar si tiene la bomba
+            if (player.hasBomb) {
+                ctx.fillStyle = 'orange';
+                ctx.fillText("[BOMBA]", 20, 120);
+            }
             
             // Controlar UI de Tienda
-            if (isShopOpen) {
-                shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default';
-            } else {
-                shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair';
-            }
+            if (isShopOpen) { shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default'; }
+            else { shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair'; }
         }
 
-        // --- 10. EL BUCLE DEL JUEGO ---
+        // --- 11. EL BUCLE DEL JUEGO ---
         function gameLoop() {
             update(); // Lógica
             draw();   // Gráficos
