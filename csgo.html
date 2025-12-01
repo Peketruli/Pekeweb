@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v23 - Granadas HE</title>
+    <title>Prototipo 2D v24 - IA Táctica</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -45,21 +45,14 @@
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
         let camera = { x: 0, y: 0 };
-        const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500 }; // (NUEVO)
+        const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500 }; 
         let game = {
             bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null },
             isDefusing: false,
             defuseStartTime: 0,
             messageTimerId: null
         };
-        const weaponData = {
-            'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 },
-            'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05 },
-            'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03 },
-            'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01 },
-            'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01 },
-            'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0 },
-            // (NUEVO) Slot de granada
+        const weaponData = { 'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 }, 'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05 }, 'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03 }, 'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01 }, 'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01 }, 'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0 },
             'he_grenade': { name: 'Granada HE', type: 'grenade', damage: 90, fireRate: 1000, range: 200 } 
         };
 
@@ -84,7 +77,7 @@
             x: 142, y: 1087, size: mapData.playerSize, color: 'cyan', speed: 4, angle: 0, health: 100, armor: 0, money: 16000, 
             inventory: { 
                 primary: null, secondary: 'pistol', melee: 'knife', kevlar: false, helmet: false,
-                grenades: { he: 0, flash: 0, smoke: 0 } // (NUEVO)
+                grenades: { he: 0, flash: 0, smoke: 0 }
             },
             activeWeapon: 'secondary', hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false 
         };
@@ -94,14 +87,12 @@
         let keys = {};
         let mouse = { x: 0, y: 0, isDown: false }; 
         let isShopOpen = false;
-        
         let bots = []; 
         let botBullets = [];
         let alliedBots = [];
         let alliedBotBullets = [];
-        
-        let grenades = []; // (NUEVO)
-        let explosions = []; // (NUEVO)
+        let grenades = []; 
+        let explosions = []; 
 
         // --- 5. SEGUIMIENTO de EVENTOS ---
         window.addEventListener('mousemove', (e) => { 
@@ -127,7 +118,7 @@
                 if (e.key === '1') { if (player.inventory.primary) { player.activeWeapon = 'primary'; player.recoil = 0; } }
                 else if (e.key === '2') { player.activeWeapon = 'secondary'; player.recoil = 0; }
                 else if (e.key === '3') { player.activeWeapon = 'melee'; player.recoil = 0; }
-                else if (e.key === '4') { // (NUEVO) Equipar Granada
+                else if (e.key === '4') { 
                     if (player.inventory.grenades.he > 0) {
                         player.activeWeapon = 'he_grenade';
                     }
@@ -155,8 +146,8 @@
             if (itemData) { 
                 if (itemData.type === 'primary') { player.inventory.primary = itemName; player.activeWeapon = 'primary'; }
                 else if (itemData.type === 'secondary') { player.inventory.secondary = itemName; player.activeWeapon = 'secondary'; }
-                else if (itemData.type === 'grenade') { // (NUEVO)
-                    player.inventory.grenades.he++; // Por ahora solo compramos HE
+                else if (itemData.type === 'grenade') { 
+                    player.inventory.grenades.he++; 
                 }
             } else { 
                 switch (itemName) {
@@ -177,7 +168,7 @@
         function checkZoneCollision(player, zone) { const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
         function checkObjectCollision(obj1, obj2) { const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
 
-        // --- 7. LÓGICA DE IA (5v5) ---
+        // --- 7. LÓGICA DE IA (ENEMIGOS Y ALIADOS) ---
         function getSpawnZone(name) {
             for (const zone of zones) {
                 if (zone.name === name) {
@@ -225,7 +216,7 @@
             return true;
         }
 
-        // --- (NUEVO) IA "RUN AND GUN" ---
+        // --- (NUEVO) IA TÁCTICA (T-BOTS) ---
         function updateBots() {
             for (let i = bots.length - 1; i >= 0; i--) {
                 const bot = bots[i];
@@ -240,6 +231,16 @@
                     continue; 
                 }
                 
+                let targetAngle = bot.angle; // Ángulo al que mira
+                
+                // 1. Lógica de Plantar
+                if (bot.isPlanting) {
+                    const plantProgress = Date.now() - bot.plantStartTime;
+                    if (plantProgress >= GAME_TIMES.PLANT) { plantBomb(bot); }
+                    continue; // No hace nada más
+                }
+                
+                // 2. Lógica de Combate
                 const seesPlayer = canSeeTarget(bot, player);
                 let seesAlly = false;
                 let targetAlly = null;
@@ -251,59 +252,63 @@
                     }
                 }
                 
-                if (bot.isPlanting) {
-                    const plantProgress = Date.now() - bot.plantStartTime;
-                    if (plantProgress >= GAME_TIMES.PLANT) { plantBomb(bot); }
-                    continue; 
-                }
-                
                 if (seesPlayer) {
                     bot.state = 'attacking';
-                    const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
-                    bot.angle = angleToPlayer;
-                    moveBot(bot, bot.angle); // (NUEVO) Se mueve mientras ataca
+                    targetAngle = Math.atan2(player.y - bot.y, player.x - bot.x); // Apunta
                     if (Date.now() - bot.lastShotTime > bot.shootCooldown) {
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: 10 };
+                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: targetAngle, damage: 10 };
                         botBullets.push(bullet);
                         bot.lastShotTime = Date.now();
                     }
                 } else if (seesAlly) {
                     bot.state = 'attacking';
-                    const angleToAlly = Math.atan2(targetAlly.y - bot.y, targetAlly.x - bot.x);
-                    bot.angle = angleToAlly;
-                    moveBot(bot, bot.angle); // (NUEVO) Se mueve mientras ataca
+                    targetAngle = Math.atan2(targetAlly.y - bot.y, targetAlly.x - bot.x); // Apunta
                     if (Date.now() - bot.lastShotTime > bot.shootCooldown) {
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: 10 };
+                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: targetAngle, damage: 10 };
                         botBullets.push(bullet);
                         bot.lastShotTime = Date.now();
                     }
+                } else {
+                    bot.state = 'navigating'; // Vuelve a su estado normal si no ve a nadie
                 }
-                else if (game.bomb.state === 'planted' && !bot.hasBomb) {
+
+                // 3. Lógica de Movimiento
+                if (game.bomb.state === 'planted' && !bot.hasBomb) {
+                    // La bomba está plantada y no la tengo, buscar al jugador
                     bot.state = 'guarding';
-                    bot.angle = Math.atan2(player.y - bot.y, player.x - bot.x);
-                    moveBot(bot, bot.angle); 
-                }
-                else {
-                    bot.state = 'navigating';
+                    const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
+                    if (bot.state !== 'attacking') targetAngle = angleToPlayer; // Si no dispara, mira hacia el jugador
+                    moveBot(bot, angleToPlayer); 
+                } else {
+                    // Sigue navegando a su waypoint
                     const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
                     if (targetWaypoint) {
                         const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
-                        bot.angle = angleToWaypoint;
-                        moveBot(bot, angleToWaypoint);
+                        if (bot.state !== 'attacking') targetAngle = angleToWaypoint; // Si no dispara, mira al waypoint
+                        moveBot(bot, angleToWaypoint); // ¡SE MUEVE SIEMPRE!
+                        
                         const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
                         if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
                     } else {
+                        // Llegó al final de la ruta
                         if (bot.hasBomb && game.bomb.state === 'unplanted') {
                             bot.state = 'planting';
                             bot.isPlanting = true;
                             bot.plantStartTime = Date.now();
                         } else {
-                            bot.state = 'guarding'; 
+                            bot.state = 'guarding'; // Llegó, ahora busca pelea
+                            const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
+                            if (bot.state !== 'attacking') targetAngle = angleToPlayer;
+                            moveBot(bot, angleToPlayer); 
                         }
                     }
                 }
+                
+                bot.angle = targetAngle; // Aplica el ángulo (disparando o moviéndose)
             }
         }
+        
+        // IA Aliada (CT) - Sigue siendo "Run and Gun"
         function updateAlliedBots() {
             for (let i = alliedBots.length - 1; i >= 0; i--) {
                 const bot = alliedBots[i];
@@ -337,7 +342,7 @@
                 if (seesEnemy) {
                     bot.state = 'attacking';
                     bot.angle = angleToEnemy;
-                    moveBot(bot, bot.angle); // (NUEVO) Se mueve mientras ataca
+                    moveBot(bot, bot.angle); // "Run and Gun"
                     if (Date.now() - bot.lastShotTime > bot.shootCooldown) {
                         const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: 12 };
                         alliedBotBullets.push(bullet);
@@ -374,49 +379,40 @@
             for (const wall of walls) { if (checkCollision(bot, wall)) { bot.y = oldY; break; } }
         }
 
-        // --- 8. LÓGICA DE ARMAS ---
+        // --- 8. LÓGICA DE ARMAS (Con Granada) ---
         function useWeapon() {
-            // (NUEVO) Comprobar slot de granada
             if (player.activeWeapon === 'he_grenade') {
                 throwGrenade('he');
                 return;
             }
-            
             const weaponName = player.inventory[player.activeWeapon];
             if (!weaponName) return; 
             const weapon = weaponData[weaponName]; 
-            
             if (Date.now() - player.lastShotTime < weapon.fireRate) return; 
             if (!weapon.automatic && player.hasFiredSemi) return; 
-            
             player.lastShotTime = Date.now(); 
             player.hasFiredSemi = true; 
-            
             if (weapon.type === 'melee') { useMelee(weapon); } 
             else { shootBullet(weapon); }
         }
         function useMelee(weapon) { const attackLine = { x: player.x + Math.cos(player.angle) * weapon.range / 2, y: player.y + Math.sin(player.angle) * weapon.range / 2, size: weapon.range }; for (const bot of bots) { if (checkObjectCollision(attackLine, bot)) { bot.health -= weapon.damage; console.log("¡Cuchillada!"); break; } } }
         function shootBullet(weapon) { const totalSpread = weapon.spread + player.recoil; const spread = (Math.random() - 0.5) * totalSpread; const bulletAngle = player.angle + spread; player.recoil += weapon.recoil; const bullet = { x: player.x, y: player.y, size: 5, color: 'yellow', speed: 15, angle: bulletAngle, damage: weapon.damage }; bullets.push(bullet); }
         
-        // (NUEVO) Lanzar Granada
         function throwGrenade(type) {
             if (type === 'he' && player.inventory.grenades.he > 0) {
                 player.inventory.grenades.he--;
-                player.lastShotTime = Date.now(); // Cooldown
-                
+                player.lastShotTime = Date.now(); 
                 const grenade = {
                     x: player.x,
                     y: player.y,
-                    size: 8,
-                    color: '#3D3D3D',
-                    velX: Math.cos(player.angle) * 10, // Más lento que una bala
+                    size: 10, // (NUEVO) Más grande
+                    color: 'darkgreen', // (NUEVO)
+                    velX: Math.cos(player.angle) * 10, 
                     velY: Math.sin(player.angle) * 10,
                     timer: Date.now() + GAME_TIMES.GRENADE_FUSE,
                     type: 'he'
                 };
                 grenades.push(grenade);
-                
-                // Volver a la pistola después de lanzar
                 player.activeWeapon = 'secondary';
             }
         }
@@ -455,17 +451,13 @@
                 }
             }
         }
-        
-        // (NUEVO) Daño de Granada
         function applyGrenadeDamage(target, damage) {
             if (target === player) {
                 applyPlayerDamage(damage);
             } else {
-                // (Los bots aliados y enemigos reciben daño por igual)
                 target.health -= damage; 
             }
         }
-
         function checkNearBomb() { if (game.bomb.state !== 'planted') return false; const distance = Math.hypot(player.x - game.bomb.x, player.y - game.bomb.y); return distance < 75; }
         function updateDefusing() {
             if (!game.isDefusing) return;
@@ -528,12 +520,11 @@
             if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
             game.bomb.timerId = null;
             
-            // Resetear Jugador (CT)
             player.hasBomb = false;
             player.health = 100;
             player.armor = 0; 
             player.inventory.helmet = false;
-            player.inventory.grenades.he = 1; // (NUEVO) Te da 1 granada HE por ronda
+            player.inventory.grenades.he = 1; 
             
             const playerSpawnZone = getSpawnZone('Spawn AT');
             if (playerSpawnZone) {
@@ -548,8 +539,8 @@
             bullets = [];
             botBullets = [];
             alliedBotBullets = [];
-            grenades = []; // (NUEVO)
-            explosions = []; // (NUEVO)
+            grenades = []; 
+            explosions = [];
             
             // === SPAWN EQUIPO T (Enemigo) ===
             const botSpawnZone = getSpawnZone('Spawn T');
@@ -607,31 +598,25 @@
             updateBots();
             updateAlliedBots(); 
             
-            // (NUEVO) Actualizar Granadas
+            // Actualizar Granadas
             for (let i = grenades.length - 1; i >= 0; i--) {
                 const g = grenades[i];
                 g.x += g.velX;
                 g.y += g.velY;
-                g.velX *= 0.99; // Fricción
+                g.velX *= 0.99; 
                 g.velY *= 0.99;
-
-                // Colisión con paredes (rebote simple)
                 for (const wall of walls) {
                     if (checkCollision(g, wall)) {
-                        // Comprobación simple, no perfecta, pero funcional
-                        // Si la velocidad X era alta, choca con pared vertical
                         if (Math.abs(g.velX) > Math.abs(g.velY)) {
-                            g.x -= g.velX; // Retrocede
-                            g.velX *= -0.5; // Invierte velocidad y pierde energía
-                        } else { // Choca con pared horizontal
+                            g.x -= g.velX; 
+                            g.velX *= -0.5;
+                        } else { 
                             g.y -= g.velY;
                             g.velY *= -0.5;
                         }
                         break;
                     }
                 }
-                
-                // Temporizador de explosión
                 if (Date.now() > g.timer) {
                     if (g.type === 'he') {
                         explodeHE(g);
@@ -639,7 +624,6 @@
                     grenades.splice(i, 1);
                 }
             }
-            // (NUEVO) Actualizar Explosiones (para el efecto visual)
             for (let i = explosions.length - 1; i >= 0; i--) {
                 explosions[i].life--;
                 if (explosions[i].life <= 0) {
@@ -668,26 +652,22 @@
         function explodeHE(grenade) {
             const data = weaponData.he_grenade;
             console.log("BOOM! Explosión de HE");
-            
-            // Añadir efecto visual
             explosions.push({ x: grenade.x, y: grenade.y, radius: data.range, life: 10 });
             
             // Dañar al jugador
             let dist = Math.hypot(player.x - grenade.x, player.y - grenade.y);
             if (dist < data.range) {
-                const damage = data.damage * (1 - (dist / data.range)); // Daño cae con la distancia
+                const damage = data.damage * (1 - (dist / data.range)); 
                 applyPlayerDamage(damage);
             }
-            
             // Dañar a bots T
             for (const bot of bots) {
                 dist = Math.hypot(bot.x - grenade.x, bot.y - grenade.y);
                 if (dist < data.range) {
                     const damage = data.damage * (1 - (dist / data.range));
-                    bot.health -= damage; // Daño directo (sin armadura)
+                    bot.health -= damage; 
                 }
             }
-            
             // Dañar a bots CT (Fuego amigo)
             for (const bot of alliedBots) {
                 dist = Math.hypot(bot.x - grenade.x, bot.y - grenade.y);
@@ -715,7 +695,6 @@
                 ctx.fillRect(game.bomb.x - 10, game.bomb.y - 10, 20, 20);
             }
             
-            // Balas
             ctx.fillStyle = 'yellow'; // Jugador
             for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
             ctx.fillStyle = 'orange'; // T
@@ -723,18 +702,20 @@
             ctx.fillStyle = 'lime'; // CT
             for (const bullet of alliedBotBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
 
-            // (NUEVO) Granadas en el aire
+            // (NUEVO) Granadas
             for (const g of grenades) {
                 ctx.fillStyle = g.color;
                 ctx.beginPath(); ctx.arc(g.x, g.y, g.size, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = 'white'; // Borde blanco
+                ctx.lineWidth = 2;
+                ctx.stroke();
             }
-            // (NUEVO) Explosiones
             for (const e of explosions) {
                 ctx.fillStyle = `rgba(255, 100, 0, ${e.life / 10})`;
                 ctx.beginPath(); ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2); ctx.fill();
             }
             
-            // Bots T
+            // Bots T (Enemigos)
             for (const bot of bots) {
                 ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
                 ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
@@ -747,7 +728,7 @@
                 }
             }
             
-            // Bots CT
+            // Bots CT (Aliados)
             for (const bot of alliedBots) {
                 ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
                 ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
@@ -770,7 +751,6 @@
             const armorIcon = player.inventory.helmet ? '🛡️' : '■';
             ctx.fillText(`Armadura: ${Math.ceil(player.armor)} ${armorIcon}`, 20, 60); 
             
-            // (NUEVO) Mostrar granadas
             const activeWeaponSlot = player.activeWeapon;
             let weaponNameStr = "";
             if (activeWeaponSlot === 'he_grenade') {
