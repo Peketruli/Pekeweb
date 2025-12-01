@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Editor de Mapas 2D</title>
+    <title>Editor de Mapas v2 (con Zonas)</title>
     
     <style>
         body {
@@ -13,11 +13,18 @@
             color: white;
         }
 
-        /* Estilos del botón de exportar */
-        #exportButton {
-            position: fixed; /* Se queda fijo en la pantalla */
+        /* --- Interfaz Fija --- */
+        .fixed-ui {
+            position: fixed;
             top: 20px;
             left: 20px;
+            background-color: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+
+        #exportButton {
             padding: 10px 20px;
             font-size: 16px;
             font-weight: bold;
@@ -26,42 +33,47 @@
             border: none;
             border-radius: 5px;
             cursor: pointer;
-            z-index: 10; /* Para que esté por encima del canvas */
+            width: 100%;
+            margin-bottom: 15px;
         }
-        
         #exportButton:hover {
             background-color: #45a049;
         }
         
-        #instructions {
-            position: fixed;
-            top: 70px;
-            left: 20px;
-            background-color: rgba(0,0,0,0.5);
-            padding: 10px;
-            border-radius: 5px;
-            z-index: 10;
+        #drawModeLabel {
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
         }
 
-        /* El lienzo del editor. Será GRANDE. */
+        #drawModeSelect {
+            width: 100%;
+            padding: 5px;
+            font-size: 14px;
+        }
+
         canvas {
             display: block;
             background-color: #333; /* El suelo del mapa */
-            /* Le damos un borde para verlo mientras editamos */
             border: 2px solid #555; 
         }
     </style>
 </head>
 <body>
 
-    <div id="instructions">
-        <h3>Editor de Mapas</h3>
-        <p>1. Haz clic y arrastra para dibujar paredes.<br>
-           2. Usa el scroll del navegador para moverte.<br>
-           3. Pulsa "Generar" para obtener el código.</p>
+    <div class="fixed-ui">
+        <button id="exportButton">Generar Código</button>
+        
+        <label id="drawModeLabel" for="drawModeSelect">Modo de Dibujo:</label>
+        <select id="drawModeSelect">
+            <option value="wall">Pared (Gris)</option>
+            <option value="spawn_at">Spawn AT (Azul)</option>
+            <option value="spawn_t">Spawn T (Rojo)</option>
+            <option value="site_a">Sitio A (Naranja)</option>
+            <option value="site_b">Sitio B (Naranja)</option>
+        </select>
+        <p style="font-size: 12px; margin-top: 10px;">¡Arrastra para dibujar!<br>Usa el scroll para moverte.</p>
     </div>
-    
-    <button id="exportButton">Generar Código del Mapa</button>
 
     <canvas id="mapCanvas"></canvas>
 
@@ -70,108 +82,127 @@
         const canvas = document.getElementById('mapCanvas');
         const ctx = canvas.getContext('2d');
         const exportButton = document.getElementById('exportButton');
+        const drawModeSelect = document.getElementById('drawModeSelect');
 
-        // ¡Hacemos el canvas del tamaño del MUNDO!
-        // Esto añadirá barras de scroll al navegador, que es lo que queremos.
         canvas.width = 3000;
         canvas.height = 2000;
 
         // --- 2. ALMACÉN Y ESTADO ---
-        let walls = []; // Aquí guardamos todas las paredes dibujadas
+        
+        // ¡¡¡ PEGA TU CÓDIGO DE PAREDES AQUÍ DENTRO !!!
+        let walls = [];
+        
+        // Las zonas se guardarán aquí
+        let zones = [];
+        
+        let currentDrawMode = 'wall'; // Modo inicial
         let isDrawing = false;
+        let startX = 0, startY = 0, currentX = 0, currentY = 0;
         
-        // Coordenadas de inicio y fin del ratón
-        let startX = 0;
-        let startY = 0;
-        let currentX = 0;
-        let currentY = 0;
-        
-        // --- 3. EVENTOS DEL RATÓN ---
+        // --- 3. EVENTOS ---
 
-        // Cuando el usuario HACE CLIC
+        // Actualizar el modo de dibujo
+        drawModeSelect.addEventListener('change', (e) => {
+            currentDrawMode = e.target.value;
+        });
+
+        // Empezar a dibujar
         canvas.addEventListener('mousedown', (e) => {
             isDrawing = true;
-            // e.offsetX/Y nos da la posición del ratón DENTRO del canvas
             startX = e.offsetX;
             startY = e.offsetY;
         });
 
-        // Cuando el usuario MUEVE el ratón
+        // Moverse mientras dibuja
         canvas.addEventListener('mousemove', (e) => {
-            if (!isDrawing) return; // No hacer nada si no está dibujando
-            
-            // Actualizamos la posición actual
+            if (!isDrawing) return;
             currentX = e.offsetX;
             currentY = e.offsetY;
         });
 
-        // Cuando el usuario SUELTA el clic
+        // Soltar el clic y guardar
         canvas.addEventListener('mouseup', (e) => {
             if (!isDrawing) return;
             isDrawing = false;
             
-            // Calculamos la pared final
-            // Usamos Math.min/max para que funcione sin importar
-            // en qué dirección arrastre (ej. de dcha a izq)
-            const wall = {
+            const rect = {
                 x: Math.min(startX, currentX),
                 y: Math.min(startY, currentY),
                 width: Math.abs(startX - currentX),
                 height: Math.abs(startY - currentY)
             };
 
-            // Solo añadimos la pared si tiene tamaño (evita clics)
-            if (wall.width > 0 && wall.height > 0) {
-                walls.push(wall);
+            if (rect.width === 0 || rect.height === 0) return; // Evitar clics
+
+            // --- Lógica para guardar en el array correcto ---
+            switch (currentDrawMode) {
+                case 'wall':
+                    walls.push(rect);
+                    break;
+                case 'spawn_at':
+                    zones.push({ ...rect, color: 'rgba(0, 150, 255, 0.5)', name: 'Spawn AT' });
+                    break;
+                case 'spawn_t':
+                    zones.push({ ...rect, color: 'rgba(255, 100, 0, 0.5)', name: 'Spawn T' });
+                    break;
+                case 'site_a':
+                    zones.push({ ...rect, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio A' });
+                    break;
+                case 'site_b':
+                    zones.push({ ...rect, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio B' });
+                    break;
             }
         });
 
-        // --- 4. EL BOTÓN DE EXPORTAR ---
-
+        // --- 4. BOTÓN DE EXPORTAR ---
         exportButton.addEventListener('click', () => {
-            // 1. Formateamos el array de 'walls' como un string de código
             let output = "const walls = [\n";
-            
             for (const wall of walls) {
-                // Añadimos cada objeto pared
                 output += `    { x: ${wall.x}, y: ${wall.y}, width: ${wall.width}, height: ${wall.height} },\n`;
+            }
+            output += "];\n\n";
+
+            output += "const zones = [\n";
+            for (const zone of zones) {
+                // Quitamos el color del objeto al exportar, solo guardamos los datos
+                output += `    { x: ${zone.x}, y: ${zone.y}, width: ${zone.width}, height: ${zone.height}, color: '${zone.color}', name: '${zone.name}' },\n`;
             }
             output += "];\n";
 
-            // 2. Abrimos una NUEVA VENTANA (mucho mejor que un alert)
+            // Abrir en ventana emergente
             const newWindow = window.open("", "Código del Mapa");
-            newWindow.document.title = "Copia tu Código de Mapa";
-            
-            // 3. Escribimos el código en esa ventana
-            // Usamos <pre> para que respete los saltos de línea y espacios
-            newWindow.document.write("<h3>¡Copia este código y pégalo en el array 'walls' de tu juego!</h3>");
+            newWindow.document.title = "Copia tu Código de Mapa (walls y zones)";
+            newWindow.document.write("<h3>¡Copia este código y pégalo en tu juego!</h3>");
             newWindow.document.write("<pre>" + output + "</pre>");
             newWindow.document.close();
         });
 
-
-        // --- 5. BUCLE DE DIBUJADO (para ver lo que hacemos) ---
-
+        // --- 5. BUCLE DE DIBUJADO (Gráficos) ---
         function drawLoop() {
-            // Limpiamos todo el canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Dibujamos el fondo
             ctx.fillStyle = '#333';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-            // Dibujamos todas las paredes YA CREADAS
-            ctx.fillStyle = '#999'; // Gris
+            // Dibujar todas las PAREDES
+            ctx.fillStyle = '#999';
             for (const wall of walls) {
                 ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
             }
 
-            // Si estamos dibujando, dibujamos el "fantasma"
+            // Dibujar todas las ZONAS
+            ctx.font = '20px Arial';
+            ctx.textAlign = 'center';
+            for (const zone of zones) {
+                ctx.fillStyle = zone.color;
+                ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
+                ctx.fillStyle = 'white'; // Texto
+                ctx.fillText(zone.name, zone.x + zone.width / 2, zone.y + zone.height / 2);
+            }
+
+            // Dibujar el "fantasma"
             if (isDrawing) {
-                ctx.strokeStyle = 'white'; // Borde blanco
-                ctx.lineWidth = 2;
-                ctx.setLineDash([5, 5]); // Línea discontinua
-                
+                ctx.setLineDash([5, 5]);
+                ctx.strokeStyle = 'white';
                 const rect = {
                     x: Math.min(startX, currentX),
                     y: Math.min(startY, currentY),
@@ -179,15 +210,12 @@
                     height: Math.abs(startY - currentY)
                 };
                 ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
-                
-                ctx.setLineDash([]); // Reseteamos la línea
+                ctx.setLineDash([]);
             }
 
-            // Pedimos al navegador que vuelva a dibujar
             requestAnimationFrame(drawLoop);
         }
 
-        // ¡Empezamos el bucle del editor!
         drawLoop();
     </script>
 </body>
