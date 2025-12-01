@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Editor de Mapas 2D</title>
+    
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #111;
+            color: white;
+        }
+
+        /* Estilos del botón de exportar */
+        #exportButton {
+            position: fixed; /* Se queda fijo en la pantalla */
+            top: 20px;
+            left: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            background-color: #4CAF50; /* Verde */
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 10; /* Para que esté por encima del canvas */
+        }
+        
+        #exportButton:hover {
+            background-color: #45a049;
+        }
+        
+        #instructions {
+            position: fixed;
+            top: 70px;
+            left: 20px;
+            background-color: rgba(0,0,0,0.5);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 10;
+        }
+
+        /* El lienzo del editor. Será GRANDE. */
+        canvas {
+            display: block;
+            background-color: #333; /* El suelo del mapa */
+            /* Le damos un borde para verlo mientras editamos */
+            border: 2px solid #555; 
+        }
+    </style>
+</head>
+<body>
+
+    <div id="instructions">
+        <h3>Editor de Mapas</h3>
+        <p>1. Haz clic y arrastra para dibujar paredes.<br>
+           2. Usa el scroll del navegador para moverte.<br>
+           3. Pulsa "Generar" para obtener el código.</p>
+    </div>
+    
+    <button id="exportButton">Generar Código del Mapa</button>
+
+    <canvas id="mapCanvas"></canvas>
+
+    <script>
+        // --- 1. CONFIGURACIÓN INICIAL ---
+        const canvas = document.getElementById('mapCanvas');
+        const ctx = canvas.getContext('2d');
+        const exportButton = document.getElementById('exportButton');
+
+        // ¡Hacemos el canvas del tamaño del MUNDO!
+        // Esto añadirá barras de scroll al navegador, que es lo que queremos.
+        canvas.width = 3000;
+        canvas.height = 2000;
+
+        // --- 2. ALMACÉN Y ESTADO ---
+        let walls = []; // Aquí guardamos todas las paredes dibujadas
+        let isDrawing = false;
+        
+        // Coordenadas de inicio y fin del ratón
+        let startX = 0;
+        let startY = 0;
+        let currentX = 0;
+        let currentY = 0;
+        
+        // --- 3. EVENTOS DEL RATÓN ---
+
+        // Cuando el usuario HACE CLIC
+        canvas.addEventListener('mousedown', (e) => {
+            isDrawing = true;
+            // e.offsetX/Y nos da la posición del ratón DENTRO del canvas
+            startX = e.offsetX;
+            startY = e.offsetY;
+        });
+
+        // Cuando el usuario MUEVE el ratón
+        canvas.addEventListener('mousemove', (e) => {
+            if (!isDrawing) return; // No hacer nada si no está dibujando
+            
+            // Actualizamos la posición actual
+            currentX = e.offsetX;
+            currentY = e.offsetY;
+        });
+
+        // Cuando el usuario SUELTA el clic
+        canvas.addEventListener('mouseup', (e) => {
+            if (!isDrawing) return;
+            isDrawing = false;
+            
+            // Calculamos la pared final
+            // Usamos Math.min/max para que funcione sin importar
+            // en qué dirección arrastre (ej. de dcha a izq)
+            const wall = {
+                x: Math.min(startX, currentX),
+                y: Math.min(startY, currentY),
+                width: Math.abs(startX - currentX),
+                height: Math.abs(startY - currentY)
+            };
+
+            // Solo añadimos la pared si tiene tamaño (evita clics)
+            if (wall.width > 0 && wall.height > 0) {
+                walls.push(wall);
+            }
+        });
+
+        // --- 4. EL BOTÓN DE EXPORTAR ---
+
+        exportButton.addEventListener('click', () => {
+            // 1. Formateamos el array de 'walls' como un string de código
+            let output = "const walls = [\n";
+            
+            for (const wall of walls) {
+                // Añadimos cada objeto pared
+                output += `    { x: ${wall.x}, y: ${wall.y}, width: ${wall.width}, height: ${wall.height} },\n`;
+            }
+            output += "];\n";
+
+            // 2. Abrimos una NUEVA VENTANA (mucho mejor que un alert)
+            const newWindow = window.open("", "Código del Mapa");
+            newWindow.document.title = "Copia tu Código de Mapa";
+            
+            // 3. Escribimos el código en esa ventana
+            // Usamos <pre> para que respete los saltos de línea y espacios
+            newWindow.document.write("<h3>¡Copia este código y pégalo en el array 'walls' de tu juego!</h3>");
+            newWindow.document.write("<pre>" + output + "</pre>");
+            newWindow.document.close();
+        });
+
+
+        // --- 5. BUCLE DE DIBUJADO (para ver lo que hacemos) ---
+
+        function drawLoop() {
+            // Limpiamos todo el canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Dibujamos el fondo
+            ctx.fillStyle = '#333';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Dibujamos todas las paredes YA CREADAS
+            ctx.fillStyle = '#999'; // Gris
+            for (const wall of walls) {
+                ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+            }
+
+            // Si estamos dibujando, dibujamos el "fantasma"
+            if (isDrawing) {
+                ctx.strokeStyle = 'white'; // Borde blanco
+                ctx.lineWidth = 2;
+                ctx.setLineDash([5, 5]); // Línea discontinua
+                
+                const rect = {
+                    x: Math.min(startX, currentX),
+                    y: Math.min(startY, currentY),
+                    width: Math.abs(startX - currentX),
+                    height: Math.abs(startY - currentY)
+                };
+                ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+                
+                ctx.setLineDash([]); // Reseteamos la línea
+            }
+
+            // Pedimos al navegador que vuelva a dibujar
+            requestAnimationFrame(drawLoop);
+        }
+
+        // ¡Empezamos el bucle del editor!
+        drawLoop();
+    </script>
+</body>
+</html>
