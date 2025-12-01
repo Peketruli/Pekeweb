@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v28 - Minimapa Corregido</title>
+    <title>Prototipo 2D v28 - FoV y Minimapa</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -12,8 +12,8 @@
             position: absolute;
             top: 20px;
             left: 20px;
-            width: 300px; /* Tamaño en pantalla */
-            height: 200px;
+            width: 240px; /* (NUEVO) Más pequeño */
+            height: 160px;
             border: 2px solid #555;
             background-color: rgba(50, 50, 50, 0.7); 
             z-index: 10;
@@ -67,7 +67,7 @@
         
         const minimapCanvas = document.getElementById('minimapCanvas');
         const mmCtx = minimapCanvas.getContext('2d');
-        minimapCanvas.width = 600;
+        minimapCanvas.width = 600; 
         minimapCanvas.height = 400;
 
         const shopMenuElement = document.getElementById('shopMenu');
@@ -80,16 +80,19 @@
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
         
-        // (¡CORREGIDO!) La escala debe ser 0.2 (600px / 3000px = 0.2)
-        const minimapScale = 0.2; 
+        const minimapScale = 0.2; // 600px / 3000px = 0.2
         
         let camera = { x: 0, y: 0 };
         const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000 };
+        
+        // (NUEVO) Estado del juego con puntuación
         let game = {
             bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null },
             isDefusing: false,
             defuseStartTime: 0,
-            messageTimerId: null
+            messageTimerId: null,
+            roundNumber: 0,
+            score: { ct: 0, t: 0 }
         };
         const weaponData = { 'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 }, 'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05 }, 'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03 }, 'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01 }, 'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01 }, 'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0 },
             'he_grenade': { name: 'Granada HE', type: 'grenade', damage: 90, fireRate: 1000, range: 200 },
@@ -116,7 +119,7 @@
 
         // --- 3. EL JUGADOR (CT) ---
         let player = {
-            x: 142, y: 1087, size: mapData.playerSize, color: 'cyan', speed: 4, angle: 0, health: 100, armor: 0, money: 16000, 
+            x: 142, y: 1087, size: mapData.playerSize, color: 'cyan', speed: 4, angle: 0, health: 100, armor: 0, money: 0, // Se pone a 700 en resetRound
             inventory: { 
                 primary: null, secondary: 'pistol', melee: 'knife', kevlar: false, helmet: false,
                 grenades: { he: 0, flash: 0, smoke: 0, molotov: 0 } 
@@ -268,7 +271,6 @@
             alliedBots.push(bot);
         }
         
-        // ¡Función de "Ver" mejorada con Humo!
         function hasLineOfSight(viewer, target) {
             if (!target) return false;
             
@@ -294,7 +296,7 @@
             return (deltaAngle <= Math.PI / 2); 
         }
 
-        // --- (NUEVO) IA TÁCTICA (T-BOTS) ---
+        // --- IA TÁCTICA (T-BOTS) ---
         function updateBots() {
             for (let i = bots.length - 1; i >= 0; i--) {
                 const bot = bots[i];
@@ -304,7 +306,7 @@
                     console.log(`Bot T eliminado, +$300. Quedan ${bots.length} bots.`);
                     if (bot.hasBomb && game.bomb.state === 'unplanted') { console.log("¡El portador de la bomba ha muerto!"); }
                     if (bots.length === 0 && game.bomb.state === 'unplanted') {
-                        endRound("CTs Ganan");
+                        endRound("CTs Ganan", "CTs");
                     }
                     continue; 
                 }
@@ -323,7 +325,6 @@
                     continue; 
                 }
                 
-                // (NUEVO) Comprobación de visión (LOS + FoV)
                 const seesPlayer = hasLineOfSight(bot, player) && isTargetInFoV(bot, player);
                 let seesAlly = false;
                 let targetAlly = null;
@@ -355,7 +356,6 @@
                     bot.state = 'navigating'; 
                 }
 
-                // Lógica de Movimiento
                 if (game.bomb.state === 'planted' && !bot.hasBomb) {
                     bot.state = 'guarding';
                     const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
@@ -366,8 +366,7 @@
                     if (targetWaypoint) {
                         const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
                         if (bot.state !== 'attacking') targetAngle = angleToWaypoint; 
-                        moveBot(bot, angleToWaypoint); // ¡SE MUEVE SIEMPRE!
-                        
+                        moveBot(bot, angleToWaypoint);
                         const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
                         if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
                     } else {
@@ -396,7 +395,7 @@
                     alliedBots.splice(i, 1);
                     console.log(`Bot Aliado eliminado. Quedan ${alliedBots.length}.`);
                     if (alliedBots.length === 0 && player.health <= 0) {
-                        endRound("Ts Ganan");
+                        endRound("Ts Ganan", "Ts");
                     }
                     continue;
                 }
@@ -552,7 +551,7 @@
                 player.health = 0; 
                 console.log("¡HAS MUERTO!");
                 if (alliedBots.length === 0) { 
-                    endRound("Ts Ganan");
+                    endRound("Ts Ganan", "Ts");
                 }
             }
         }
@@ -560,7 +559,7 @@
             bot.health -= damage;
             if (bot.health <= 0) {
                 if (alliedBots.length <= 1 && player.health <= 0) { 
-                    endRound("Ts Ganan");
+                    endRound("Ts Ganan", "Ts");
                 }
             }
         }
@@ -607,27 +606,49 @@
             game.isDefusing = false;
             hideProgress();
             game.bomb.state = 'defused';
-            endRound("CTs Ganan");
+            endRound("CTs Ganan", "CTs");
         }
         function bombExplode() {
             console.log("¡BOOM!");
             game.bomb.state = 'exploded';
-            endRound("Ts Ganan");
+            endRound("Ts Ganan", "Ts");
         }
         
         let isRoundEnding = false;
         
-        function endRound(message) {
+        // (NUEVO) Función de fin de ronda con puntuación
+        function endRound(message, winner) {
             if (isRoundEnding) return; 
             isRoundEnding = true;
-            showMessage(message, 3000);
+            
             if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
             console.log("Fin de ronda: " + message);
+
+            // Actualizar puntuación
+            if (winner === 'CTs') {
+                game.score.ct++;
+            } else if (winner === 'Ts') {
+                game.score.t++;
+            }
+            
+            // Comprobar victoria de la partida
+            if (game.score.ct === 12) {
+                showMessage("¡¡CTs GANAN LA PARTIDA!!", 10000);
+                return; // No reiniciar
+            }
+            if (game.score.t === 12) {
+                showMessage("¡¡Ts GANAN LA PARTIDA!!", 10000);
+                return; // No reiniciar
+            }
+            
+            // Si no, continuar a la siguiente ronda
+            showMessage(message, 3000);
             setTimeout(resetRound, 3000);
         }
 
         function resetRound() {
-            console.log("--- Nueva Ronda 5v5 ---");
+            game.roundNumber++; // (NUEVO)
+            console.log(`--- Nueva Ronda ${game.roundNumber} (CT: ${game.score.ct} - T: ${game.score.t}) ---`);
             isRoundEnding = false; 
             game.bomb.state = 'unplanted';
             if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
@@ -637,8 +658,15 @@
             player.health = 100;
             player.armor = 0; 
             player.inventory.helmet = false;
-            // (NUEVO) Empezar con 0 granadas
-            player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; 
+            player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; // (NUEVO) Granadas a 0
+            
+            // (NUEVO) Economía de Ronda 1
+            if (game.roundNumber === 1) {
+                player.money = 700;
+            } else {
+                // TODO: Lógica de bonus por ganar/perder
+                player.money = 2500; // Valor simple para seguir jugando
+            }
             
             const playerSpawnZone = getSpawnZone('Spawn AT');
             if (playerSpawnZone) {
@@ -757,7 +785,7 @@
                 if (Date.now() > g.timer) {
                     if (g.type === 'he') { explodeHE(g); }
                     if (g.type === 'molotov') { explodeMolotov(g); }
-                    if (g.type === 'flash') { explodeFlash(g); }
+                    if (g.type === 'flash') { explodeFlash(g); } 
                     if (g.type === 'smoke') { explodeSmoke(g); } 
                     grenades.splice(i, 1);
                 }
@@ -894,11 +922,11 @@
                 ctx.fill();
             }
             
-            // --- (NUEVO) Lógica de FoV y LOS para dibujar ---
+            // --- Lógica de FoV y LOS para dibujar ---
             
             // Bots T (Enemigos)
             for (const bot of bots) {
-                if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) { // ¡SOLO DIBUJA SI LO VES!
+                if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) { 
                     ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
                     ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
                     ctx.strokeStyle = 'black'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bot.size, 0); ctx.stroke();
@@ -913,7 +941,7 @@
             
             // Bots CT (Aliados)
             for (const bot of alliedBots) {
-                if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) { // ¡SOLO DIBUJA SI LO VES!
+                if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) { 
                     ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
                     ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
                     ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bot.size, 0); ctx.stroke();
@@ -942,10 +970,11 @@
             
             drawMinimap();
             
+            // (NUEVO) HUD movido
             ctx.fillStyle = 'white'; ctx.font = '24px Arial';
-            ctx.fillText(`Vida: ${Math.ceil(player.health)}`, 20, 240); // Movido debajo del minimapa
+            ctx.fillText(`Vida: ${Math.ceil(player.health)}`, 20, 190); // Debajo del minimapa
             const armorIcon = player.inventory.helmet ? '🛡️' : '■';
-            ctx.fillText(`Armadura: ${Math.ceil(player.armor)} ${armorIcon}`, 20, 270); 
+            ctx.fillText(`Armadura: ${Math.ceil(player.armor)} ${armorIcon}`, 20, 220); 
             
             const activeWeaponSlot = player.activeWeapon;
             let weaponNameStr = "";
@@ -961,16 +990,24 @@
                 const activeWeaponName = player.inventory[activeWeaponSlot];
                 weaponNameStr = activeWeaponName ? weaponData[activeWeaponName].name : "Manos";
             }
-            ctx.fillText(`Arma: ${weaponNameStr}`, 20, 300); 
+            ctx.fillText(`Arma: ${weaponNameStr}`, 20, 250); 
             
             ctx.fillStyle = 'white'; 
-            ctx.fillText(`Dinero: $${player.money}`, 20, 330); 
-            if (player.hasBomb) { ctx.fillStyle = 'orange'; ctx.fillText("[BOMBA]", 20, 360); }
+            ctx.fillText(`Dinero: $${player.money}`, 20, 280); 
+            if (player.hasBomb) { ctx.fillStyle = 'orange'; ctx.fillText("[BOMBA]", 20, 310); }
             
+            // Contadores de equipo
             ctx.fillStyle = 'red';
             ctx.fillText(`Bots T: ${bots.length}`, window.innerWidth - 200, 30);
             ctx.fillStyle = 'cyan';
             ctx.fillText(`Aliados: ${alliedBots.length}`, window.innerWidth - 200, 60);
+            
+            // (NUEVO) Puntuación
+            ctx.fillStyle = 'white';
+            ctx.font = 'bold 24px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText(`[ ${game.score.ct} : ${game.score.t} ]`, window.innerWidth / 2, 40);
+            ctx.textAlign = 'left'; // Resetear
             
             if (isShopOpen) { shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default'; }
             else { shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair'; }
@@ -990,12 +1027,11 @@
             }
         }
         
-        // (NUEVO) Función para dibujar el Minimapa (CORREGIDA)
         function drawMinimap() {
-            const mmScale = 0.2; // (CORREGIDO)
+            const mmScale = 0.2; // Escala (600 / 3000)
             mmCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
             mmCtx.fillStyle = "rgba(50, 50, 50, 0.7)";
-            mmCtx.fillRect(0, 0, world.width * mmScale, world.height * mmScale);
+            mmCtx.fillRect(0, 0, world.width * mmScale, world.height * mmScale); // Dibuja el fondo del tamaño correcto
 
             for (const zone of zones) {
                 mmCtx.fillStyle = zone.color;
@@ -1010,7 +1046,7 @@
             mmCtx.fillStyle = 'blue';
             for (const bot of alliedBots) {
                 mmCtx.beginPath();
-                mmCtx.arc(bot.x * mmScale, bot.y * mmScale, 3, 0, Math.PI * 2);
+                mmCtx.arc(bot.x * mmScale, bot.y * mmScale, 4, 0, Math.PI * 2); // Puntos más grandes
                 mmCtx.fill();
             }
             
@@ -1032,7 +1068,7 @@
                 
                 if (isVisible) {
                     mmCtx.beginPath();
-                    mmCtx.arc(bot.x * mmScale, bot.y * mmScale, 3, 0, Math.PI * 2);
+                    mmCtx.arc(bot.x * mmScale, bot.y * mmScale, 4, 0, Math.PI * 2);
                     mmCtx.fill();
                 }
             }
@@ -1040,7 +1076,7 @@
             // Fuego y Humo
             mmCtx.fillStyle = 'rgba(255, 100, 0, 0.8)';
             for (const patch of firePatches) {
-                 mmCtx.fillRect(patch.x * mmScale, patch.y * mmScale, 3, 3);
+                 mmCtx.fillRect(patch.x * mmScale, patch.y * mmScale, 4, 4);
             }
             mmCtx.fillStyle = 'rgba(200, 200, 200, 0.8)';
             for (const smoke of smokeClouds) {
@@ -1052,7 +1088,7 @@
             // Jugador
             mmCtx.fillStyle = 'white';
             mmCtx.beginPath();
-            mmCtx.arc(player.x * mmScale, player.y * mmScale, 3, 0, Math.PI * 2);
+            mmCtx.arc(player.x * mmScale, player.y * mmScale, 4, 0, Math.PI * 2);
             mmCtx.fill();
         }
 
