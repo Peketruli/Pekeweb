@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v20 - Rush Coordinado</title>
+    <title>Prototipo 2D v21 - 5 vs 5</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -70,13 +70,17 @@
             activeWeapon: 'secondary', hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false 
         };
 
-        // --- 4. ALMACENES Y ESTADO ---
+        // --- 4. ALMACENES Y ESTADO (NUEVOS ARRAYS) ---
         let bullets = [];
         let keys = {};
         let mouse = { x: 0, y: 0, isDown: false }; 
         let isShopOpen = false;
-        let bots = []; 
+        
+        let bots = []; // Bots Enemigos (T)
         let botBullets = [];
+        
+        let alliedBots = []; // (NUEVO) Bots Aliados (CT)
+        let alliedBotBullets = []; // (NUEVO)
 
         // --- 5. SEGUIMIENTO de EVENTOS ---
         window.addEventListener('mousemove', (e) => { 
@@ -144,22 +148,17 @@
         function checkZoneCollision(player, zone) { const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
         function checkObjectCollision(obj1, obj2) { const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
 
-        // --- 7. LÓGICA DE IA (¡ACTUALIZADA!) ---
-        
-        // (NUEVO) Busca la *zona* de spawn, no el centro
+        // --- 7. LÓGICA DE IA (ENEMIGOS Y ALIADOS) ---
         function getSpawnZone(name) {
             for (const zone of zones) {
                 if (zone.name === name) {
                     return zone;
                 }
             }
-            return null; // No se encontró
+            return null; 
         }
         
-        // (NUEVO) Acepta el nombre del camino, no el camino en sí
         function spawnBot(carriesBomb, spawnPoint, pathName) {
-            console.log(`Bot spawneado en (${spawnPoint.x.toFixed(0)}, ${spawnPoint.y.toFixed(0)}), ruta: ${pathName}, Bomba: ${carriesBomb}`);
-            
             const bot = {
                 x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'red',
                 speed: 2.5, angle: 0, health: 100,
@@ -168,13 +167,38 @@
                 isPlanting: false,
                 plantStartTime: 0,
                 state: 'navigating', 
-                currentPath: paths[pathName] || [], // Asigna el array de waypoints
+                currentPath: paths[pathName] || [], 
                 currentWaypointIndex: 0
             };
             bots.push(bot);
         }
         
-        function canSeePlayer(bot) { const angle = Math.atan2(player.y - bot.y, player.x - bot.x); const distance = Math.hypot(player.x - bot.x, player.y - bot.y); if (distance > 1000) return false; for (let i = 0.1; i < 1; i += 0.1) { const testPoint = { x: bot.x + (player.x - bot.x) * i, y: bot.y + (player.y - bot.y) * i, size: 2 }; for (const wall of walls) { if (checkCollision(testPoint, wall)) { return false; } } } return true; }
+        // (NUEVO) Spawnea un bot aliado (CT)
+        function spawnAlliedBot(spawnPoint) {
+            const bot = {
+                x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'cyan',
+                speed: 2.5, angle: 0, health: 100,
+                lastShotTime: 0, shootCooldown: 500,
+                state: 'seeking',
+                target: null // El enemigo (T) que está persiguiendo
+            };
+            alliedBots.push(bot);
+        }
+        
+        // (NUEVO) Función genérica para "ver" a un objetivo
+        function canSeeTarget(bot, target) {
+            if (!target) return false;
+            const angle = Math.atan2(target.y - bot.y, target.x - bot.x);
+            const distance = Math.hypot(target.x - bot.x, target.y - bot.y);
+            if (distance > 1000) return false; 
+            for (let i = 0.1; i < 1; i += 0.1) {
+                const testPoint = { x: bot.x + (target.x - bot.x) * i, y: bot.y + (target.y - bot.y) * i, size: 2 };
+                for (const wall of walls) {
+                    if (checkCollision(testPoint, wall)) { return false; }
+                }
+            }
+            return true;
+        }
 
         function updateBots() {
             for (let i = bots.length - 1; i >= 0; i--) {
@@ -182,12 +206,8 @@
                 if (bot.health <= 0) {
                     player.money += 300; 
                     bots.splice(i, 1);
-                    console.log(`Bot eliminado, +$300. Quedan ${bots.length} bots.`);
-                    
-                    if (bot.hasBomb && game.bomb.state === 'unplanted') {
-                         console.log("¡El portador de la bomba ha muerto!");
-                    }
-                    
+                    console.log(`Bot T eliminado, +$300. Quedan ${bots.length} bots.`);
+                    if (bot.hasBomb && game.bomb.state === 'unplanted') { console.log("¡El portador de la bomba ha muerto!"); }
                     if (bots.length === 0 && game.bomb.state === 'unplanted') {
                         showMessage("¡CTs Ganan! (Todos los T eliminados)", 3000);
                         setTimeout(resetRound, 3000); 
@@ -195,7 +215,7 @@
                     continue; 
                 }
                 
-                const seesPlayer = canSeePlayer(bot);
+                const seesPlayer = canSeeTarget(bot, player); // Ahora usa la función genérica
                 
                 if (bot.isPlanting) {
                     const plantProgress = Date.now() - bot.plantStartTime;
@@ -238,6 +258,58 @@
                 }
             }
         }
+        
+        // (NUEVO) IA para tus aliados (CT)
+        function updateAlliedBots() {
+            for (let i = alliedBots.length - 1; i >= 0; i--) {
+                const bot = alliedBots[i];
+                
+                // 1. Lógica de muerte
+                if (bot.health <= 0) {
+                    alliedBots.splice(i, 1);
+                    console.log(`Bot Aliado eliminado. Quedan ${alliedBots.length}.`);
+                    continue;
+                }
+                
+                // 2. Lógica de "Buscar y Destruir"
+                
+                // Encontrar al enemigo (T) más cercano
+                let closestEnemy = null;
+                let minDistance = Infinity;
+                for (const enemy of bots) {
+                    const distance = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestEnemy = enemy;
+                    }
+                }
+                
+                if (closestEnemy) {
+                    const seesEnemy = canSeeTarget(bot, closestEnemy);
+                    const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
+                    
+                    if (seesEnemy) {
+                        // Atacar
+                        bot.state = 'attacking';
+                        bot.angle = angleToEnemy;
+                        if (Date.now() - bot.lastShotTime > bot.shootCooldown) {
+                            const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: 12 }; // Balas aliadas
+                            alliedBotBullets.push(bullet);
+                            bot.lastShotTime = Date.now();
+                        }
+                    } else {
+                        // Perseguir
+                        bot.state = 'seeking';
+                        bot.angle = angleToEnemy;
+                        moveBot(bot, bot.angle);
+                    }
+                } else {
+                    // No quedan enemigos, se quedan quietos
+                    bot.state = 'idle';
+                }
+            }
+        }
+
         function moveBot(bot, angle) {
             const oldX = bot.x;
             const oldY = bot.y;
@@ -273,10 +345,16 @@
             if (player.health <= 0) {
                 player.health = 0; 
                 console.log("¡HAS MUERTO!");
-                showMessage("¡Ts Ganan!", 3000);
-                setTimeout(resetRound, 3000);
+                endRound("Ts Ganan");
             }
         }
+        
+        // (NUEVO) Lógica de daño para bots aliados
+        function applyAlliedBotDamage(bot, damage) {
+            // (Los bots no tienen armadura... por ahora)
+            bot.health -= damage;
+        }
+
         function checkNearBomb() { if (game.bomb.state !== 'planted') return false; const distance = Math.hypot(player.x - game.bomb.x, player.y - game.bomb.y); return distance < 75; }
         function updateDefusing() {
             if (!game.isDefusing) return;
@@ -313,68 +391,78 @@
             game.isDefusing = false;
             hideProgress();
             game.bomb.state = 'defused';
-            showMessage("¡CTs Ganan!", 3000);
-            setTimeout(resetRound, 3000);
+            endRound("CTs Ganan");
         }
         function bombExplode() {
             console.log("¡BOOM!");
             game.bomb.state = 'exploded';
-            showMessage("¡Ts Ganan!", 3000);
-            setTimeout(resetRound, 3000);
+            endRound("Ts Ganan");
         }
         
-        // --- (NUEVO) RESETEAR PARA 5 BOTS ALEATORIOS ---
+        // (NUEVO) Función para terminar y reiniciar la ronda
+        function endRound(message) {
+            showMessage(message, 3000);
+            
+            // Detener todos los timers de bombas
+            if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
+            game.bomb.timerId = null;
+            
+            // Evitar que se reinicie múltiples veces
+            if (game.bomb.state === 'exploded' || game.bomb.state === 'defused') return;
+            if (bots.length === 0 && game.bomb.state === 'unplanted') return;
+            if (player.health <= 0) return;
+            
+            setTimeout(resetRound, 3000);
+        }
+
         function resetRound() {
             console.log("--- Nueva Ronda ---");
             game.bomb.state = 'unplanted';
             if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
             game.bomb.timerId = null;
             
+            // Resetear Jugador (CT)
             player.hasBomb = false;
             player.health = 100;
             player.armor = 0; 
             player.inventory.helmet = false;
-            
-            // Spawn del jugador (aleatorio dentro de su zona)
             const playerSpawnZone = getSpawnZone('Spawn AT');
             if (playerSpawnZone) {
                 player.x = playerSpawnZone.x + Math.random() * playerSpawnZone.width;
                 player.y = playerSpawnZone.y + Math.random() * playerSpawnZone.height;
             } else {
-                const fallbackSpawn = getZoneCenter('Spawn AT');
-                player.x = fallbackSpawn.x;
-                player.y = fallbackSpawn.y;
+                player.x = 142; player.y = 1087; // Fallback
             }
             
+            // Limpiar todo
             bots = [];
+            alliedBots = [];
             bullets = [];
             botBullets = [];
+            alliedBotBullets = [];
             
-            // --- ¡NUEVA LÓGICA DE SPAWN ALEATORIO! ---
+            // === SPAWN EQUIPOS ===
+            
+            // Spawnea 5 BOTS T
             const botSpawnZone = getSpawnZone('Spawn T');
-            if (!botSpawnZone) {
-                console.error("¡No se encontró la 'Spawn T' zone!");
-                return;
-            }
-            
-            // 1. Decisión del EQUIPO: A qué sitio van
+            if (!botSpawnZone) { console.error("¡No se encontró la 'Spawn T' zone!"); return; }
             const teamTargetSite = Math.random() < 0.5 ? 'A' : 'B';
             console.log(`El equipo T ha decidido ir a: ${teamTargetSite}`);
-            
-            // 2. Elegir el portador de la bomba
             const bombCarrierIndex = Math.floor(Math.random() * 5);
-            
-            // 3. Spawnea 5 bots
             for (let i = 0; i < 5; i++) {
-                // Posición aleatoria DENTRO de la zona
                 const spawnX = botSpawnZone.x + Math.random() * botSpawnZone.width;
                 const spawnY = botSpawnZone.y + Math.random() * botSpawnZone.height;
-                
-                // Decisión INDIVIDUAL: Qué ruta tomar
                 const targetRoute = Math.random() < 0.5 ? 1 : 2;
                 const pathName = `path_${teamTargetSite}_${targetRoute}`;
-                
                 spawnBot(i === bombCarrierIndex, { x: spawnX, y: spawnY }, pathName);
+            }
+            
+            // (NUEVO) Spawnea 4 BOTS CT
+            if (!playerSpawnZone) { console.error("¡No se encontró la 'Spawn AT' zone!"); return; }
+            for (let i = 0; i < 4; i++) {
+                const spawnX = playerSpawnZone.x + Math.random() * playerSpawnZone.width;
+                const spawnY = playerSpawnZone.y + Math.random() * playerSpawnZone.height;
+                spawnAlliedBot({ x: spawnX, y: spawnY });
             }
         }
         function showProgress(progress, max) { progressContainerEl.style.display = 'block'; const percentage = Math.min((progress / max) * 100, 100); progressBarEl.style.width = percentage + '%'; }
@@ -402,8 +490,24 @@
             }
             updateDefusing();
             updateBots();
+            updateAlliedBots(); // (NUEVO)
+            
+            // Lógica de Balas del JUGADOR (solo daña a bots T)
             for (let i = bullets.length - 1; i >= 0; i--) { let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (let j = bots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, bots[j])) { bots[j].health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
-            for (let i = botBullets.length - 1; i >= 0; i--) { let bullet = botBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (checkObjectCollision(bullet, player)) { applyPlayerDamage(bullet.damage); botBullets.splice(i, 1); bulletHit = true; } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } }
+            
+            // Lógica de Balas del BOT T (daña a jugador Y aliados)
+            for (let i = botBullets.length - 1; i >= 0; i--) { let bullet = botBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; 
+                // Daña al jugador
+                if (checkObjectCollision(bullet, player)) { applyPlayerDamage(bullet.damage); botBullets.splice(i, 1); bulletHit = true; continue; }
+                // Daña a aliados
+                for (let j = alliedBots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, alliedBots[j])) { applyAlliedBotDamage(alliedBots[j], bullet.damage); botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue;
+                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } 
+            }
+            
+            // (NUEVO) Lógica de Balas del BOT ALIADO (solo daña a bots T)
+            for (let i = alliedBotBullets.length - 1; i >= 0; i--) { let bullet = alliedBotBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { alliedBotBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (let j = bots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, bots[j])) { bots[j].health -= bullet.damage; alliedBotBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { alliedBotBullets.splice(i, 1); } }
+
+            // Lógica de Cámara
             camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2;
             if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0;
             if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width;
@@ -426,11 +530,16 @@
                 ctx.fillStyle = `rgb(255, ${flash * 100}, ${flash * 100})`;
                 ctx.fillRect(game.bomb.x - 10, game.bomb.y - 10, 20, 20);
             }
-            ctx.fillStyle = 'yellow';
-            for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
-            ctx.fillStyle = 'orange';
-            for (const bullet of botBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
             
+            // Balas
+            ctx.fillStyle = 'yellow'; // Jugador
+            for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
+            ctx.fillStyle = 'orange'; // T
+            for (const bullet of botBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
+            ctx.fillStyle = 'lime'; // CT (Aliados) (NUEVO)
+            for (const bullet of alliedBotBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
+
+            // Bots T (Enemigos)
             for (const bot of bots) {
                 ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
                 ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
@@ -443,6 +552,17 @@
                 }
             }
             
+            // (NUEVO) Bots CT (Aliados)
+            for (const bot of alliedBots) {
+                ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
+                ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
+                ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bot.size, 0); ctx.stroke();
+                ctx.restore();
+                ctx.fillStyle = 'red'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size, 5);
+                ctx.fillStyle = 'green'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size * (bot.health / 100), 5);
+            }
+            
+            // Jugador
             ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
             ctx.fillStyle = player.color; ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
             ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.size, 0); ctx.stroke();
@@ -461,8 +581,11 @@
             ctx.fillText(`Dinero: $${player.money}`, 20, 120); 
             if (player.hasBomb) { ctx.fillStyle = 'orange'; ctx.fillText("[BOMBA]", 20, 150); }
             
+            // Contadores de equipo
             ctx.fillStyle = 'red';
-            ctx.fillText(`Bots Restantes: ${bots.length}`, window.innerWidth - 200, 30);
+            ctx.fillText(`Bots T: ${bots.length}`, window.innerWidth - 200, 30);
+            ctx.fillStyle = 'cyan';
+            ctx.fillText(`Bots CT: ${alliedBots.length}`, window.innerWidth - 200, 60);
             
             if (isShopOpen) { shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default'; }
             else { shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair'; }
