@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v9 - Tu Mapa Completo</title>
+    <title>Prototipo 2D v10 - Tienda</title>
     
     <style>
         body {
@@ -10,16 +10,83 @@
             padding: 0;
             background-color: #111;
             overflow: hidden; 
+            font-family: Arial, sans-serif;
         }
         canvas {
             display: block;
             background-color: #111; 
-            margin: 0 auto; 
+            margin: 0 auto;
+            /* El cursor será una cruz por defecto */
+            cursor: crosshair; 
+        }
+
+        /* --- (NUEVO) ESTILOS DE LA TIENDA --- */
+        #shopMenu {
+            /* Oculto por defecto */
+            display: none; 
+            
+            /* Posición */
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            
+            /* Aspecto */
+            background-color: rgba(30, 30, 30, 0.9);
+            border: 2px solid #ccc;
+            border-radius: 10px;
+            padding: 20px;
+            color: white;
+            z-index: 10; /* Para que esté por encima del canvas */
+        }
+        #shopMenu h2 {
+            margin-top: 0;
+            border-bottom: 1px solid #555;
+            padding-bottom: 10px;
+        }
+        .shop-category {
+            margin-bottom: 15px;
+        }
+        .shop-category h3 {
+            color: #aaa;
+            margin-bottom: 5px;
+        }
+        .shop-item {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 5px;
+            background-color: #555;
+            color: white;
+            border: 1px solid #777;
+            cursor: pointer;
+            font-size: 16px;
+            text-align: left;
+        }
+        .shop-item:hover {
+            background-color: #777;
         }
     </style>
 </head>
 <body>
     
+    <div id="shopMenu">
+        <h2>Tienda (Pulsa 'B' para cerrar)</h2>
+        
+        <div class="shop-category">
+            <h3>Rifles</h3>
+            <button class="shop-item" data-item="ak47" data-cost="2700">AK-47 ($2700)</button>
+            <button class="shop-item" data-item="m4a1" data-cost="3100">M4A1-S ($3100)</button>
+            <button class="shop-item" data-item="awp" data-cost="4750">AWP ($4750)</button>
+        </div>
+        
+        <div class="shop-category">
+            <h3>Equipo</h3>
+            <button class="shop-item" data-item="kevlar" data-cost="650">Chaleco ($650)</button>
+            <button class="shop-item" data-item="full_armor" data-cost="1000">Chaleco + Casco ($1000)</button>
+        </div>
+    </div>
+
     <canvas id="gameCanvas"></canvas>
 
     <script>
@@ -29,119 +96,78 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
 
+        // --- (NUEVO) Selectores de la Tienda ---
+        const shopMenuElement = document.getElementById('shopMenu');
+        const shopButtons = document.querySelectorAll('.shop-item');
+
         // --- TAMAÑO DEL MUNDO ---
-        const world = {
-            width: 3000,
-            height: 2000
-        };
+        const world = { width: 3000, height: 2000 };
+        const mapData = { playerSize: 20 };
+        let camera = { x: 0, y: 0 };
 
-        const mapData = {
-            wallSize: 20,
-            padding: 40,
-            playerSize: 20
-        };
+        // --- 2. EL MAPA (Tu diseño) ---
+        const walls = [ /* Tu array de paredes de 48 líneas va aquí... */ { x: 1696, y: 1311, width: 85, height: 632 }, { x: 1682, y: 1, width: 99, height: 579 }, { x: 1658, y: 774, width: 578, height: 381 }, { x: 1885, y: 429, width: 350, height: 355 }, { x: 1954, y: 1367, width: 328, height: 231 }, { x: 1841, y: 107, width: 395, height: 119 }, { x: 1402, y: 532, width: 135, height: 463 }, { x: 899, y: 209, width: 496, height: 337 }, { x: 881, y: 204, width: 523, height: 423 }, { x: 839, y: 119, width: 59, height: 507 }, { x: -1, y: 2, width: 345, height: 617 }, { x: 542, y: 293, width: 31, height: 22 }, { x: 571, y: 204, width: 33, height: 21 }, { x: 609, y: 268, width: 34, height: 23 }, { x: 493, y: 181, width: 19, height: 166 }, { x: 512, y: 347, width: 133, height: 24 }, { x: 494, y: 348, width: 356, height: 276 }, { x: 493, y: 340, width: 19, height: 15 }, { x: 491, y: 9, width: 26, height: 50 }, { x: 491, y: 3, width: 25, height: 9 }, { x: 594, y: 142, width: 24, height: 12 }, { x: 656, y: 182, width: 66, height: 35 }, { x: 761, y: 106, width: 21, height: 189 }, { x: 1, y: 3, width: 1520, height: 9 }, { x: 1522, y: 5, width: 1453, height: 6 }, { x: 2978, y: 7, width: 10, height: 3 }, { x: 2972, y: 5, width: 17, height: 6 }, { x: 2980, y: 9, width: 5, height: 728 }, { x: 2983, y: 738, width: 3, height: 610 }, { x: 2981, y: 739, width: 4, height: 615 }, { x: 2981, y: 1353, width: 3, height: 627 }, { x: 1465, y: 1943, width: 1520, height: 35 }, { x: -2, y: 1943, width: 1469, height: 35 }, { x: 0, y: 1225, width: 12, height: 720 }, { x: 4, y: 661, width: 8, height: 566 }, { x: 2, y: 604, width: 9, height: 59 }, { x: 1353, y: 1259, width: 200, height: 108 }, { x: 1159, y: 1035, width: 135, height: 123 }, { x: 1339, y: 1367, width: 67, height: 433 }, { x: 533, y: 1479, width: 115, height: 332 }, { x: 815, y: 1333, width: 355, height: 107 }, { x: 535, y: 1129, width: 143, height: 100 }, { x: 767, y: 826, width: 217, height: 236 }, { x: 1137, y: 692, width: 73, height: 55 }, { x: 501, y: 715, width: 58, height: 68 }, { x: 142, y: 1606, width: 405, height: 205 }, { x: 834, y: 1603, width: 40, height: 31 }, { x: 940, y: 1547, width: 260, height: 63 }, { x: 1115, y: 1662, width: 28, height: 76 }, { x: 943, y: 1706, width: 8, height: 31 }, { x: 875, y: 1767, width: 43, height: 29 }, { x: 898, y: 1656, width: 43, height: 15 }, { x: 1046, y: 1812, width: 40, height: 29 }, { x: 838, y: 1873, width: 33, height: 21 }, { x: 989, y: 1840, width: 94, height: 105 }, { x: 1190, y: 1783, width: 66, height: 36 } ];
+        const zones = [ { x: 52, y: 969, width: 180, height: 236, color: 'rgba(0, 150, 255, 0.5)', name: 'Spawn AT' }, { x: 2528, y: 976, width: 276, height: 243, color: 'rgba(255, 100, 0, 0.5)', name: 'Spawn T' }, { x: 545, y: 195, width: 130, height: 114, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio A' }, { x: 814, y: 1572, width: 396, height: 317, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio B' } ];
 
-        // --- CÁMARA ---
-        let camera = {
-            x: 0,
-            y: 0,
-        };
-
-        // --- 2. EL MAPA (¡TU DISEÑO!) ---
-        
-        // ¡Tu array de paredes!
-        const walls = [
-            { x: 1696, y: 1311, width: 85, height: 632 },
-            { x: 1682, y: 1, width: 99, height: 579 },
-            { x: 1658, y: 774, width: 578, height: 381 },
-            { x: 1885, y: 429, width: 350, height: 355 },
-            { x: 1954, y: 1367, width: 328, height: 231 },
-            { x: 1841, y: 107, width: 395, height: 119 },
-            { x: 1402, y: 532, width: 135, height: 463 },
-            { x: 899, y: 209, width: 496, height: 337 },
-            { x: 881, y: 204, width: 523, height: 423 },
-            { x: 839, y: 119, width: 59, height: 507 },
-            { x: -1, y: 2, width: 345, height: 617 },
-            { x: 542, y: 293, width: 31, height: 22 },
-            { x: 571, y: 204, width: 33, height: 21 },
-            { x: 609, y: 268, width: 34, height: 23 },
-            { x: 493, y: 181, width: 19, height: 166 },
-            { x: 512, y: 347, width: 133, height: 24 },
-            { x: 494, y: 348, width: 356, height: 276 },
-            { x: 493, y: 340, width: 19, height: 15 },
-            { x: 491, y: 9, width: 26, height: 50 },
-            { x: 491, y: 3, width: 25, height: 9 },
-            { x: 594, y: 142, width: 24, height: 12 },
-            { x: 656, y: 182, width: 66, height: 35 },
-            { x: 761, y: 106, width: 21, height: 189 },
-            { x: 1, y: 3, width: 1520, height: 9 },
-            { x: 1522, y: 5, width: 1453, height: 6 },
-            { x: 2978, y: 7, width: 10, height: 3 },
-            { x: 2972, y: 5, width: 17, height: 6 },
-            { x: 2980, y: 9, width: 5, height: 728 },
-            { x: 2983, y: 738, width: 3, height: 610 },
-            { x: 2981, y: 739, width: 4, height: 615 },
-            { x: 2981, y: 1353, width: 3, height: 627 },
-            { x: 1465, y: 1943, width: 1520, height: 35 },
-            { x: -2, y: 1943, width: 1469, height: 35 },
-            { x: 0, y: 1225, width: 12, height: 720 },
-            { x: 4, y: 661, width: 8, height: 566 },
-            { x: 2, y: 604, width: 9, height: 59 },
-            { x: 1353, y: 1259, width: 200, height: 108 },
-            { x: 1159, y: 1035, width: 135, height: 123 },
-            { x: 1339, y: 1367, width: 67, height: 433 },
-            { x: 533, y: 1479, width: 115, height: 332 },
-            { x: 815, y: 1333, width: 355, height: 107 },
-            { x: 535, y: 1129, width: 143, height: 100 },
-            { x: 767, y: 826, width: 217, height: 236 },
-            { x: 1137, y: 692, width: 73, height: 55 },
-            { x: 501, y: 715, width: 58, height: 68 },
-            { x: 142, y: 1606, width: 405, height: 205 },
-            { x: 834, y: 1603, width: 40, height: 31 },
-            { x: 940, y: 1547, width: 260, height: 63 },
-            { x: 1115, y: 1662, width: 28, height: 76 },
-            { x: 943, y: 1706, width: 8, height: 31 },
-            { x: 875, y: 1767, width: 43, height: 29 },
-            { x: 898, y: 1656, width: 43, height: 15 },
-            { x: 1046, y: 1812, width: 40, height: 29 },
-            { x: 838, y: 1873, width: 33, height: 21 },
-            { x: 989, y: 1840, width: 94, height: 105 },
-            { x: 1190, y: 1783, width: 66, height: 36 },
-        ];
-
-        // ¡Tu array de zonas!
-        const zones = [
-            { x: 52, y: 969, width: 180, height: 236, color: 'rgba(0, 150, 255, 0.5)', name: 'Spawn AT' },
-            { x: 2528, y: 976, width: 276, height: 243, color: 'rgba(255, 100, 0, 0.5)', name: 'Spawn T' },
-            { x: 545, y: 195, width: 130, height: 114, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio A' },
-            { x: 814, y: 1572, width: 396, height: 317, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio B' },
-        ];
-
-        // --- 3. EL JUGADOR ---
+        // --- 3. EL JUGADOR (¡Actualizado!) ---
         let player = {
-            // ¡Spawn en el centro de tu 'Spawn AT'!
-            x: 142,  // (52 + 180 / 2)
-            y: 1087, // (969 + 236 / 2)
+            x: 142, y: 1087,
             size: mapData.playerSize,
             color: 'cyan', 
             speed: 4,
             angle: 0,
-            health: 100
+            health: 100,
+            // (NUEVO)
+            money: 800, // Dinero inicial
+            inventory: {
+                primary: 'pistol', // Arma inicial
+                secondary: null,
+                kevlar: false,
+                helmet: false
+            }
         };
 
         // --- 4. ALMACENES Y ESTADO ---
         let bullets = [];
         let keys = {};
         let mouse = { x: 0, y: 0 }; 
+        
+        // (NUEVO) Estado de la tienda
+        let isShopOpen = false;
 
-        // --- 5. SEGUIMIENTO DE EVENTOS ---
+        // --- 5. SEGUIMIENTO DE EVENTOS (¡Actualizado!) ---
         window.addEventListener('mousemove', (e) => { 
             mouse.x = e.clientX + camera.x;
             mouse.y = e.clientY + camera.y;
         });
         window.addEventListener('keydown', (e) => { keys[e.key] = true; });
-        window.addEventListener('keyup', (e) => { delete keys[e.key]; });
+        
+        window.addEventListener('keyup', (e) => {
+            delete keys[e.key];
+            
+            // --- (NUEVO) Lógica para abrir/cerrar tienda ---
+            if (e.key === 'b' || e.key === 'B') {
+                // Comprobar si está en la zona de spawn
+                let inSpawn = false;
+                for (const zone of zones) {
+                    if (zone.name === 'Spawn AT' && checkZoneCollision(player, zone)) {
+                        inSpawn = true;
+                        break;
+                    }
+                }
+                
+                if (inSpawn) {
+                    isShopOpen = !isShopOpen; // Abre o cierra la tienda
+                } else {
+                    isShopOpen = false; // Si no está en spawn, la cierra
+                }
+            }
+        });
+
         window.addEventListener('mousedown', (e) => {
+            // No disparar si la tienda está abierta
+            if (isShopOpen) return; 
+
             const angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
             const bullet = {
                 x: player.x,
@@ -153,8 +179,44 @@
             };
             bullets.push(bullet);
         });
+        
+        // --- (NUEVO) Lógica de compra ---
+        shopButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const item = button.dataset.item;
+                const cost = parseInt(button.dataset.cost);
 
-        // --- 6. FUNCIÓN DE COLISIÓN ---
+                if (player.money >= cost) {
+                    player.money -= cost;
+                    buyItem(item);
+                    isShopOpen = false; // Cerrar tienda después de comprar
+                } else {
+                    // (Opcional) Mostrar un mensaje de "dinero insuficiente"
+                    console.log("Dinero insuficiente");
+                }
+            });
+        });
+
+        function buyItem(item) {
+            console.log("Comprado: " + item);
+            switch (item) {
+                case 'ak47':
+                case 'm4a1':
+                case 'awp':
+                    player.inventory.primary = item;
+                    break;
+                case 'kevlar':
+                    player.inventory.kevlar = true;
+                    player.inventory.helmet = false; // Resetea casco si solo compra chaleco
+                    break;
+                case 'full_armor':
+                    player.inventory.kevlar = true;
+                    player.inventory.helmet = true;
+                    break;
+            }
+        }
+
+        // --- 6. FUNCIONES DE COLISIÓN ---
         function checkCollision(obj, wall) {
             const objLeft = obj.x - obj.size / 2;
             const objRight = obj.x + obj.size / 2;
@@ -171,9 +233,33 @@
                 objTop < wallBottom
             );
         }
+        
+        // (NUEVO) Colisión específica para ZONAS
+        function checkZoneCollision(player, zone) {
+            const playerLeft = player.x - player.size / 2;
+            const playerRight = player.x + player.size / 2;
+            const playerTop = player.y - player.size / 2;
+            const playerBottom = player.y + player.size / 2;
+            // Zone se mide desde la esquina, no desde el centro
+            const zoneLeft = zone.x;
+            const zoneRight = zone.x + zone.width;
+            const zoneTop = zone.y;
+            const zoneBottom = zone.y + zone.height;
+            return (
+                playerRight > zoneLeft &&
+                playerLeft < zoneRight &&
+                playerBottom > zoneTop &&
+                playerTop < zoneBottom
+            );
+        }
 
         // --- 7. FUNCIÓN DE ACTUALIZACIÓN (Lógica) ---
         function update() {
+            // --- (NUEVO) PAUSAR JUEGO SI LA TIENDA ESTÁ ABIERTA ---
+            if (isShopOpen) {
+                return; // No actualiza nada más (ni movimiento, ni balas)
+            }
+
             // Lógica del Jugador
             const oldX = player.x;
             const oldY = player.y;
@@ -233,7 +319,7 @@
             ctx.fillStyle = '#333';
             ctx.fillRect(0, 0, world.width, world.height);
 
-            // Dibujar Zonas (¡Ahora sí se ven!)
+            // Dibujar Zonas
             for (const zone of zones) {
                 ctx.fillStyle = zone.color;
                 ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
@@ -273,10 +359,21 @@
             
             ctx.restore(); // Restaura la cámara
 
-            // Dibujar HUD
+            // --- Dibujar HUD (¡Actualizado!) ---
             ctx.fillStyle = 'white';
             ctx.font = '24px Arial';
             ctx.fillText(`Vida: ${player.health}`, 20, 30);
+            ctx.fillText(`Dinero: $${player.money}`, 20, 60); // Muestra el dinero
+            ctx.fillText(`Arma: ${player.inventory.primary}`, 20, 90); // Muestra el arma
+            
+            // --- (NUEVO) Controlar la UI de la Tienda ---
+            if (isShopOpen) {
+                shopMenuElement.style.display = 'block'; // Muestra la tienda HTML
+                canvas.style.cursor = 'default'; // Muestra el cursor normal
+            } else {
+                shopMenuElement.style.display = 'none'; // Oculta la tienda HTML
+                canvas.style.cursor = 'crosshair'; // Vuelve a la mira
+            }
         }
 
         // --- 9. EL BUCLE DEL JUEGO ---
