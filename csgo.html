@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v12 - Lógica de Armas</title>
+    <title>Prototipo 2D v13 - 3 Armas y Recoil</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -19,6 +19,10 @@
     
     <div id="shopMenu">
         <h2>Tienda (Pulsa 'B' para cerrar)</h2>
+        <div class="shop-category">
+            <h3>Pistolas</h3>
+            <button class="shop-item" data-item="deagle" data-cost="700">Deagle ($700)</button>
+        </div>
         <div class="shop-category">
             <h3>Rifles</h3>
             <button class="shop-item" data-item="ak47" data-cost="2700">AK-47 ($2700)</button>
@@ -48,35 +52,58 @@
         const mapData = { playerSize: 20, botSize: 20 };
         let camera = { x: 0, y: 0 };
 
-        // --- (NUEVO) ESTADÍSTICAS DE ARMAS ---
+        // --- (NUEVO) ESTADÍSTICAS DE ARMAS MEJORADAS ---
         const weaponData = {
-            'pistol': {
-                name: 'Pistol',
-                damage: 25,
-                fireRate: 200, // ms entre disparos
+            'knife': {
+                name: 'Cuchillo',
+                type: 'melee',
+                damage: 50,
+                fireRate: 500, // ms entre "disparos"
+                range: 40, // Rango del cuchillo (en píxeles)
                 automatic: false,
-                recoil: 0.0, // Sin retroceso
-                spread: 0.05 // Un poco de dispersión
+                recoil: 0,
+                spread: 0
+            },
+            'pistol': {
+                name: 'Pistola (Glock)',
+                type: 'secondary',
+                damage: 25,
+                fireRate: 200, 
+                automatic: false,
+                recoil: 0.0,
+                spread: 0.05
+            },
+            'deagle': {
+                name: 'Deagle',
+                type: 'secondary',
+                damage: 60,
+                fireRate: 400, 
+                automatic: false,
+                recoil: 0.1, // Mucho retroceso
+                spread: 0.03
             },
             'ak47': {
                 name: 'AK-47',
+                type: 'primary',
                 damage: 34,
                 fireRate: 100, // 600 RPM
                 automatic: true,
-                recoil: 0.03, // Aumenta el retroceso con cada disparo
-                spread: 0.01 // Muy precisa en el primer disparo
+                recoil: 0.03, // Aumenta con cada disparo
+                spread: 0.01 // Precisa en el primer disparo
             },
             'm4a1': {
                 name: 'M4A1-S',
+                type: 'primary',
                 damage: 30,
                 fireRate: 110,
                 automatic: true,
-                recoil: 0.02, // Menos retroceso que el AK
+                recoil: 0.02, // Menos retroceso
                 spread: 0.01
             },
             'awp': {
                 name: 'AWP',
-                damage: 110, // Mata de un tiro
+                type: 'primary',
+                damage: 110,
                 fireRate: 1500, // 1.5s de espera
                 automatic: false,
                 recoil: 0.0,
@@ -96,24 +123,30 @@
             speed: 4,
             angle: 0,
             health: 100,
-            money: 800, 
-            inventory: { primary: 'pistol', kevlar: false, helmet: false },
-            // (NUEVO)
+            money: 16000, // Más dinero para probar
+            // (NUEVO) Inventario de 3 armas
+            inventory: { 
+                primary: null, // 'ak47', 'm4a1', etc.
+                secondary: 'pistol',
+                melee: 'knife',
+                kevlar: false, 
+                helmet: false 
+            },
+            activeWeapon: 'secondary', // (NUEVO) Slot activo ('primary', 'secondary', 'melee')
             lastShotTime: 0,
-            recoil: 0.0, // Retroceso actual
-            hasFiredSemi: false // Para evitar que las pistolas disparen auto
+            recoil: 0.0,
+            hasFiredSemi: false 
         };
 
         // --- 4. ALMACENES Y ESTADO ---
         let bullets = [];
         let keys = {};
-        let mouse = { x: 0, y: 0, isDown: false }; // (NUEVO) isDown
+        let mouse = { x: 0, y: 0, isDown: false }; 
         let isShopOpen = false;
-        
         let bots = [];
         let botBullets = [];
 
-        // --- 5. SEGUIMIENTO DE EVENTOS (¡Actualizado!) ---
+        // --- 5. SEGUIMIENTO de EVENTOS (¡Actualizado!) ---
         window.addEventListener('mousemove', (e) => { 
             mouse.x = e.clientX + camera.x;
             mouse.y = e.clientY + camera.y;
@@ -121,6 +154,25 @@
         window.addEventListener('keydown', (e) => { keys[e.key] = true; });
         window.addEventListener('keyup', (e) => {
             delete keys[e.key];
+            
+            // --- (NUEVO) Cambio de Arma ---
+            if (!isShopOpen) { // No cambiar de arma si la tienda está abierta
+                if (e.key === '1') {
+                    // Solo cambia si TIENES un arma principal
+                    if (player.inventory.primary) {
+                        player.activeWeapon = 'primary';
+                        player.recoil = 0; // Resetea recoil al cambiar
+                    }
+                } else if (e.key === '2') {
+                    player.activeWeapon = 'secondary';
+                    player.recoil = 0;
+                } else if (e.key === '3') {
+                    player.activeWeapon = 'melee';
+                    player.recoil = 0;
+                }
+            }
+
+            // Abrir tienda
             if (e.key === 'b' || e.key === 'B') {
                 let inSpawn = false;
                 for (const zone of zones) {
@@ -134,180 +186,133 @@
             }
         });
 
-        // (NUEVO) Manejo de clics
         window.addEventListener('mousedown', (e) => {
             if (isShopOpen) return; 
             mouse.isDown = true;
-            player.hasFiredSemi = false; // Permite disparar semi-auto de nuevo
+            player.hasFiredSemi = false; 
         });
         window.addEventListener('mouseup', (e) => {
             mouse.isDown = false;
         });
         
+        // (NUEVO) Lógica de compra mejorada
         shopButtons.forEach(button => {
             button.addEventListener('click', () => {
-                const item = button.dataset.item;
+                const itemName = button.dataset.item;
                 const cost = parseInt(button.dataset.cost);
+                
                 if (player.money >= cost) {
                     player.money -= cost;
-                    buyItem(item);
+                    buyItem(itemName);
                     isShopOpen = false; 
                 } else {
                     console.log("Dinero insuficiente");
                 }
             });
         });
-        function buyItem(item) {
-            console.log("Comprado: " + item);
-            player.recoil = 0.0; // Resetea el recoil al comprar
-            switch (item) {
-                case 'ak47': case 'm4a1': case 'awp':
-                    player.inventory.primary = item;
-                    break;
-                case 'kevlar':
-                    player.inventory.kevlar = true;
-                    player.inventory.helmet = false; 
-                    break;
-                case 'full_armor':
-                    player.inventory.kevlar = true;
-                    player.inventory.helmet = true;
-                    break;
+
+        function buyItem(itemName) {
+            console.log("Comprado: " + itemName);
+            player.recoil = 0.0;
+            const itemData = weaponData[itemName];
+            
+            if (itemData) {
+                // Si es un arma, la equipa en su slot
+                if (itemData.type === 'primary') {
+                    player.inventory.primary = itemName;
+                    player.activeWeapon = 'primary'; // La equipa al comprar
+                } else if (itemData.type === 'secondary') {
+                    player.inventory.secondary = itemName;
+                    player.activeWeapon = 'secondary';
+                }
+            } else {
+                // Si no es un arma, es equipo
+                switch (itemName) {
+                    case 'kevlar':
+                        player.inventory.kevlar = true;
+                        player.inventory.helmet = false; 
+                        break;
+                    case 'full_armor':
+                        player.inventory.kevlar = true;
+                        player.inventory.helmet = true;
+                        break;
+                }
             }
         }
 
         // --- 6. FUNCIONES DE COLISIÓN ---
-        function checkCollision(obj, wall) {
-            const objLeft = obj.x - obj.size / 2;
-            const objRight = obj.x + obj.size / 2;
-            const objTop = obj.y - obj.size / 2;
-            const objBottom = obj.y + obj.size / 2;
-            const wallLeft = wall.x;
-            const wallRight = wall.x + wall.width;
-            const wallTop = wall.y;
-            const wallBottom = wall.y + wall.height;
-            return (objRight > wallLeft && objLeft < wallRight && objBottom > wallTop && objTop < wallBottom);
-        }
-        function checkZoneCollision(player, zone) {
-            const playerLeft = player.x - player.size / 2;
-            const playerRight = player.x + player.size / 2;
-            const playerTop = player.y - player.size / 2;
-            const playerBottom = player.y + player.size / 2;
-            const zoneLeft = zone.x;
-            const zoneRight = zone.x + zone.width;
-            const zoneTop = zone.y;
-            const zoneBottom = zone.y + zone.height;
-            return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom);
-        }
-        function checkObjectCollision(obj1, obj2) {
-            const obj1Left = obj1.x - obj1.size / 2;
-            const obj1Right = obj1.x + obj1.size / 2;
-            const obj1Top = obj1.y - obj1.size / 2;
-            const obj1Bottom = obj1.y + obj1.size / 2;
-            const obj2Left = obj2.x - obj2.size / 2;
-            const obj2Right = obj2.x + obj2.size / 2;
-            const obj2Top = obj2.y - obj2.size / 2;
-            const obj2Bottom = obj2.y + obj2.size / 2;
-            return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom);
-        }
+        function checkCollision(obj, wall) { /* ... (Sin cambios) ... */ const objLeft = obj.x - obj.size / 2; const objRight = obj.x + obj.size / 2; const objTop = obj.y - obj.size / 2; const objBottom = obj.y + obj.size / 2; const wallLeft = wall.x; const wallRight = wall.x + wall.width; const wallTop = wall.y; const wallBottom = wall.y + wall.height; return (objRight > wallLeft && objLeft < wallRight && objBottom > wallTop && objTop < wallBottom); }
+        function checkZoneCollision(player, zone) { /* ... (Sin cambios) ... */ const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
+        function checkObjectCollision(obj1, obj2) { /* ... (Sin cambios) ... */ const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
         
         // --- 7. LÓGICA DE IA ---
-        function getZoneCenter(name) {
-            for (const zone of zones) {
-                if (zone.name === name) {
-                    return { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 };
-                }
-            }
-            return { x: 2666, y: 1097 }; // Fallback
-        }
-        function spawnBot() {
-            const spawnPoint = getZoneCenter('Spawn T');
-            const bot = {
-                x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'red',
-                speed: 2.5, angle: 0, health: 100, state: 'seeking',
-                lastShotTime: 0, shootCooldown: 500
-            };
-            bots.push(bot);
-        }
-        function canSeePlayer(bot) {
-            const angle = Math.atan2(player.y - bot.y, player.x - bot.x);
-            const distance = Math.hypot(player.x - bot.x, player.y - bot.y);
-            if (distance > 1000) return false; 
-            for (let i = 0.1; i < 1; i += 0.1) {
-                const testPoint = {
-                    x: bot.x + (player.x - bot.x) * i,
-                    y: bot.y + (player.y - bot.y) * i,
-                    size: 2
-                };
-                for (const wall of walls) {
-                    if (checkCollision(testPoint, wall)) { return false; }
-                }
-            }
-            return true;
-        }
-        function updateBots() {
-            for (let i = bots.length - 1; i >= 0; i--) {
-                const bot = bots[i];
-                if (bot.health <= 0) {
-                    player.money += 300; 
-                    bots.splice(i, 1);
-                    console.log("Bot eliminado, +$300");
-                    setTimeout(spawnBot, 3000); 
-                    continue; 
-                }
-                const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
-                if (canSeePlayer(bot)) {
-                    bot.state = 'attacking';
-                    bot.angle = angleToPlayer; 
-                    if (Date.now() - bot.lastShotTime > bot.shootCooldown) {
-                        const bullet = {
-                            x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: 10
-                        };
-                        botBullets.push(bullet);
-                        bot.lastShotTime = Date.now();
-                    }
-                } else {
-                    bot.state = 'seeking';
-                    bot.angle = angleToPlayer; 
-                    const oldX = bot.x;
-                    const oldY = bot.y;
-                    bot.x += Math.cos(bot.angle) * bot.speed;
-                    for (const wall of walls) { if (checkCollision(bot, wall)) { bot.x = oldX; break; } }
-                    bot.y += Math.sin(bot.angle) * bot.speed;
-                    for (const wall of walls) { if (checkCollision(bot, wall)) { bot.y = oldY; break; } }
-                }
-            }
-        }
+        function getZoneCenter(name) { /* ... (Sin cambios) ... */ for (const zone of zones) { if (zone.name === name) { return { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 }; } } return { x: 2666, y: 1097 }; }
+        function spawnBot() { /* ... (Sin cambios) ... */ const spawnPoint = getZoneCenter('Spawn T'); const bot = { x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'red', speed: 2.5, angle: 0, health: 100, state: 'seeking', lastShotTime: 0, shootCooldown: 500 }; bots.push(bot); }
+        function canSeePlayer(bot) { /* ... (Sin cambios) ... */ const angle = Math.atan2(player.y - bot.y, player.x - bot.x); const distance = Math.hypot(player.x - bot.x, player.y - bot.y); if (distance > 1000) return false; for (let i = 0.1; i < 1; i += 0.1) { const testPoint = { x: bot.x + (player.x - bot.x) * i, y: bot.y + (player.y - bot.y) * i, size: 2 }; for (const wall of walls) { if (checkCollision(testPoint, wall)) { return false; } } } return true; }
+        function updateBots() { /* ... (Sin cambios) ... */ for (let i = bots.length - 1; i >= 0; i--) { const bot = bots[i]; if (bot.health <= 0) { player.money += 300; bots.splice(i, 1); console.log("Bot eliminado, +$300"); setTimeout(spawnBot, 3000); continue; } const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x); if (canSeePlayer(bot)) { bot.state = 'attacking'; bot.angle = angleToPlayer; if (Date.now() - bot.lastShotTime > bot.shootCooldown) { const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: 10 }; botBullets.push(bullet); bot.lastShotTime = Date.now(); } } else { bot.state = 'seeking'; bot.angle = angleToPlayer; const oldX = bot.x; const oldY = bot.y; bot.x += Math.cos(bot.angle) * bot.speed; for (const wall of walls) { if (checkCollision(bot, wall)) { bot.x = oldX; break; } } bot.y += Math.sin(bot.angle) * bot.speed; for (const wall of walls) { if (checkCollision(bot, wall)) { bot.y = oldY; break; } } } } }
 
-        // --- (NUEVO) FUNCIÓN DE DISPARO ---
-        function shoot() {
-            const weapon = weaponData[player.inventory.primary];
+        // --- (NUEVO) FUNCIONES DE DISPARO REFACTORIZADAS ---
+        
+        function useWeapon() {
+            // 1. Obtener el nombre del arma activa (ej: 'ak47', 'knife')
+            const weaponName = player.inventory[player.activeWeapon];
+            if (!weaponName) return; // No tiene arma en ese slot
             
-            // 1. Comprobar Cooldown
+            const weapon = weaponData[weaponName];
+            
+            // 2. Comprobar Cooldown
             if (Date.now() - player.lastShotTime < weapon.fireRate) return;
             
-            // 2. Comprobar si es semi-auto y ya ha disparado este clic
+            // 3. Comprobar semi-auto
             if (!weapon.automatic && player.hasFiredSemi) return;
-
-            // 3. Registrar el disparo
+            
+            // 4. Registrar el "disparo"
             player.lastShotTime = Date.now();
-            player.hasFiredSemi = true; // Marca que ha disparado
+            player.hasFiredSemi = true; 
 
-            // 4. Calcular retroceso/dispersión
-            // 'spread' es la imprecisión base, 'recoil' es la que se acumula
+            // 5. Decidir qué hacer: ¿cuchillo o bala?
+            if (weapon.type === 'melee') {
+                useMelee(weapon);
+            } else {
+                shootBullet(weapon);
+            }
+        }
+        
+        function useMelee(weapon) {
+            // Dibuja una línea de ataque para el cuchillo
+            const attackLine = {
+                x: player.x + Math.cos(player.angle) * weapon.range / 2,
+                y: player.y + Math.sin(player.angle) * weapon.range / 2,
+                size: weapon.range
+            };
+            
+            // Comprueba si golpea a un bot
+            for (const bot of bots) {
+                if (checkObjectCollision(attackLine, bot)) {
+                    bot.health -= weapon.damage;
+                    console.log("¡Cuchillada!");
+                    // (Opcional: solo golpear a uno y parar)
+                    break;
+                }
+            }
+        }
+        
+        function shootBullet(weapon) {
+            // Calcular retroceso/dispersión
             const totalSpread = weapon.spread + player.recoil;
             const spread = (Math.random() - 0.5) * totalSpread;
             const bulletAngle = player.angle + spread;
             
-            // 5. Acumular retroceso
+            // Acumular retroceso
             player.recoil += weapon.recoil;
             
-            // 6. Crear la bala
+            // Crear la bala
             const bullet = {
                 x: player.x,
                 y: player.y,
                 size: 5, 
                 color: 'yellow',
-                speed: 15, // Balas más rápidas
+                speed: 15,
                 angle: bulletAngle,
                 damage: weapon.damage
             };
@@ -320,18 +325,17 @@
 
             // --- (NUEVO) Lógica de Disparo y Retroceso ---
             if (mouse.isDown) {
-                shoot(); // Intenta disparar
+                useWeapon(); // Intenta usar el arma activa
             } else {
-                // Recuperar retroceso lentamente
+                // (NUEVO) Recuperación de retroceso más rápida
                 if (player.recoil > 0) {
-                    player.recoil -= 0.005; // Velocidad de recuperación
+                    player.recoil -= 0.02; // Velocidad de recuperación
                 }
                 if (player.recoil < 0) player.recoil = 0;
             }
 
             // Lógica del Jugador
-            const oldX = player.x;
-            const oldY = player.y;
+            const oldX = player.x; const oldY = player.y;
             if (keys['a'] || keys['A']) { player.x -= player.speed; }
             if (keys['d'] || keys['D']) { player.x += player.speed; }
             for (const wall of walls) { if (checkCollision(player, wall)) { player.x = oldX; break; } }
@@ -346,25 +350,16 @@
                 bullet.x += Math.cos(bullet.angle) * bullet.speed;
                 bullet.y += Math.sin(bullet.angle) * bullet.speed;
                 let bulletHit = false;
-
-                for (const wall of walls) {
-                    if (checkCollision(bullet, wall)) {
-                        bullets.splice(i, 1); bulletHit = true; break; 
-                    }
-                }
+                for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } }
                 if (bulletHit) continue; 
-                
                 for (const bot of bots) {
                     if (checkObjectCollision(bullet, bot)) {
-                        bot.health -= bullet.damage; // Daño basado en arma
+                        bot.health -= bullet.damage;
                         bullets.splice(i, 1); bulletHit = true; break;
                     }
                 }
                 if (bulletHit) continue;
-
-                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) {
-                    bullets.splice(i, 1);
-                }
+                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); }
             }
             
             // Lógica de Balas del BOT
@@ -373,11 +368,7 @@
                 bullet.x += Math.cos(bullet.angle) * bullet.speed;
                 bullet.y += Math.sin(bullet.angle) * bullet.speed;
                 let bulletHit = false;
-                for (const wall of walls) {
-                    if (checkCollision(bullet, wall)) {
-                        botBullets.splice(i, 1); bulletHit = true; break; 
-                    }
-                }
+                for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } }
                 if (bulletHit) continue;
                 if (checkObjectCollision(bullet, player)) {
                     player.health -= bullet.damage; 
@@ -385,9 +376,7 @@
                     if (player.health <= 0) console.log("¡HAS MUERTO!");
                 }
                 if (bulletHit) continue;
-                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) {
-                    botBullets.splice(i, 1);
-                }
+                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); }
             }
             
             // Actualizar IA
@@ -408,57 +397,44 @@
             ctx.save();
             ctx.translate(-camera.x, -camera.y);
 
+            // Dibujar Suelo, Zonas, Paredes
             ctx.fillStyle = '#333'; ctx.fillRect(0, 0, world.width, world.height);
-            for (const zone of zones) {
-                ctx.fillStyle = zone.color;
-                ctx.fillRect(zone.x, zone.y, zone.width, zone.height);
-                ctx.fillStyle = 'white'; ctx.font = '20px Arial'; ctx.textAlign = 'center';
-                ctx.fillText(zone.name, zone.x + zone.width / 2, zone.y + zone.height / 2);
-            }
+            for (const zone of zones) { ctx.fillStyle = zone.color; ctx.fillRect(zone.x, zone.y, zone.width, zone.height); ctx.fillStyle = 'white'; ctx.font = '20px Arial'; ctx.textAlign = 'center'; ctx.fillText(zone.name, zone.x + zone.width / 2, zone.y + zone.height / 2); }
             ctx.fillStyle = '#999';
             for (const wall of walls) { ctx.fillRect(wall.x, wall.y, wall.width, wall.height); }
 
+            // Dibujar Balas
             ctx.fillStyle = 'yellow';
-            for (const bullet of bullets) {
-                ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill();
-            }
+            for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
             ctx.fillStyle = 'orange';
-            for (const bullet of botBullets) {
-                ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill();
-            }
+            for (const bullet of botBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
 
+            // Dibujar Bots
             for (const bot of bots) {
-                ctx.save();
-                ctx.translate(bot.x, bot.y);
-                ctx.rotate(bot.angle);
-                ctx.fillStyle = bot.color;
-                ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
-                ctx.strokeStyle = 'black'; ctx.lineWidth = 3;
-                ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bot.size, 0); ctx.stroke();
+                ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
+                ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
+                ctx.strokeStyle = 'black'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bot.size, 0); ctx.stroke();
                 ctx.restore();
-                ctx.fillStyle = 'red';
-                ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size, 5);
-                ctx.fillStyle = 'green';
-                ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size * (bot.health / 100), 5);
+                ctx.fillStyle = 'red'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size, 5);
+                ctx.fillStyle = 'green'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size * (bot.health / 100), 5);
             }
 
-            ctx.save();
-            ctx.translate(player.x, player.y);
-            ctx.rotate(player.angle);
-            ctx.fillStyle = player.color;
-            ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
-            ctx.strokeStyle = 'white'; ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.size, 0); ctx.stroke();
+            // Dibujar Jugador
+            ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
+            ctx.fillStyle = player.color; ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
+            ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.size, 0); ctx.stroke();
             ctx.restore(); 
-            
             ctx.restore(); // Restaura la cámara
 
-            // Dibujar HUD
+            // --- (NUEVO) Dibujar HUD Mejorado ---
             ctx.fillStyle = 'white'; ctx.font = '24px Arial';
             ctx.fillText(`Vida: ${player.health}`, 20, 30);
             ctx.fillText(`Dinero: $${player.money}`, 20, 60); 
-            // Muestra el nombre del arma
-            ctx.fillText(`Arma: ${weaponData[player.inventory.primary].name}`, 20, 90); 
+            
+            // Mostrar nombre del arma activa
+            const activeWeaponName = player.inventory[player.activeWeapon];
+            const weaponNameStr = activeWeaponName ? weaponData[activeWeaponName].name : "Manos";
+            ctx.fillText(`Arma: ${weaponNameStr}`, 20, 90); 
             
             // Controlar UI de Tienda
             if (isShopOpen) {
