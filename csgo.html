@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v15 - IA con Puntos de Ruta</title>
+    <title>Prototipo 2D v16 - Lógica de Ronda Corregida</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -21,21 +21,9 @@
     
     <div id="shopMenu">
         <h2>Tienda (Pulsa 'B' para cerrar)</h2>
-        <div class="shop-category">
-            <h3>Pistolas</h3>
-            <button class="shop-item" data-item="deagle" data-cost="700">Deagle ($700)</button>
-        </div>
-        <div class="shop-category">
-            <h3>Rifles</h3>
-            <button class="shop-item" data-item="ak47" data-cost="2700">AK-47 ($2700)</button>
-            <button class="shop-item" data-item="m4a1" data-cost="3100">M4A1-S ($3100)</button>
-            <button class="shop-item" data-item="awp" data-cost="4750">AWP ($4750)</button>
-        </div>
-        <div class="shop-category">
-            <h3>Equipo</h3>
-            <button class="shop-item" data-item="kevlar" data-cost="650">Chaleco ($650)</button>
-            <button class="shop-item" data-item="full_armor" data-cost="1000">Chaleco + Casco ($1000)</button>
-        </div>
+        <div class="shop-category"><h3>Pistolas</h3><button class="shop-item" data-item="deagle" data-cost="700">Deagle ($700)</button></div>
+        <div class="shop-category"><h3>Rifles</h3><button class="shop-item" data-item="ak47" data-cost="2700">AK-47 ($2700)</button><button class="shop-item" data-item="m4a1" data-cost="3100">M4A1-S ($3100)</button><button class="shop-item" data-item="awp" data-cost="4750">AWP ($4750)</button></div>
+        <div class="shop-category"><h3>Equipo</h3><button class="shop-item" data-item="kevlar" data-cost="650">Chaleco ($650)</button><button class="shop-item" data-item="full_armor" data-cost="1000">Chaleco + Casco ($1000)</button></div>
     </div>
     <div id="progress-container"><div id="progress-bar"></div></div>
     <div id="game-message"></div>
@@ -48,29 +36,24 @@
         const ctx = canvas.getContext('2d');
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
-
         const shopMenuElement = document.getElementById('shopMenu');
         const shopButtons = document.querySelectorAll('.shop-item');
         const progressContainerEl = document.getElementById('progress-container');
         const progressBarEl = document.getElementById('progress-bar');
         const gameMessageEl = document.getElementById('game-message');
-
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
         let camera = { x: 0, y: 0 };
-
         const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000 };
-        
         let game = {
             bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null },
-            isDefusing: false, // El jugador (CT) solo desactiva
+            isDefusing: false,
             defuseStartTime: 0,
             messageTimerId: null
         };
+        const weaponData = { 'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 }, 'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05 }, 'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03 }, 'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01 }, 'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01 }, 'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0 } };
 
-        const weaponData = { /* ... (Datos de armas sin cambios) ... */ 'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 }, 'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05 }, 'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03 }, 'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01 }, 'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01 }, 'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0 } };
-
-        // --- 2. EL MAPA (¡TU DISEÑO COMPLETO!) ---
+        // --- 2. EL MAPA (¡Tus datos actualizados!) ---
         
         // === ARRAY DE PAREDES ===
         const walls = [ { x: 1696, y: 1311, width: 85, height: 632 }, { x: 1682, y: 1, width: 99, height: 579 }, { x: 1658, y: 774, width: 578, height: 381 }, { x: 1885, y: 429, width: 350, height: 355 }, { x: 1954, y: 1367, width: 328, height: 231 }, { x: 1841, y: 107, width: 395, height: 119 }, { x: 1402, y: 532, width: 135, height: 463 }, { x: 899, y: 209, width: 496, height: 337 }, { x: 881, y: 204, width: 523, height: 423 }, { x: 839, y: 119, width: 59, height: 507 }, { x: -1, y: 2, width: 345, height: 617 }, { x: 542, y: 293, width: 31, height: 22 }, { x: 571, y: 204, width: 33, height: 21 }, { x: 609, y: 268, width: 34, height: 23 }, { x: 493, y: 181, width: 19, height: 166 }, { x: 512, y: 347, width: 133, height: 24 }, { x: 494, y: 348, width: 356, height: 276 }, { x: 493, y: 340, width: 19, height: 15 }, { x: 491, y: 9, width: 26, height: 50 }, { x: 491, y: 3, width: 25, height: 9 }, { x: 594, y: 142, width: 24, height: 12 }, { x: 656, y: 182, width: 66, height: 35 }, { x: 761, y: 106, width: 21, height: 189 }, { x: 1, y: 3, width: 1520, height: 9 }, { x: 1522, y: 5, width: 1453, height: 6 }, { x: 2978, y: 7, width: 10, height: 3 }, { x: 2972, y: 5, width: 17, height: 6 }, { x: 2980, y: 9, width: 5, height: 728 }, { x: 2983, y: 738, width: 3, height: 610 }, { x: 2981, y: 739, width: 4, height: 615 }, { x: 2981, y: 1353, width: 3, height: 627 }, { x: 1465, y: 1943, width: 1520, height: 35 }, { x: -2, y: 1943, width: 1469, height: 35 }, { x: 0, y: 1225, width: 12, height: 720 }, { x: 4, y: 661, width: 8, height: 566 }, { x: 2, y: 604, width: 9, height: 59 }, { x: 1353, y: 1259, width: 200, height: 108 }, { x: 1159, y: 1035, width: 135, height: 123 }, { x: 1339, y: 1367, width: 67, height: 433 }, { x: 533, y: 1479, width: 115, height: 332 }, { x: 815, y: 1333, width: 355, height: 107 }, { x: 535, y: 1129, width: 143, height: 100 }, { x: 767, y: 826, width: 217, height: 236 }, { x: 1137, y: 692, width: 73, height: 55 }, { x: 501, y: 715, width: 58, height: 68 }, { x: 142, y: 1606, width: 405, height: 205 }, { x: 834, y: 1603, width: 40, height: 31 }, { x: 940, y: 1547, width: 260, height: 63 }, { x: 1115, y: 1662, width: 28, height: 76 }, { x: 943, y: 1706, width: 8, height: 31 }, { x: 875, y: 1767, width: 43, height: 29 }, { x: 898, y: 1656, width: 43, height: 15 }, { x: 1046, y: 1812, width: 40, height: 29 }, { x: 838, y: 1873, width: 33, height: 21 }, { x: 989, y: 1840, width: 94, height: 105 }, { x: 1190, y: 1783, width: 66, height: 36 } ];
@@ -79,189 +62,14 @@
         const zones = [ { x: 52, y: 969, width: 180, height: 236, color: 'rgba(0, 150, 255, 0.5)', name: 'Spawn AT' }, { x: 2528, y: 976, width: 276, height: 243, color: 'rgba(255, 100, 0, 0.5)', name: 'Spawn T' }, { x: 545, y: 195, width: 130, height: 114, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio A' }, { x: 814, y: 1572, width: 396, height: 317, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio B' } ];
 
         // === OBJETO DE CAMINOS IA ===
-     // === OBJETO DE CAMINOS IA ===
-const paths = {
-    path_A_1: [
-        { x: 2648, y: 1020 },
-        { x: 2395, y: 317 },
-        { x: 2074, y: 280 },
-        { x: 1905, y: 275 },
-        { x: 1858, y: 300 },
-        { x: 1829, y: 383 },
-        { x: 1832, y: 533 },
-        { x: 1820, y: 611 },
-        { x: 1799, y: 663 },
-        { x: 1751, y: 690 },
-        { x: 1678, y: 681 },
-        { x: 1634, y: 650 },
-        { x: 1622, y: 583 },
-        { x: 1590, y: 512 },
-        { x: 1563, y: 441 },
-        { x: 1539, y: 384 },
-        { x: 1522, y: 297 },
-        { x: 1513, y: 279 },
-        { x: 1495, y: 222 },
-        { x: 1492, y: 200 },
-        { x: 1460, y: 169 },
-        { x: 1403, y: 139 },
-        { x: 1347, y: 138 },
-        { x: 1295, y: 135 },
-        { x: 1223, y: 118 },
-        { x: 1190, y: 111 },
-        { x: 1147, y: 98 },
-        { x: 1098, y: 74 },
-        { x: 929, y: 70 },
-        { x: 887, y: 70 },
-        { x: 860, y: 78 },
-        { x: 842, y: 85 },
-        { x: 833, y: 92 },
-        { x: 823, y: 106 },
-        { x: 812, y: 133 },
-        { x: 808, y: 160 },
-        { x: 809, y: 168 },
-        { x: 808, y: 184 },
-        { x: 805, y: 243 },
-        { x: 807, y: 250 },
-        { x: 809, y: 289 },
-        { x: 809, y: 292 },
-        { x: 806, y: 301 },
-        { x: 798, y: 308 },
-        { x: 790, y: 315 },
-        { x: 788, y: 316 },
-        { x: 775, y: 318 },
-        { x: 762, y: 321 },
-        { x: 748, y: 319 },
-        { x: 736, y: 320 },
-        { x: 717, y: 313 },
-        { x: 708, y: 305 },
-        { x: 695, y: 292 },
-        { x: 691, y: 287 },
-        { x: 689, y: 283 },
-        { x: 681, y: 272 },
-        { x: 676, y: 265 },
-        { x: 667, y: 248 },
-        { x: 659, y: 245 },
-        { x: 658, y: 245 },
-    ],
-    path_A_2: [
-        { x: 2638, y: 1089 },
-        { x: 2572, y: 1120 },
-        { x: 2536, y: 1141 },
-        { x: 2486, y: 1167 },
-        { x: 2398, y: 1196 },
-        { x: 2296, y: 1226 },
-        { x: 2219, y: 1227 },
-        { x: 2142, y: 1224 },
-        { x: 2046, y: 1225 },
-        { x: 1984, y: 1225 },
-        { x: 1907, y: 1228 },
-        { x: 1814, y: 1234 },
-        { x: 1714, y: 1211 },
-        { x: 1683, y: 1207 },
-        { x: 1657, y: 1204 },
-        { x: 1624, y: 1187 },
-        { x: 1624, y: 1160 },
-        { x: 1608, y: 1124 },
-        { x: 1605, y: 1087 },
-        { x: 1605, y: 1062 },
-        { x: 1602, y: 1028 },
-        { x: 1603, y: 992 },
-        { x: 1604, y: 988 },
-        { x: 1625, y: 247 },
-        { x: 1539, y: 183 },
-        { x: 1481, y: 85 },
-        { x: 1175, y: 79 },
-        { x: 1101, y: 79 },
-        { x: 889, y: 67 },
-        { x: 858, y: 80 },
-        { x: 820, y: 77 },
-        { x: 791, y: 78 },
-        { x: 770, y: 81 },
-        { x: 739, y: 90 },
-        { x: 721, y: 94 },
-        { x: 709, y: 102 },
-        { x: 690, y: 114 },
-        { x: 680, y: 121 },
-        { x: 676, y: 124 },
-        { x: 666, y: 131 },
-        { x: 662, y: 142 },
-        { x: 656, y: 153 },
-        { x: 653, y: 162 },
-        { x: 651, y: 165 },
-        { x: 644, y: 171 },
-        { x: 638, y: 178 },
-        { x: 637, y: 181 },
-        { x: 632, y: 196 },
-        { x: 632, y: 198 },
-        { x: 630, y: 212 },
-        { x: 630, y: 221 },
-        { x: 632, y: 226 },
-    ],
-    path_B_1: [
-        { x: 2646, y: 1102 },
-        { x: 2592, y: 1121 },
-        { x: 2548, y: 1136 },
-        { x: 2492, y: 1145 },
-        { x: 2399, y: 1167 },
-        { x: 2334, y: 1179 },
-        { x: 2288, y: 1187 },
-        { x: 2190, y: 1193 },
-        { x: 2126, y: 1204 },
-        { x: 2002, y: 1221 },
-        { x: 1944, y: 1235 },
-        { x: 1889, y: 1241 },
-        { x: 1787, y: 1248 },
-        { x: 1770, y: 1253 },
-        { x: 1744, y: 1259 },
-        { x: 1730, y: 1265 },
-        { x: 1706, y: 1273 },
-        { x: 1679, y: 1279 },
-        { x: 1665, y: 1289 },
-        { x: 1647, y: 1322 },
-        { x: 1630, y: 1358 },
-        { x: 1618, y: 1401 },
-        { x: 1606, y: 1437 },
-        { x: 1584, y: 1631 },
-        { x: 1584, y: 1635 },
-        { x: 1574, y: 1675 },
-        { x: 1559, y: 1725 },
-        { x: 1538, y: 1804 },
-        { x: 1508, y: 1834 },
-        { x: 1474, y: 1854 },
-        { x: 1438, y: 1870 },
-        { x: 1386, y: 1880 },
-        { x: 1351, y: 1883 },
-        { x: 1309, y: 1886 },
-        { x: 1273, y: 1883 },
-        { x: 1230, y: 1879 },
-        { x: 1159, y: 1830 },
-        { x: 1159, y: 1832 },
-        { x: 1133, y: 1826 },
-        { x: 1118, y: 1813 },
-        { x: 1102, y: 1793 },
-        { x: 1076, y: 1769 },
-        { x: 1059, y: 1753 },
-        { x: 1049, y: 1747 },
-        { x: 1045, y: 1746 },
-        { x: 1034, y: 1739 },
-        { x: 1024, y: 1734 },
-    ],
-    path_B_2: [
-        { x: 2622, y: 1111 },
-        { x: 2603, y: 1116 },
-        { x: 2547, y: 1132 },
-        { x: 2500, y: 1144 },
-        { x: 2440, y: 1165 },
-        { x: 2382, y: 1184 },
-        { x: 2336, y: 1194 },
-        { x: 2241, y: 1210 },
-        { x: 2153, y: 1213 },
-        { x: 2040, y: 1213 },
-        { x: 1973, y: 1218 },
-        { x: 1907, y: 1220 },  { x: 1798, y: 1220 }, { x: 1590, y: 1228 },{ x: 1517, y: 1228 },{ x: 1496, y: 1230 },{ x: 1436, y: 1208 }, { x: 1420, y: 1210 },{ x: 1277, y: 1222 }, { x: 1284, y: 1247 }, { x: 1287, y: 1277 },{ x: 1279, y: 1294 },{ x: 1265, y: 1326 },  { x: 1254, y: 1366 }, { x: 1256, y: 1396 },{ x: 1257, y: 1415 }, { x: 1256, y: 1434 },{ x: 1254, y: 1491 },{ x: 1257, y: 1501 },{ x: 1262, y: 1580 },{ x: 1259, y: 1590 },{ x: 1234, y: 1640 },{ x: 1226, y: 1651 },{ x: 1197, y: 1639 },{ x: 1162, y: 1635 },{ x: 1133, y: 1639 },{ x: 1104, y: 1648 },{ x: 1075, y: 1654 },{ x: 1039, y: 1669 },{ x: 1028, y: 1693 },],
-};
+        const paths = {
+            path_A_1: [ { x: 2648, y: 1020 }, { x: 2395, y: 317 }, { x: 2074, y: 280 }, { x: 1905, y: 275 }, { x: 1858, y: 300 }, { x: 1829, y: 383 }, { x: 1832, y: 533 }, { x: 1820, y: 611 }, { x: 1799, y: 663 }, { x: 1751, y: 690 }, { x: 1678, y: 681 }, { x: 1634, y: 650 }, { x: 1622, y: 583 }, { x: 1590, y: 512 }, { x: 1563, y: 441 }, { x: 1539, y: 384 }, { x: 1522, y: 297 }, { x: 1513, y: 279 }, { x: 1495, y: 222 }, { x: 1492, y: 200 }, { x: 1460, y: 169 }, { x: 1403, y: 139 }, { x: 1347, y: 138 }, { x: 1295, y: 135 }, { x: 1223, y: 118 }, { x: 1190, y: 111 }, { x: 1147, y: 98 }, { x: 1098, y: 74 }, { x: 929, y: 70 }, { x: 887, y: 70 }, { x: 860, y: 78 }, { x: 842, y: 85 }, { x: 833, y: 92 }, { x: 823, y: 106 }, { x: 812, y: 133 }, { x: 808, y: 160 }, { x: 809, y: 168 }, { x: 808, y: 184 }, { x: 805, y: 243 }, { x: 807, y: 250 }, { x: 809, y: 289 }, { x: 809, y: 292 }, { x: 806, y: 301 }, { x: 798, y: 308 }, { x: 790, y: 315 }, { x: 788, y: 316 }, { x: 775, y: 318 }, { x: 762, y: 321 }, { x: 748, y: 319 }, { x: 736, y: 320 }, { x: 717, y: 313 }, { x: 708, y: 305 }, { x: 695, y: 292 }, { x: 691, y: 287 }, { x: 689, y: 283 }, { x: 681, y: 272 }, { x: 676, y: 265 }, { x: 667, y: 248 }, { x: 659, y: 245 }, { x: 658, y: 245 } ],
+            path_A_2: [ { x: 2638, y: 1089 }, { x: 2572, y: 1120 }, { x: 2536, y: 1141 }, { x: 2486, y: 1167 }, { x: 2398, y: 1196 }, { x: 2296, y: 1226 }, { x: 2219, y: 1227 }, { x: 2142, y: 1224 }, { x: 2046, y: 1225 }, { x: 1984, y: 1225 }, { x: 1907, y: 1228 }, { x: 1814, y: 1234 }, { x: 1714, y: 1211 }, { x: 1683, y: 1207 }, { x: 1657, y: 1204 }, { x: 1624, y: 1187 }, { x: 1624, y: 1160 }, { x: 1608, y: 1124 }, { x: 1605, y: 1087 }, { x: 1605, y: 1062 }, { x: 1602, y: 1028 }, { x: 1603, y: 992 }, { x: 1604, y: 988 }, { x: 1625, y: 247 }, { x: 1539, y: 183 }, { x: 1481, y: 85 }, { x: 1175, y: 79 }, { x: 1101, y: 79 }, { x: 889, y: 67 }, { x: 858, y: 80 }, { x: 820, y: 77 }, { x: 791, y: 78 }, { x: 770, y: 81 }, { x: 739, y: 90 }, { x: 721, y: 94 }, { x: 709, y: 102 }, { x: 690, y: 114 }, { x: 680, y: 121 }, { x: 676, y: 124 }, { x: 666, y: 131 }, { x: 662, y: 142 }, { x: 656, y: 153 }, { x: 653, y: 162 }, { x: 651, y: 165 }, { x: 644, y: 171 }, { x: 638, y: 178 }, { x: 637, y: 181 }, { x: 632, y: 196 }, { x: 632, y: 198 }, { x: 630, y: 212 }, { x: 630, y: 221 }, { x: 632, y: 226 } ],
+            path_B_1: [ { x: 2646, y: 1102 }, { x: 2592, y: 1121 }, { x: 2548, y: 1136 }, { x: 2492, y: 1145 }, { x: 2399, y: 1167 }, { x: 2334, y: 1179 }, { x: 2288, y: 1187 }, { x: 2190, y: 1193 }, { x: 2126, y: 1204 }, { x: 2002, y: 1221 }, { x: 1944, y: 1235 }, { x: 1889, y: 1241 }, { x: 1787, y: 1248 }, { x: 1770, y: 1253 }, { x: 1744, y: 1259 }, { x: 1730, y: 1265 }, { x: 1706, y: 1273 }, { x: 1679, y: 1279 }, { x: 1665, y: 1289 }, { x: 1647, y: 1322 }, { x: 1630, y: 1358 }, { x: 1618, y: 1401 }, { x: 1606, y: 1437 }, { x: 1584, y: 1631 }, { x: 1584, y: 1635 }, { x: 1574, y: 1675 }, { x: 1559, y: 1725 }, { x: 1538, y: 1804 }, { x: 1508, y: 1834 }, { x: 1474, y: 1854 }, { x: 1438, y: 1870 }, { x: 1386, y: 1880 }, { x: 1351, y: 1883 }, { x: 1309, y: 1886 }, { x: 1273, y: 1883 }, { x: 1230, y: 1879 }, { x: 1159, y: 1830 }, { x: 1159, y: 1832 }, { x: 1133, y: 1826 }, { x: 1118, y: 1813 }, { x: 1102, y: 1793 }, { x: 1076, y: 1769 }, { x: 1059, y: 1753 }, { x: 1049, y: 1747 }, { x: 1045, y: 1746 }, { x: 1034, y: 1739 }, { x: 1024, y: 1734 } ],
+            path_B_2: [ { x: 2622, y: 1111 }, { x: 2603, y: 1116 }, { x: 2547, y: 1132 }, { x: 2500, y: 1144 }, { x: 2440, y: 1165 }, { x: 2382, y: 1184 }, { x: 2336, y: 1194 }, { x: 2241, y: 1210 }, { x: 2153, y: 1213 }, { x: 2040, y: 1213 }, { x: 1973, y: 1218 }, { x: 1907, y: 1220 }, { x: 1798, y: 1220 }, { x: 1590, y: 1228 }, { x: 1517, y: 1228 }, { x: 1496, y: 1230 }, { x: 1436, y: 1208 }, { x: 1420, y: 1210 }, { x: 1277, y: 1222 }, { x: 1284, y: 1247 }, { x: 1287, y: 1277 }, { x: 1279, y: 1294 }, { x: 1265, y: 1326 }, { x: 1254, y: 1366 }, { x: 1256, y: 1396 }, { x: 1257, y: 1415 }, { x: 1256, y: 1434 }, { x: 1254, y: 1491 }, { x: 1257, y: 1501 }, { x: 1262, y: 1580 }, { x: 1259, y: 1590 }, { x: 1234, y: 1640 }, { x: 1226, y: 1651 }, { x: 1197, y: 1639 }, { x: 1162, y: 1635 }, { x: 1133, y: 1639 }, { x: 1104, y: 1648 }, { x: 1075, y: 1654 }, { x: 1039, y: 1669 }, { x: 1028, y: 1693 } ],
+        };
 
-        // --- 3. EL JUGADOR (Ahora es CT) ---
+        // --- 3. EL JUGADOR (CT) ---
         let player = {
             x: 142, y: 1087, // Spawn AT
             size: mapData.playerSize,
@@ -286,15 +94,13 @@ const paths = {
         let bots = [];
         let botBullets = [];
 
-        // --- 5. SEGUIMIENTO de EVENTOS (¡Actualizado para CT!) ---
+        // --- 5. SEGUIMIENTO de EVENTOS ---
         window.addEventListener('mousemove', (e) => { 
             mouse.x = e.clientX + camera.x;
             mouse.y = e.clientY + camera.y;
         });
         window.addEventListener('keydown', (e) => { 
             keys[e.key] = true; 
-            
-            // Lógica de DESACTIVAR
             if (e.key === 'e' && !isShopOpen && !game.isDefusing) {
                 if (game.bomb.state === 'planted' && checkNearBomb()) {
                     game.isDefusing = true;
@@ -304,19 +110,15 @@ const paths = {
         });
         window.addEventListener('keyup', (e) => {
             delete keys[e.key];
-            
-            // Cancelar DESACTIVACIÓN
             if (e.key === 'e') {
                 game.isDefusing = false;
                 hideProgress();
             }
-
             if (!isShopOpen) {
                 if (e.key === '1') { if (player.inventory.primary) { player.activeWeapon = 'primary'; player.recoil = 0; } }
                 else if (e.key === '2') { player.activeWeapon = 'secondary'; player.recoil = 0; }
                 else if (e.key === '3') { player.activeWeapon = 'melee'; player.recoil = 0; }
             }
-
             if (e.key === 'b' || e.key === 'B') {
                 let inSpawn = false;
                 for (const zone of zones) { if (zone.name === 'Spawn AT' && checkZoneCollision(player, zone)) { inSpawn = true; break; } }
@@ -324,125 +126,110 @@ const paths = {
                 else isShopOpen = false;
             }
         });
-
         window.addEventListener('mousedown', (e) => {
-            if (isShopOpen || game.isDefusing) return; // No disparar si está desactivando
+            if (isShopOpen || game.isDefusing) return;
             mouse.isDown = true;
             player.hasFiredSemi = false; 
         });
         window.addEventListener('mouseup', (e) => { mouse.isDown = false; });
-        
-        shopButtons.forEach(button => { /* ... (Lógica de tienda sin cambios) ... */ button.addEventListener('click', () => { const itemName = button.dataset.item; const cost = parseInt(button.dataset.cost); if (player.money >= cost) { player.money -= cost; buyItem(itemName); isShopOpen = false; } else { console.log("Dinero insuficiente"); } }); });
-        function buyItem(itemName) { /* ... (Lógica de tienda sin cambios) ... */ console.log("Comprado: " + itemName); player.recoil = 0.0; const itemData = weaponData[itemName]; if (itemData) { if (itemData.type === 'primary') { player.inventory.primary = itemName; player.activeWeapon = 'primary'; } else if (itemData.type === 'secondary') { player.inventory.secondary = itemName; player.activeWeapon = 'secondary'; } } else { switch (itemName) { case 'kevlar': player.inventory.kevlar = true; player.inventory.helmet = false; break; case 'full_armor': player.inventory.kevlar = true; player.inventory.helmet = true; break; } } }
+        shopButtons.forEach(button => { button.addEventListener('click', () => { const itemName = button.dataset.item; const cost = parseInt(button.dataset.cost); if (player.money >= cost) { player.money -= cost; buyItem(itemName); isShopOpen = false; } else { console.log("Dinero insuficiente"); } }); });
+        function buyItem(itemName) { console.log("Comprado: " + itemName); player.recoil = 0.0; const itemData = weaponData[itemName]; if (itemData) { if (itemData.type === 'primary') { player.inventory.primary = itemName; player.activeWeapon = 'primary'; } else if (itemData.type === 'secondary') { player.inventory.secondary = itemName; player.activeWeapon = 'secondary'; } } else { switch (itemName) { case 'kevlar': player.inventory.kevlar = true; player.inventory.helmet = false; break; case 'full_armor': player.inventory.kevlar = true; player.inventory.helmet = true; break; } } }
 
         // --- 6. FUNCIONES DE COLISIÓN ---
-        function checkCollision(obj, wall) { /* ... (Sin cambios) ... */ const objLeft = obj.x - obj.size / 2; const objRight = obj.x + obj.size / 2; const objTop = obj.y - obj.size / 2; const objBottom = obj.y + obj.size / 2; const wallLeft = wall.x; const wallRight = wall.x + wall.width; const wallTop = wall.y; const wallBottom = wall.y + wall.height; return (objRight > wallLeft && objLeft < wallRight && objBottom > wallTop && objTop < wallBottom); }
-        function checkZoneCollision(player, zone) { /* ... (Sin cambios) ... */ const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
-        function checkObjectCollision(obj1, obj2) { /* ... (Sin cambios) ... */ const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
+        function checkCollision(obj, wall) { const objLeft = obj.x - obj.size / 2; const objRight = obj.x + obj.size / 2; const objTop = obj.y - obj.size / 2; const objBottom = obj.y + obj.size / 2; const wallLeft = wall.x; const wallRight = wall.x + wall.width; const wallTop = wall.y; const wallBottom = wall.y + wall.height; return (objRight > wallLeft && objLeft < wallRight && objBottom > wallTop && objTop < wallBottom); }
+        function checkZoneCollision(player, zone) { const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
+        function checkObjectCollision(obj1, obj2) { const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
 
-        // --- 7. LÓGICA DE IA (¡NUEVA!) ---
+        // --- 7. LÓGICA DE IA (¡CORREGIDA!) ---
         function getZoneCenter(name) {
             for (const zone of zones) { if (zone.name === name) { return { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 }; } }
-            // Fallback con tus zonas
             if (name === 'Spawn AT') return { x: 142, y: 1087 };
             return { x: 2666, y: 1097 }; // Spawn T
         }
 
-        // (NUEVO) El bot decide su plan al spawnear
         function spawnBot() {
             const spawnPoint = getZoneCenter('Spawn T');
-            
-            // Decidir a qué site ir
             const targetSite = Math.random() < 0.5 ? 'A' : 'B';
-            // Decidir qué ruta tomar
             const targetRoute = Math.random() < 0.5 ? 1 : 2;
             const pathName = `path_${targetSite}_${targetRoute}`;
-            
             console.log(`Bot spawneado, objetivo: ${targetSite}, ruta: ${pathName}`);
-            
             const bot = {
                 x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'red',
                 speed: 2.5, angle: 0, health: 100,
                 lastShotTime: 0, shootCooldown: 500,
-                // --- (NUEVO) Propiedades de IA ---
                 hasBomb: true,
                 isPlanting: false,
                 plantStartTime: 0,
-                state: 'navigating', // 'navigating', 'attacking', 'planting', 'guarding'
-                currentPath: paths[pathName], // ¡Sigue tu camino!
+                state: 'navigating', 
+                currentPath: paths[pathName], 
                 currentWaypointIndex: 0
             };
             bots.push(bot);
         }
         
-        function canSeePlayer(bot) { /* ... (Sin cambios) ... */ const angle = Math.atan2(player.y - bot.y, player.x - bot.x); const distance = Math.hypot(player.x - bot.x, player.y - bot.y); if (distance > 1000) return false; for (let i = 0.1; i < 1; i += 0.1) { const testPoint = { x: bot.x + (player.x - bot.x) * i, y: bot.y + (player.y - bot.y) * i, size: 2 }; for (const wall of walls) { if (checkCollision(testPoint, wall)) { return false; } } } return true; }
+        function canSeePlayer(bot) { const angle = Math.atan2(player.y - bot.y, player.x - bot.x); const distance = Math.hypot(player.x - bot.x, player.y - bot.y); if (distance > 1000) return false; for (let i = 0.1; i < 1; i += 0.1) { const testPoint = { x: bot.x + (player.x - bot.x) * i, y: bot.y + (player.y - bot.y) * i, size: 2 }; for (const wall of walls) { if (checkCollision(testPoint, wall)) { return false; } } } return true; }
 
-        // (NUEVO) Cerebro del Bot (¡Actualizado!)
         function updateBots() {
             for (let i = bots.length - 1; i >= 0; i--) {
                 const bot = bots[i];
                 
-                // Lógica de muerte
+                // --- LÓGICA DE MUERTE (¡CORREGIDA!) ---
                 if (bot.health <= 0) {
                     player.money += 300; 
-                    bots.splice(i, 1);
+                    bots.splice(i, 1); // Elimina el bot
                     console.log("Bot eliminado, +$300");
-                    // Respawnear reiniciará la ronda
-                    setTimeout(resetRound, 3000); 
-                    continue; 
+                    
+                    // (¡NUEVA LÓGICA!)
+                    // Solo reinicia la ronda si la bomba NO estaba plantada.
+                    if (game.bomb.state === 'unplanted') {
+                        showMessage("¡CTs Ganan! (Terrorista Eliminado)", 3000);
+                        setTimeout(resetRound, 3000); // Respawn y reinicia
+                    } else {
+                        // La bomba está plantada. El bot está muerto, pero la ronda sigue.
+                        // El jugador (CT) todavía tiene que desactivar.
+                        console.log("Bot muerto, pero la bomba está plantada. ¡Desactiva!");
+                    }
+                    continue; // Pasa al siguiente bot (aunque solo hay 1)
                 }
                 
                 // Lógica de estado
                 const seesPlayer = canSeePlayer(bot);
                 
-                // 1. ¿Está Plantando?
                 if (bot.isPlanting) {
                     const plantProgress = Date.now() - bot.plantStartTime;
                     if (plantProgress >= GAME_TIMES.PLANT) {
-                        plantBomb(bot); // Llama a la función global
+                        plantBomb(bot); 
                     }
-                    // No hace nada más mientras planta
-                    continue;
+                    continue; // No hace nada más mientras planta
                 }
                 
-                // 2. ¿Ve al jugador?
                 if (seesPlayer) {
                     bot.state = 'attacking';
-                    bot.angle = Math.atan2(player.y - bot.y, player.x - bot.x); // Apunta
-                    // Dispara (lógica sin cambios)
+                    bot.angle = Math.atan2(player.y - bot.y, player.x - bot.x); 
                     if (Date.now() - bot.lastShotTime > bot.shootCooldown) {
                         const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: 10 };
                         botBullets.push(bullet);
                         bot.lastShotTime = Date.now();
                     }
                 } 
-                // 3. ¿No ve al jugador pero ya plantó?
                 else if (game.bomb.state === 'planted' && !bot.hasBomb) {
                     bot.state = 'guarding';
-                    // (Lógica simple de guardia: buscar al jugador)
                     bot.angle = Math.atan2(player.y - bot.y, player.x - bot.x);
-                    moveBot(bot, bot.angle); // Se mueve hacia la última pos del jugador
+                    moveBot(bot, bot.angle); 
                 }
-                // 4. ¿No ve al jugador Y NO ha plantado? (Navegando)
                 else {
                     bot.state = 'navigating';
-                    
-                    // Coger el punto de ruta actual
                     const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
                     
                     if (targetWaypoint) {
-                        // Moverse hacia el punto de ruta
                         const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
                         bot.angle = angleToWaypoint;
                         moveBot(bot, angleToWaypoint);
-                        
-                        // Comprobar si ha llegado
                         const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
-                        if (distance < bot.speed * 2) { // Si está "suficientemente cerca"
-                            bot.currentWaypointIndex++; // Ir al siguiente punto
+                        if (distance < bot.speed * 2) { 
+                            bot.currentWaypointIndex++; 
                         }
                     } else {
-                        // ¡Ha llegado al final del camino!
                         if (bot.hasBomb) {
                             bot.state = 'planting';
                             bot.isPlanting = true;
@@ -453,7 +240,6 @@ const paths = {
             }
         }
         
-        // (NUEVO) Función separada para mover el bot (para no repetir código)
         function moveBot(bot, angle) {
             const oldX = bot.x;
             const oldY = bot.y;
@@ -464,17 +250,12 @@ const paths = {
         }
 
         // --- 8. LÓGICA DE ARMAS ---
-        function useWeapon() { /* ... (Sin cambios) ... */ const weaponName = player.inventory[player.activeWeapon]; if (!weaponName) return; const weapon = weaponData[weaponName]; if (Date.now() - player.lastShotTime < weapon.fireRate) return; if (!weapon.automatic && player.hasFiredSemi) return; player.lastShotTime = Date.now(); player.hasFiredSemi = true; if (weapon.type === 'melee') { useMelee(weapon); } else { shootBullet(weapon); } }
-        function useMelee(weapon) { /* ... (Sin cambios) ... */ const attackLine = { x: player.x + Math.cos(player.angle) * weapon.range / 2, y: player.y + Math.sin(player.angle) * weapon.range / 2, size: weapon.range }; for (const bot of bots) { if (checkObjectCollision(attackLine, bot)) { bot.health -= weapon.damage; console.log("¡Cuchillada!"); break; } } }
-        function shootBullet(weapon) { /* ... (Sin cambios) ... */ const totalSpread = weapon.spread + player.recoil; const spread = (Math.random() - 0.5) * totalSpread; const bulletAngle = player.angle + spread; player.recoil += weapon.recoil; const bullet = { x: player.x, y: player.y, size: 5, color: 'yellow', speed: 15, angle: bulletAngle, damage: weapon.damage }; bullets.push(bullet); }
+        function useWeapon() { const weaponName = player.inventory[player.activeWeapon]; if (!weaponName) return; const weapon = weaponData[weaponName]; if (Date.now() - player.lastShotTime < weapon.fireRate) return; if (!weapon.automatic && player.hasFiredSemi) return; player.lastShotTime = Date.now(); player.hasFiredSemi = true; if (weapon.type === 'melee') { useMelee(weapon); } else { shootBullet(weapon); } }
+        function useMelee(weapon) { const attackLine = { x: player.x + Math.cos(player.angle) * weapon.range / 2, y: player.y + Math.sin(player.angle) * weapon.range / 2, size: weapon.range }; for (const bot of bots) { if (checkObjectCollision(attackLine, bot)) { bot.health -= weapon.damage; console.log("¡Cuchillada!"); break; } } }
+        function shootBullet(weapon) { const totalSpread = weapon.spread + player.recoil; const spread = (Math.random() - 0.5) * totalSpread; const bulletAngle = player.angle + spread; player.recoil += weapon.recoil; const bullet = { x: player.x, y: player.y, size: 5, color: 'yellow', speed: 15, angle: bulletAngle, damage: weapon.damage }; bullets.push(bullet); }
         
-        // --- 9. LÓGICA DE LA BOMBA (¡Actualizada!) ---
-        function checkNearBomb() {
-            if (game.bomb.state !== 'planted') return false;
-            const distance = Math.hypot(player.x - game.bomb.x, player.y - game.bomb.y);
-            return distance < 75; 
-        }
-
+        // --- 9. LÓGICA DE LA BOMBA ---
+        function checkNearBomb() { if (game.bomb.state !== 'planted') return false; const distance = Math.hypot(player.x - game.bomb.x, player.y - game.bomb.y); return distance < 75; }
         function updateDefusing() {
             if (!game.isDefusing) return;
             if (!checkNearBomb()) { 
@@ -488,74 +269,57 @@ const paths = {
                 defuseBomb();
             }
         }
-
-        // (NUEVO) El bot planta la bomba
         function plantBomb(bot) {
             console.log("¡Bomba Plantada por el Bot!");
             bot.isPlanting = false;
             bot.hasBomb = false;
-            
             game.bomb.state = 'planted';
             game.bomb.x = bot.x;
             game.bomb.y = bot.y;
             game.bomb.plantTime = Date.now();
-            
             game.bomb.timerId = setTimeout(bombExplode, GAME_TIMES.BOMB_FUSE);
         }
-        
         function defuseBomb() {
             console.log("¡Bomba Desactivada!");
             clearTimeout(game.bomb.timerId);
             game.isDefusing = false;
             hideProgress();
-            
             game.bomb.state = 'defused';
             showMessage("¡CTs Ganan!", 3000);
             setTimeout(resetRound, 3000);
         }
-        
         function bombExplode() {
             console.log("¡BOOM!");
             game.bomb.state = 'exploded';
             showMessage("¡Ts Ganan!", 3000);
             setTimeout(resetRound, 3000);
         }
-        
         function resetRound() {
             console.log("--- Nueva Ronda ---");
             game.bomb.state = 'unplanted';
             if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
             game.bomb.timerId = null;
-            
-            // Resetear Jugador (CT)
             player.hasBomb = false;
             player.health = 100;
             const playerSpawn = getZoneCenter('Spawn AT');
             player.x = playerSpawn.x;
             player.y = playerSpawn.y;
-            
-            // Matar bots viejos y crear uno nuevo
             bots = [];
             spawnBot();
         }
-
-        function showProgress(progress, max) { /* ... (Sin cambios) ... */ progressContainerEl.style.display = 'block'; const percentage = Math.min((progress / max) * 100, 100); progressBarEl.style.width = percentage + '%'; }
-        function hideProgress() { /* ... (Sin cambios) ... */ progressContainerEl.style.display = 'none'; progressBarEl.style.width = '0%'; }
-        function showMessage(text, duration) { /* ... (Sin cambios) ... */ gameMessageEl.textContent = text; gameMessageEl.style.display = 'block'; clearTimeout(game.messageTimerId); game.messageTimerId = setTimeout(() => { gameMessageEl.style.display = 'none'; }, duration); }
-
+        function showProgress(progress, max) { progressContainerEl.style.display = 'block'; const percentage = Math.min((progress / max) * 100, 100); progressBarEl.style.width = percentage + '%'; }
+        function hideProgress() { progressContainerEl.style.display = 'none'; progressBarEl.style.width = '0%'; }
+        function showMessage(text, duration) { gameMessageEl.textContent = text; gameMessageEl.style.display = 'block'; clearTimeout(game.messageTimerId); game.messageTimerId = setTimeout(() => { gameMessageEl.style.display = 'none'; }, duration); }
 
         // --- 10. FUNCIÓN DE ACTUALIZACIÓN (Lógica) ---
         function update() {
             if (isShopOpen) return;
-
             if (mouse.isDown && !game.isDefusing) {
                 useWeapon();
             } else {
                 if (player.recoil > 0) player.recoil -= 0.02;
                 if (player.recoil < 0) player.recoil = 0;
             }
-
-            // (NUEVO) No moverse si está desactivando
             if (!game.isDefusing) {
                 const oldX = player.x; const oldY = player.y;
                 if (keys['a'] || keys['A']) { player.x -= player.speed; }
@@ -566,16 +330,10 @@ const paths = {
                 for (const wall of walls) { if (checkCollision(player, wall)) { player.y = oldY; break; } }
                 player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
             }
-            
-            updateDefusing(); // Lógica de desactivar del jugador
-            updateBots();     // Lógica de IA (incluye plantar)
-
-            // Lógica de Balas del JUGADOR
-            for (let i = bullets.length - 1; i >= 0; i--) { /* ... (Sin cambios) ... */ let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (const bot of bots) { if (checkObjectCollision(bullet, bot)) { bot.health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
-            // Lógica de Balas del BOT
-            for (let i = botBullets.length - 1; i >= 0; i--) { /* ... (Sin cambios) ... */ let bullet = botBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (checkObjectCollision(bullet, player)) { player.health -= bullet.damage; botBullets.splice(i, 1); bulletHit = true; if (player.health <= 0) console.log("¡HAS MUERTO!"); } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } }
-            
-            // Lógica de la Cámara
+            updateDefusing();
+            updateBots();
+            for (let i = bullets.length - 1; i >= 0; i--) { let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (const bot of bots) { if (checkObjectCollision(bullet, bot)) { bot.health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
+            for (let i = botBullets.length - 1; i >= 0; i--) { let bullet = botBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (checkObjectCollision(bullet, player)) { player.health -= bullet.damage; botBullets.splice(i, 1); bulletHit = true; if (player.health <= 0) console.log("¡HAS MUERTO!"); } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } }
             camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2;
             if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0;
             if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width;
@@ -587,28 +345,20 @@ const paths = {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.save();
             ctx.translate(-camera.x, -camera.y);
-
-            // Dibujar Suelo, Zonas, Paredes
             ctx.fillStyle = '#333'; ctx.fillRect(0, 0, world.width, world.height);
             for (const zone of zones) { ctx.fillStyle = zone.color; ctx.fillRect(zone.x, zone.y, zone.width, zone.height); ctx.fillStyle = 'white'; ctx.font = '20px Arial'; ctx.textAlign = 'center'; ctx.fillText(zone.name, zone.x + zone.width / 2, zone.y + zone.height / 2); }
             ctx.fillStyle = '#999';
             for (const wall of walls) { ctx.fillRect(wall.x, wall.y, wall.width, wall.height); }
-
-            // Dibujar la bomba plantada
             if (game.bomb.state === 'planted') {
                 const time = Date.now();
                 const flash = Math.abs(Math.sin(time / 100));
                 ctx.fillStyle = `rgb(255, ${flash * 100}, ${flash * 100})`;
                 ctx.fillRect(game.bomb.x - 10, game.bomb.y - 10, 20, 20);
             }
-
-            // Dibujar Balas
             ctx.fillStyle = 'yellow';
             for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
             ctx.fillStyle = 'orange';
             for (const bullet of botBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
-
-            // Dibujar Bots
             for (const bot of bots) {
                 ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
                 ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
@@ -616,28 +366,22 @@ const paths = {
                 ctx.restore();
                 ctx.fillStyle = 'red'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size, 5);
                 ctx.fillStyle = 'green'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size * (bot.health / 100), 5);
-                // (NUEVO) Icono de bomba en el bot
                 if (bot.hasBomb) {
                     ctx.fillStyle = 'orange'; ctx.font = 'bold 20px Arial'; ctx.fillText("B", bot.x, bot.y - 20);
                 }
             }
-
-            // Dibujar Jugador
             ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
             ctx.fillStyle = player.color; ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
             ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.size, 0); ctx.stroke();
             ctx.restore(); 
-            ctx.restore(); // Restaura la cámara
-
-            // Dibujar HUD
+            ctx.restore(); 
             ctx.fillStyle = 'white'; ctx.font = '24px Arial';
             ctx.fillText(`Vida: ${player.health}`, 20, 30);
             ctx.fillText(`Dinero: $${player.money}`, 20, 60); 
             const activeWeaponName = player.inventory[player.activeWeapon];
             const weaponNameStr = activeWeaponName ? weaponData[activeWeaponName].name : "Manos";
             ctx.fillText(`Arma: ${weaponNameStr}`, 20, 90); 
-            
-            // Controlar UI de Tienda
+            if (player.hasBomb) { ctx.fillStyle = 'orange'; ctx.fillText("[BOMBA]", 20, 120); }
             if (isShopOpen) { shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default'; }
             else { shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair'; }
         }
@@ -648,9 +392,7 @@ const paths = {
             draw();   // Gráficos
             requestAnimationFrame(gameLoop);
         }
-        
-        // ¡EMPEZAR JUEGO!
-        resetRound(); // Inicia la primera ronda
+        resetRound();
         gameLoop(); 
     </script>
 </body>
