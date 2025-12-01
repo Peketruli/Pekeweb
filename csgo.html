@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v19 - Spawn Aleatorio</title>
+    <title>Prototipo 2D v20 - Rush Coordinado</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -144,20 +144,21 @@
         function checkZoneCollision(player, zone) { const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
         function checkObjectCollision(obj1, obj2) { const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
 
-        // --- 7. LÓGICA DE IA (¡ACTUALIZADA PARA 5 BOTS!) ---
-        function getZoneCenter(name) {
-            for (const zone of zones) { if (zone.name === name) { return { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 }; } }
-            if (name === 'Spawn AT') return { x: 142, y: 1087 };
-            return { x: 2666, y: 1097 }; // Spawn T
+        // --- 7. LÓGICA DE IA (¡ACTUALIZADA!) ---
+        
+        // (NUEVO) Busca la *zona* de spawn, no el centro
+        function getSpawnZone(name) {
+            for (const zone of zones) {
+                if (zone.name === name) {
+                    return zone;
+                }
+            }
+            return null; // No se encontró
         }
-
-        // (NUEVO) La función ahora acepta un punto de spawn
-        function spawnBot(carriesBomb, spawnPoint) {
-            const targetSite = Math.random() < 0.5 ? 'A' : 'B';
-            const targetRoute = Math.random() < 0.5 ? 1 : 2;
-            const pathName = `path_${targetSite}_${targetRoute}`;
-            
-            console.log(`Bot spawneado en (${spawnPoint.x.toFixed(0)}, ${spawnPoint.y.toFixed(0)}), objetivo: ${targetSite}, ruta: ${pathName}, Bomba: ${carriesBomb}`);
+        
+        // (NUEVO) Acepta el nombre del camino, no el camino en sí
+        function spawnBot(carriesBomb, spawnPoint, pathName) {
+            console.log(`Bot spawneado en (${spawnPoint.x.toFixed(0)}, ${spawnPoint.y.toFixed(0)}), ruta: ${pathName}, Bomba: ${carriesBomb}`);
             
             const bot = {
                 x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'red',
@@ -167,7 +168,7 @@
                 isPlanting: false,
                 plantStartTime: 0,
                 state: 'navigating', 
-                currentPath: paths[pathName] || [], 
+                currentPath: paths[pathName] || [], // Asigna el array de waypoints
                 currentWaypointIndex: 0
             };
             bots.push(bot);
@@ -334,38 +335,46 @@
             player.armor = 0; 
             player.inventory.helmet = false;
             
-            const playerSpawn = getZoneCenter('Spawn AT');
-            player.x = playerSpawn.x;
-            player.y = playerSpawn.y;
+            // Spawn del jugador (aleatorio dentro de su zona)
+            const playerSpawnZone = getSpawnZone('Spawn AT');
+            if (playerSpawnZone) {
+                player.x = playerSpawnZone.x + Math.random() * playerSpawnZone.width;
+                player.y = playerSpawnZone.y + Math.random() * playerSpawnZone.height;
+            } else {
+                const fallbackSpawn = getZoneCenter('Spawn AT');
+                player.x = fallbackSpawn.x;
+                player.y = fallbackSpawn.y;
+            }
             
             bots = [];
             bullets = [];
             botBullets = [];
             
             // --- ¡NUEVA LÓGICA DE SPAWN ALEATORIO! ---
-            const spawnZone = zones.find(z => z.name === 'Spawn T');
-            let fallbackSpawn = getZoneCenter('Spawn T');
-            if (!spawnZone) {
-                console.error("No se encontró la 'Spawn T' zone. Usando fallback.");
+            const botSpawnZone = getSpawnZone('Spawn T');
+            if (!botSpawnZone) {
+                console.error("¡No se encontró la 'Spawn T' zone!");
+                return;
             }
             
+            // 1. Decisión del EQUIPO: A qué sitio van
+            const teamTargetSite = Math.random() < 0.5 ? 'A' : 'B';
+            console.log(`El equipo T ha decidido ir a: ${teamTargetSite}`);
+            
+            // 2. Elegir el portador de la bomba
             const bombCarrierIndex = Math.floor(Math.random() * 5);
             
+            // 3. Spawnea 5 bots
             for (let i = 0; i < 5; i++) {
-                let spawnX, spawnY;
-                if (spawnZone) {
-                    // Genera un punto aleatorio dentro del 80% del centro de la zona
-                    const centerX = spawnZone.x + spawnZone.width / 2;
-                    const centerY = spawnZone.y + spawnZone.height / 2;
-                    spawnX = centerX + (Math.random() - 0.5) * (spawnZone.width * 0.8);
-                    spawnY = centerY + (Math.random() - 0.5) * (spawnZone.height * 0.8);
-                } else {
-                    // Fallback por si acaso
-                    spawnX = fallbackSpawn.x + (Math.random() - 0.5) * 50;
-                    spawnY = fallbackSpawn.y + (Math.random() - 0.5) * 50;
-                }
+                // Posición aleatoria DENTRO de la zona
+                const spawnX = botSpawnZone.x + Math.random() * botSpawnZone.width;
+                const spawnY = botSpawnZone.y + Math.random() * botSpawnZone.height;
                 
-                spawnBot(i === bombCarrierIndex, { x: spawnX, y: spawnY });
+                // Decisión INDIVIDUAL: Qué ruta tomar
+                const targetRoute = Math.random() < 0.5 ? 1 : 2;
+                const pathName = `path_${teamTargetSite}_${targetRoute}`;
+                
+                spawnBot(i === bombCarrierIndex, { x: spawnX, y: spawnY }, pathName);
             }
         }
         function showProgress(progress, max) { progressContainerEl.style.display = 'block'; const percentage = Math.min((progress / max) * 100, 100); progressBarEl.style.width = percentage + '%'; }
