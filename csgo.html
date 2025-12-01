@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v17 - Sistema de Armadura</title>
+    <title>Prototipo 2D v18 - 1 vs 5</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -63,7 +63,7 @@
             path_B_2: [ { x: 2622, y: 1111 }, { x: 2603, y: 1116 }, { x: 2547, y: 1132 }, { x: 2500, y: 1144 }, { x: 2440, y: 1165 }, { x: 2382, y: 1184 }, { x: 2336, y: 1194 }, { x: 2241, y: 1210 }, { x: 2153, y: 1213 }, { x: 2040, y: 1213 }, { x: 1973, y: 1218 }, { x: 1907, y: 1220 }, { x: 1798, y: 1220 }, { x: 1590, y: 1228 }, { x: 1517, y: 1228 }, { x: 1496, y: 1230 }, { x: 1436, y: 1208 }, { x: 1420, y: 1210 }, { x: 1277, y: 1222 }, { x: 1284, y: 1247 }, { x: 1287, y: 1277 }, { x: 1279, y: 1294 }, { x: 1265, y: 1326 }, { x: 1254, y: 1366 }, { x: 1256, y: 1396 }, { x: 1257, y: 1415 }, { x: 1256, y: 1434 }, { x: 1254, y: 1491 }, { x: 1257, y: 1501 }, { x: 1262, y: 1580 }, { x: 1259, y: 1590 }, { x: 1234, y: 1640 }, { x: 1226, y: 1651 }, { x: 1197, y: 1639 }, { x: 1162, y: 1635 }, { x: 1133, y: 1639 }, { x: 1104, y: 1648 }, { x: 1075, y: 1654 }, { x: 1039, y: 1669 }, { x: 1028, y: 1693 } ],
         };
 
-        // --- 3. EL JUGADOR (CT - ¡CON ARMADURA!) ---
+        // --- 3. EL JUGADOR (CT - con Armadura) ---
         let player = {
             x: 142, y: 1087, // Spawn AT
             size: mapData.playerSize,
@@ -71,15 +71,9 @@
             speed: 4,
             angle: 0,
             health: 100,
-            armor: 0, // (NUEVO)
+            armor: 0, 
             money: 16000, 
-            inventory: { 
-                primary: null, 
-                secondary: 'pistol', 
-                melee: 'knife', 
-                kevlar: false, // ¡Esto ahora es solo un 'flag'
-                helmet: false  // ¡Este es el 'flag' importante!
-            },
+            inventory: { primary: null, secondary: 'pistol', melee: 'knife', kevlar: false, helmet: false },
             activeWeapon: 'secondary',
             hasBomb: false,
             lastShotTime: 0,
@@ -92,7 +86,7 @@
         let keys = {};
         let mouse = { x: 0, y: 0, isDown: false }; 
         let isShopOpen = false;
-        let bots = [];
+        let bots = []; // (NUEVO) ¡Un array para MÚLTIPLES bots!
         let botBullets = [];
 
         // --- 5. SEGUIMIENTO de EVENTOS ---
@@ -135,24 +129,22 @@
         window.addEventListener('mouseup', (e) => { mouse.isDown = false; });
         shopButtons.forEach(button => { button.addEventListener('click', () => { const itemName = button.dataset.item; const cost = parseInt(button.dataset.cost); if (player.money >= cost) { player.money -= cost; buyItem(itemName); isShopOpen = false; } else { console.log("Dinero insuficiente"); } }); });
         
-        // (NUEVO) Lógica de tienda actualizada
         function buyItem(itemName) {
             console.log("Comprado: " + itemName);
             player.recoil = 0.0;
             const itemData = weaponData[itemName];
-            
             if (itemData) { 
                 if (itemData.type === 'primary') { player.inventory.primary = itemName; player.activeWeapon = 'primary'; }
                 else if (itemData.type === 'secondary') { player.inventory.secondary = itemName; player.activeWeapon = 'secondary'; }
             } else { 
                 switch (itemName) {
                     case 'kevlar':
-                        player.armor = 100; // Da 100 de armadura
-                        player.inventory.helmet = false; // Pero NO casco
+                        player.armor = 100; 
+                        player.inventory.helmet = false; 
                         break;
                     case 'full_armor':
-                        player.armor = 100; // Da 100 de armadura
-                        player.inventory.helmet = true; // Y SÍ da casco
+                        player.armor = 100; 
+                        player.inventory.helmet = true; 
                         break;
                 }
             }
@@ -163,46 +155,60 @@
         function checkZoneCollision(player, zone) { const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
         function checkObjectCollision(obj1, obj2) { const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
 
-        // --- 7. LÓGICA DE IA (Corregida) ---
+        // --- 7. LÓGICA DE IA (¡ACTUALIZADA PARA 5 BOTS!) ---
         function getZoneCenter(name) {
             for (const zone of zones) { if (zone.name === name) { return { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 }; } }
             if (name === 'Spawn AT') return { x: 142, y: 1087 };
             return { x: 2666, y: 1097 }; // Spawn T
         }
-        function spawnBot() {
+
+        // (NUEVO) La función ahora acepta si el bot es el portador
+        function spawnBot(carriesBomb) {
             const spawnPoint = getZoneCenter('Spawn T');
+            
+            // Cada bot elige su propio camino
             const targetSite = Math.random() < 0.5 ? 'A' : 'B';
             const targetRoute = Math.random() < 0.5 ? 1 : 2;
             const pathName = `path_${targetSite}_${targetRoute}`;
-            console.log(`Bot spawneado, objetivo: ${targetSite}, ruta: ${pathName}`);
+            
+            console.log(`Bot spawneado, objetivo: ${targetSite}, ruta: ${pathName}, Bomba: ${carriesBomb}`);
+            
             const bot = {
                 x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'red',
                 speed: 2.5, angle: 0, health: 100,
                 lastShotTime: 0, shootCooldown: 500,
-                hasBomb: true,
+                hasBomb: carriesBomb,
                 isPlanting: false,
                 plantStartTime: 0,
                 state: 'navigating', 
-                currentPath: paths[pathName] || [], // Seguridad por si el path no existe
+                currentPath: paths[pathName] || [], 
                 currentWaypointIndex: 0
             };
             bots.push(bot);
         }
+        
         function canSeePlayer(bot) { const angle = Math.atan2(player.y - bot.y, player.x - bot.x); const distance = Math.hypot(player.x - bot.x, player.y - bot.y); if (distance > 1000) return false; for (let i = 0.1; i < 1; i += 0.1) { const testPoint = { x: bot.x + (player.x - bot.x) * i, y: bot.y + (player.y - bot.y) * i, size: 2 }; for (const wall of walls) { if (checkCollision(testPoint, wall)) { return false; } } } return true; }
 
-        // Lógica de muerte del bot (Corregida v16)
+        // (NUEVO) Lógica de muerte para 5 bots
         function updateBots() {
             for (let i = bots.length - 1; i >= 0; i--) {
                 const bot = bots[i];
                 if (bot.health <= 0) {
                     player.money += 300; 
                     bots.splice(i, 1);
-                    console.log("Bot eliminado, +$300");
-                    if (game.bomb.state === 'unplanted') {
-                        showMessage("¡CTs Ganan! (Terrorista Eliminado)", 3000);
+                    console.log(`Bot eliminado, +$300. Quedan ${bots.length} bots.`);
+                    
+                    // Si era el portador Y la bomba no está plantada, suéltala (futura mecánica)
+                    if (bot.hasBomb && game.bomb.state === 'unplanted') {
+                         console.log("¡El portador de la bomba ha muerto!");
+                         // (Aquí podríamos añadir la lógica de soltar la bomba)
+                         // Por ahora, la bomba simplemente desaparece de la ronda.
+                    }
+                    
+                    // Comprobar si todos los bots están muertos
+                    if (bots.length === 0 && game.bomb.state === 'unplanted') {
+                        showMessage("¡CTs Ganan! (Todos los T eliminados)", 3000);
                         setTimeout(resetRound, 3000); 
-                    } else {
-                        console.log("Bot muerto, pero la bomba está plantada. ¡Desactiva!");
                     }
                     continue; 
                 }
@@ -239,10 +245,15 @@
                         const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
                         if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
                     } else {
-                        if (bot.hasBomb) {
+                        // ¡Ha llegado al final!
+                        // Solo planta si ES el portador de la bomba
+                        if (bot.hasBomb && game.bomb.state === 'unplanted') {
                             bot.state = 'planting';
                             bot.isPlanting = true;
                             bot.plantStartTime = Date.now();
+                        } else {
+                            // Si no tiene la bomba, se queda guardando
+                            bot.state = 'guarding';
                         }
                     }
                 }
@@ -263,30 +274,30 @@
         function shootBullet(weapon) { const totalSpread = weapon.spread + player.recoil; const spread = (Math.random() - 0.5) * totalSpread; const bulletAngle = player.angle + spread; player.recoil += weapon.recoil; const bullet = { x: player.x, y: player.y, size: 5, color: 'yellow', speed: 15, angle: bulletAngle, damage: weapon.damage }; bullets.push(bullet); }
         
         // --- 9. LÓGICA DE LA BOMBA Y DAÑO ---
-        
-        // (NUEVO) Aplicar daño al jugador con armadura
         function applyPlayerDamage(damage) {
             if (player.armor <= 0) {
                 player.health -= damage;
-                return;
-            }
-
-            // Si tiene casco, absorbe más (70%). Si no, solo chaleco (50%).
-            const absorptionRatio = player.inventory.helmet ? 0.70 : 0.50;
-            
-            let damageToArmor = damage * absorptionRatio;
-            let damageToHealth = damage * (1 - absorptionRatio);
-
-            // Comprobar si la armadura se rompe
-            if (player.armor < damageToArmor) {
-                const remainingDamage = damageToArmor - player.armor; // Daño que sobra
-                player.armor = 0;
-                player.inventory.helmet = false; // Se rompe el casco también
-                player.health -= (damageToHealth + remainingDamage);
             } else {
-                // La armadura aguanta
-                player.armor -= damageToArmor;
-                player.health -= damageToHealth;
+                const absorptionRatio = player.inventory.helmet ? 0.70 : 0.50;
+                let damageToArmor = damage * absorptionRatio;
+                let damageToHealth = damage * (1 - absorptionRatio);
+                if (player.armor < damageToArmor) {
+                    const remainingDamage = damageToArmor - player.armor;
+                    player.armor = 0;
+                    player.inventory.helmet = false;
+                    player.health -= (damageToHealth + remainingDamage);
+                } else {
+                    player.armor -= damageToArmor;
+                    player.health -= damageToHealth;
+                }
+            }
+            
+            // (NUEVO) Lógica de muerte del jugador
+            if (player.health <= 0) {
+                player.health = 0; // Evita vida negativa
+                console.log("¡HAS MUERTO!");
+                showMessage("¡Ts Ganan!", 3000);
+                setTimeout(resetRound, 3000);
             }
         }
         
@@ -305,14 +316,26 @@
             }
         }
         function plantBomb(bot) {
+            // (NUEVO) Evitar que múltiples bots planten
+            if (game.bomb.state === 'planted') return; 
+            
             console.log("¡Bomba Plantada por el Bot!");
             bot.isPlanting = false;
             bot.hasBomb = false;
+            
+            // Pasa la bomba al estado global del juego
             game.bomb.state = 'planted';
             game.bomb.x = bot.x;
             game.bomb.y = bot.y;
             game.bomb.plantTime = Date.now();
             game.bomb.timerId = setTimeout(bombExplode, GAME_TIMES.BOMB_FUSE);
+            
+            // Decirle a los otros bots que dejen de buscar el site
+            for (const otherBot of bots) {
+                if (otherBot !== bot) {
+                    otherBot.state = 'guarding'; // Ahora defienden
+                }
+            }
         }
         function defuseBomb() {
             console.log("¡Bomba Desactivada!");
@@ -330,7 +353,7 @@
             setTimeout(resetRound, 3000);
         }
         
-        // (NUEVO) Resetear armadura al reiniciar
+        // (NUEVO) Resetear para 5 bots
         function resetRound() {
             console.log("--- Nueva Ronda ---");
             game.bomb.state = 'unplanted';
@@ -339,15 +362,25 @@
             
             player.hasBomb = false;
             player.health = 100;
-            player.armor = 0; // Reinicia armadura
-            player.inventory.helmet = false; // Quita casco
+            player.armor = 0; 
+            player.inventory.helmet = false;
             
             const playerSpawn = getZoneCenter('Spawn AT');
             player.x = playerSpawn.x;
             player.y = playerSpawn.y;
             
+            // Limpia bots y balas viejas
             bots = [];
-            spawnBot();
+            bullets = [];
+            botBullets = [];
+            
+            // Elige un portador de bomba
+            const bombCarrierIndex = Math.floor(Math.random() * 5);
+            
+            // Spawnea 5 bots
+            for (let i = 0; i < 5; i++) {
+                spawnBot(i === bombCarrierIndex);
+            }
         }
         function showProgress(progress, max) { progressContainerEl.style.display = 'block'; const percentage = Math.min((progress / max) * 100, 100); progressBarEl.style.width = percentage + '%'; }
         function hideProgress() { progressContainerEl.style.display = 'none'; progressBarEl.style.width = '0%'; }
@@ -374,28 +407,8 @@
             }
             updateDefusing();
             updateBots();
-            for (let i = bullets.length - 1; i >= 0; i--) { let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (const bot of bots) { if (checkObjectCollision(bullet, bot)) { bot.health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
-            
-            // (NUEVO) Lógica de balas de bot actualizada
-            for (let i = botBullets.length - 1; i >= 0; i--) { 
-                let bullet = botBullets[i]; 
-                bullet.x += Math.cos(bullet.angle) * bullet.speed; 
-                bullet.y += Math.sin(bullet.angle) * bullet.speed; 
-                let bulletHit = false; 
-                for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } 
-                if (bulletHit) continue; 
-                
-                // ¡Aquí es donde se aplica el daño!
-                if (checkObjectCollision(bullet, player)) {
-                    applyPlayerDamage(bullet.damage); // Llama a la nueva función
-                    botBullets.splice(i, 1); 
-                    bulletHit = true;
-                    if (player.health <= 0) console.log("¡HAS MUERTO!"); 
-                } 
-                if (bulletHit) continue; 
-                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } 
-            }
-            
+            for (let i = bullets.length - 1; i >= 0; i--) { let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (let j = bots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, bots[j])) { bots[j].health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
+            for (let i = botBullets.length - 1; i >= 0; i--) { let bullet = botBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (checkObjectCollision(bullet, player)) { applyPlayerDamage(bullet.damage); botBullets.splice(i, 1); bulletHit = true; } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } }
             camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2;
             if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0;
             if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width;
@@ -422,6 +435,8 @@
             for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
             ctx.fillStyle = 'orange';
             for (const bullet of botBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
+            
+            // (NUEVO) Dibujar MÚLTIPLES bots
             for (const bot of bots) {
                 ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
                 ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
@@ -433,28 +448,28 @@
                     ctx.fillStyle = 'orange'; ctx.font = 'bold 20px Arial'; ctx.fillText("B", bot.x, bot.y - 20);
                 }
             }
+            
             ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
             ctx.fillStyle = player.color; ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
             ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.size, 0); ctx.stroke();
             ctx.restore(); 
             ctx.restore(); 
             
-            // --- (NUEVO) HUD con Armadura ---
+            // HUD Actualizado
             ctx.fillStyle = 'white'; ctx.font = '24px Arial';
             ctx.fillText(`Vida: ${Math.ceil(player.health)}`, 20, 30);
-            
-            // Dibuja el icono de armadura
             const armorIcon = player.inventory.helmet ? '🛡️' : '■';
             ctx.fillText(`Armadura: ${Math.ceil(player.armor)} ${armorIcon}`, 20, 60); 
-            
             const activeWeaponName = player.inventory[player.activeWeapon];
             const weaponNameStr = activeWeaponName ? weaponData[activeWeaponName].name : "Manos";
             ctx.fillText(`Arma: ${weaponNameStr}`, 20, 90); 
-            
-            ctx.fillStyle = 'white'; // Reset color
+            ctx.fillStyle = 'white'; 
             ctx.fillText(`Dinero: $${player.money}`, 20, 120); 
-            
             if (player.hasBomb) { ctx.fillStyle = 'orange'; ctx.fillText("[BOMBA]", 20, 150); }
+            
+            // (NUEVO) Contador de Bots
+            ctx.fillStyle = 'red';
+            ctx.fillText(`Bots Restantes: ${bots.length}`, window.innerWidth - 200, 30);
             
             if (isShopOpen) { shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default'; }
             else { shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair'; }
