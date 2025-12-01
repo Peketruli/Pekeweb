@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v26 - Flashbangs</title>
+    <title>Prototipo 2D v27 - Granadas de Humo</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -15,8 +15,6 @@
         #progress-container { display: none; position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%); width: 300px; height: 30px; background-color: rgba(0, 0, 0, 0.5); border: 2px solid white; border-radius: 5px; z-index: 20; }
         #progress-bar { width: 0%; height: 100%; background-color: #4CAF50; transition: width 0.1s linear; }
         #game-message { display: none; position: absolute; top: 30%; left: 50%; transform: translateX(-50%); font-size: 48px; font-weight: bold; color: white; text-shadow: 2px 2px 4px black; z-index: 20; }
-        
-        /* (NUEVO) Pantalla de Flash */
         #flash-overlay {
             display: none;
             position: absolute;
@@ -38,12 +36,15 @@
             <button class="shop-item" data-item="he_grenade" data-cost="300">Granada HE ($300)</button>
             <button class="shop-item" data-item="molotov" data-cost="400">Molotov ($400)</button>
             <button class="shop-item" data-item="flash" data-cost="200">Flash ($200)</button>
+            <button class="shop-item" data-item="smoke" data-cost="300">Humo ($300)</button>
         </div>
         <div class="shop-category"><h3>Equipo</h3><button class="shop-item" data-item="kevlar" data-cost="650">Chaleco ($650)</button><button class="shop-item" data-item="full_armor" data-cost="1000">Chaleco + Casco ($1000)</button></div>
     </div>
     <div id="progress-container"><div id="progress-bar"></div></div>
     <div id="game-message"></div>
-    <div id="flash-overlay"></div> <canvas id="gameCanvas"></canvas>
+    <div id="flash-overlay"></div>
+
+    <canvas id="gameCanvas"></canvas>
 
     <script>
         // --- 1. CONFIGURACIÓN INICIAL ---
@@ -56,11 +57,11 @@
         const progressContainerEl = document.getElementById('progress-container');
         const progressBarEl = document.getElementById('progress-bar');
         const gameMessageEl = document.getElementById('game-message');
-        const flashOverlayEl = document.getElementById('flash-overlay'); // (NUEVO)
+        const flashOverlayEl = document.getElementById('flash-overlay'); 
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
         let camera = { x: 0, y: 0 };
-        const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000 }; // (NUEVO)
+        const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000 }; // (NUEVO)
         let game = {
             bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null },
             isDefusing: false,
@@ -70,7 +71,8 @@
         const weaponData = { 'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 }, 'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05 }, 'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03 }, 'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01 }, 'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01 }, 'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0 },
             'he_grenade': { name: 'Granada HE', type: 'grenade', damage: 90, fireRate: 1000, range: 200 },
             'molotov': { name: 'Molotov', type: 'grenade', damage: 10, fireRate: 1000, range: 100 },
-            'flash': { name: 'Flash', type: 'grenade', damage: 0, fireRate: 1000, range: 800 } // (NUEVO) Rango muy grande
+            'flash': { name: 'Flash', type: 'grenade', damage: 0, fireRate: 1000, range: 800 },
+            'smoke': { name: 'Humo', type: 'grenade', damage: 0, fireRate: 1000, range: 150 } // (NUEVO)
         };
 
         // --- 2. EL MAPA (Tus datos) ---
@@ -97,7 +99,7 @@
                 grenades: { he: 0, flash: 0, smoke: 0, molotov: 0 } 
             },
             activeWeapon: 'secondary', hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false,
-            flashed: 0 // (NUEVO)
+            flashed: 0 
         };
 
         // --- 4. ALMACENES Y ESTADO ---
@@ -112,6 +114,7 @@
         let grenades = []; 
         let explosions = []; 
         let firePatches = [];
+        let smokeClouds = []; // (NUEVO)
 
         // --- 5. SEGUIMIENTO de EVENTOS ---
         window.addEventListener('mousemove', (e) => { 
@@ -147,9 +150,14 @@
                         player.activeWeapon = 'molotov';
                     }
                 }
-                else if (e.key === '6') { // (NUEVO)
+                else if (e.key === '6') { 
                     if (player.inventory.grenades.flash > 0) {
                         player.activeWeapon = 'flash';
+                    }
+                }
+                else if (e.key === '7') { // (NUEVO)
+                    if (player.inventory.grenades.smoke > 0) {
+                        player.activeWeapon = 'smoke';
                     }
                 }
             }
@@ -161,7 +169,7 @@
             }
         });
         window.addEventListener('mousedown', (e) => {
-            if (isShopOpen || game.isDefusing || player.flashed > Date.now()) return; // (NUEVO) No disparar si está ciego
+            if (isShopOpen || game.isDefusing || player.flashed > Date.now()) return; 
             mouse.isDown = true;
             player.hasFiredSemi = false; 
         });
@@ -179,6 +187,7 @@
                     if(itemName === 'he_grenade') player.inventory.grenades.he++; 
                     if(itemName === 'molotov') player.inventory.grenades.molotov++; 
                     if(itemName === 'flash') player.inventory.grenades.flash++; 
+                    if(itemName === 'smoke') player.inventory.grenades.smoke++; // (NUEVO)
                 }
             } else { 
                 switch (itemName) {
@@ -219,7 +228,7 @@
                 state: 'navigating', 
                 currentPath: paths[pathName] || [], 
                 currentWaypointIndex: 0,
-                flashed: 0 // (NUEVO)
+                flashed: 0 
             };
             bots.push(bot);
         }
@@ -231,22 +240,35 @@
                 state: 'navigating',
                 currentPath: paths[pathName] || [], 
                 currentWaypointIndex: 0,
-                flashed: 0 // (NUEVO)
+                flashed: 0 
             };
             alliedBots.push(bot);
         }
+        
+        // (NUEVO) ¡Función de "Ver" mejorada con Humo!
         function canSeeTarget(bot, target) {
             if (!target) return false;
             const angle = Math.atan2(target.y - bot.y, target.x - bot.x);
             const distance = Math.hypot(target.x - bot.x, target.y - bot.y);
             if (distance > 1000) return false; 
+            
+            // Comprobar 10 puntos en la línea de visión
             for (let i = 0.1; i < 1; i += 0.1) {
                 const testPoint = { x: bot.x + (target.x - bot.x) * i, y: bot.y + (target.y - bot.y) * i, size: 2 };
+                
+                // 1. ¿Bloqueado por una pared?
                 for (const wall of walls) {
                     if (checkCollision(testPoint, wall)) { return false; }
                 }
+                
+                // 2. ¿Bloqueado por un Humo?
+                for (const smoke of smokeClouds) {
+                    if (checkObjectCollision(testPoint, smoke)) {
+                        return false; // ¡Visión bloqueada!
+                    }
+                }
             }
-            return true;
+            return true; // No hay nada en medio
         }
 
         // --- IA TÁCTICA (T-BOTS) ---
@@ -264,11 +286,10 @@
                     continue; 
                 }
                 
-                // (NUEVO) Comprobar ceguera
                 if (bot.flashed > Date.now()) {
                     bot.state = 'flashed';
-                    bot.angle += 0.5; // Gira loco
-                    continue; // No hace nada más
+                    bot.angle += 0.5; 
+                    continue; 
                 }
                 
                 let targetAngle = bot.angle; 
@@ -354,11 +375,10 @@
                     continue;
                 }
                 
-                // (NUEVO) Comprobar ceguera
                 if (bot.flashed > Date.now()) {
                     bot.state = 'flashed';
-                    bot.angle += 0.5; // Gira loco
-                    continue; // No hace nada más
+                    bot.angle += 0.5; 
+                    continue; 
                 }
                 
                 let closestEnemy = null;
@@ -429,8 +449,12 @@
                 throwGrenade('molotov');
                 return;
             }
-            if (player.activeWeapon === 'flash') { // (NUEVO)
+            if (player.activeWeapon === 'flash') { 
                 throwGrenade('flash');
+                return;
+            }
+            if (player.activeWeapon === 'smoke') { // (NUEVO)
+                throwGrenade('smoke');
                 return;
             }
             
@@ -458,6 +482,9 @@
             } else if (type === 'flash' && player.inventory.grenades.flash > 0) {
                 player.inventory.grenades.flash--;
                 grenadeData = { type: 'flash', color: 'white', size: 10, timer: Date.now() + GAME_TIMES.FLASH_FUSE };
+            } else if (type === 'smoke' && player.inventory.grenades.smoke > 0) {
+                player.inventory.grenades.smoke--;
+                grenadeData = { type: 'smoke', color: '#BBBBBB', size: 10, timer: Date.now() + GAME_TIMES.SMOKE_FUSE };
             } else {
                 return; 
             }
@@ -584,7 +611,7 @@
             player.health = 100;
             player.armor = 0; 
             player.inventory.helmet = false;
-            player.inventory.grenades = { he: 1, molotov: 1, flash: 1, smoke: 0 }; // (NUEVO)
+            player.inventory.grenades = { he: 1, molotov: 1, flash: 1, smoke: 1 }; // (NUEVO)
             
             const playerSpawnZone = getSpawnZone('Spawn AT');
             if (playerSpawnZone) {
@@ -602,6 +629,7 @@
             grenades = []; 
             explosions = [];
             firePatches = []; 
+            smokeClouds = []; // (NUEVO)
             
             // === SPAWN EQUIPO T (Enemigo) ===
             const botSpawnZone = getSpawnZone('Spawn T');
@@ -645,7 +673,7 @@
                 if (player.recoil > 0) player.recoil -= 0.02;
                 if (player.recoil < 0) player.recoil = 0;
             }
-            if (!game.isDefusing && player.flashed <= Date.now()) { // No moverse si ciego
+            if (!game.isDefusing && player.flashed <= Date.now()) { 
                 const oldX = player.x; const oldY = player.y;
                 if (keys['a'] || keys['A']) { player.x -= player.speed; }
                 if (keys['d'] || keys['D']) { player.x += player.speed; }
@@ -655,7 +683,7 @@
                 for (const wall of walls) { if (checkCollision(player, wall)) { player.y = oldY; break; } }
                 player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
             } else if (player.flashed > Date.now()) {
-                player.angle += 0.1; // Gira loco si ciego
+                player.angle += 0.1; 
             }
             
             updateDefusing();
@@ -664,6 +692,7 @@
             
             updateGrenades();
             updateFire();
+            updateSmokes(); // (NUEVO)
             
             // Balas del Jugador (daña T)
             for (let i = bullets.length - 1; i >= 0; i--) { let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (let j = bots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, bots[j])) { bots[j].health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
@@ -701,7 +730,8 @@
                 if (Date.now() > g.timer) {
                     if (g.type === 'he') { explodeHE(g); }
                     if (g.type === 'molotov') { explodeMolotov(g); }
-                    if (g.type === 'flash') { explodeFlash(g); } // (NUEVO)
+                    if (g.type === 'flash') { explodeFlash(g); }
+                    if (g.type === 'smoke') { explodeSmoke(g); } // (NUEVO)
                     grenades.splice(i, 1);
                 }
             }
@@ -719,6 +749,17 @@
                 }
             }
         }
+        
+        // (NUEVO)
+        function updateSmokes() {
+            for (let i = smokeClouds.length - 1; i >= 0; i--) {
+                smokeClouds[i].life--;
+                if (smokeClouds[i].life <= 0) {
+                    smokeClouds.splice(i, 1);
+                }
+            }
+        }
+
         function explodeHE(grenade) {
             const data = weaponData.he_grenade;
             console.log("BOOM! Explosión de HE");
@@ -756,38 +797,39 @@
                 firePatches.push(firePatch);
             }
         }
-        
-        // (NUEVO) Lógica de Flash
         function explodeFlash(grenade) {
             console.log("¡FLASH!");
             const data = weaponData.flash;
-            explosions.push({ x: grenade.x, y: grenade.y, radius: data.range / 4, life: 5 }); // Efecto visual corto
-            
+            explosions.push({ x: grenade.x, y: grenade.y, radius: data.range / 4, life: 5 });
             const entities = [player, ...bots, ...alliedBots];
-            
             for (const entity of entities) {
                 const dist = Math.hypot(entity.x - grenade.x, entity.y - grenade.y);
-                
-                // 1. ¿Está en rango?
                 if (dist < data.range) {
-                    // 2. ¿Hay visión (sin paredes)?
                     if (canSeeTarget(entity, grenade)) {
-                        // 3. ¿Está mirando?
                         const vecToFlashX = grenade.x - entity.x;
                         const vecToFlashY = grenade.y - entity.y;
                         const angleToFlash = Math.atan2(vecToFlashY, vecToFlashX);
-                        
                         let deltaAngle = Math.abs(angleToFlash - entity.angle);
-                        // Normalizar ángulo (para que 1° y 359° estén cerca)
                         if (deltaAngle > Math.PI) deltaAngle = 2 * Math.PI - deltaAngle;
-                        
-                        if (deltaAngle < Math.PI / 2) { // 90° de cono de visión
+                        if (deltaAngle < Math.PI / 2) { 
                             console.log("¡Cegado!");
                             entity.flashed = Date.now() + GAME_TIMES.FLASH_DURATION;
                         }
                     }
                 }
             }
+        }
+        
+        // (NUEVO)
+        function explodeSmoke(grenade) {
+            console.log("¡HUMO!");
+            const data = weaponData.smoke;
+            smokeClouds.push({
+                x: grenade.x,
+                y: grenade.y,
+                size: data.range, // radio
+                life: GAME_TIMES.SMOKE_DURATION / 60 // 15 segundos
+            });
         }
 
         // --- 11. FUNCIÓN DE DIBUJADO (Gráficos) ---
@@ -858,6 +900,14 @@
                 ctx.fillStyle = 'green'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size * (bot.health / 100), 5);
             }
             
+            // (NUEVO) Humo (se dibuja encima de los jugadores)
+            for (const smoke of smokeClouds) {
+                ctx.fillStyle = `rgba(150, 150, 150, 0.6)`;
+                ctx.beginPath();
+                ctx.arc(smoke.x, smoke.y, smoke.size, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            
             // Jugador
             ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
             ctx.fillStyle = player.color; ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
@@ -865,7 +915,7 @@
             ctx.restore(); 
             ctx.restore(); 
             
-            // --- HUD ---
+            // HUD
             ctx.fillStyle = 'white'; ctx.font = '24px Arial';
             ctx.fillText(`Vida: ${Math.ceil(player.health)}`, 20, 30);
             const armorIcon = player.inventory.helmet ? '🛡️' : '■';
@@ -877,8 +927,10 @@
                 weaponNameStr = `HE Granada (${player.inventory.grenades.he})`;
             } else if (activeWeaponSlot === 'molotov') { 
                 weaponNameStr = `Molotov (${player.inventory.grenades.molotov})`;
-            } else if (activeWeaponSlot === 'flash') { // (NUEVO)
+            } else if (activeWeaponSlot === 'flash') { 
                 weaponNameStr = `Flash (${player.inventory.grenades.flash})`;
+            } else if (activeWeaponSlot === 'smoke') { // (NUEVO)
+                weaponNameStr = `Humo (${player.inventory.grenades.smoke})`;
             } else {
                 const activeWeaponName = player.inventory[activeWeaponSlot];
                 weaponNameStr = activeWeaponName ? weaponData[activeWeaponName].name : "Manos";
@@ -897,14 +949,13 @@
             if (isShopOpen) { shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default'; }
             else { shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair'; }
             
-            // (NUEVO) Lógica de pantalla flasheada
             if (player.flashed > Date.now()) {
                 const timeLeft = player.flashed - Date.now();
                 let opacity = 0;
-                if (timeLeft > GAME_TIMES.FLASH_DURATION - 500) { // El primer 0.5s
-                    opacity = 1; // Blanco total
+                if (timeLeft > GAME_TIMES.FLASH_DURATION - 500) { 
+                    opacity = 1; 
                 } else {
-                    opacity = timeLeft / (GAME_TIMES.FLASH_DURATION - 500); // Se desvanece
+                    opacity = timeLeft / (GAME_TIMES.FLASH_DURATION - 500); 
                 }
                 flashOverlayEl.style.display = 'block';
                 flashOverlayEl.style.opacity = opacity;
