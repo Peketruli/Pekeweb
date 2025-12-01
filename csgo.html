@@ -2,13 +2,12 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v28 - FoV y Minimapa</title>
+    <title>Prototipo 2D v28 - Minimapa Corregido</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
         canvas { display: block; background-color: #111; margin: 0 auto; cursor: crosshair; }
         
-        /* (NUEVO) Estilos del Minimapa */
         #minimapCanvas {
             position: absolute;
             top: 20px;
@@ -16,7 +15,7 @@
             width: 300px; /* Tamaño en pantalla */
             height: 200px;
             border: 2px solid #555;
-            background-color: rgba(50, 50, 50, 0.7); /* Fondo semitransparente */
+            background-color: rgba(50, 50, 50, 0.7); 
             z-index: 10;
         }
 
@@ -42,7 +41,6 @@
 <body>
     
     <canvas id="minimapCanvas"></canvas>
-
     <div id="shopMenu">
         <h2>Tienda (Pulsa 'B' para cerrar)</h2>
         <div class="shop-category"><h3>Pistolas</h3><button class="shop-item" data-item="deagle" data-cost="700">Deagle ($700)</button></div>
@@ -67,10 +65,8 @@
         canvas.width = window.innerWidth;
         canvas.height = window.innerHeight;
         
-        // (NUEVO) Minimapa
         const minimapCanvas = document.getElementById('minimapCanvas');
         const mmCtx = minimapCanvas.getContext('2d');
-        // El tamaño del canvas del minimapa (alta res)
         minimapCanvas.width = 600;
         minimapCanvas.height = 400;
 
@@ -84,8 +80,8 @@
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
         
-        // (NUEVO) Escala del minimapa
-        const minimapScale = 0.1; // 10% del tamaño del mundo
+        // (¡CORREGIDO!) La escala debe ser 0.2 (600px / 3000px = 0.2)
+        const minimapScale = 0.2; 
         
         let camera = { x: 0, y: 0 };
         const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000 };
@@ -272,42 +268,33 @@
             alliedBots.push(bot);
         }
         
-        // (NUEVO) ¡Función de "Ver" mejorada con Humo!
+        // ¡Función de "Ver" mejorada con Humo!
         function hasLineOfSight(viewer, target) {
             if (!target) return false;
             
-            // 1. Comprobar 10 puntos en la línea de visión
             for (let i = 0.1; i < 1; i += 0.1) {
                 const testPoint = { x: viewer.x + (target.x - viewer.x) * i, y: viewer.y + (target.y - viewer.y) * i, size: 2 };
-                
-                // 1. ¿Bloqueado por una pared?
                 for (const wall of walls) {
                     if (checkCollision(testPoint, wall)) { return false; }
                 }
-                
-                // 2. ¿Bloqueado por un Humo?
                 for (const smoke of smokeClouds) {
                     if (checkObjectCollision(testPoint, smoke)) {
-                        return false; // ¡Visión bloqueada!
+                        return false; 
                     }
                 }
             }
-            return true; // No hay nada en medio
+            return true; 
         }
         
-        // (NUEVO) Comprobar Cono de Visión (FoV)
         function isTargetInFoV(viewer, target) {
             if (!target) return false;
-            
             const angleToTarget = Math.atan2(target.y - viewer.y, target.x - viewer.x);
             let deltaAngle = Math.abs(angleToTarget - viewer.angle);
-            if (deltaAngle > Math.PI) deltaAngle = 2 * Math.PI - deltaAngle; // Normalizar
-            
-            // Cono de visión de 180 grados (90 a cada lado)
+            if (deltaAngle > Math.PI) deltaAngle = 2 * Math.PI - deltaAngle; 
             return (deltaAngle <= Math.PI / 2); 
         }
 
-        // --- IA TÁCTICA (T-BOTS) ---
+        // --- (NUEVO) IA TÁCTICA (T-BOTS) ---
         function updateBots() {
             for (let i = bots.length - 1; i >= 0; i--) {
                 const bot = bots[i];
@@ -336,6 +323,7 @@
                     continue; 
                 }
                 
+                // (NUEVO) Comprobación de visión (LOS + FoV)
                 const seesPlayer = hasLineOfSight(bot, player) && isTargetInFoV(bot, player);
                 let seesAlly = false;
                 let targetAlly = null;
@@ -367,6 +355,7 @@
                     bot.state = 'navigating'; 
                 }
 
+                // Lógica de Movimiento
                 if (game.bomb.state === 'planted' && !bot.hasBomb) {
                     bot.state = 'guarding';
                     const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
@@ -377,7 +366,8 @@
                     if (targetWaypoint) {
                         const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
                         if (bot.state !== 'attacking') targetAngle = angleToWaypoint; 
-                        moveBot(bot, angleToWaypoint);
+                        moveBot(bot, angleToWaypoint); // ¡SE MUEVE SIEMPRE!
+                        
                         const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
                         if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
                     } else {
@@ -839,8 +829,8 @@
             for (const entity of entities) {
                 const dist = Math.hypot(entity.x - grenade.x, entity.y - grenade.y);
                 if (dist < data.range) {
-                    if (hasLineOfSight(entity, grenade)) { // Usa la nueva función
-                        if(isTargetInFoV(entity, {x: grenade.x, y: grenade.y})) { // Comprueba el ángulo
+                    if (hasLineOfSight(entity, grenade)) { 
+                        if(isTargetInFoV(entity, {x: grenade.x, y: grenade.y})) { 
                             console.log("¡Cegado!");
                             entity.flashed = Date.now() + GAME_TIMES.FLASH_DURATION;
                         }
@@ -950,7 +940,6 @@
             
             // --- HUD (Se dibuja encima de todo, sin cámara) ---
             
-            // (NUEVO) Dibuja el Minimapa
             drawMinimap();
             
             ctx.fillStyle = 'white'; ctx.font = '24px Arial';
@@ -1001,28 +990,23 @@
             }
         }
         
-        // (NUEVO) Función para dibujar el Minimapa
+        // (NUEVO) Función para dibujar el Minimapa (CORREGIDA)
         function drawMinimap() {
-            const mmScale = 0.1; // 10%
+            const mmScale = 0.2; // (CORREGIDO)
             mmCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
-
-            // Dibujar fondo del mapa (semitransparente)
             mmCtx.fillStyle = "rgba(50, 50, 50, 0.7)";
             mmCtx.fillRect(0, 0, world.width * mmScale, world.height * mmScale);
 
-            // Dibujar zonas
             for (const zone of zones) {
                 mmCtx.fillStyle = zone.color;
                 mmCtx.fillRect(zone.x * mmScale, zone.y * mmScale, zone.width * mmScale, zone.height * mmScale);
             }
-            
-            // Dibujar paredes
             mmCtx.fillStyle = "#999";
             for (const wall of walls) {
                 mmCtx.fillRect(wall.x * mmScale, wall.y * mmScale, wall.width * mmScale, wall.height * mmScale);
             }
             
-            // Dibujar Aliados (siempre visibles)
+            // Aliados
             mmCtx.fillStyle = 'blue';
             for (const bot of alliedBots) {
                 mmCtx.beginPath();
@@ -1030,15 +1014,13 @@
                 mmCtx.fill();
             }
             
-            // Dibujar Enemigos (solo si son visibles para el equipo CT)
+            // Enemigos
             mmCtx.fillStyle = 'red';
             for (const bot of bots) {
                 let isVisible = false;
-                // ¿Lo ve el jugador?
                 if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) {
                     isVisible = true;
                 }
-                // ¿Lo ve un aliado?
                 if (!isVisible) {
                     for (const ally of alliedBots) {
                         if (hasLineOfSight(ally, bot) && isTargetInFoV(ally, bot)) {
@@ -1055,7 +1037,7 @@
                 }
             }
             
-            // Dibujar Humo y Fuego
+            // Fuego y Humo
             mmCtx.fillStyle = 'rgba(255, 100, 0, 0.8)';
             for (const patch of firePatches) {
                  mmCtx.fillRect(patch.x * mmScale, patch.y * mmScale, 3, 3);
@@ -1067,7 +1049,7 @@
                 mmCtx.fill();
             }
             
-            // Dibujar al Jugador (encima de todo)
+            // Jugador
             mmCtx.fillStyle = 'white';
             mmCtx.beginPath();
             mmCtx.arc(player.x * mmScale, player.y * mmScale, 3, 0, Math.PI * 2);
