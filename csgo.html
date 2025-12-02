@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v31 - Munición y Recarga</title>
+    <title>Prototipo 2D v30 - Economía Real</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -80,12 +80,12 @@
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
         
-        const minimapScale = 0.2; 
+        const minimapScale = 0.2; // (CORREGIDO)
         
         let camera = { x: 0, y: 0 };
-        const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000, BUY_TIME: 10000 };
+        const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000, BUY_TIME: 10000 }; 
         
-        // (NUEVO) Economía con límite
+        // (NUEVO) Constantes de Economía
         const MAX_MONEY = 16000;
         const ECONOMY = {
             ROUND_1: 700,
@@ -95,6 +95,7 @@
             DEFUSE_BONUS: 500
         };
         
+        // (NUEVO) Estado del juego con puntuación
         let game = {
             bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null },
             isDefusing: false,
@@ -144,16 +145,16 @@
         let player = {
             x: 142, y: 1087, size: mapData.playerSize, color: 'cyan', speed: 4, angle: 0, health: 100, armor: 0, money: 0, 
             inventory: { 
-                primary: null, // (NUEVO) Será un objeto { name, ammoInClip, ammoInReserve }
-                secondary: null, // (NUEVO) Será un objeto
+                primary: null, 
+                secondary: null,
                 melee: 'knife', 
                 kevlar: false, helmet: false,
                 grenades: { he: 0, flash: 0, smoke: 0, molotov: 0 } 
             },
-            activeWeapon: 'secondary', // (NUEVO) Sigue siendo 'secondary', pero el objeto se asigna en resetRound
+            activeWeapon: 'secondary', 
             hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false,
             flashed: 0,
-            isReloading: false // (NUEVO)
+            isReloading: false 
         };
 
         // --- 4. ALMACENES Y ESTADO ---
@@ -234,7 +235,7 @@
             }
         });
         window.addEventListener('mousedown', (e) => {
-            if (isShopOpen || game.isDefusing || player.flashed > Date.now() || player.isReloading) return; // (NUEVO) No disparar si recarga
+            if (isShopOpen || game.isDefusing || player.flashed > Date.now() || player.isReloading) return; 
             mouse.isDown = true;
             player.hasFiredSemi = false; 
         });
@@ -247,7 +248,7 @@
             const itemData = weaponData[itemName];
             if (itemData) { 
                 if (itemData.type === 'primary') { 
-                    player.inventory.primary = {
+                    player.inventory.primary = { // (NUEVO)
                         name: itemName,
                         ammoInClip: itemData.clipSize,
                         ammoInReserve: itemData.reserveAmmo
@@ -255,7 +256,7 @@
                     player.activeWeapon = 'primary'; 
                 }
                 else if (itemData.type === 'secondary') { 
-                    player.inventory.secondary = {
+                    player.inventory.secondary = { // (NUEVO)
                         name: itemName,
                         ammoInClip: itemData.clipSize,
                         ammoInReserve: itemData.reserveAmmo
@@ -556,7 +557,6 @@
                     weaponSlot.ammoInClip--; // ¡Resta una bala!
                 }
             } else {
-                // (Aquí sonaría el "clic" de cargador vacío)
                 console.log("¡Sin munición!");
             }
         }
@@ -567,6 +567,7 @@
         function reload() {
             if (player.activeWeapon === 'primary' || player.activeWeapon === 'secondary') {
                 const weaponSlot = player.inventory[player.activeWeapon];
+                if (!weaponSlot) return; // No tiene esa arma
                 const weapon = weaponData[weaponSlot.name];
                 
                 if (weaponSlot.ammoInClip === weapon.clipSize) return; // Cargador lleno
@@ -718,6 +719,7 @@
             if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
             console.log("Fin de ronda: " + message);
 
+            // (NUEVO) Asignar dinero de ronda
             if (winner === 'CTs') {
                 game.score.ct++;
                 player.money += ECONOMY.WIN_BONUS; 
@@ -754,7 +756,7 @@
             player.health = 100;
             player.armor = 0; 
             player.inventory.helmet = false;
-            player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; 
+            player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; // (NUEVO) Granadas a 0
             
             // (NUEVO) Economía de Ronda
             if (game.roundNumber === 1) {
@@ -836,6 +838,7 @@
 
         // --- 10. FUNCIÓN DE ACTUALIZACIÓN (Lógica) ---
         function update() {
+            // (NUEVO) Lógica de pausa
             if (isRoundEnding) return;
             if (game.isBuyTime) { 
                 camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2;
@@ -845,6 +848,7 @@
                 return;
             }
             
+            // (NUEVO) Si la tienda está abierta, solo el jugador se pausa
             if (mouse.isDown && !game.isDefusing && player.flashed <= Date.now() && !isShopOpen) {
                 useWeapon();
             } else {
@@ -936,6 +940,7 @@
                 }
             }
         }
+        // (NUEVO) BUG CORREGIDO
         function updateExplosions() {
              for (let i = explosions.length - 1; i >= 0; i--) {
                 explosions[i].life--;
