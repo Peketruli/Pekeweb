@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Editor de Mapas v4 (Rutas CT)</title>
+    <title>Editor de Mapas v5 (Borrar + Rotación)</title>
     
     <style>
         body {
@@ -61,17 +61,21 @@
                 <option value="path_T_B_1">Ruta T - B1 (Rojo claro)</option>
                 <option value="path_T_B_2">Ruta T - B2 (Naranja)</option>
             </optgroup>
-            <optgroup label="IA Aliada (Anti-Terrorista)">
+            <optgroup label="IA Aliada (Defensa)">
                 <option value="path_CT_A_1">Ruta CT - A1 (Cian)</option>
                 <option value="path_CT_A_2">Ruta CT - A2 (Azul claro)</option>
                 <option value="path_CT_B_1">Ruta CT - B1 (Verde claro)</option>
                 <option value="path_CT_B_2">Ruta CT - B2 (Lima)</option>
                 <option value="path_CT_MID_1">Ruta CT - Medio (Blanco)</option>
             </optgroup>
+            <optgroup label="IA Aliada (Rotación)">
+                <option value="path_CT_Rotate_B_to_A">Rotar B -> A (Magenta)</option>
+                <option value="path_CT_Rotate_A_to_B">Rotar A -> B (Morado)</option>
+            </optgroup>
         </select>
         <p style="font-size: 12px; margin-top: 10px;">
-            <b>Rectángulos:</b> Arrastra<br>
-            <b>Caminos de IA:</b> Haz clic en orden
+            <b>Clic Izq:</b> Dibujar<br>
+            <b>Clic Der:</b> Borrar
         </p>
     </div>
 
@@ -105,7 +109,9 @@
             path_CT_A_2: [],
             path_CT_B_1: [],
             path_CT_B_2: [],
-            path_CT_MID_1: []
+            path_CT_MID_1: [],
+            path_CT_Rotate_B_to_A: [], // (NUEVO)
+            path_CT_Rotate_A_to_B: []  // (NUEVO)
         };
         
         // Colores para dibujar los caminos
@@ -118,19 +124,41 @@
             path_CT_A_2: "#ADD8E6", // Azul claro
             path_CT_B_1: "#90EE90", // Verde claro
             path_CT_B_2: "#00FF00", // Lima
-            path_CT_MID_1: "white"
+            path_CT_MID_1: "white",
+            path_CT_Rotate_B_to_A: "#FF00FF", // Magenta
+            path_CT_Rotate_A_to_B: "#800080"  // Morado
         };
         
         let currentDrawMode = 'wall';
         let isDrawing = false; // Para rectángulos
         let startX = 0, startY = 0, currentX = 0, currentY = 0;
+
+        // --- 3. FUNCIONES DE AYUDA (NUEVO) ---
+        function isPointInsideRect(px, py, rect) {
+            return px > rect.x && px < rect.x + rect.width && py > rect.y && py < rect.y + rect.height;
+        }
+
+        function findClosestPoint(px, py, path) {
+            let closestIndex = -1;
+            let minDist = Infinity;
+            for (let i = 0; i < path.length; i++) {
+                const dist = Math.hypot(px - path[i].x, py - path[i].y);
+                if (dist < 20 && dist < minDist) { // 20px de 'snap'
+                    minDist = dist;
+                    closestIndex = i;
+                }
+            }
+            return closestIndex;
+        }
         
-        // --- 3. EVENTOS ---
+        // --- 4. EVENTOS ---
         drawModeSelect.addEventListener('change', (e) => {
             currentDrawMode = e.target.value;
         });
 
         canvas.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return; // Solo clic izquierdo
+            
             startX = e.offsetX;
             startY = e.offsetY;
             
@@ -154,6 +182,7 @@
         });
 
         canvas.addEventListener('mouseup', (e) => {
+            if (e.button !== 0) return; // Solo clic izquierdo
             if (isDrawing) {
                 isDrawing = false;
                 
@@ -186,7 +215,42 @@
             }
         });
 
-        // --- 4. BOTÓN DE EXPORTAR ---
+        // (NUEVO) Evento de Clic Derecho para Borrar
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault(); // Prevenir que salga el menú
+            
+            const mouseX = e.offsetX;
+            const mouseY = e.offsetY;
+
+            if (currentDrawMode.startsWith('path_')) {
+                // Borrar un punto de una ruta
+                const path = paths[currentDrawMode];
+                if (path) {
+                    const pointIndex = findClosestPoint(mouseX, mouseY, path);
+                    if (pointIndex > -1) {
+                        path.splice(pointIndex, 1); // Borra el punto
+                    }
+                }
+            } else if (currentDrawMode === 'wall') {
+                // Borrar una pared
+                for (let i = walls.length - 1; i >= 0; i--) {
+                    if (isPointInsideRect(mouseX, mouseY, walls[i])) {
+                        walls.splice(i, 1); // Borra la pared
+                        break; // Borra solo una a la vez
+                    }
+                }
+            } else {
+                // Borrar una zona
+                for (let i = zones.length - 1; i >= 0; i--) {
+                    if (isPointInsideRect(mouseX, mouseY, zones[i])) {
+                        zones.splice(i, 1); // Borra la zona
+                        break; 
+                    }
+                }
+            }
+        });
+
+        // --- 5. BOTÓN DE EXPORTAR ---
         exportButton.addEventListener('click', () => {
             for (const key in pathColors) {
                 if (!paths[key]) {
@@ -208,7 +272,7 @@
             }
             output += "];\n\n";
             
-            output += "// === OBJETO DE CAMINOS IA (T y CT) ===\n";
+            output += "// === OBJETO DE CAMINOS IA (T, CT y Rotación) ===\n";
             output += "const paths = {\n";
             for (const pathName in paths) {
                 if (pathColors[pathName]) {
@@ -228,7 +292,7 @@
             newWindow.document.close();
         });
 
-        // --- 5. BUCLE DE DIBUJADO ---
+        // --- 6. BUCLE DE DIBUJADO ---
         function drawLoop() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.fillStyle = '#333';
