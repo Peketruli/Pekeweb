@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v30 - Economía de Bots y Recarga</title>
+    <title>Prototipo 2D v31 - Modo Espectador</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -85,7 +85,6 @@
         let camera = { x: 0, y: 0 };
         const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000, BUY_TIME: 10000 };
         
-        // (NUEVO) Constantes de Economía
         const MAX_MONEY = 16000;
         const ECONOMY = {
             ROUND_1: 700,
@@ -102,14 +101,14 @@
             messageTimerId: null,
             roundNumber: 0,
             score: { ct: 0, t: 0 },
-            isBuyTime: false 
+            isBuyTime: false,
+            spectatorTargetIndex: 0 // (NUEVO)
         };
         
-        // (NUEVO) Datos de armas con munición
         const weaponData = {
             'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 },
             'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05,
-                clipSize: 20, reserveAmmo: 100, reloadTime: 1500, cost: 200 }, // Coste añadido
+                clipSize: 20, reserveAmmo: 100, reloadTime: 1500, cost: 200 },
             'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03,
                 clipSize: 7, reserveAmmo: 35, reloadTime: 2000, cost: 700 },
             'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01,
@@ -153,7 +152,8 @@
             activeWeapon: 'secondary', 
             hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false,
             flashed: 0,
-            isReloading: false 
+            isReloading: false,
+            isAlive: true // (NUEVO)
         };
 
         // --- 4. ALMACENES Y ESTADO ---
@@ -177,14 +177,13 @@
         });
         window.addEventListener('keydown', (e) => { 
             keys[e.key] = true; 
-            if (e.key === 'e' && !isShopOpen && !game.isDefusing) {
+            if (e.key === 'e' && !isShopOpen && !game.isDefusing && player.isAlive) { // (NUEVO)
                 if (game.bomb.state === 'planted' && checkNearBomb()) {
                     game.isDefusing = true;
                     game.defuseStartTime = Date.now();
                 }
             }
-            // (NUEVO) Tecla de Recarga
-            if (e.key === 'r' && !isShopOpen && !game.isBuyTime && !player.isReloading) {
+            if (e.key === 'r' && !isShopOpen && !game.isBuyTime && !player.isReloading && player.isAlive) { // (NUEVO)
                 reload();
             }
         });
@@ -234,7 +233,15 @@
             }
         });
         window.addEventListener('mousedown', (e) => {
-            if (isShopOpen || game.isDefusing || player.flashed > Date.now() || player.isReloading) return; 
+            // (NUEVO) Clic para cambiar de espectador
+            if (!player.isAlive && !isShopOpen) {
+                game.spectatorTargetIndex++;
+                if (game.spectatorTargetIndex >= alliedBots.length) {
+                    game.spectatorTargetIndex = 0;
+                }
+                return;
+            }
+            if (isShopOpen || game.isDefusing || player.flashed > Date.now() || player.isReloading || !player.isAlive) return; 
             mouse.isDown = true;
             player.hasFiredSemi = false; 
         });
@@ -308,8 +315,8 @@
                 currentPath: paths[pathName] || [], 
                 currentWaypointIndex: 0,
                 flashed: 0,
-                money: money, // (NUEVO)
-                weapon: 'pistol', // (NUEVO) Se cambiará en botBuyLogic
+                money: money, 
+                weapon: 'pistol', 
                 armor: false
             };
             bots.push(bot);
@@ -323,8 +330,8 @@
                 currentPath: paths[pathName] || [], 
                 currentWaypointIndex: 0,
                 flashed: 0,
-                money: money, // (NUEVO)
-                weapon: 'pistol', // (NUEVO)
+                money: money, 
+                weapon: 'pistol', 
                 armor: false
             };
             alliedBots.push(bot);
@@ -332,21 +339,24 @@
         
         // (NUEVO) Lógica de compra del Bot
         function botBuyLogic(bot, team) {
+            bot.armor = false;
+            bot.weapon = 'pistol'; // Default
+            
             // Lógica de compra simple
             if (bot.money >= 5750) { // AWP + Armor
                 bot.weapon = 'awp';
-                bot.money -= (weaponData['awp'].cost + weaponData['full_armor'].cost);
+                bot.money -= (weaponData['awp'].cost + 1000); // 1000 for armor
                 bot.armor = true;
             } else if (bot.money >= 4750) { // AWP
                 bot.weapon = 'awp';
                 bot.money -= weaponData['awp'].cost;
             } else if (bot.money >= 4100 && team === 'ct') { // M4 + Armor
                 bot.weapon = 'm4a1';
-                bot.money -= (weaponData['m4a1'].cost + weaponData['full_armor'].cost);
+                bot.money -= (weaponData['m4a1'].cost + 1000);
                 bot.armor = true;
             } else if (bot.money >= 3700 && team === 't') { // AK + Armor
                 bot.weapon = 'ak47';
-                bot.money -= (weaponData['ak47'].cost + weaponData['full_armor'].cost);
+                bot.money -= (weaponData['ak47'].cost + 1000);
                 bot.armor = true;
             } else if (bot.money >= 3100 && team === 'ct') { // M4
                 bot.weapon = 'm4a1';
@@ -354,8 +364,6 @@
             } else if (bot.money >= 2700 && team === 't') { // AK
                 bot.weapon = 'ak47';
                 bot.money -= weaponData['ak47'].cost;
-            } else {
-                bot.weapon = 'pistol'; // Eco
             }
             console.log(`Bot ${team} compró ${bot.weapon}. Dinero restante: ${bot.money}`);
         }
@@ -427,21 +435,21 @@
                     }
                 }
                 
-                const weapon = weaponData[bot.weapon]; // (NUEVO)
+                const weapon = weaponData[bot.weapon]; 
                 
                 if (seesPlayer) {
                     bot.state = 'attacking';
                     targetAngle = Math.atan2(player.y - bot.y, player.x - bot.x); 
-                    if (Date.now() - bot.lastShotTime > weapon.fireRate) { // (NUEVO)
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: targetAngle, damage: weapon.damage }; // (NUEVO)
+                    if (Date.now() - bot.lastShotTime > weapon.fireRate) { 
+                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: targetAngle, damage: weapon.damage }; 
                         botBullets.push(bullet);
                         bot.lastShotTime = Date.now();
                     }
                 } else if (seesAlly) {
                     bot.state = 'attacking';
                     targetAngle = Math.atan2(targetAlly.y - bot.y, targetAlly.x - bot.x); 
-                    if (Date.now() - bot.lastShotTime > weapon.fireRate) { // (NUEVO)
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: targetAngle, damage: weapon.damage }; // (NUEVO)
+                    if (Date.now() - bot.lastShotTime > weapon.fireRate) { 
+                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: targetAngle, damage: weapon.damage }; 
                         botBullets.push(bullet);
                         bot.lastShotTime = Date.now();
                     }
@@ -487,7 +495,7 @@
                 if (bot.health <= 0) {
                     alliedBots.splice(i, 1);
                     console.log(`Bot Aliado eliminado. Quedan ${alliedBots.length}.`);
-                    if (alliedBots.length === 0 && player.health <= 0) {
+                    if (alliedBots.length === 0 && !player.isAlive) { // (NUEVO)
                         endRound("Ts Ganan", "Ts");
                     }
                     continue;
@@ -663,6 +671,8 @@
         
         // --- 9. LÓGICA DE LA BOMBA Y DAÑO ---
         function applyPlayerDamage(damage) {
+            if (!player.isAlive) return; // (NUEVO)
+            
             if (player.armor <= 0) {
                 player.health -= damage;
             } else {
@@ -681,6 +691,7 @@
             }
             if (player.health <= 0) {
                 player.health = 0; 
+                player.isAlive = false; // (NUEVO)
                 console.log("¡HAS MUERTO!");
                 if (alliedBots.length === 0) { 
                     endRound("Ts Ganan", "Ts");
@@ -688,12 +699,11 @@
             }
         }
         function applyAlliedBotDamage(bot, damage) {
-            // (NUEVO) Daño reducido si el bot tiene armadura
-            const damageToApply = bot.armor ? damage * 0.5 : damage; // Simple 50%
+            const damageToApply = bot.armor ? damage * 0.5 : damage;
             bot.health -= damageToApply;
             
             if (bot.health <= 0) {
-                if (alliedBots.length <= 1 && player.health <= 0) { 
+                if (alliedBots.length <= 1 && !player.isAlive) { 
                     endRound("Ts Ganan", "Ts");
                 }
             }
@@ -702,7 +712,6 @@
             if (target === player) {
                 applyPlayerDamage(damage);
             } else {
-                // (NUEVO) Los bots ahora tienen armadura
                 const damageToApply = target.armor ? damage * 0.5 : damage;
                 target.health -= damageToApply; 
             }
@@ -775,7 +784,6 @@
                 alliedBots.forEach(b => b.money += ECONOMY.LOSS_BONUS);
                 bots.forEach(b => b.money += ECONOMY.WIN_BONUS);
             }
-            // (NUEVO) Aplicar límite
             if (player.money > MAX_MONEY) player.money = MAX_MONEY;
             alliedBots.forEach(b => { if (b.money > MAX_MONEY) b.money = MAX_MONEY; });
             bots.forEach(b => { if (b.money > MAX_MONEY) b.money = MAX_MONEY; });
@@ -818,6 +826,7 @@
             smokeClouds = []; 
             
             // --- Resetear Jugador ---
+            player.isAlive = true; // (NUEVO)
             player.hasBomb = false;
             player.health = 100;
             player.armor = 0; 
@@ -836,6 +845,7 @@
             };
             player.inventory.primary = null; 
             player.activeWeapon = 'secondary';
+            
             
             const playerSpawnZone = getSpawnZone('Spawn AT');
             if (playerSpawnZone) {
@@ -909,13 +919,13 @@
                 return;
             }
             
-            if (mouse.isDown && !game.isDefusing && player.flashed <= Date.now() && !isShopOpen) {
+            if (mouse.isDown && !game.isDefusing && player.flashed <= Date.now() && !isShopOpen && player.isAlive) {
                 useWeapon();
             } else {
                 if (player.recoil > 0) player.recoil -= 0.02;
                 if (player.recoil < 0) player.recoil = 0;
             }
-            if (!game.isDefusing && player.flashed <= Date.now() && !isShopOpen) { 
+            if (!game.isDefusing && player.flashed <= Date.now() && !isShopOpen && player.isAlive) { 
                 const oldX = player.x; const oldY = player.y;
                 if (keys['a'] || keys['A']) { player.x -= player.speed; }
                 if (keys['d'] || keys['D']) { player.x += player.speed; }
@@ -924,7 +934,7 @@
                 if (keys['s'] || keys['S']) { player.y += player.speed; }
                 for (const wall of walls) { if (checkCollision(player, wall)) { player.y = oldY; break; } }
                 player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-            } else if (player.flashed > Date.now()) {
+            } else if (player.flashed > Date.now() && player.isAlive) {
                 player.angle += 0.1; 
             }
             
@@ -935,7 +945,7 @@
             updateGrenades();
             updateFire();
             updateSmokes(); 
-            updateExplosions();
+            updateExplosions(); 
             
             // Balas del Jugador (daña T)
             for (let i = bullets.length - 1; i >= 0; i--) { let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (let j = bots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, bots[j])) { bots[j].health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
@@ -948,7 +958,27 @@
             // Balas de CT (daña T)
             for (let i = alliedBotBullets.length - 1; i >= 0; i--) { let bullet = alliedBotBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { alliedBotBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (let j = bots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, bots[j])) { bots[j].health -= bullet.damage; alliedBotBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { alliedBotBullets.splice(i, 1); } }
 
-            camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2;
+            // (NUEVO) Lógica de Cámara Espectador
+            if (player.isAlive) {
+                camera.x = player.x - canvas.width / 2;
+                camera.y = player.y - canvas.height / 2;
+            } else {
+                // Modo espectador: seguir aliados
+                if (alliedBots.length > 0) {
+                    if (game.spectatorTargetIndex >= alliedBots.length) {
+                        game.spectatorTargetIndex = 0; // Reinicia si el índice es inválido
+                    }
+                    const targetBot = alliedBots[game.spectatorTargetIndex];
+                    camera.x = targetBot.x - canvas.width / 2;
+                    camera.y = targetBot.y - canvas.height / 2;
+                } else {
+                    // Todos los aliados muertos, se queda en la última posición del jugador
+                    camera.x = player.x - canvas.width / 2;
+                    camera.y = player.y - canvas.height / 2;
+                }
+            }
+            
+            // Clamp camera
             if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0;
             if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width;
             if (camera.y + canvas.height > world.height) camera.y = world.height - canvas.height;
@@ -1123,7 +1153,7 @@
             
             // Bots T (Enemigos)
             for (const bot of bots) {
-                if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) { 
+                if (!player.isAlive || (hasLineOfSight(player, bot) && isTargetInFoV(player, bot))) { 
                     ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
                     ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
                     ctx.strokeStyle = 'black'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bot.size, 0); ctx.stroke();
@@ -1138,7 +1168,7 @@
             
             // Bots CT (Aliados)
             for (const bot of alliedBots) {
-                if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) { 
+                if (!player.isAlive || (hasLineOfSight(player, bot) && isTargetInFoV(player, bot))) { 
                     ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
                     ctx.fillStyle = bot.color; ctx.fillRect(-bot.size / 2, -bot.size / 2, bot.size, bot.size);
                     ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(bot.size, 0); ctx.stroke();
@@ -1156,11 +1186,13 @@
                 ctx.fill();
             }
             
-            // Jugador (Siempre se dibuja)
-            ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
-            ctx.fillStyle = player.color; ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
-            ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.size, 0); ctx.stroke();
-            ctx.restore(); 
+            // (NUEVO) Solo dibuja al jugador si está vivo
+            if (player.isAlive) {
+                ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
+                ctx.fillStyle = player.color; ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
+                ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.size, 0); ctx.stroke();
+                ctx.restore(); 
+            }
             ctx.restore(); 
             
             // --- HUD (Se dibuja encima de todo, sin cámara) ---
@@ -1182,7 +1214,8 @@
                 if (weapon) {
                     weaponNameStr = weaponData[weapon.name].name;
                     ammoStr = `${weapon.ammoInClip} / ${weapon.ammoInReserve}`;
-                } else {
+                } else if (player.activeWeapon === 'secondary' && player.inventory.secondary === null) {
+                    // Caso especial: ronda 1, pistola por defecto
                     weaponNameStr = "Manos";
                 }
             } else if (activeWeaponSlot === 'melee') {
@@ -1268,14 +1301,19 @@
             mmCtx.fillStyle = 'red';
             for (const bot of bots) {
                 let isVisible = false;
-                if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) {
+                // (NUEVO) Si estás muerto, ves todo en el radar
+                if (!player.isAlive) {
                     isVisible = true;
-                }
-                if (!isVisible) {
-                    for (const ally of alliedBots) {
-                        if (hasLineOfSight(ally, bot) && isTargetInFoV(ally, bot)) {
-                            isVisible = true;
-                            break;
+                } else {
+                    if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) {
+                        isVisible = true;
+                    }
+                    if (!isVisible) {
+                        for (const ally of alliedBots) {
+                            if (hasLineOfSight(ally, bot) && isTargetInFoV(ally, bot)) {
+                                isVisible = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -1298,10 +1336,13 @@
                 mmCtx.fill();
             }
             
-            mmCtx.fillStyle = 'white';
-            mmCtx.beginPath();
-            mmCtx.arc(player.x * mmScale, player.y * mmScale, 4, 0, Math.PI * 2);
-            mmCtx.fill();
+            // (NUEVO) No dibujar al jugador en el minimapa si está muerto
+            if (player.isAlive) {
+                mmCtx.fillStyle = 'white';
+                mmCtx.beginPath();
+                mmCtx.arc(player.x * mmScale, player.y * mmScale, 4, 0, Math.PI * 2);
+                mmCtx.fill();
+            }
         }
 
         // --- 12. EL BUCLE DEL JUEGO ---
