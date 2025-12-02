@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v31 - IA "Humana"</title>
+    <title>Prototipo 2D v32 - Rotación Inteligente</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -95,7 +95,7 @@
         };
         
         let game = {
-            bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null },
+            bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null, site: null }, // (NUEVO)
             isDefusing: false,
             defuseStartTime: 0,
             messageTimerId: null,
@@ -449,21 +449,20 @@
                 
                 // 2. Lógica de Combate (Parar y Disparar)
                 if (seesPlayer) {
-                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now(); // (NUEVO) Tiempo de Reacción
+                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now(); 
                     bot.state = 'attacking';
                     
                     const angleToEnemy = Math.atan2(player.y - bot.y, player.x - bot.x);
-                    bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); // (NUEVO) Puntería Lenta
+                    bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); 
                     
                     if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { 
                         const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: weapon.damage }; 
                         botBullets.push(bullet);
                         bot.lastShotTime = Date.now();
                         
-                        // (NUEVO) Ráfagas
                         bot.burstCount++;
                         if (bot.burstCount >= 4) {
-                            bot.lastShotTime = Date.now() + 500; // Pausa
+                            bot.lastShotTime = Date.now() + 500; 
                             bot.burstCount = 0;
                         }
                     }
@@ -487,7 +486,7 @@
                     }
                 } else {
                     // 3. Lógica de Movimiento (Si no hay combate)
-                    bot.burstCount = 0; // Resetea la ráfaga
+                    bot.burstCount = 0; 
                     if (game.bomb.state === 'planted' && !bot.hasBomb) {
                         bot.state = 'guarding';
                         const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
@@ -577,10 +576,44 @@
                     
                     if (game.bomb.state === 'planted') {
                         // ¡ROTAR!
-                        bot.state = 'rotating'; 
-                        const angleToBomb = Math.atan2(game.bomb.y - bot.y, game.bomb.x - bot.x);
-                        bot.angle = lerpAngle(bot.angle, angleToBomb, 0.1);
-                        moveBot(bot, angleToBomb); // Corre hacia la bomba
+                        if (bot.state !== 'rotating') { // Solo asignar ruta una vez
+                            let botAtSite = false;
+                            const targetZoneName = game.bomb.site === 'A' ? 'Sitio A' : 'Sitio B';
+                            for (const zone of zones) {
+                                if (zone.name === targetZoneName && checkObjectCollision(bot, zone)) {
+                                    botAtSite = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (botAtSite) {
+                                bot.state = 'seeking'; // Ya está en el sitio, que cace
+                            } else {
+                                // Necesita rotar
+                                bot.state = 'rotating';
+                                const targetPathName = game.bomb.site === 'A' ? 'path_CT_A_1' : 'path_CT_B_1'; // (Ruta de rotación simple)
+                                bot.currentPath = paths[targetPathName];
+                                bot.currentWaypointIndex = 0;
+                            }
+                        }
+
+                        // Moverse según el estado
+                        if (bot.state === 'rotating') {
+                             const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
+                             if (targetWaypoint) {
+                                const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
+                                bot.angle = lerpAngle(bot.angle, angleToWaypoint, 0.1);
+                                moveBot(bot, angleToWaypoint);
+                                const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
+                                if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
+                             } else {
+                                bot.state = 'seeking'; // Llegó al sitio
+                             }
+                        } else if (bot.state === 'seeking') {
+                             const angleToBomb = Math.atan2(game.bomb.y - bot.y, game.bomb.x - bot.x);
+                             bot.angle = lerpAngle(bot.angle, angleToBomb, 0.1);
+                             moveBot(bot, angleToBomb);
+                        }
 
                     } else if (bot.state === 'navigating') {
                         // Seguir ruta de defensa
@@ -597,10 +630,12 @@
                     } 
                     else {
                         // Modo 'seeking' (cazar al enemigo más cercano)
-                        bot.state = 'seeking';
-                        const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
-                        bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.1);
-                        moveBot(bot, angleToEnemy);
+                        if (closestEnemy) {
+                            bot.state = 'seeking';
+                            const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
+                            bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.1);
+                            moveBot(bot, angleToEnemy);
+                        }
                     }
                 }
             }
@@ -777,7 +812,16 @@
         }
         function plantBomb(bot) {
             if (game.bomb.state === 'planted') return; 
-            console.log("¡Bomba Plantada por el Bot!");
+            
+            // (NUEVO) Detectar en qué sitio se plantó
+            for (const zone of zones) {
+                if (zone.name.startsWith('Sitio') && checkObjectCollision(bot, zone)) {
+                    game.bomb.site = zone.name.includes('A') ? 'A' : 'B';
+                    break;
+                }
+            }
+            
+            console.log(`¡Bomba Plantada en Sitio ${game.bomb.site}!`);
             bot.isPlanting = false;
             bot.hasBomb = false;
             game.bomb.state = 'planted';
@@ -851,6 +895,7 @@
             console.log(`--- Nueva Ronda ${game.roundNumber} (CT: ${game.score.ct} - T: ${game.score.t}) ---`);
             isRoundEnding = false; 
             game.bomb.state = 'unplanted';
+            game.bomb.site = null; // (NUEVO)
             if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
             game.bomb.timerId = null;
             
@@ -1257,7 +1302,6 @@
                     weaponNameStr = weaponData[weapon.name].name;
                     ammoStr = `${weapon.ammoInClip} / ${weapon.ammoInReserve}`;
                 } else if (player.activeWeapon === 'secondary' && player.inventory.secondary === null) {
-                    // Caso especial: ronda 1, pistola por defecto (ahora se asigna en resetRound)
                     weaponNameStr = "Manos";
                 }
             } else if (activeWeaponSlot === 'melee') {
