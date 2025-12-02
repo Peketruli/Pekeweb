@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v31 - IA de Rotación</title>
+    <title>Prototipo 2D v31 - IA "Humana"</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -293,6 +293,14 @@
         function checkZoneCollision(player, zone) { const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
         function checkObjectCollision(obj1, obj2) { const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
 
+        // (NUEVO) Función de interpolación de ángulo (para puntería "lenta")
+        function lerpAngle(start, end, amount) {
+            let difference = end - start;
+            if (difference > Math.PI) difference -= 2 * Math.PI;
+            if (difference < -Math.PI) difference += 2 * Math.PI;
+            return start + difference * amount;
+        }
+
         // --- 7. LÓGICA DE IA (5v5) ---
         function getSpawnZone(name) {
             for (const zone of zones) {
@@ -316,7 +324,10 @@
                 flashed: 0,
                 money: money, 
                 weapon: 'pistol', 
-                armor: false
+                armor: false,
+                reactionTime: 200 + Math.random() * 150, // (NUEVO)
+                lastSeenTime: 0, // (NUEVO)
+                burstCount: 0 // (NUEVO)
             };
             bots.push(bot);
         }
@@ -331,7 +342,10 @@
                 flashed: 0,
                 money: money, 
                 weapon: 'pistol', 
-                armor: false
+                armor: false,
+                reactionTime: 200 + Math.random() * 150, // (NUEVO)
+                lastSeenTime: 0, // (NUEVO)
+                burstCount: 0 // (NUEVO)
             };
             alliedBots.push(bot);
         }
@@ -340,26 +354,25 @@
             bot.armor = false;
             bot.weapon = 'pistol'; // Default
             
-            // Lógica de compra simple
-            if (bot.money >= 5750) { // AWP + Armor
+            if (bot.money >= 5750) { 
                 bot.weapon = 'awp';
-                bot.money -= (weaponData['awp'].cost + 1000); // 1000 for armor
+                bot.money -= (weaponData['awp'].cost + 1000); 
                 bot.armor = true;
-            } else if (bot.money >= 4750) { // AWP
+            } else if (bot.money >= 4750) { 
                 bot.weapon = 'awp';
                 bot.money -= weaponData['awp'].cost;
-            } else if (bot.money >= 4100 && team === 'ct') { // M4 + Armor
+            } else if (bot.money >= 4100 && team === 'ct') { 
                 bot.weapon = 'm4a1';
                 bot.money -= (weaponData['m4a1'].cost + 1000);
                 bot.armor = true;
-            } else if (bot.money >= 3700 && team === 't') { // AK + Armor
+            } else if (bot.money >= 3700 && team === 't') { 
                 bot.weapon = 'ak47';
                 bot.money -= (weaponData['ak47'].cost + 1000);
                 bot.armor = true;
-            } else if (bot.money >= 3100 && team === 'ct') { // M4
+            } else if (bot.money >= 3100 && team === 'ct') { 
                 bot.weapon = 'm4a1';
                 bot.money -= weaponData['m4a1'].cost;
-            } else if (bot.money >= 2700 && team === 't') { // AK
+            } else if (bot.money >= 2700 && team === 't') { 
                 bot.weapon = 'ak47';
                 bot.money -= weaponData['ak47'].cost;
             }
@@ -391,7 +404,7 @@
             return (deltaAngle <= Math.PI / 2); 
         }
 
-        // --- IA TÁCTICA (T-BOTS) ---
+        // --- (NUEVO) IA TÁCTICA (T-BOTS) ---
         function updateBots() {
             for (let i = bots.length - 1; i >= 0; i--) {
                 const bot = bots[i];
@@ -414,14 +427,13 @@
                     continue; 
                 }
                 
-                let targetAngle = bot.angle; 
-                
                 if (bot.isPlanting) {
                     const plantProgress = Date.now() - bot.plantStartTime;
                     if (plantProgress >= GAME_TIMES.PLANT) { plantBomb(bot); }
                     continue; 
                 }
                 
+                // 1. Detección
                 const seesPlayer = hasLineOfSight(bot, player) && isTargetInFoV(bot, player);
                 let seesAlly = false;
                 let targetAlly = null;
@@ -435,58 +447,79 @@
                 
                 const weapon = weaponData[bot.weapon]; 
                 
+                // 2. Lógica de Combate (Parar y Disparar)
                 if (seesPlayer) {
+                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now(); // (NUEVO) Tiempo de Reacción
                     bot.state = 'attacking';
-                    targetAngle = Math.atan2(player.y - bot.y, player.x - bot.x); 
-                    if (Date.now() - bot.lastShotTime > weapon.fireRate) { 
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: targetAngle, damage: weapon.damage }; 
+                    
+                    const angleToEnemy = Math.atan2(player.y - bot.y, player.x - bot.x);
+                    bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); // (NUEVO) Puntería Lenta
+                    
+                    if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { 
+                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: weapon.damage }; 
                         botBullets.push(bullet);
                         bot.lastShotTime = Date.now();
+                        
+                        // (NUEVO) Ráfagas
+                        bot.burstCount++;
+                        if (bot.burstCount >= 4) {
+                            bot.lastShotTime = Date.now() + 500; // Pausa
+                            bot.burstCount = 0;
+                        }
                     }
                 } else if (seesAlly) {
+                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now();
                     bot.state = 'attacking';
-                    targetAngle = Math.atan2(targetAlly.y - bot.y, targetAlly.x - bot.x); 
-                    if (Date.now() - bot.lastShotTime > weapon.fireRate) { 
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: targetAngle, damage: weapon.damage }; 
+                    
+                    const angleToEnemy = Math.atan2(targetAlly.y - bot.y, targetAlly.x - bot.x);
+                    bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); 
+                    
+                    if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { 
+                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: weapon.damage }; 
                         botBullets.push(bullet);
                         bot.lastShotTime = Date.now();
+                        
+                        bot.burstCount++;
+                        if (bot.burstCount >= 4) {
+                            bot.lastShotTime = Date.now() + 500;
+                            bot.burstCount = 0;
+                        }
                     }
                 } else {
-                    bot.state = 'navigating'; 
-                }
-
-                if (game.bomb.state === 'planted' && !bot.hasBomb) {
-                    bot.state = 'guarding';
-                    const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
-                    if (bot.state !== 'attacking') targetAngle = angleToPlayer; 
-                    moveBot(bot, angleToPlayer); 
-                } else {
-                    const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
-                    if (targetWaypoint) {
-                        const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
-                        if (bot.state !== 'attacking') targetAngle = angleToWaypoint; 
-                        moveBot(bot, angleToWaypoint);
-                        const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
-                        if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
+                    // 3. Lógica de Movimiento (Si no hay combate)
+                    bot.burstCount = 0; // Resetea la ráfaga
+                    if (game.bomb.state === 'planted' && !bot.hasBomb) {
+                        bot.state = 'guarding';
+                        const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
+                        bot.angle = lerpAngle(bot.angle, angleToPlayer, 0.1); 
+                        moveBot(bot, bot.angle); 
                     } else {
-                        if (bot.hasBomb && game.bomb.state === 'unplanted') {
-                            bot.state = 'planting';
-                            bot.isPlanting = true;
-                            bot.plantStartTime = Date.now();
+                        bot.state = 'navigating';
+                        const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
+                        if (targetWaypoint) {
+                            const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
+                            bot.angle = lerpAngle(bot.angle, angleToWaypoint, 0.1); 
+                            moveBot(bot, angleToWaypoint);
+                            const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
+                            if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
                         } else {
-                            bot.state = 'guarding'; 
-                            const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
-                            if (bot.state !== 'attacking') targetAngle = angleToPlayer;
-                            moveBot(bot, angleToPlayer); 
+                            if (bot.hasBomb && game.bomb.state === 'unplanted') {
+                                bot.state = 'planting';
+                                bot.isPlanting = true;
+                                bot.plantStartTime = Date.now();
+                            } else {
+                                bot.state = 'guarding'; 
+                                const angleToPlayer = Math.atan2(player.y - bot.y, player.x - bot.x);
+                                bot.angle = lerpAngle(bot.angle, angleToPlayer, 0.1);
+                                moveBot(bot, angleToPlayer); 
+                            }
                         }
                     }
                 }
-                
-                bot.angle = targetAngle; 
             }
         }
         
-        // (NUEVO) IA Aliada (CT) con ROTACIÓN
+        // (NUEVO) IA Aliada (CT) con ROTACIÓN y Parar/Disparar
         function updateAlliedBots() {
             for (let i = alliedBots.length - 1; i >= 0; i--) {
                 const bot = alliedBots[i];
@@ -505,92 +538,69 @@
                     continue; 
                 }
                 
-                // --- ¡¡NUEVA LÓGICA DE ROTACIÓN!! ---
-                if (game.bomb.state === 'planted') {
-                    bot.state = 'rotating'; // Nuevo estado
-                    
-                    // Buscar enemigo más cercano
-                    let closestEnemy = null;
-                    let minDistance = Infinity;
-                    for (const enemy of bots) {
-                        const distance = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            closestEnemy = enemy;
-                        }
+                // 1. Detección
+                let closestEnemy = null;
+                let minDistance = Infinity;
+                for (const enemy of bots) {
+                    const distance = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        closestEnemy = enemy;
                     }
-                    
-                    const seesEnemy = closestEnemy && hasLineOfSight(bot, closestEnemy) && isTargetInFoV(bot, closestEnemy);
-                    
-                    if (seesEnemy) {
-                        // ¡Ve a un enemigo! Atacarlo.
-                        const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
-                        bot.angle = angleToEnemy;
-                        moveBot(bot, bot.angle); // "Run and Gun"
-                        
-                        const weapon = weaponData[bot.weapon];
-                        if (Date.now() - bot.lastShotTime > weapon.fireRate) {
-                            const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: weapon.damage };
-                            alliedBotBullets.push(bullet);
-                            bot.lastShotTime = Date.now();
-                        }
-                    } else {
-                        // No ve a nadie. Correr hacia la bomba.
-                        const angleToBomb = Math.atan2(game.bomb.y - bot.y, game.bomb.x - bot.x);
-                        bot.angle = angleToBomb;
-                        moveBot(bot, angleToBomb);
-                    }
-
-                } else {
-                    // --- LÓGICA DE DEFENSA NORMAL (Bomba no plantada) ---
+                }
                 
-                    let closestEnemy = null;
-                    let minDistance = Infinity;
-                    for (const enemy of bots) {
-                        const distance = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
-                        if (distance < minDistance) {
-                            minDistance = distance;
-                            closestEnemy = enemy;
-                        }
-                    }
+                const seesEnemy = closestEnemy && hasLineOfSight(bot, closestEnemy) && isTargetInFoV(bot, closestEnemy);
+                const weapon = weaponData[bot.weapon]; 
+                
+                // 2. Lógica de Combate (Parar y Disparar)
+                if (seesEnemy) {
+                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now();
+                    bot.state = 'attacking';
                     
-                    if (!closestEnemy) {
-                        bot.state = 'idle';
-                        continue;
-                    }
-                    
-                    const seesEnemy = hasLineOfSight(bot, closestEnemy) && isTargetInFoV(bot, closestEnemy);
                     const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
+                    bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); // Puntería lenta
                     
-                    const weapon = weaponData[bot.weapon]; 
+                    if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { 
+                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: weapon.damage }; 
+                        alliedBotBullets.push(bullet);
+                        bot.lastShotTime = Date.now();
+                        
+                        bot.burstCount++;
+                        if (bot.burstCount >= 4) {
+                            bot.lastShotTime = Date.now() + 500;
+                            bot.burstCount = 0;
+                        }
+                    }
+                } else {
+                    // 3. Lógica de Movimiento (Si no hay combate)
+                    bot.burstCount = 0;
                     
-                    if (seesEnemy) {
-                        bot.state = 'attacking';
-                        bot.angle = angleToEnemy;
-                        moveBot(bot, bot.angle); 
-                        if (Date.now() - bot.lastShotTime > weapon.fireRate) { 
-                            const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: weapon.damage }; 
-                            alliedBotBullets.push(bullet);
-                            bot.lastShotTime = Date.now();
+                    if (game.bomb.state === 'planted') {
+                        // ¡ROTAR!
+                        bot.state = 'rotating'; 
+                        const angleToBomb = Math.atan2(game.bomb.y - bot.y, game.bomb.x - bot.x);
+                        bot.angle = lerpAngle(bot.angle, angleToBomb, 0.1);
+                        moveBot(bot, angleToBomb); // Corre hacia la bomba
+
+                    } else if (bot.state === 'navigating') {
+                        // Seguir ruta de defensa
+                        const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
+                        if (targetWaypoint) {
+                            const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
+                            bot.angle = lerpAngle(bot.angle, angleToWaypoint, 0.1);
+                            moveBot(bot, angleToWaypoint);
+                            const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
+                            if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
+                        } else {
+                            bot.state = 'seeking'; // Terminó la ruta
                         }
-                    } else {
-                        if (bot.state === 'navigating') {
-                            const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
-                            if (targetWaypoint) {
-                                const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
-                                bot.angle = angleToWaypoint;
-                                moveBot(bot, angleToWaypoint);
-                                const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
-                                if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
-                            } else {
-                                bot.state = 'seeking';
-                            }
-                        } 
-                        else {
-                            bot.state = 'seeking';
-                            bot.angle = angleToEnemy;
-                            moveBot(bot, bot.angle);
-                        }
+                    } 
+                    else {
+                        // Modo 'seeking' (cazar al enemigo más cercano)
+                        bot.state = 'seeking';
+                        const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
+                        bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.1);
+                        moveBot(bot, angleToEnemy);
                     }
                 }
             }
@@ -1247,6 +1257,7 @@
                     weaponNameStr = weaponData[weapon.name].name;
                     ammoStr = `${weapon.ammoInClip} / ${weapon.ammoInReserve}`;
                 } else if (player.activeWeapon === 'secondary' && player.inventory.secondary === null) {
+                    // Caso especial: ronda 1, pistola por defecto (ahora se asigna en resetRound)
                     weaponNameStr = "Manos";
                 }
             } else if (activeWeaponSlot === 'melee') {
@@ -1351,7 +1362,7 @@
             mmCtx.fillStyle = 'red';
             for (const bot of bots) {
                 let isVisible = false;
-                if (!player.isAlive) { // (NUEVO) Ver todo si estás muerto
+                if (!player.isAlive) { 
                     isVisible = true;
                 } else {
                     if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) {
