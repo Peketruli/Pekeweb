@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v29 - Economía y Tienda</title>
+    <title>Prototipo 2D v31 - Munición y Recarga</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -12,7 +12,7 @@
             position: absolute;
             top: 20px;
             left: 20px;
-            width: 240px; /* (NUEVO) Más pequeño */
+            width: 240px; 
             height: 160px;
             border: 2px solid #555;
             background-color: rgba(50, 50, 50, 0.7); 
@@ -80,12 +80,12 @@
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
         
-        const minimapScale = 0.2; // (CORREGIDO)
+        const minimapScale = 0.2; 
         
         let camera = { x: 0, y: 0 };
-        const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000, BUY_TIME: 10000 }; // (NUEVO)
+        const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000, BUY_TIME: 10000 };
         
-        // (NUEVO) Constantes de Economía
+        // (NUEVO) Economía con límite
         const MAX_MONEY = 16000;
         const ECONOMY = {
             ROUND_1: 700,
@@ -95,7 +95,6 @@
             DEFUSE_BONUS: 500
         };
         
-        // (NUEVO) Estado del juego con puntuación
         let game = {
             bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null },
             isDefusing: false,
@@ -103,9 +102,22 @@
             messageTimerId: null,
             roundNumber: 0,
             score: { ct: 0, t: 0 },
-            isBuyTime: false // (NUEVO)
+            isBuyTime: false 
         };
-        const weaponData = { 'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 }, 'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05 }, 'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03 }, 'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01 }, 'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01 }, 'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0 },
+        
+        // (NUEVO) Datos de armas con munición
+        const weaponData = {
+            'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 },
+            'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05,
+                clipSize: 20, reserveAmmo: 100, reloadTime: 1500 },
+            'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03,
+                clipSize: 7, reserveAmmo: 35, reloadTime: 2000 },
+            'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01,
+                clipSize: 30, reserveAmmo: 90, reloadTime: 2500 },
+            'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01,
+                clipSize: 25, reserveAmmo: 75, reloadTime: 3000 },
+            'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0,
+                clipSize: 5, reserveAmmo: 30, reloadTime: 3500 },
             'he_grenade': { name: 'Granada HE', type: 'grenade', damage: 90, fireRate: 1000, range: 200 },
             'molotov': { name: 'Molotov', type: 'grenade', damage: 10, fireRate: 1000, range: 100 },
             'flash': { name: 'Flash', type: 'grenade', damage: 0, fireRate: 1000, range: 800 },
@@ -130,13 +142,18 @@
 
         // --- 3. EL JUGADOR (CT) ---
         let player = {
-            x: 142, y: 1087, size: mapData.playerSize, color: 'cyan', speed: 4, angle: 0, health: 100, armor: 0, money: 0,
+            x: 142, y: 1087, size: mapData.playerSize, color: 'cyan', speed: 4, angle: 0, health: 100, armor: 0, money: 0, 
             inventory: { 
-                primary: null, secondary: 'pistol', melee: 'knife', kevlar: false, helmet: false,
+                primary: null, // (NUEVO) Será un objeto { name, ammoInClip, ammoInReserve }
+                secondary: null, // (NUEVO) Será un objeto
+                melee: 'knife', 
+                kevlar: false, helmet: false,
                 grenades: { he: 0, flash: 0, smoke: 0, molotov: 0 } 
             },
-            activeWeapon: 'secondary', hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false,
-            flashed: 0 
+            activeWeapon: 'secondary', // (NUEVO) Sigue siendo 'secondary', pero el objeto se asigna en resetRound
+            hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false,
+            flashed: 0,
+            isReloading: false // (NUEVO)
         };
 
         // --- 4. ALMACENES Y ESTADO ---
@@ -166,6 +183,10 @@
                     game.defuseStartTime = Date.now();
                 }
             }
+            // (NUEVO) Tecla de Recarga
+            if (e.key === 'r' && !isShopOpen && !game.isBuyTime && !player.isReloading) {
+                reload();
+            }
         });
         window.addEventListener('keyup', (e) => {
             delete keys[e.key];
@@ -173,9 +194,9 @@
                 game.isDefusing = false;
                 hideProgress();
             }
-            if (!isShopOpen) { // No cambiar de arma si la tienda está abierta
+            if (!isShopOpen) { 
                 if (e.key === '1') { if (player.inventory.primary) { player.activeWeapon = 'primary'; player.recoil = 0; } }
-                else if (e.key === '2') { player.activeWeapon = 'secondary'; player.recoil = 0; }
+                else if (e.key === '2') { if (player.inventory.secondary) { player.activeWeapon = 'secondary'; player.recoil = 0; } }
                 else if (e.key === '3') { player.activeWeapon = 'melee'; player.recoil = 0; }
                 else if (e.key === '4') { 
                     if (player.inventory.grenades.he > 0) {
@@ -199,22 +220,21 @@
                 }
             }
             if (e.key === 'b' || e.key === 'B') {
-                if (game.isBuyTime) { // Durante el tiempo de compra, puede abrir/cerrar en cualquier sitio
+                if (game.isBuyTime) { 
                     isShopOpen = !isShopOpen;
                 } else {
-                    // Después, solo en la zona de spawn
                     let inSpawn = false;
                     for (const zone of zones) { if (zone.name === 'Spawn AT' && checkZoneCollision(player, zone)) { inSpawn = true; break; } }
                     if (inSpawn) {
                         isShopOpen = !isShopOpen;
                     } else {
-                        isShopOpen = false; // Cierra si no está en spawn
+                        isShopOpen = false;
                     }
                 }
             }
         });
         window.addEventListener('mousedown', (e) => {
-            if (isShopOpen || game.isDefusing || player.flashed > Date.now()) return; 
+            if (isShopOpen || game.isDefusing || player.flashed > Date.now() || player.isReloading) return; // (NUEVO) No disparar si recarga
             mouse.isDown = true;
             player.hasFiredSemi = false; 
         });
@@ -226,8 +246,22 @@
             player.recoil = 0.0;
             const itemData = weaponData[itemName];
             if (itemData) { 
-                if (itemData.type === 'primary') { player.inventory.primary = itemName; player.activeWeapon = 'primary'; }
-                else if (itemData.type === 'secondary') { player.inventory.secondary = itemName; player.activeWeapon = 'secondary'; }
+                if (itemData.type === 'primary') { 
+                    player.inventory.primary = {
+                        name: itemName,
+                        ammoInClip: itemData.clipSize,
+                        ammoInReserve: itemData.reserveAmmo
+                    };
+                    player.activeWeapon = 'primary'; 
+                }
+                else if (itemData.type === 'secondary') { 
+                    player.inventory.secondary = {
+                        name: itemName,
+                        ammoInClip: itemData.clipSize,
+                        ammoInReserve: itemData.reserveAmmo
+                    };
+                    player.activeWeapon = 'secondary';
+                }
                 else if (itemData.type === 'grenade') { 
                     if(itemName === 'he_grenade') player.inventory.grenades.he++; 
                     if(itemName === 'molotov') player.inventory.grenades.molotov++; 
@@ -320,8 +354,8 @@
             for (let i = bots.length - 1; i >= 0; i--) {
                 const bot = bots[i];
                 if (bot.health <= 0) {
-                    player.money += ECONOMY.KILL_BONUS; // (NUEVO)
-                    if (player.money > MAX_MONEY) player.money = MAX_MONEY; // (NUEVO)
+                    player.money += ECONOMY.KILL_BONUS; 
+                    if (player.money > MAX_MONEY) player.money = MAX_MONEY;
                     
                     bots.splice(i, 1);
                     console.log(`Bot T eliminado, +$${ECONOMY.KILL_BONUS}. Quedan ${bots.length} bots.`);
@@ -504,19 +538,56 @@
                 return;
             }
             
-            const weaponName = player.inventory[player.activeWeapon];
-            if (!weaponName) return; 
-            const weapon = weaponData[weaponName]; 
+            // (NUEVO) Lógica de Arma con Munición
+            const weaponSlot = player.inventory[player.activeWeapon];
+            if (!weaponSlot) return; 
+            const weapon = weaponData[weaponSlot.name];
+            
             if (Date.now() - player.lastShotTime < weapon.fireRate) return; 
             if (!weapon.automatic && player.hasFiredSemi) return; 
-            player.lastShotTime = Date.now(); 
-            player.hasFiredSemi = true; 
-            if (weapon.type === 'melee') { useMelee(weapon); } 
-            else { shootBullet(weapon); }
+            
+            // Comprobar munición
+            if (weaponSlot.ammoInClip > 0) {
+                player.lastShotTime = Date.now(); 
+                player.hasFiredSemi = true; 
+                if (weapon.type === 'melee') { useMelee(weapon); } 
+                else { 
+                    shootBullet(weapon); 
+                    weaponSlot.ammoInClip--; // ¡Resta una bala!
+                }
+            } else {
+                // (Aquí sonaría el "clic" de cargador vacío)
+                console.log("¡Sin munición!");
+            }
         }
         function useMelee(weapon) { const attackLine = { x: player.x + Math.cos(player.angle) * weapon.range / 2, y: player.y + Math.sin(player.angle) * weapon.range / 2, size: weapon.range }; for (const bot of bots) { if (checkObjectCollision(attackLine, bot)) { bot.health -= weapon.damage; console.log("¡Cuchillada!"); break; } } }
         function shootBullet(weapon) { const totalSpread = weapon.spread + player.recoil; const spread = (Math.random() - 0.5) * totalSpread; const bulletAngle = player.angle + spread; player.recoil += weapon.recoil; const bullet = { x: player.x, y: player.y, size: 5, color: 'yellow', speed: 15, angle: bulletAngle, damage: weapon.damage }; bullets.push(bullet); }
         
+        // (NUEVO) Función de Recarga
+        function reload() {
+            if (player.activeWeapon === 'primary' || player.activeWeapon === 'secondary') {
+                const weaponSlot = player.inventory[player.activeWeapon];
+                const weapon = weaponData[weaponSlot.name];
+                
+                if (weaponSlot.ammoInClip === weapon.clipSize) return; // Cargador lleno
+                if (weaponSlot.ammoInReserve === 0) return; // Sin reserva
+                
+                player.isReloading = true;
+                console.log("Recargando...");
+                
+                setTimeout(() => {
+                    const bulletsNeeded = weapon.clipSize - weaponSlot.ammoInClip;
+                    const bulletsToReload = Math.min(bulletsNeeded, weaponSlot.ammoInReserve);
+                    
+                    weaponSlot.ammoInClip += bulletsToReload;
+                    weaponSlot.ammoInReserve -= bulletsToReload;
+                    
+                    player.isReloading = false;
+                    console.log("¡Recarga completa!");
+                }, weapon.reloadTime);
+            }
+        }
+
         function throwGrenade(type) {
             let grenadeData = {};
             if (type === 'he' && player.inventory.grenades.he > 0) {
@@ -623,8 +694,8 @@
         }
         function defuseBomb() {
             console.log("¡Bomba Desactivada!");
-            player.money += ECONOMY.DEFUSE_BONUS; // (NUEVO)
-            if (player.money > MAX_MONEY) player.money = MAX_MONEY; // (NUEVO)
+            player.money += ECONOMY.DEFUSE_BONUS; 
+            if (player.money > MAX_MONEY) player.money = MAX_MONEY;
             
             clearTimeout(game.bomb.timerId);
             game.isDefusing = false;
@@ -647,7 +718,6 @@
             if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
             console.log("Fin de ronda: " + message);
 
-            // (NUEVO) Asignar dinero de ronda
             if (winner === 'CTs') {
                 game.score.ct++;
                 player.money += ECONOMY.WIN_BONUS; 
@@ -655,7 +725,6 @@
                 game.score.t++;
                 player.money += ECONOMY.LOSS_BONUS; 
             }
-            // (NUEVO) Aplicar límite
             if (player.money > MAX_MONEY) {
                 player.money = MAX_MONEY;
             }
@@ -685,13 +754,24 @@
             player.health = 100;
             player.armor = 0; 
             player.inventory.helmet = false;
-            player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; // (NUEVO) Granadas a 0
+            player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; 
             
             // (NUEVO) Economía de Ronda
             if (game.roundNumber === 1) {
                 player.money = ECONOMY.ROUND_1;
             } 
             // Si no es la ronda 1, el dinero ya se sumó en endRound()
+            
+            // (NUEVO) Dar pistola por defecto y munición
+            const pistol = weaponData['pistol'];
+            player.inventory.secondary = {
+                name: 'pistol',
+                ammoInClip: pistol.clipSize,
+                ammoInReserve: pistol.reserveAmmo
+            };
+            player.inventory.primary = null; // Quitar arma primaria
+            player.activeWeapon = 'secondary';
+            
             
             const playerSpawnZone = getSpawnZone('Spawn AT');
             if (playerSpawnZone) {
@@ -756,17 +836,15 @@
 
         // --- 10. FUNCIÓN DE ACTUALIZACIÓN (Lógica) ---
         function update() {
-            // (NUEVO) Lógica de pausa
             if (isRoundEnding) return;
-            if (game.isBuyTime) { // Si es tiempo de compra, solo actualiza la cámara (para ver el spawn)
+            if (game.isBuyTime) { 
                 camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2;
                 if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0;
                 if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width;
                 if (camera.y + canvas.height > world.height) camera.y = world.height - canvas.height;
-                return; // Congela todo el juego
+                return;
             }
             
-            // (NUEVO) Si la tienda está abierta, solo el jugador se pausa
             if (mouse.isDown && !game.isDefusing && player.flashed <= Date.now() && !isShopOpen) {
                 useWeapon();
             } else {
@@ -858,7 +936,6 @@
                 }
             }
         }
-        // (NUEVO) BUG CORREGIDO
         function updateExplosions() {
              for (let i = explosions.length - 1; i >= 0; i--) {
                 explosions[i].life--;
@@ -1034,7 +1111,19 @@
             
             const activeWeaponSlot = player.activeWeapon;
             let weaponNameStr = "";
-            if (activeWeaponSlot === 'he_grenade') {
+            let ammoStr = ""; // (NUEVO)
+            
+            if (activeWeaponSlot === 'primary' || activeWeaponSlot === 'secondary') {
+                const weapon = player.inventory[activeWeaponSlot];
+                if (weapon) {
+                    weaponNameStr = weaponData[weapon.name].name;
+                    ammoStr = `${weapon.ammoInClip} / ${weapon.ammoInReserve}`;
+                } else {
+                    weaponNameStr = "Manos";
+                }
+            } else if (activeWeaponSlot === 'melee') {
+                 weaponNameStr = weaponData['knife'].name;
+            } else if (activeWeaponSlot === 'he_grenade') {
                 weaponNameStr = `HE (${player.inventory.grenades.he})`;
             } else if (activeWeaponSlot === 'molotov') { 
                 weaponNameStr = `Molotov (${player.inventory.grenades.molotov})`;
@@ -1042,15 +1131,22 @@
                 weaponNameStr = `Flash (${player.inventory.grenades.flash})`;
             } else if (activeWeaponSlot === 'smoke') {
                 weaponNameStr = `Humo (${player.inventory.grenades.smoke})`;
-            } else {
-                const activeWeaponName = player.inventory[activeWeaponSlot];
-                weaponNameStr = activeWeaponName ? weaponData[activeWeaponName].name : "Manos";
             }
+
             ctx.fillText(`Arma: ${weaponNameStr}`, 20, 250); 
-            
             ctx.fillStyle = 'white'; 
             ctx.fillText(`Dinero: $${player.money}`, 20, 280); 
             if (player.hasBomb) { ctx.fillStyle = 'orange'; ctx.fillText("[BOMBA]", 20, 310); }
+
+            // (NUEVO) Dibujar munición en la esquina opuesta
+            ctx.font = 'bold 36px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillStyle = 'white';
+            ctx.fillText(ammoStr, window.innerWidth - 30, window.innerHeight - 30);
+            if (player.isReloading) {
+                ctx.fillText("RECARGANDO...", window.innerWidth - 30, window.innerHeight - 70);
+            }
+            ctx.textAlign = 'left'; // Resetear
             
             // Contadores de equipo
             ctx.fillStyle = 'red';
