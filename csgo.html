@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v31 - Modo Espectador</title>
+    <title>Prototipo 2D v31 - IA de Rotación</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -102,7 +102,7 @@
             roundNumber: 0,
             score: { ct: 0, t: 0 },
             isBuyTime: false,
-            spectatorTargetIndex: 0 // (NUEVO)
+            spectatorTargetIndex: 0 
         };
         
         const weaponData = {
@@ -153,7 +153,7 @@
             hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false,
             flashed: 0,
             isReloading: false,
-            isAlive: true // (NUEVO)
+            isAlive: true 
         };
 
         // --- 4. ALMACENES Y ESTADO ---
@@ -177,13 +177,13 @@
         });
         window.addEventListener('keydown', (e) => { 
             keys[e.key] = true; 
-            if (e.key === 'e' && !isShopOpen && !game.isDefusing && player.isAlive) { // (NUEVO)
+            if (e.key === 'e' && !isShopOpen && !game.isDefusing && player.isAlive) { 
                 if (game.bomb.state === 'planted' && checkNearBomb()) {
                     game.isDefusing = true;
                     game.defuseStartTime = Date.now();
                 }
             }
-            if (e.key === 'r' && !isShopOpen && !game.isBuyTime && !player.isReloading && player.isAlive) { // (NUEVO)
+            if (e.key === 'r' && !isShopOpen && !game.isBuyTime && !player.isReloading && player.isAlive) { 
                 reload();
             }
         });
@@ -233,7 +233,6 @@
             }
         });
         window.addEventListener('mousedown', (e) => {
-            // (NUEVO) Clic para cambiar de espectador
             if (!player.isAlive && !isShopOpen) {
                 game.spectatorTargetIndex++;
                 if (game.spectatorTargetIndex >= alliedBots.length) {
@@ -337,7 +336,6 @@
             alliedBots.push(bot);
         }
         
-        // (NUEVO) Lógica de compra del Bot
         function botBuyLogic(bot, team) {
             bot.armor = false;
             bot.weapon = 'pistol'; // Default
@@ -488,14 +486,14 @@
             }
         }
         
-        // IA Aliada (CT)
+        // (NUEVO) IA Aliada (CT) con ROTACIÓN
         function updateAlliedBots() {
             for (let i = alliedBots.length - 1; i >= 0; i--) {
                 const bot = alliedBots[i];
                 if (bot.health <= 0) {
                     alliedBots.splice(i, 1);
                     console.log(`Bot Aliado eliminado. Quedan ${alliedBots.length}.`);
-                    if (alliedBots.length === 0 && !player.isAlive) { // (NUEVO)
+                    if (alliedBots.length === 0 && !player.isAlive) { 
                         endRound("Ts Ganan", "Ts");
                     }
                     continue;
@@ -507,52 +505,92 @@
                     continue; 
                 }
                 
-                let closestEnemy = null;
-                let minDistance = Infinity;
-                for (const enemy of bots) {
-                    const distance = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        closestEnemy = enemy;
-                    }
-                }
-                
-                if (!closestEnemy) {
-                    bot.state = 'idle';
-                    continue;
-                }
-                
-                const seesEnemy = hasLineOfSight(bot, closestEnemy) && isTargetInFoV(bot, closestEnemy);
-                const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
-                
-                const weapon = weaponData[bot.weapon]; // (NUEVO)
-                
-                if (seesEnemy) {
-                    bot.state = 'attacking';
-                    bot.angle = angleToEnemy;
-                    moveBot(bot, bot.angle); 
-                    if (Date.now() - bot.lastShotTime > weapon.fireRate) { // (NUEVO)
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: weapon.damage }; // (NUEVO)
-                        alliedBotBullets.push(bullet);
-                        bot.lastShotTime = Date.now();
-                    }
-                } else {
-                    if (bot.state === 'navigating') {
-                        const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
-                        if (targetWaypoint) {
-                            const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
-                            bot.angle = angleToWaypoint;
-                            moveBot(bot, angleToWaypoint);
-                            const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
-                            if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
-                        } else {
-                            bot.state = 'seeking';
+                // --- ¡¡NUEVA LÓGICA DE ROTACIÓN!! ---
+                if (game.bomb.state === 'planted') {
+                    bot.state = 'rotating'; // Nuevo estado
+                    
+                    // Buscar enemigo más cercano
+                    let closestEnemy = null;
+                    let minDistance = Infinity;
+                    for (const enemy of bots) {
+                        const distance = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestEnemy = enemy;
                         }
-                    } 
-                    else {
-                        bot.state = 'seeking';
+                    }
+                    
+                    const seesEnemy = closestEnemy && hasLineOfSight(bot, closestEnemy) && isTargetInFoV(bot, closestEnemy);
+                    
+                    if (seesEnemy) {
+                        // ¡Ve a un enemigo! Atacarlo.
+                        const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
                         bot.angle = angleToEnemy;
-                        moveBot(bot, bot.angle);
+                        moveBot(bot, bot.angle); // "Run and Gun"
+                        
+                        const weapon = weaponData[bot.weapon];
+                        if (Date.now() - bot.lastShotTime > weapon.fireRate) {
+                            const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: weapon.damage };
+                            alliedBotBullets.push(bullet);
+                            bot.lastShotTime = Date.now();
+                        }
+                    } else {
+                        // No ve a nadie. Correr hacia la bomba.
+                        const angleToBomb = Math.atan2(game.bomb.y - bot.y, game.bomb.x - bot.x);
+                        bot.angle = angleToBomb;
+                        moveBot(bot, angleToBomb);
+                    }
+
+                } else {
+                    // --- LÓGICA DE DEFENSA NORMAL (Bomba no plantada) ---
+                
+                    let closestEnemy = null;
+                    let minDistance = Infinity;
+                    for (const enemy of bots) {
+                        const distance = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
+                        if (distance < minDistance) {
+                            minDistance = distance;
+                            closestEnemy = enemy;
+                        }
+                    }
+                    
+                    if (!closestEnemy) {
+                        bot.state = 'idle';
+                        continue;
+                    }
+                    
+                    const seesEnemy = hasLineOfSight(bot, closestEnemy) && isTargetInFoV(bot, closestEnemy);
+                    const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
+                    
+                    const weapon = weaponData[bot.weapon]; 
+                    
+                    if (seesEnemy) {
+                        bot.state = 'attacking';
+                        bot.angle = angleToEnemy;
+                        moveBot(bot, bot.angle); 
+                        if (Date.now() - bot.lastShotTime > weapon.fireRate) { 
+                            const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: weapon.damage }; 
+                            alliedBotBullets.push(bullet);
+                            bot.lastShotTime = Date.now();
+                        }
+                    } else {
+                        if (bot.state === 'navigating') {
+                            const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
+                            if (targetWaypoint) {
+                                const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
+                                bot.angle = angleToWaypoint;
+                                moveBot(bot, angleToWaypoint);
+                                const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
+                                if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
+                            } else {
+                                bot.state = 'seeking';
+                            }
+                        } 
+                        else {
+                            bot.state = 'seeking';
+                            bot.angle = angleToEnemy;
+                            moveBot(bot, bot.angle);
+                        }
                     }
                 }
             }
@@ -586,7 +624,6 @@
                 return;
             }
             
-            // (NUEVO) Lógica de Arma con Munición
             const weaponSlot = player.inventory[player.activeWeapon];
             if (!weaponSlot) return; 
             const weapon = weaponData[weaponSlot.name];
@@ -594,14 +631,13 @@
             if (Date.now() - player.lastShotTime < weapon.fireRate) return; 
             if (!weapon.automatic && player.hasFiredSemi) return; 
             
-            // Comprobar munición
             if (weaponSlot.ammoInClip > 0) {
                 player.lastShotTime = Date.now(); 
                 player.hasFiredSemi = true; 
                 if (weapon.type === 'melee') { useMelee(weapon); } 
                 else { 
                     shootBullet(weapon); 
-                    weaponSlot.ammoInClip--; // ¡Resta una bala!
+                    weaponSlot.ammoInClip--; 
                 }
             } else {
                 console.log("¡Sin munición!");
@@ -610,15 +646,14 @@
         function useMelee(weapon) { const attackLine = { x: player.x + Math.cos(player.angle) * weapon.range / 2, y: player.y + Math.sin(player.angle) * weapon.range / 2, size: weapon.range }; for (const bot of bots) { if (checkObjectCollision(attackLine, bot)) { bot.health -= weapon.damage; console.log("¡Cuchillada!"); break; } } }
         function shootBullet(weapon) { const totalSpread = weapon.spread + player.recoil; const spread = (Math.random() - 0.5) * totalSpread; const bulletAngle = player.angle + spread; player.recoil += weapon.recoil; const bullet = { x: player.x, y: player.y, size: 5, color: 'yellow', speed: 15, angle: bulletAngle, damage: weapon.damage }; bullets.push(bullet); }
         
-        // (NUEVO) Función de Recarga
         function reload() {
             if (player.activeWeapon === 'primary' || player.activeWeapon === 'secondary') {
                 const weaponSlot = player.inventory[player.activeWeapon];
-                if (!weaponSlot) return; // No tiene esa arma
+                if (!weaponSlot) return; 
                 const weapon = weaponData[weaponSlot.name];
                 
-                if (weaponSlot.ammoInClip === weapon.clipSize) return; // Cargador lleno
-                if (weaponSlot.ammoInReserve === 0) return; // Sin reserva
+                if (weaponSlot.ammoInClip === weapon.clipSize) return; 
+                if (weaponSlot.ammoInReserve === 0) return; 
                 
                 player.isReloading = true;
                 console.log("Recargando...");
@@ -671,7 +706,7 @@
         
         // --- 9. LÓGICA DE LA BOMBA Y DAÑO ---
         function applyPlayerDamage(damage) {
-            if (!player.isAlive) return; // (NUEVO)
+            if (!player.isAlive) return; 
             
             if (player.armor <= 0) {
                 player.health -= damage;
@@ -691,7 +726,7 @@
             }
             if (player.health <= 0) {
                 player.health = 0; 
-                player.isAlive = false; // (NUEVO)
+                player.isAlive = false; 
                 console.log("¡HAS MUERTO!");
                 if (alliedBots.length === 0) { 
                     endRound("Ts Ganan", "Ts");
@@ -772,7 +807,6 @@
             if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
             console.log("Fin de ronda: " + message);
 
-            // (NUEVO) Asignar dinero de ronda
             if (winner === 'CTs') {
                 game.score.ct++;
                 player.money += ECONOMY.WIN_BONUS; 
@@ -826,7 +860,7 @@
             smokeClouds = []; 
             
             // --- Resetear Jugador ---
-            player.isAlive = true; // (NUEVO)
+            player.isAlive = true; 
             player.hasBomb = false;
             player.health = 100;
             player.armor = 0; 
@@ -972,7 +1006,6 @@
                     camera.x = targetBot.x - canvas.width / 2;
                     camera.y = targetBot.y - canvas.height / 2;
                 } else {
-                    // Todos los aliados muertos, se queda en la última posición del jugador
                     camera.x = player.x - canvas.width / 2;
                     camera.y = player.y - canvas.height / 2;
                 }
@@ -1199,15 +1232,14 @@
             
             drawMinimap();
             
-            // (NUEVO) HUD movido
             ctx.fillStyle = 'white'; ctx.font = '24px Arial';
-            ctx.fillText(`Vida: ${Math.ceil(player.health)}`, 20, 190); // Debajo del minimapa
+            ctx.fillText(`Vida: ${Math.ceil(player.health)}`, 20, 190); 
             const armorIcon = player.inventory.helmet ? '🛡️' : '■';
             ctx.fillText(`Armadura: ${Math.ceil(player.armor)} ${armorIcon}`, 20, 220); 
             
             const activeWeaponSlot = player.activeWeapon;
             let weaponNameStr = "";
-            let ammoStr = ""; // (NUEVO)
+            let ammoStr = ""; 
             
             if (activeWeaponSlot === 'primary' || activeWeaponSlot === 'secondary') {
                 const weapon = player.inventory[activeWeaponSlot];
@@ -1215,7 +1247,6 @@
                     weaponNameStr = weaponData[weapon.name].name;
                     ammoStr = `${weapon.ammoInClip} / ${weapon.ammoInReserve}`;
                 } else if (player.activeWeapon === 'secondary' && player.inventory.secondary === null) {
-                    // Caso especial: ronda 1, pistola por defecto
                     weaponNameStr = "Manos";
                 }
             } else if (activeWeaponSlot === 'melee') {
@@ -1230,12 +1261,30 @@
                 weaponNameStr = `Humo (${player.inventory.grenades.smoke})`;
             }
 
+            // (NUEVO) Mensaje de espectador
+            if (!player.isAlive) {
+                ctx.fillStyle = 'red';
+                ctx.font = 'bold 30px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText("¡ESTÁS MUERTO!", window.innerWidth / 2, window.innerHeight / 2 - 50);
+                
+                let targetName = "Nadie";
+                if (alliedBots.length > 0) {
+                    if (game.spectatorTargetIndex >= alliedBots.length) game.spectatorTargetIndex = 0;
+                    targetName = `Aliado ${game.spectatorTargetIndex + 1} (${alliedBots[game.spectatorTargetIndex].weapon})`;
+                }
+                ctx.font = '24px Arial';
+                ctx.fillText(`Espectando: ${targetName}`, window.innerWidth / 2, window.innerHeight / 2);
+                ctx.fillText("(Clic para cambiar)", window.innerWidth / 2, window.innerHeight / 2 + 30);
+                ctx.textAlign = 'left';
+            }
+
+            ctx.fillStyle = 'white'; ctx.font = '24px Arial';
             ctx.fillText(`Arma: ${weaponNameStr}`, 20, 250); 
             ctx.fillStyle = 'white'; 
             ctx.fillText(`Dinero: $${player.money}`, 20, 280); 
             if (player.hasBomb) { ctx.fillStyle = 'orange'; ctx.fillText("[BOMBA]", 20, 310); }
 
-            // (NUEVO) Dibujar munición en la esquina opuesta
             ctx.font = 'bold 36px Arial';
             ctx.textAlign = 'right';
             ctx.fillStyle = 'white';
@@ -1243,10 +1292,11 @@
             if (player.isReloading) {
                 ctx.fillText("RECARGANDO...", window.innerWidth - 30, window.innerHeight - 70);
             }
-            ctx.textAlign = 'left'; // Resetear
+            ctx.textAlign = 'left'; 
             
             // Contadores de equipo
             ctx.fillStyle = 'red';
+            ctx.font = '24px Arial';
             ctx.fillText(`Bots T: ${bots.length}`, window.innerWidth - 200, 30);
             ctx.fillStyle = 'cyan';
             ctx.fillText(`Aliados: ${alliedBots.length}`, window.innerWidth - 200, 60);
@@ -1256,7 +1306,7 @@
             ctx.font = 'bold 24px Arial';
             ctx.textAlign = 'center';
             ctx.fillText(`[ ${game.score.ct} : ${game.score.t} ]`, window.innerWidth / 2, 40);
-            ctx.textAlign = 'left'; // Resetear
+            ctx.textAlign = 'left'; 
             
             if (isShopOpen) { shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default'; }
             else { shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair'; }
@@ -1301,8 +1351,7 @@
             mmCtx.fillStyle = 'red';
             for (const bot of bots) {
                 let isVisible = false;
-                // (NUEVO) Si estás muerto, ves todo en el radar
-                if (!player.isAlive) {
+                if (!player.isAlive) { // (NUEVO) Ver todo si estás muerto
                     isVisible = true;
                 } else {
                     if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) {
@@ -1336,7 +1385,6 @@
                 mmCtx.fill();
             }
             
-            // (NUEVO) No dibujar al jugador en el minimapa si está muerto
             if (player.isAlive) {
                 mmCtx.fillStyle = 'white';
                 mmCtx.beginPath();
