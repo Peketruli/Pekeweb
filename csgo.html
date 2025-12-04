@@ -2,21 +2,15 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v33 - Final (Raycasting + IA Táctica)</title>
+    <title>Prototipo 2D v34 - Mecánicas Finales</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
         canvas { display: block; background-color: #111; margin: 0 auto; cursor: crosshair; }
         
         #minimapCanvas {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            width: 240px; 
-            height: 160px;
-            border: 2px solid #555;
-            background-color: rgba(50, 50, 50, 0.7); 
-            z-index: 10;
+            position: absolute; top: 20px; left: 20px; width: 240px; height: 160px;
+            border: 2px solid #555; background-color: rgba(50, 50, 50, 0.7); z-index: 10;
         }
 
         #shopMenu { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background-color: rgba(30, 30, 30, 0.9); border: 2px solid #ccc; border-radius: 10px; padding: 20px; color: white; z-index: 10; }
@@ -27,37 +21,26 @@
         #progress-container { display: none; position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%); width: 300px; height: 30px; background-color: rgba(0, 0, 0, 0.5); border: 2px solid white; border-radius: 5px; z-index: 20; }
         #progress-bar { width: 0%; height: 100%; background-color: #4CAF50; transition: width 0.1s linear; }
         
-        /* UI Arreglada */
-        #game-message { 
-            display: none; 
-            position: absolute; 
-            top: 15%; 
-            left: 50%; 
-            transform: translateX(-50%); 
-            font-size: 48px; 
-            font-weight: bold; 
-            color: white; 
-            text-shadow: 2px 2px 4px black; 
-            z-index: 20; 
-            pointer-events: none; 
-            text-align: center;
-        }
+        #game-message { display: none; position: absolute; top: 15%; left: 50%; transform: translateX(-50%); font-size: 48px; font-weight: bold; color: white; text-shadow: 2px 2px 4px black; z-index: 20; pointer-events: none; text-align: center; }
         
-        #flash-overlay {
-            display: none;
-            position: absolute;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background-color: white;
-            opacity: 0;
-            z-index: 50;
+        #flash-overlay { display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background-color: white; opacity: 0; z-index: 50; }
+        
+        /* (NUEVO) Estilo para el Killfeed */
+        #killfeed {
+            position: absolute; top: 20px; right: 20px; width: 300px; text-align: right; pointer-events: none; z-index: 15; font-family: 'Courier New', Courier, monospace; font-weight: bold;
         }
+        .kill-msg {
+            background-color: rgba(0, 0, 0, 0.6); color: white; padding: 5px 10px; margin-bottom: 5px; border-radius: 3px; font-size: 14px;
+            border-left: 3px solid red; display: inline-block; clear: right; float: right;
+        }
+        .kill-msg span.ct { color: cyan; }
+        .kill-msg span.t { color: #ff4444; }
     </style>
 </head>
 <body>
     
     <canvas id="minimapCanvas"></canvas>
-    <div id="shopMenu">
+    <div id="killfeed"></div> <div id="shopMenu">
         <h2>Tienda (Pulsa 'B' para cerrar)</h2>
         <div class="shop-category"><h3>Pistolas</h3><button class="shop-item" data-item="deagle" data-cost="700">Deagle ($700)</button></div>
         <div class="shop-category"><h3>Rifles</h3><button class="shop-item" data-item="ak47" data-cost="2700">AK-47 ($2700)</button><button class="shop-item" data-item="m4a1" data-cost="3100">M4A1-S ($3100)</button><button class="shop-item" data-item="awp" data-cost="4750">AWP ($4750)</button></div>
@@ -75,7 +58,6 @@
     <canvas id="gameCanvas"></canvas>
 
     <script>
-        // --- 1. CONFIGURACIÓN INICIAL ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         canvas.width = window.innerWidth;
@@ -83,8 +65,7 @@
         
         const minimapCanvas = document.getElementById('minimapCanvas');
         const mmCtx = minimapCanvas.getContext('2d');
-        minimapCanvas.width = 600; 
-        minimapCanvas.height = 400;
+        minimapCanvas.width = 600; minimapCanvas.height = 400;
 
         const shopMenuElement = document.getElementById('shopMenu');
         const shopButtons = document.querySelectorAll('.shop-item');
@@ -92,14 +73,17 @@
         const progressBarEl = document.getElementById('progress-bar');
         const gameMessageEl = document.getElementById('game-message');
         const flashOverlayEl = document.getElementById('flash-overlay'); 
+        const killfeedEl = document.getElementById('killfeed');
         
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
         const minimapScale = 0.2; 
         let camera = { x: 0, y: 0 };
         const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000, BUY_TIME: 10000 };
+        
         const MAX_MONEY = 16000;
         const ECONOMY = { ROUND_1: 700, KILL_BONUS: 300, WIN_BONUS: 1200, LOSS_BONUS: 700, DEFUSE_BONUS: 500 };
+        
         let game = { bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null, site: null }, isDefusing: false, defuseStartTime: 0, messageTimerId: null, roundNumber: 0, score: { ct: 0, t: 0 }, isBuyTime: false, spectatorTargetIndex: 0 };
         
         const weaponData = {
@@ -115,24 +99,10 @@
             'smoke': { name: 'Humo', type: 'grenade', damage: 0, fireRate: 1000, range: 150, cost: 300 }
         };
 
-        // === 2. EL MAPA ACTUALIZADO (TU CÓDIGO) ===
-        const walls = [
-            { x: 1696, y: 1311, width: 85, height: 632 }, { x: 1682, y: 1, width: 99, height: 579 }, { x: 1885, y: 429, width: 350, height: 355 }, { x: 1954, y: 1367, width: 328, height: 231 }, { x: 1402, y: 532, width: 135, height: 463 }, { x: 899, y: 209, width: 496, height: 337 }, { x: 881, y: 204, width: 523, height: 423 }, { x: 839, y: 119, width: 59, height: 507 }, { x: -1, y: 2, width: 345, height: 617 }, { x: 542, y: 293, width: 31, height: 22 }, { x: 571, y: 204, width: 33, height: 21 }, { x: 609, y: 268, width: 34, height: 23 }, { x: 493, y: 181, width: 19, height: 166 }, { x: 512, y: 347, width: 133, height: 24 }, { x: 494, y: 348, width: 356, height: 276 }, { x: 493, y: 340, width: 19, height: 15 }, { x: 491, y: 9, width: 26, height: 50 }, { x: 491, y: 3, width: 25, height: 9 }, { x: 594, y: 142, width: 24, height: 12 }, { x: 656, y: 182, width: 66, height: 35 }, { x: 761, y: 106, width: 21, height: 189 }, { x: 1, y: 3, width: 1520, height: 9 }, { x: 1522, y: 5, width: 1453, height: 6 }, { x: 2978, y: 7, width: 10, height: 3 }, { x: 2972, y: 5, width: 17, height: 6 }, { x: 2980, y: 9, width: 5, height: 728 }, { x: 2983, y: 738, width: 3, height: 610 }, { x: 2981, y: 739, width: 4, height: 615 }, { x: 2981, y: 1353, width: 3, height: 627 }, { x: 1465, y: 1943, width: 1520, height: 35 }, { x: -2, y: 1943, width: 1469, height: 35 }, { x: 0, y: 1225, width: 12, height: 720 }, { x: 4, y: 661, width: 8, height: 566 }, { x: 2, y: 604, width: 9, height: 59 }, { x: 1353, y: 1259, width: 200, height: 108 }, { x: 1159, y: 1035, width: 135, height: 123 }, { x: 1339, y: 1367, width: 67, height: 433 }, { x: 533, y: 1479, width: 115, height: 332 }, { x: 535, y: 1129, width: 143, height: 100 }, { x: 767, y: 826, width: 217, height: 236 }, { x: 1137, y: 692, width: 73, height: 55 }, { x: 501, y: 715, width: 58, height: 68 }, { x: 142, y: 1606, width: 405, height: 205 }, { x: 834, y: 1603, width: 40, height: 31 }, { x: 940, y: 1547, width: 260, height: 63 }, { x: 1115, y: 1662, width: 28, height: 76 }, { x: 943, y: 1706, width: 8, height: 31 }, { x: 875, y: 1767, width: 43, height: 29 }, { x: 898, y: 1656, width: 43, height: 15 }, { x: 1046, y: 1812, width: 40, height: 29 }, { x: 838, y: 1873, width: 33, height: 21 }, { x: 989, y: 1840, width: 94, height: 105 }, { x: 1190, y: 1783, width: 66, height: 36 }, { x: 1663, y: 732, width: 577, height: 232 }, { x: 1159, y: 972, width: 135, height: 139 }, { x: 768, y: 1058, width: 457, height: 221 }, { x: 955, y: 1348, width: 39, height: 224 }, { x: 1084, y: 616, width: 328, height: 250 }
-        ];
-        const zones = [
-            { x: 52, y: 969, width: 180, height: 236, color: 'rgba(0, 150, 255, 0.5)', name: 'Spawn AT' }, { x: 2528, y: 976, width: 276, height: 243, color: 'rgba(255, 100, 0, 0.5)', name: 'Spawn T' }, { x: 545, y: 195, width: 130, height: 114, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio A' }, { x: 814, y: 1572, width: 396, height: 317, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio B' }
-        ];
-        const paths = {
-            path_T_A_1: [ { x: 2648, y: 1020 }, { x: 2395, y: 317 }, { x: 2074, y: 280 }, { x: 1905, y: 275 }, { x: 1858, y: 300 }, { x: 1829, y: 383 }, { x: 1832, y: 533 }, { x: 1820, y: 611 }, { x: 1799, y: 663 }, { x: 1751, y: 690 }, { x: 1678, y: 681 }, { x: 1634, y: 650 }, { x: 1622, y: 583 }, { x: 1590, y: 512 }, { x: 1563, y: 441 }, { x: 1539, y: 384 }, { x: 1522, y: 297 }, { x: 1513, y: 279 }, { x: 1495, y: 222 }, { x: 1492, y: 200 }, { x: 1460, y: 169 }, { x: 1403, y: 139 }, { x: 1347, y: 138 }, { x: 1295, y: 135 }, { x: 1223, y: 118 }, { x: 1190, y: 111 }, { x: 1147, y: 98 }, { x: 1098, y: 74 }, { x: 929, y: 70 }, { x: 887, y: 70 }, { x: 860, y: 78 }, { x: 842, y: 85 }, { x: 833, y: 92 }, { x: 823, y: 106 }, { x: 812, y: 133 }, { x: 808, y: 160 }, { x: 809, y: 168 }, { x: 808, y: 184 }, { x: 805, y: 243 }, { x: 807, y: 250 }, { x: 809, y: 289 }, { x: 809, y: 292 }, { x: 806, y: 301 }, { x: 798, y: 308 }, { x: 790, y: 315 }, { x: 788, y: 316 }, { x: 775, y: 318 }, { x: 762, y: 321 }, { x: 748, y: 319 }, { x: 736, y: 320 }, { x: 717, y: 313 }, { x: 708, y: 305 }, { x: 695, y: 292 }, { x: 691, y: 287 }, { x: 689, y: 283 }, { x: 681, y: 272 }, { x: 676, y: 265 }, { x: 667, y: 248 }, { x: 659, y: 245 }, { x: 658, y: 245 } ],
-            path_T_A_2: [ { x: 2638, y: 1089 }, { x: 2572, y: 1120 }, { x: 2536, y: 1141 }, { x: 2486, y: 1167 }, { x: 2398, y: 1196 }, { x: 2296, y: 1226 }, { x: 2219, y: 1227 }, { x: 2142, y: 1224 }, { x: 2046, y: 1225 }, { x: 1984, y: 1225 }, { x: 1907, y: 1228 }, { x: 1814, y: 1234 }, { x: 1714, y: 1211 }, { x: 1683, y: 1207 }, { x: 1657, y: 1204 }, { x: 1624, y: 1187 }, { x: 1624, y: 1160 }, { x: 1608, y: 1124 }, { x: 1605, y: 1087 }, { x: 1605, y: 1062 }, { x: 1602, y: 1028 }, { x: 1603, y: 992 }, { x: 1604, y: 988 }, { x: 1625, y: 247 }, { x: 1539, y: 183 }, { x: 1481, y: 85 }, { x: 1175, y: 79 }, { x: 1101, y: 79 }, { x: 889, y: 67 }, { x: 858, y: 80 }, { x: 820, y: 77 }, { x: 791, y: 78 }, { x: 770, y: 81 }, { x: 739, y: 90 }, { x: 721, y: 94 }, { x: 709, y: 102 }, { x: 690, y: 114 }, { x: 680, y: 121 }, { x: 676, y: 124 }, { x: 666, y: 131 }, { x: 662, y: 142 }, { x: 656, y: 153 }, { x: 653, y: 162 }, { x: 651, y: 165 }, { x: 644, y: 171 }, { x: 638, y: 178 }, { x: 637, y: 181 }, { x: 632, y: 196 }, { x: 632, y: 198 }, { x: 630, y: 212 }, { x: 630, y: 221 }, { x: 632, y: 226 } ],
-            path_T_B_1: [ { x: 2646, y: 1102 }, { x: 2592, y: 1121 }, { x: 2548, y: 1136 }, { x: 2492, y: 1145 }, { x: 2399, y: 1167 }, { x: 2334, y: 1179 }, { x: 2288, y: 1187 }, { x: 2190, y: 1193 }, { x: 2126, y: 1204 }, { x: 2002, y: 1221 }, { x: 1944, y: 1235 }, { x: 1889, y: 1241 }, { x: 1787, y: 1248 }, { x: 1770, y: 1253 }, { x: 1744, y: 1259 }, { x: 1730, y: 1265 }, { x: 1706, y: 1273 }, { x: 1679, y: 1279 }, { x: 1665, y: 1289 }, { x: 1647, y: 1322 }, { x: 1630, y: 1358 }, { x: 1618, y: 1401 }, { x: 1606, y: 1437 }, { x: 1584, y: 1631 }, { x: 1584, y: 1635 }, { x: 1574, y: 1675 }, { x: 1559, y: 1725 }, { x: 1538, y: 1804 }, { x: 1508, y: 1834 }, { x: 1474, y: 1854 }, { x: 1438, y: 1870 }, { x: 1386, y: 1880 }, { x: 1351, y: 1883 }, { x: 1309, y: 1886 }, { x: 1273, y: 1883 }, { x: 1230, y: 1879 }, { x: 1159, y: 1830 }, { x: 1159, y: 1832 }, { x: 1133, y: 1826 }, { x: 1118, y: 1813 }, { x: 1102, y: 1793 }, { x: 1076, y: 1769 }, { x: 1059, y: 1753 }, { x: 1049, y: 1747 }, { x: 1045, y: 1746 }, { x: 1034, y: 1739 }, { x: 1024, y: 1734 } ],
-            path_T_B_2: [ { x: 2622, y: 1111 }, { x: 2603, y: 1116 }, { x: 2547, y: 1132 }, { x: 2500, y: 1144 }, { x: 2440, y: 1165 }, { x: 2382, y: 1184 }, { x: 2336, y: 1194 }, { x: 2241, y: 1210 }, { x: 2153, y: 1213 }, { x: 2040, y: 1213 }, { x: 1973, y: 1218 }, { x: 1907, y: 1220 }, { x: 1798, y: 1220 }, { x: 1590, y: 1228 }, { x: 1517, y: 1228 }, { x: 1496, y: 1230 }, { x: 1436, y: 1208 }, { x: 1420, y: 1210 }, { x: 1277, y: 1222 }, { x: 1284, y: 1247 }, { x: 1287, y: 1277 }, { x: 1279, y: 1294 }, { x: 1265, y: 1326 }, { x: 1254, y: 1366 }, { x: 1256, y: 1396 }, { x: 1257, y: 1415 }, { x: 1256, y: 1434 }, { x: 1254, y: 1491 }, { x: 1257, y: 1501 }, { x: 1262, y: 1580 }, { x: 1259, y: 1590 }, { x: 1234, y: 1640 }, { x: 1226, y: 1651 }, { x: 1197, y: 1639 }, { x: 1162, y: 1635 }, { x: 1133, y: 1639 }, { x: 1104, y: 1648 }, { x: 1075, y: 1654 }, { x: 1039, y: 1669 }, { x: 1028, y: 1693 } ],
-            path_CT_A_1: [ { x: 196, y: 1000 }, { x: 321, y: 749 }, { x: 407, y: 658 }, { x: 408, y: 523 }, { x: 408, y: 200 }, { x: 426, y: 152 }, { x: 476, y: 126 }, { x: 517, y: 128 }, { x: 534, y: 152 }, { x: 543, y: 184 }, { x: 545, y: 228 }, { x: 573, y: 252 } ],
-            path_CT_A_2: [ ],
-            path_CT_B_1: [ { x: 199, y: 1179 }, { x: 259, y: 1222 }, { x: 360, y: 1275 }, { x: 543, y: 1319 }, { x: 660, y: 1392 }, { x: 721, y: 1448 }, { x: 767, y: 1634 }, { x: 809, y: 1706 }, { x: 854, y: 1712 }, { x: 888, y: 1700 }, { x: 920, y: 1689 }, { x: 956, y: 1684 }, { x: 997, y: 1696 } ],
-            path_CT_B_2: [ { x: 131, y: 1162 }, { x: 128, y: 1255 }, { x: 88, y: 1459 }, { x: 60, y: 1600 }, { x: 68, y: 1732 }, { x: 86, y: 1834 }, { x: 144, y: 1868 }, { x: 388, y: 1876 }, { x: 652, y: 1873 }, { x: 756, y: 1834 }, { x: 829, y: 1755 }, { x: 891, y: 1708 }, { x: 921, y: 1688 }, { x: 970, y: 1688 }, { x: 999, y: 1699 } ],            path_CT_Rotate_B_to_A: [ { x: 988, y: 1688 }, { x: 962, y: 1638 }, { x: 915, y: 1625 }, { x: 894, y: 1575 }, { x: 744, y: 1510 }, { x: 725, y: 1138 }, { x: 618, y: 860 }, { x: 448, y: 841 }, { x: 414, y: 420 }, { x: 434, y: 141 }, { x: 488, y: 125 }, { x: 539, y: 138 }, { x: 548, y: 180 }, { x: 549, y: 223 }, { x: 581, y: 252 } ],
-            path_CT_Rotate_A_to_B: [ { x: 582, y: 253 }, { x: 547, y: 233 }, { x: 538, y: 144 }, { x: 435, y: 135 }, { x: 422, y: 473 }, { x: 443, y: 864 }, { x: 709, y: 1073 }, { x: 762, y: 1390 }, { x: 756, y: 1496 }, { x: 769, y: 1731 }, { x: 842, y: 1723 }, { x: 911, y: 1691 }, { x: 983, y: 1687 } ]
-        };
+        // === TU MAPA ACTUALIZADO ===
+        const walls = [ { x: 1696, y: 1311, width: 85, height: 632 }, { x: 1682, y: 1, width: 99, height: 579 }, { x: 1885, y: 429, width: 350, height: 355 }, { x: 1954, y: 1367, width: 328, height: 231 }, { x: 1402, y: 532, width: 135, height: 463 }, { x: 899, y: 209, width: 496, height: 337 }, { x: 881, y: 204, width: 523, height: 423 }, { x: 839, y: 119, width: 59, height: 507 }, { x: -1, y: 2, width: 345, height: 617 }, { x: 542, y: 293, width: 31, height: 22 }, { x: 571, y: 204, width: 33, height: 21 }, { x: 609, y: 268, width: 34, height: 23 }, { x: 493, y: 181, width: 19, height: 166 }, { x: 512, y: 347, width: 133, height: 24 }, { x: 494, y: 348, width: 356, height: 276 }, { x: 493, y: 340, width: 19, height: 15 }, { x: 491, y: 9, width: 26, height: 50 }, { x: 491, y: 3, width: 25, height: 9 }, { x: 594, y: 142, width: 24, height: 12 }, { x: 656, y: 182, width: 66, height: 35 }, { x: 761, y: 106, width: 21, height: 189 }, { x: 1, y: 3, width: 1520, height: 9 }, { x: 1522, y: 5, width: 1453, height: 6 }, { x: 2978, y: 7, width: 10, height: 3 }, { x: 2972, y: 5, width: 17, height: 6 }, { x: 2980, y: 9, width: 5, height: 728 }, { x: 2983, y: 738, width: 3, height: 610 }, { x: 2981, y: 739, width: 4, height: 615 }, { x: 2981, y: 1353, width: 3, height: 627 }, { x: 1465, y: 1943, width: 1520, height: 35 }, { x: -2, y: 1943, width: 1469, height: 35 }, { x: 0, y: 1225, width: 12, height: 720 }, { x: 4, y: 661, width: 8, height: 566 }, { x: 2, y: 604, width: 9, height: 59 }, { x: 1353, y: 1259, width: 200, height: 108 }, { x: 1159, y: 1035, width: 135, height: 123 }, { x: 1339, y: 1367, width: 67, height: 433 }, { x: 533, y: 1479, width: 115, height: 332 }, { x: 535, y: 1129, width: 143, height: 100 }, { x: 767, y: 826, width: 217, height: 236 }, { x: 1137, y: 692, width: 73, height: 55 }, { x: 501, y: 715, width: 58, height: 68 }, { x: 142, y: 1606, width: 405, height: 205 }, { x: 834, y: 1603, width: 40, height: 31 }, { x: 940, y: 1547, width: 260, height: 63 }, { x: 1115, y: 1662, width: 28, height: 76 }, { x: 943, y: 1706, width: 8, height: 31 }, { x: 875, y: 1767, width: 43, height: 29 }, { x: 898, y: 1656, width: 43, height: 15 }, { x: 1046, y: 1812, width: 40, height: 29 }, { x: 838, y: 1873, width: 33, height: 21 }, { x: 989, y: 1840, width: 94, height: 105 }, { x: 1190, y: 1783, width: 66, height: 36 }, { x: 1663, y: 732, width: 577, height: 232 }, { x: 1159, y: 972, width: 135, height: 139 }, { x: 768, y: 1058, width: 457, height: 221 }, { x: 955, y: 1348, width: 39, height: 224 }, { x: 1084, y: 616, width: 328, height: 250 } ];
+        const zones = [ { x: 52, y: 969, width: 180, height: 236, color: 'rgba(0, 150, 255, 0.5)', name: 'Spawn AT' }, { x: 2528, y: 976, width: 276, height: 243, color: 'rgba(255, 100, 0, 0.5)', name: 'Spawn T' }, { x: 545, y: 195, width: 130, height: 114, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio A' }, { x: 814, y: 1572, width: 396, height: 317, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio B' } ];
+        const paths = { path_T_A_1: [ { x: 2648, y: 1020 }, { x: 2395, y: 317 }, { x: 2074, y: 280 }, { x: 1905, y: 275 }, { x: 1858, y: 300 }, { x: 1829, y: 383 }, { x: 1832, y: 533 }, { x: 1820, y: 611 }, { x: 1799, y: 663 }, { x: 1751, y: 690 }, { x: 1678, y: 681 }, { x: 1634, y: 650 }, { x: 1622, y: 583 }, { x: 1590, y: 512 }, { x: 1563, y: 441 }, { x: 1539, y: 384 }, { x: 1522, y: 297 }, { x: 1513, y: 279 }, { x: 1495, y: 222 }, { x: 1492, y: 200 }, { x: 1460, y: 169 }, { x: 1403, y: 139 }, { x: 1347, y: 138 }, { x: 1295, y: 135 }, { x: 1223, y: 118 }, { x: 1190, y: 111 }, { x: 1147, y: 98 }, { x: 1098, y: 74 }, { x: 929, y: 70 }, { x: 887, y: 70 }, { x: 860, y: 78 }, { x: 842, y: 85 }, { x: 833, y: 92 }, { x: 823, y: 106 }, { x: 812, y: 133 }, { x: 808, y: 160 }, { x: 809, y: 168 }, { x: 808, y: 184 }, { x: 805, y: 243 }, { x: 807, y: 250 }, { x: 809, y: 289 }, { x: 809, y: 292 }, { x: 806, y: 301 }, { x: 798, y: 308 }, { x: 790, y: 315 }, { x: 788, y: 316 }, { x: 775, y: 318 }, { x: 762, y: 321 }, { x: 748, y: 319 }, { x: 736, y: 320 }, { x: 717, y: 313 }, { x: 708, y: 305 }, { x: 695, y: 292 }, { x: 691, y: 287 }, { x: 689, y: 283 }, { x: 681, y: 272 }, { x: 676, y: 265 }, { x: 667, y: 248 }, { x: 659, y: 245 }, { x: 658, y: 245 } ], path_T_A_2: [ { x: 2638, y: 1089 }, { x: 2572, y: 1120 }, { x: 2536, y: 1141 }, { x: 2486, y: 1167 }, { x: 2398, y: 1196 }, { x: 2296, y: 1226 }, { x: 2219, y: 1227 }, { x: 2142, y: 1224 }, { x: 2046, y: 1225 }, { x: 1984, y: 1225 }, { x: 1907, y: 1228 }, { x: 1814, y: 1234 }, { x: 1714, y: 1211 }, { x: 1683, y: 1207 }, { x: 1657, y: 1204 }, { x: 1624, y: 1187 }, { x: 1624, y: 1160 }, { x: 1608, y: 1124 }, { x: 1605, y: 1087 }, { x: 1605, y: 1062 }, { x: 1602, y: 1028 }, { x: 1603, y: 992 }, { x: 1604, y: 988 }, { x: 1625, y: 247 }, { x: 1539, y: 183 }, { x: 1481, y: 85 }, { x: 1175, y: 79 }, { x: 1101, y: 79 }, { x: 889, y: 67 }, { x: 858, y: 80 }, { x: 820, y: 77 }, { x: 791, y: 78 }, { x: 770, y: 81 }, { x: 739, y: 90 }, { x: 721, y: 94 }, { x: 709, y: 102 }, { x: 690, y: 114 }, { x: 680, y: 121 }, { x: 676, y: 124 }, { x: 666, y: 131 }, { x: 662, y: 142 }, { x: 656, y: 153 }, { x: 653, y: 162 }, { x: 651, y: 165 }, { x: 644, y: 171 }, { x: 638, y: 178 }, { x: 637, y: 181 }, { x: 632, y: 196 }, { x: 632, y: 198 }, { x: 630, y: 212 }, { x: 630, y: 221 }, { x: 632, y: 226 } ], path_T_B_1: [ { x: 2646, y: 1102 }, { x: 2592, y: 1121 }, { x: 2548, y: 1136 }, { x: 2492, y: 1145 }, { x: 2399, y: 1167 }, { x: 2334, y: 1179 }, { x: 2288, y: 1187 }, { x: 2190, y: 1193 }, { x: 2126, y: 1204 }, { x: 2002, y: 1221 }, { x: 1944, y: 1235 }, { x: 1889, y: 1241 }, { x: 1787, y: 1248 }, { x: 1770, y: 1253 }, { x: 1744, y: 1259 }, { x: 1730, y: 1265 }, { x: 1706, y: 1273 }, { x: 1679, y: 1279 }, { x: 1665, y: 1289 }, { x: 1647, y: 1322 }, { x: 1630, y: 1358 }, { x: 1618, y: 1401 }, { x: 1606, y: 1437 }, { x: 1584, y: 1631 }, { x: 1584, y: 1635 }, { x: 1574, y: 1675 }, { x: 1559, y: 1725 }, { x: 1538, y: 1804 }, { x: 1508, y: 1834 }, { x: 1474, y: 1854 }, { x: 1438, y: 1870 }, { x: 1386, y: 1880 }, { x: 1351, y: 1883 }, { x: 1309, y: 1886 }, { x: 1273, y: 1883 }, { x: 1230, y: 1879 }, { x: 1159, y: 1830 }, { x: 1159, y: 1832 }, { x: 1133, y: 1826 }, { x: 1118, y: 1813 }, { x: 1102, y: 1793 }, { x: 1076, y: 1769 }, { x: 1059, y: 1753 }, { x: 1049, y: 1747 }, { x: 1045, y: 1746 }, { x: 1034, y: 1739 }, { x: 1024, y: 1734 } ], path_T_B_2: [ { x: 2622, y: 1111 }, { x: 2603, y: 1116 }, { x: 2547, y: 1132 }, { x: 2500, y: 1144 }, { x: 2440, y: 1165 }, { x: 2382, y: 1184 }, { x: 2336, y: 1194 }, { x: 2241, y: 1210 }, { x: 2153, y: 1213 }, { x: 2040, y: 1213 }, { x: 1973, y: 1218 }, { x: 1907, y: 1220 }, { x: 1798, y: 1220 }, { x: 1590, y: 1228 }, { x: 1517, y: 1228 }, { x: 1496, y: 1230 }, { x: 1436, y: 1208 }, { x: 1420, y: 1210 }, { x: 1277, y: 1222 }, { x: 1284, y: 1247 }, { x: 1287, y: 1277 }, { x: 1279, y: 1294 }, { x: 1265, y: 1326 }, { x: 1254, y: 1366 }, { x: 1256, y: 1396 }, { x: 1257, y: 1415 }, { x: 1256, y: 1434 }, { x: 1254, y: 1491 }, { x: 1257, y: 1501 }, { x: 1262, y: 1580 }, { x: 1259, y: 1590 }, { x: 1234, y: 1640 }, { x: 1226, y: 1651 }, { x: 1197, y: 1639 }, { x: 1162, y: 1635 }, { x: 1133, y: 1639 }, { x: 1104, y: 1648 }, { x: 1075, y: 1654 }, { x: 1039, y: 1669 }, { x: 1028, y: 1693 } ], path_CT_A_1: [ { x: 196, y: 1000 }, { x: 321, y: 749 }, { x: 407, y: 658 }, { x: 408, y: 523 }, { x: 408, y: 200 }, { x: 426, y: 152 }, { x: 476, y: 126 }, { x: 517, y: 128 }, { x: 534, y: 152 }, { x: 543, y: 184 }, { x: 545, y: 228 }, { x: 573, y: 252 } ], path_CT_A_2: [ ], path_CT_B_1: [ { x: 199, y: 1179 }, { x: 259, y: 1222 }, { x: 360, y: 1275 }, { x: 543, y: 1319 }, { x: 660, y: 1392 }, { x: 721, y: 1448 }, { x: 767, y: 1634 }, { x: 809, y: 1706 }, { x: 854, y: 1712 }, { x: 888, y: 1700 }, { x: 920, y: 1689 }, { x: 956, y: 1684 }, { x: 997, y: 1696 } ], path_CT_B_2: [ { x: 131, y: 1162 }, { x: 128, y: 1255 }, { x: 88, y: 1459 }, { x: 60, y: 1600 }, { x: 68, y: 1732 }, { x: 86, y: 1834 }, { x: 144, y: 1868 }, { x: 388, y: 1876 }, { x: 652, y: 1873 }, { x: 756, y: 1834 }, { x: 829, y: 1755 }, { x: 891, y: 1708 }, { x: 921, y: 1688 }, { x: 970, y: 1688 }, { x: 999, y: 1699 } ], path_CT_MID_1: [ { x: 161, y: 1086 }, { x: 261, y: 1076 }, { x: 467, y: 1054 }, { x: 746, y: 1068 }, { x: 948, y: 1138 }, { x: 1196, y: 1240 }, { x: 1387, y: 1164 } ], path_CT_Rotate_B_to_A: [ { x: 988, y: 1688 }, { x: 962, y: 1638 }, { x: 915, y: 1625 }, { x: 894, y: 1575 }, { x: 744, y: 1510 }, { x: 725, y: 1138 }, { x: 618, y: 860 }, { x: 448, y: 841 }, { x: 414, y: 420 }, { x: 434, y: 141 }, { x: 488, y: 125 }, { x: 539, y: 138 }, { x: 548, y: 180 }, { x: 549, y: 223 }, { x: 581, y: 252 } ], path_CT_Rotate_A_to_B: [ { x: 582, y: 253 }, { x: 547, y: 233 }, { x: 538, y: 144 }, { x: 435, y: 135 }, { x: 422, y: 473 }, { x: 443, y: 864 }, { x: 709, y: 1073 }, { x: 762, y: 1390 }, { x: 756, y: 1496 }, { x: 769, y: 1731 }, { x: 842, y: 1723 }, { x: 911, y: 1691 }, { x: 983, y: 1687 } ] };
         
         const rotationPaths = {
             'A': ['path_CT_Rotate_B_to_A'],
@@ -159,6 +129,7 @@
         let explosions = []; 
         let firePatches = [];
         let smokeClouds = []; 
+        let droppedItems = []; // (NUEVO) Items en el suelo
 
         window.addEventListener('mousemove', (e) => { 
             mouse.x = e.clientX + camera.x;
@@ -174,6 +145,9 @@
             }
             if (e.key === 'r' && !isShopOpen && !game.isBuyTime && !player.isReloading && player.isAlive) { 
                 reload();
+            }
+            if ((e.key === 'g' || e.key === 'G') && !isShopOpen && !game.isBuyTime && player.isAlive) { // (NUEVO) Drop
+                dropPlayerWeapon();
             }
             if (e.key === 'b' || e.key === 'B') {
                 if (game.isBuyTime) { 
@@ -232,10 +206,14 @@
             const itemData = weaponData[itemName];
             if (itemData) { 
                 if (itemData.type === 'primary') { 
+                    // Drop current primary if exists
+                    if (player.inventory.primary) dropPlayerWeapon('primary');
                     player.inventory.primary = { name: itemName, ammoInClip: itemData.clipSize, ammoInReserve: itemData.reserveAmmo };
                     player.activeWeapon = 'primary'; 
                 }
                 else if (itemData.type === 'secondary') { 
+                     // Drop current secondary if exists
+                    if (player.inventory.secondary) dropPlayerWeapon('secondary');
                     player.inventory.secondary = { name: itemName, ammoInClip: itemData.clipSize, ammoInReserve: itemData.reserveAmmo };
                     player.activeWeapon = 'secondary';
                 }
@@ -252,8 +230,61 @@
                 }
             }
         }
+        
+        // (NUEVO) Drop Weapon Logic
+        function dropPlayerWeapon(forceSlot) {
+            const slot = forceSlot || player.activeWeapon;
+            if (slot !== 'primary' && slot !== 'secondary') return;
+            
+            const weapon = player.inventory[slot];
+            if (!weapon) return;
+            
+            // Create dropped item
+            droppedItems.push({
+                x: player.x,
+                y: player.y,
+                name: weapon.name,
+                ammoInClip: weapon.ammoInClip,
+                ammoInReserve: weapon.ammoInReserve,
+                rotation: Math.random() * Math.PI * 2
+            });
+            
+            player.inventory[slot] = null;
+            
+            // Switch to knife if current weapon dropped
+            if (player.activeWeapon === slot) {
+                 player.activeWeapon = 'melee';
+            }
+        }
+        
+        function dropBotWeapon(bot) {
+             // Bots drop their weapon on death
+             if (bot.weapon && bot.weapon !== 'knife') {
+                 const data = weaponData[bot.weapon];
+                 droppedItems.push({
+                    x: bot.x,
+                    y: bot.y,
+                    name: bot.weapon,
+                    ammoInClip: data.clipSize, // Simplified: bots drop full mag usually in this logic
+                    ammoInReserve: data.reserveAmmo / 2,
+                    rotation: Math.random() * Math.PI * 2
+                });
+             }
+        }
+        
+        function addKillFeed(killer, victim, weaponName, teamKiller, teamVictim) {
+             const div = document.createElement('div');
+             div.className = 'kill-msg';
+             div.innerHTML = `<span class="${teamKiller}">${killer}</span> [${weaponName}] <span class="${teamVictim}">${victim}</span>`;
+             killfeedEl.appendChild(div);
+             
+             // Remove after 5 seconds
+             setTimeout(() => {
+                 if (div.parentNode) div.parentNode.removeChild(div);
+             }, 5000);
+        }
 
-        // (CORREGIDO) RAYCASTING REAL
+        // RAYCASTING REAL
         function lineIntersectsLine(x1, y1, x2, y2, x3, y3, x4, y4) {
             const uA = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1));
             const uB = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1));
@@ -280,16 +311,13 @@
         function spawnAlliedBot(spawnPoint, pathName, money) { alliedBots.push({ x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'cyan', speed: 2.5, angle: 0, health: 100, lastShotTime: 0, state: 'navigating', currentPath: paths[pathName] || [], currentWaypointIndex: 0, flashed: 0, money: money, weapon: 'pistol', armor: false, reactionTime: 200 + Math.random() * 150, lastSeenTime: 0, burstCount: 0 }); }
         function botBuyLogic(bot, team) { bot.armor = false; bot.weapon = 'pistol'; if (bot.money >= 5750) { bot.weapon = 'awp'; bot.money -= (weaponData['awp'].cost + 1000); bot.armor = true; } else if (bot.money >= 4750) { bot.weapon = 'awp'; bot.money -= weaponData['awp'].cost; } else if (bot.money >= 4100 && team === 'ct') { bot.weapon = 'm4a1'; bot.money -= (weaponData['m4a1'].cost + 1000); bot.armor = true; } else if (bot.money >= 3700 && team === 't') { bot.weapon = 'ak47'; bot.money -= (weaponData['ak47'].cost + 1000); bot.armor = true; } else if (bot.money >= 3100 && team === 'ct') { bot.weapon = 'm4a1'; bot.money -= weaponData['m4a1'].cost; } else if (bot.money >= 2700 && team === 't') { bot.weapon = 'ak47'; bot.money -= weaponData['ak47'].cost; } }
 
-        // (CORREGIDO) HAS LINE OF SIGHT USANDO RAYCASTING
         function hasLineOfSight(viewer, target) {
             if (!target) return false;
-            // Comprueba colisión RAYO vs CAJA para cada pared
             for (const wall of walls) {
                 if (lineIntersectsRect(viewer.x, viewer.y, target.x, target.y, wall)) {
-                    return false; // Hay una pared en medio
+                    return false; 
                 }
             }
-            // Comprueba humo (aquí sí usamos puntos porque el humo es circular)
             for (let i = 0.1; i < 1; i += 0.1) {
                 const testPoint = { x: viewer.x + (target.x - viewer.x) * i, y: viewer.y + (target.y - viewer.y) * i, size: 2 };
                 for (const smoke of smokeClouds) {
@@ -304,11 +332,16 @@
         function updateBots() {
             for (let i = bots.length - 1; i >= 0; i--) {
                 const bot = bots[i];
-                if (bot.health <= 0) { player.money += ECONOMY.KILL_BONUS; if (player.money > MAX_MONEY) player.money = MAX_MONEY; bots.splice(i, 1); if (bots.length === 0 && game.bomb.state === 'unplanted') endRound("CTs Ganan", "CTs"); continue; }
+                if (bot.health <= 0) { 
+                    player.money += ECONOMY.KILL_BONUS; if (player.money > MAX_MONEY) player.money = MAX_MONEY; 
+                    dropBotWeapon(bot); // (NUEVO) Loot
+                    addKillFeed("Jugador", "Bot T", player.activeWeapon === 'secondary' ? player.inventory.secondary.name : (player.inventory.primary ? player.inventory.primary.name : 'knife'), "ct", "t");
+                    bots.splice(i, 1); if (bots.length === 0 && game.bomb.state === 'unplanted') endRound("CTs Ganan", "CTs"); continue; 
+                }
                 if (bot.flashed > Date.now()) { bot.state = 'flashed'; bot.angle += 0.5; continue; }
                 if (bot.isPlanting) { if (Date.now() - bot.plantStartTime >= GAME_TIMES.PLANT) plantBomb(bot); continue; }
                 
-                const seesPlayer = hasLineOfSight(bot, player) && isTargetInFoV(bot, player) && player.isAlive;
+                const seesPlayer = hasLineOfSight(bot, player) && isTargetInFoV(bot, player) && player.isAlive; 
                 let seesAlly = false; let targetAlly = null;
                 for(const ally of alliedBots) { if (hasLineOfSight(bot, ally) && isTargetInFoV(bot, ally)) { seesAlly = true; targetAlly = ally; break; } }
                 const weapon = weaponData[bot.weapon]; 
@@ -333,7 +366,13 @@
         function updateAlliedBots() {
             for (let i = alliedBots.length - 1; i >= 0; i--) {
                 const bot = alliedBots[i];
-                if (bot.health <= 0) { alliedBots.splice(i, 1); if (alliedBots.length === 0 && !player.isAlive) endRound("Ts Ganan", "Ts"); continue; }
+                if (bot.health <= 0) { 
+                    alliedBots.splice(i, 1); 
+                    dropBotWeapon(bot); // (NUEVO) Loot
+                    addKillFeed("Bot T", "Bot CT", "unknown", "t", "ct");
+                    if (alliedBots.length === 0 && !player.isAlive) endRound("Ts Ganan", "Ts"); 
+                    continue; 
+                }
                 if (bot.flashed > Date.now()) { bot.state = 'flashed'; bot.angle += 0.5; continue; }
                 
                 let closestEnemy = null; let minDistance = Infinity;
@@ -370,7 +409,7 @@
         function shootBullet(weapon) { const totalSpread = weapon.spread + player.recoil; const spread = (Math.random() - 0.5) * totalSpread; const bulletAngle = player.angle + spread; player.recoil += weapon.recoil; const bullet = { x: player.x, y: player.y, size: 5, color: 'yellow', speed: 15, angle: bulletAngle, damage: weapon.damage }; bullets.push(bullet); }
         function reload() { if (player.activeWeapon === 'primary' || player.activeWeapon === 'secondary') { const weaponSlot = player.inventory[player.activeWeapon]; if (!weaponSlot) return; const weapon = weaponData[weaponSlot.name]; if (weaponSlot.ammoInClip === weapon.clipSize) return; if (weaponSlot.ammoInReserve === 0) return; player.isReloading = true; setTimeout(() => { const bulletsNeeded = weapon.clipSize - weaponSlot.ammoInClip; const bulletsToReload = Math.min(bulletsNeeded, weaponSlot.ammoInReserve); weaponSlot.ammoInClip += bulletsToReload; weaponSlot.ammoInReserve -= bulletsToReload; player.isReloading = false; }, weapon.reloadTime); } }
         function throwGrenade(type) { let grenadeData = {}; if (type === 'he' && player.inventory.grenades.he > 0) { player.inventory.grenades.he--; grenadeData = { type: 'he', color: 'darkgreen', size: 10, timer: Date.now() + GAME_TIMES.GRENADE_FUSE }; } else if (type === 'molotov' && player.inventory.grenades.molotov > 0) { player.inventory.grenades.molotov--; grenadeData = { type: 'molotov', color: '#B27300', size: 10, timer: Date.now() + GAME_TIMES.MOLOTOV_FUSE }; } else if (type === 'flash' && player.inventory.grenades.flash > 0) { player.inventory.grenades.flash--; grenadeData = { type: 'flash', color: 'white', size: 10, timer: Date.now() + GAME_TIMES.FLASH_FUSE }; } else if (type === 'smoke' && player.inventory.grenades.smoke > 0) { player.inventory.grenades.smoke--; grenadeData = { type: 'smoke', color: '#BBBBBB', size: 10, timer: Date.now() + GAME_TIMES.SMOKE_FUSE }; } else { return; } player.lastShotTime = Date.now(); const grenade = { x: player.x, y: player.y, size: grenadeData.size, color: grenadeData.color, velX: Math.cos(player.angle) * 10, velY: Math.sin(player.angle) * 10, timer: grenadeData.timer, type: grenadeData.type }; grenades.push(grenade); player.activeWeapon = 'secondary'; }
-        function applyPlayerDamage(damage) { if (!player.isAlive) return; if (player.armor <= 0) { player.health -= damage; } else { const absorptionRatio = player.inventory.helmet ? 0.70 : 0.50; let damageToArmor = damage * absorptionRatio; let damageToHealth = damage * (1 - absorptionRatio); if (player.armor < damageToArmor) { const remainingDamage = damageToArmor - player.armor; player.armor = 0; player.inventory.helmet = false; player.health -= (damageToHealth + remainingDamage); } else { player.armor -= damageToArmor; player.health -= damageToHealth; } } if (player.health <= 0) { player.health = 0; player.isAlive = false; if (alliedBots.length === 0) { endRound("Ts Ganan", "Ts"); } } }
+        function applyPlayerDamage(damage) { if (!player.isAlive) return; if (player.armor <= 0) { player.health -= damage; } else { const absorptionRatio = player.inventory.helmet ? 0.70 : 0.50; let damageToArmor = damage * absorptionRatio; let damageToHealth = damage * (1 - absorptionRatio); if (player.armor < damageToArmor) { const remainingDamage = damageToArmor - player.armor; player.armor = 0; player.inventory.helmet = false; player.health -= (damageToHealth + remainingDamage); } else { player.armor -= damageToArmor; player.health -= damageToHealth; } } if (player.health <= 0) { player.health = 0; player.isAlive = false; addKillFeed("Bot T", "Jugador", "unknown", "t", "ct"); if (alliedBots.length === 0) { endRound("Ts Ganan", "Ts"); } } }
         function applyAlliedBotDamage(bot, damage) { const damageToApply = bot.armor ? damage * 0.5 : damage; bot.health -= damageToApply; if (bot.health <= 0) { if (alliedBots.length <= 1 && !player.isAlive) { endRound("Ts Ganan", "Ts"); } } }
         function applyGrenadeDamage(target, damage) { if (target === player) { applyPlayerDamage(damage); } else { const damageToApply = target.armor ? damage * 0.5 : damage; target.health -= damageToApply; } }
         function checkNearBomb() { if (game.bomb.state !== 'planted') return false; const distance = Math.hypot(player.x - game.bomb.x, player.y - game.bomb.y); return distance < 75; }
@@ -380,7 +419,7 @@
         function bombExplode() { game.bomb.state = 'exploded'; endRound("Ts Ganan", "Ts"); }
         let isRoundEnding = false;
         function endRound(message, winner) { if (isRoundEnding) return; isRoundEnding = true; if (game.bomb.timerId) clearTimeout(game.bomb.timerId); if (winner === 'CTs') { game.score.ct++; player.money += ECONOMY.WIN_BONUS; alliedBots.forEach(b => b.money += ECONOMY.WIN_BONUS); bots.forEach(b => b.money += ECONOMY.LOSS_BONUS); } else if (winner === 'Ts') { game.score.t++; player.money += ECONOMY.LOSS_BONUS; alliedBots.forEach(b => b.money += ECONOMY.LOSS_BONUS); bots.forEach(b => b.money += ECONOMY.WIN_BONUS); } if (player.money > MAX_MONEY) player.money = MAX_MONEY; alliedBots.forEach(b => { if (b.money > MAX_MONEY) b.money = MAX_MONEY; }); bots.forEach(b => { if (b.money > MAX_MONEY) b.money = MAX_MONEY; }); if (game.score.ct === 12) { showMessage("¡¡CTs GANAN!!", 10000); return; } if (game.score.t === 12) { showMessage("¡¡Ts GANAN!!", 10000); return; } showMessage(message, 3000); setTimeout(resetRound, 3000); }
-        function resetRound() { game.roundNumber++; isRoundEnding = false; game.bomb.state = 'unplanted'; game.bomb.site = null; if (game.bomb.timerId) clearTimeout(game.bomb.timerId); game.bomb.timerId = null; const oldAlliedBots = [...alliedBots]; const oldEnemyBots = [...bots]; bots = []; alliedBots = []; bullets = []; botBullets = []; alliedBotBullets = []; grenades = []; explosions = []; firePatches = []; smokeClouds = []; player.isAlive = true; player.hasBomb = false; player.health = 100; player.armor = 0; player.inventory.helmet = false; player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; if (game.roundNumber === 1) { player.money = ECONOMY.ROUND_1; } const pistol = weaponData['pistol']; player.inventory.secondary = { name: 'pistol', ammoInClip: pistol.clipSize, ammoInReserve: pistol.reserveAmmo }; player.inventory.primary = null; player.activeWeapon = 'secondary'; const playerSpawnZone = getSpawnZone('Spawn AT'); if (playerSpawnZone) { player.x = playerSpawnZone.x + Math.random() * playerSpawnZone.width; player.y = playerSpawnZone.y + Math.random() * playerSpawnZone.height; } else { player.x = 142; player.y = 1087; } const botSpawnZone = getSpawnZone('Spawn T'); if (!botSpawnZone) { return; } const teamTargetSite = Math.random() < 0.5 ? 'A' : 'B'; const bombCarrierIndex = Math.floor(Math.random() * 5); for (let i = 0; i < 5; i++) { const spawnX = botSpawnZone.x + Math.random() * botSpawnZone.width; const spawnY = botSpawnZone.y + Math.random() * botSpawnZone.height; const targetRoute = Math.random() < 0.5 ? 1 : 2; const pathName = `path_T_${teamTargetSite}_${targetRoute}`; const oldBot = oldEnemyBots[i]; const money = game.roundNumber === 1 ? ECONOMY.ROUND_1 : (oldBot ? oldBot.money : ECONOMY.LOSS_BONUS); spawnBot(i === bombCarrierIndex, { x: spawnX, y: spawnY }, pathName, money); } if (!playerSpawnZone) { return; } let availableCTPaths = [...ctPathNames]; availableCTPaths = availableCTPaths.filter(pathName => paths[pathName] && paths[pathName].length > 0); for (let i = 0; i < 4; i++) { const spawnX = playerSpawnZone.x + Math.random() * playerSpawnZone.width; const spawnY = playerSpawnZone.y + Math.random() * playerSpawnZone.height; const pathName = availableCTPaths[i % availableCTPaths.length]; const oldBot = oldAlliedBots[i]; const money = game.roundNumber === 1 ? ECONOMY.ROUND_1 : (oldBot ? oldBot.money : ECONOMY.LOSS_BONUS); spawnAlliedBot({ x: spawnX, y: spawnY }, pathName, money); } game.isBuyTime = true; isShopOpen = true; showMessage(`Ronda ${game.roundNumber} - Compra`, GAME_TIMES.BUY_TIME); for (const bot of bots) { botBuyLogic(bot, 't'); } for (const bot of alliedBots) { botBuyLogic(bot, 'ct'); } setTimeout(() => { game.isBuyTime = false; isShopOpen = false; showMessage("¡Go!", 1000); }, GAME_TIMES.BUY_TIME); }
+        function resetRound() { game.roundNumber++; isRoundEnding = false; game.bomb.state = 'unplanted'; game.bomb.site = null; if (game.bomb.timerId) clearTimeout(game.bomb.timerId); game.bomb.timerId = null; const oldAlliedBots = [...alliedBots]; const oldEnemyBots = [...bots]; bots = []; alliedBots = []; bullets = []; botBullets = []; alliedBotBullets = []; grenades = []; explosions = []; firePatches = []; smokeClouds = []; droppedItems = []; player.isAlive = true; player.hasBomb = false; player.health = 100; player.armor = 0; player.inventory.helmet = false; player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; if (game.roundNumber === 1) { player.money = ECONOMY.ROUND_1; } const pistol = weaponData['pistol']; player.inventory.secondary = { name: 'pistol', ammoInClip: pistol.clipSize, ammoInReserve: pistol.reserveAmmo }; player.inventory.primary = null; player.activeWeapon = 'secondary'; const playerSpawnZone = getSpawnZone('Spawn AT'); if (playerSpawnZone) { player.x = playerSpawnZone.x + Math.random() * playerSpawnZone.width; player.y = playerSpawnZone.y + Math.random() * playerSpawnZone.height; } else { player.x = 142; player.y = 1087; } const botSpawnZone = getSpawnZone('Spawn T'); if (!botSpawnZone) { return; } const teamTargetSite = Math.random() < 0.5 ? 'A' : 'B'; const bombCarrierIndex = Math.floor(Math.random() * 5); for (let i = 0; i < 5; i++) { const spawnX = botSpawnZone.x + Math.random() * botSpawnZone.width; const spawnY = botSpawnZone.y + Math.random() * botSpawnZone.height; const targetRoute = Math.random() < 0.5 ? 1 : 2; const pathName = `path_T_${teamTargetSite}_${targetRoute}`; const oldBot = oldEnemyBots[i]; const money = game.roundNumber === 1 ? ECONOMY.ROUND_1 : (oldBot ? oldBot.money : ECONOMY.LOSS_BONUS); spawnBot(i === bombCarrierIndex, { x: spawnX, y: spawnY }, pathName, money); } if (!playerSpawnZone) { return; } let availableCTPaths = [...ctPathNames]; availableCTPaths = availableCTPaths.filter(pathName => paths[pathName] && paths[pathName].length > 0); for (let i = 0; i < 4; i++) { const spawnX = playerSpawnZone.x + Math.random() * playerSpawnZone.width; const spawnY = playerSpawnZone.y + Math.random() * playerSpawnZone.height; const pathName = availableCTPaths[i % availableCTPaths.length]; const oldBot = oldAlliedBots[i]; const money = game.roundNumber === 1 ? ECONOMY.ROUND_1 : (oldBot ? oldBot.money : ECONOMY.LOSS_BONUS); spawnAlliedBot({ x: spawnX, y: spawnY }, pathName, money); } game.isBuyTime = true; isShopOpen = true; showMessage(`Ronda ${game.roundNumber} - Compra`, GAME_TIMES.BUY_TIME); for (const bot of bots) { botBuyLogic(bot, 't'); } for (const bot of alliedBots) { botBuyLogic(bot, 'ct'); } setTimeout(() => { game.isBuyTime = false; isShopOpen = false; showMessage("¡Go!", 1000); }, GAME_TIMES.BUY_TIME); }
         function showProgress(progress, max) { progressContainerEl.style.display = 'block'; const percentage = Math.min((progress / max) * 100, 100); progressBarEl.style.width = percentage + '%'; }
         function hideProgress() { progressContainerEl.style.display = 'none'; progressBarEl.style.width = '0%'; }
         function showMessage(text, duration) { gameMessageEl.textContent = text; gameMessageEl.style.display = 'block'; clearTimeout(game.messageTimerId); game.messageTimerId = setTimeout(() => { gameMessageEl.style.display = 'none'; }, duration); }
@@ -388,8 +427,33 @@
         function update() {
             if (isRoundEnding) return;
             if (game.isBuyTime) { camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2; if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0; if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width; if (camera.y + canvas.height > world.height) camera.y = world.height - canvas.height; return; }
+            
+            // (NUEVO) SHIFT WALKING
+            const currentSpeed = (keys['Shift']) ? player.speed * 0.5 : player.speed;
+
             if (mouse.isDown && !game.isDefusing && player.flashed <= Date.now() && !isShopOpen && player.isAlive) { useWeapon(); } else { if (player.recoil > 0) player.recoil -= 0.02; if (player.recoil < 0) player.recoil = 0; }
-            if (!game.isDefusing && player.flashed <= Date.now() && !isShopOpen && player.isAlive) { const oldX = player.x; const oldY = player.y; if (keys['a'] || keys['A']) { player.x -= player.speed; } if (keys['d'] || keys['D']) { player.x += player.speed; } for (const wall of walls) { if (checkCollision(player, wall)) { player.x = oldX; break; } } if (keys['w'] || keys['W']) { player.y -= player.speed; } if (keys['s'] || keys['S']) { player.y += player.speed; } for (const wall of walls) { if (checkCollision(player, wall)) { player.y = oldY; break; } } player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x); } else if (player.flashed > Date.now() && player.isAlive) { player.angle += 0.1; }
+            if (!game.isDefusing && player.flashed <= Date.now() && !isShopOpen && player.isAlive) { const oldX = player.x; const oldY = player.y; if (keys['a'] || keys['A']) { player.x -= currentSpeed; } if (keys['d'] || keys['D']) { player.x += currentSpeed; } for (const wall of walls) { if (checkCollision(player, wall)) { player.x = oldX; break; } } if (keys['w'] || keys['W']) { player.y -= currentSpeed; } if (keys['s'] || keys['S']) { player.y += currentSpeed; } for (const wall of walls) { if (checkCollision(player, wall)) { player.y = oldY; break; } } player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x); } else if (player.flashed > Date.now() && player.isAlive) { player.angle += 0.1; }
+            
+            // (NUEVO) Pickup Weapon
+            if (player.isAlive) {
+                for (let i = droppedItems.length - 1; i >= 0; i--) {
+                    const item = droppedItems[i];
+                    const dist = Math.hypot(player.x - item.x, player.y - item.y);
+                    if (dist < 30) { // Collision radius
+                        const itemData = weaponData[item.name];
+                        if (itemData.type === 'primary' && !player.inventory.primary) {
+                            player.inventory.primary = { name: item.name, ammoInClip: item.ammoInClip, ammoInReserve: item.ammoInReserve };
+                            player.activeWeapon = 'primary';
+                            droppedItems.splice(i, 1);
+                        } else if (itemData.type === 'secondary' && !player.inventory.secondary) {
+                             player.inventory.secondary = { name: item.name, ammoInClip: item.ammoInClip, ammoInReserve: item.ammoInReserve };
+                             player.activeWeapon = 'secondary';
+                             droppedItems.splice(i, 1);
+                        }
+                    }
+                }
+            }
+
             updateDefusing(); updateBots(); updateAlliedBots(); updateGrenades(); updateFire(); updateSmokes(); updateExplosions();
             for (let i = bullets.length - 1; i >= 0; i--) { let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (let j = bots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, bots[j])) { bots[j].health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
             for (let i = botBullets.length - 1; i >= 0; i--) { let bullet = botBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (checkObjectCollision(bullet, player)) { applyPlayerDamage(bullet.damage); botBullets.splice(i, 1); bulletHit = true; continue; } for (let j = alliedBots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, alliedBots[j])) { applyAlliedBotDamage(alliedBots[j], bullet.damage); botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } }
@@ -397,15 +461,6 @@
             if (player.isAlive) { camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2; } else { if (alliedBots.length > 0) { if (game.spectatorTargetIndex >= alliedBots.length) { game.spectatorTargetIndex = 0; } const targetBot = alliedBots[game.spectatorTargetIndex]; camera.x = targetBot.x - canvas.width / 2; camera.y = targetBot.y - canvas.height / 2; } else { camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2; } }
             if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0; if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width; if (camera.y + canvas.height > world.height) camera.y = world.height - canvas.height;
         }
-
-        function updateGrenades() { for (let i = grenades.length - 1; i >= 0; i--) { const g = grenades[i]; g.x += g.velX; g.y += g.velY; g.velX *= 0.99; g.velY *= 0.99; for (const wall of walls) { if (checkCollision(g, wall)) { if (Math.abs(g.velX) > Math.abs(g.velY)) { g.x -= g.velX; g.velX *= -0.5; } else { g.y -= g.velY; g.velY *= -0.5; } break; } } if (Date.now() > g.timer) { if (g.type === 'he') { explodeHE(g); } if (g.type === 'molotov') { explodeMolotov(g); } if (g.type === 'flash') { explodeFlash(g); } if (g.type === 'smoke') { explodeSmoke(g); } grenades.splice(i, 1); } } }
-        function updateFire() { const fireDamage = weaponData.molotov.damage; for (let i = firePatches.length - 1; i >= 0; i--) { const patch = firePatches[i]; if (checkObjectCollision(player, patch)) { applyPlayerDamage(fireDamage); } for(const bot of bots) { if (checkObjectCollision(bot, patch)) { bot.health -= fireDamage; } } for(const bot of alliedBots) { if (checkObjectCollision(bot, patch)) { applyAlliedBotDamage(bot, fireDamage); } } patch.life--; if (patch.life <= 0) { firePatches.splice(i, 1); } } }
-        function updateSmokes() { for (let i = smokeClouds.length - 1; i >= 0; i--) { smokeClouds[i].life--; if (smokeClouds[i].life <= 0) { smokeClouds.splice(i, 1); } } }
-        function updateExplosions() { for (let i = explosions.length - 1; i >= 0; i--) { explosions[i].life--; if (explosions[i].life <= 0) { explosions.splice(i, 1); } } }
-        function explodeHE(grenade) { const data = weaponData.he_grenade; explosions.push({ x: grenade.x, y: grenade.y, radius: data.range, life: 10 }); let dist = Math.hypot(player.x - grenade.x, player.y - grenade.y); if (dist < data.range) { const damage = data.damage * (1 - (dist / data.range)); applyPlayerDamage(damage); } for (const bot of bots) { dist = Math.hypot(bot.x - grenade.x, bot.y - grenade.y); if (dist < data.range) { const damage = data.damage * (1 - (dist / data.range)); applyGrenadeDamage(bot, damage); } } for (const bot of alliedBots) { dist = Math.hypot(bot.x - grenade.x, bot.y - grenade.y); if (dist < data.range) { const damage = data.damage * (1 - (dist / data.range)); applyAlliedBotDamage(bot, damage); } } }
-        function explodeMolotov(grenade) { const data = weaponData.molotov; for (let i = 0; i < 5; i++) { const firePatch = { x: grenade.x + (Math.random() - 0.5) * data.range, y: grenade.y + (Math.random() - 0.5) * data.range, size: 30, life: GAME_TIMES.FIRE_DURATION / 60 }; firePatches.push(firePatch); } }
-        function explodeFlash(grenade) { const data = weaponData.flash; explosions.push({ x: grenade.x, y: grenade.y, radius: data.range / 4, life: 5 }); const entities = [player, ...bots, ...alliedBots]; for (const entity of entities) { const dist = Math.hypot(entity.x - grenade.x, entity.y - grenade.y); if (dist < data.range) { if (hasLineOfSight(entity, grenade)) { if(isTargetInFoV(entity, {x: grenade.x, y: grenade.y})) { entity.flashed = Date.now() + GAME_TIMES.FLASH_DURATION; } } } } }
-        function explodeSmoke(grenade) { const data = weaponData.smoke; smokeClouds.push({ x: grenade.x, y: grenade.y, size: data.range, life: GAME_TIMES.SMOKE_DURATION / 60 }); }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -417,6 +472,15 @@
             for (const wall of walls) { ctx.fillRect(wall.x, wall.y, wall.width, wall.height); }
             if (game.bomb.state === 'planted') { const time = Date.now(); const flash = Math.abs(Math.sin(time / 100)); ctx.fillStyle = `rgb(255, ${flash * 100}, ${flash * 100})`; ctx.fillRect(game.bomb.x - 10, game.bomb.y - 10, 20, 20); }
             
+            // Draw Dropped Items
+            for (const item of droppedItems) {
+                 ctx.save(); ctx.translate(item.x, item.y); ctx.rotate(item.rotation);
+                 ctx.fillStyle = '#888'; // Grey gun color
+                 if (weaponData[item.name].type === 'primary') ctx.fillRect(-10, -3, 20, 6); // Bigger for rifle
+                 else ctx.fillRect(-5, -2, 10, 4); // Smaller for pistol
+                 ctx.restore();
+            }
+
             ctx.fillStyle = 'yellow'; for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
             ctx.fillStyle = 'orange'; for (const bullet of botBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
             ctx.fillStyle = 'lime'; for (const bullet of alliedBotBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
@@ -450,6 +514,7 @@
             ctx.restore(); 
             
             drawMinimap();
+            
             ctx.font = 'bold 24px Arial';
             ctx.fillStyle = 'white'; ctx.fillText(`Vida: ${Math.ceil(player.health)}`, 20, 190); 
             ctx.fillStyle = '#66CCFF'; const armorIcon = player.inventory.helmet ? '🛡️' : '■'; ctx.fillText(`Armadura: ${Math.ceil(player.armor)} ${armorIcon}`, 20, 220); 
