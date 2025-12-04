@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Prototipo 2D v32 - IA Táctica Corregida</title>
+    <title>Prototipo 2D v33 - Final (Raycasting + IA Táctica)</title>
     
     <style>
         body { margin: 0; padding: 0; background-color: #111; overflow: hidden; font-family: Arial, sans-serif; }
@@ -26,7 +26,23 @@
         .shop-item:hover { background-color: #777; }
         #progress-container { display: none; position: absolute; bottom: 20%; left: 50%; transform: translateX(-50%); width: 300px; height: 30px; background-color: rgba(0, 0, 0, 0.5); border: 2px solid white; border-radius: 5px; z-index: 20; }
         #progress-bar { width: 0%; height: 100%; background-color: #4CAF50; transition: width 0.1s linear; }
-        #game-message { display: none; position: absolute; top: 30%; left: 50%; transform: translateX(-50%); font-size: 48px; font-weight: bold; color: white; text-shadow: 2px 2px 4px black; z-index: 20; }
+        
+        /* UI Arreglada */
+        #game-message { 
+            display: none; 
+            position: absolute; 
+            top: 15%; 
+            left: 50%; 
+            transform: translateX(-50%); 
+            font-size: 48px; 
+            font-weight: bold; 
+            color: white; 
+            text-shadow: 2px 2px 4px black; 
+            z-index: 20; 
+            pointer-events: none; 
+            text-align: center;
+        }
+        
         #flash-overlay {
             display: none;
             position: absolute;
@@ -79,446 +95,60 @@
         
         const world = { width: 3000, height: 2000 };
         const mapData = { playerSize: 20, botSize: 20 };
-        
         const minimapScale = 0.2; 
-        
         let camera = { x: 0, y: 0 };
         const GAME_TIMES = { PLANT: 3000, DEFUSE: 5000, BOMB_FUSE: 30000, GRENADE_FUSE: 2500, MOLOTOV_FUSE: 2000, FIRE_DURATION: 5000, FLASH_FUSE: 2000, FLASH_DURATION: 3000, SMOKE_FUSE: 2000, SMOKE_DURATION: 15000, BUY_TIME: 10000 };
-        
         const MAX_MONEY = 16000;
-        const ECONOMY = {
-            ROUND_1: 700,
-            KILL_BONUS: 300,
-            WIN_BONUS: 1200,
-            LOSS_BONUS: 700,
-            DEFUSE_BONUS: 500
-        };
-        
-        let game = {
-            bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null, site: null }, 
-            isDefusing: false,
-            defuseStartTime: 0,
-            messageTimerId: null,
-            roundNumber: 0,
-            score: { ct: 0, t: 0 },
-            isBuyTime: false,
-            spectatorTargetIndex: 0 
-        };
+        const ECONOMY = { ROUND_1: 700, KILL_BONUS: 300, WIN_BONUS: 1200, LOSS_BONUS: 700, DEFUSE_BONUS: 500 };
+        let game = { bomb: { state: 'unplanted', x: 0, y: 0, plantTime: 0, timerId: null, site: null }, isDefusing: false, defuseStartTime: 0, messageTimerId: null, roundNumber: 0, score: { ct: 0, t: 0 }, isBuyTime: false, spectatorTargetIndex: 0 };
         
         const weaponData = {
             'knife': { name: 'Cuchillo', type: 'melee', damage: 50, fireRate: 500, range: 40, automatic: false, recoil: 0, spread: 0 },
-            'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05,
-                clipSize: 20, reserveAmmo: 100, reloadTime: 1500, cost: 200 },
-            'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03,
-                clipSize: 7, reserveAmmo: 35, reloadTime: 2000, cost: 700 },
-            'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01,
-                clipSize: 30, reserveAmmo: 90, reloadTime: 2500, cost: 2700 },
-            'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01,
-                clipSize: 25, reserveAmmo: 75, reloadTime: 3000, cost: 3100 },
-            'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0,
-                clipSize: 5, reserveAmmo: 30, reloadTime: 3500, cost: 4750 },
+            'pistol': { name: 'Pistola (Glock)', type: 'secondary', damage: 25, fireRate: 200, automatic: false, recoil: 0.0, spread: 0.05, clipSize: 20, reserveAmmo: 100, reloadTime: 1500, cost: 200 },
+            'deagle': { name: 'Deagle', type: 'secondary', damage: 60, fireRate: 400, automatic: false, recoil: 0.1, spread: 0.03, clipSize: 7, reserveAmmo: 35, reloadTime: 2000, cost: 700 },
+            'ak47': { name: 'AK-47', type: 'primary', damage: 34, fireRate: 100, automatic: true, recoil: 0.03, spread: 0.01, clipSize: 30, reserveAmmo: 90, reloadTime: 2500, cost: 2700 },
+            'm4a1': { name: 'M4A1-S', type: 'primary', damage: 30, fireRate: 110, automatic: true, recoil: 0.02, spread: 0.01, clipSize: 25, reserveAmmo: 75, reloadTime: 3000, cost: 3100 },
+            'awp': { name: 'AWP', type: 'primary', damage: 110, fireRate: 1500, automatic: false, recoil: 0.0, spread: 0.0, clipSize: 5, reserveAmmo: 30, reloadTime: 3500, cost: 4750 },
             'he_grenade': { name: 'Granada HE', type: 'grenade', damage: 90, fireRate: 1000, range: 200, cost: 300 },
             'molotov': { name: 'Molotov', type: 'grenade', damage: 10, fireRate: 1000, range: 100, cost: 400 },
             'flash': { name: 'Flash', type: 'grenade', damage: 0, fireRate: 1000, range: 800, cost: 200 },
             'smoke': { name: 'Humo', type: 'grenade', damage: 0, fireRate: 1000, range: 150, cost: 300 }
         };
 
-        // --- 2. EL MAPA (Tus datos) ---
-        // (NUEVO) ¡Tu mapa actualizado!
+        // === 2. EL MAPA ACTUALIZADO (TU CÓDIGO) ===
         const walls = [
-            { x: 1696, y: 1311, width: 85, height: 632 },
-            { x: 1682, y: 1, width: 99, height: 579 },
-            { x: 1885, y: 429, width: 350, height: 355 },
-            { x: 1954, y: 1367, width: 328, height: 231 },
-            { x: 1402, y: 532, width: 135, height: 463 },
-            { x: 899, y: 209, width: 496, height: 337 },
-            { x: 881, y: 204, width: 523, height: 423 },
-            { x: 839, y: 119, width: 59, height: 507 },
-            { x: -1, y: 2, width: 345, height: 617 },
-            { x: 542, y: 293, width: 31, height: 22 },
-            { x: 571, y: 204, width: 33, height: 21 },
-            { x: 609, y: 268, width: 34, height: 23 },
-            { x: 493, y: 181, width: 19, height: 166 },
-            { x: 512, y: 347, width: 133, height: 24 },
-            { x: 494, y: 348, width: 356, height: 276 },
-            { x: 493, y: 340, width: 19, height: 15 },
-            { x: 491, y: 9, width: 26, height: 50 },
-            { x: 491, y: 3, width: 25, height: 9 },
-            { x: 594, y: 142, width: 24, height: 12 },
-            { x: 656, y: 182, width: 66, height: 35 },
-            { x: 761, y: 106, width: 21, height: 189 },
-            { x: 1, y: 3, width: 1520, height: 9 },
-            { x: 1522, y: 5, width: 1453, height: 6 },
-            { x: 2978, y: 7, width: 10, height: 3 },
-            { x: 2972, y: 5, width: 17, height: 6 },
-            { x: 2980, y: 9, width: 5, height: 728 },
-            { x: 2983, y: 738, width: 3, height: 610 },
-            { x: 2981, y: 739, width: 4, height: 615 },
-            { x: 2981, y: 1353, width: 3, height: 627 },
-            { x: 1465, y: 1943, width: 1520, height: 35 },
-            { x: -2, y: 1943, width: 1469, height: 35 },
-            { x: 0, y: 1225, width: 12, height: 720 },
-            { x: 4, y: 661, width: 8, height: 566 },
-            { x: 2, y: 604, width: 9, height: 59 },
-            { x: 1353, y: 1259, width: 200, height: 108 },
-            { x: 1159, y: 1035, width: 135, height: 123 },
-            { x: 1339, y: 1367, width: 67, height: 433 },
-            { x: 533, y: 1479, width: 115, height: 332 },
-            { x: 535, y: 1129, width: 143, height: 100 },
-            { x: 767, y: 826, width: 217, height: 236 },
-            { x: 1137, y: 692, width: 73, height: 55 },
-            { x: 501, y: 715, width: 58, height: 68 },
-            { x: 142, y: 1606, width: 405, height: 205 },
-            { x: 834, y: 1603, width: 40, height: 31 },
-            { x: 940, y: 1547, width: 260, height: 63 },
-            { x: 1115, y: 1662, width: 28, height: 76 },
-            { x: 943, y: 1706, width: 8, height: 31 },
-            { x: 875, y: 1767, width: 43, height: 29 },
-            { x: 898, y: 1656, width: 43, height: 15 },
-            { x: 1046, y: 1812, width: 40, height: 29 },
-            { x: 838, y: 1873, width: 33, height: 21 },
-            { x: 989, y: 1840, width: 94, height: 105 },
-            { x: 1190, y: 1783, width: 66, height: 36 },
-            { x: 1663, y: 732, width: 577, height: 232 },
-            { x: 1159, y: 972, width: 135, height: 139 },
-            { x: 768, y: 1058, width: 457, height: 221 },
-            { x: 955, y: 1348, width: 39, height: 224 },
-            { x: 1084, y: 616, width: 328, height: 250 },
+            { x: 1696, y: 1311, width: 85, height: 632 }, { x: 1682, y: 1, width: 99, height: 579 }, { x: 1885, y: 429, width: 350, height: 355 }, { x: 1954, y: 1367, width: 328, height: 231 }, { x: 1402, y: 532, width: 135, height: 463 }, { x: 899, y: 209, width: 496, height: 337 }, { x: 881, y: 204, width: 523, height: 423 }, { x: 839, y: 119, width: 59, height: 507 }, { x: -1, y: 2, width: 345, height: 617 }, { x: 542, y: 293, width: 31, height: 22 }, { x: 571, y: 204, width: 33, height: 21 }, { x: 609, y: 268, width: 34, height: 23 }, { x: 493, y: 181, width: 19, height: 166 }, { x: 512, y: 347, width: 133, height: 24 }, { x: 494, y: 348, width: 356, height: 276 }, { x: 493, y: 340, width: 19, height: 15 }, { x: 491, y: 9, width: 26, height: 50 }, { x: 491, y: 3, width: 25, height: 9 }, { x: 594, y: 142, width: 24, height: 12 }, { x: 656, y: 182, width: 66, height: 35 }, { x: 761, y: 106, width: 21, height: 189 }, { x: 1, y: 3, width: 1520, height: 9 }, { x: 1522, y: 5, width: 1453, height: 6 }, { x: 2978, y: 7, width: 10, height: 3 }, { x: 2972, y: 5, width: 17, height: 6 }, { x: 2980, y: 9, width: 5, height: 728 }, { x: 2983, y: 738, width: 3, height: 610 }, { x: 2981, y: 739, width: 4, height: 615 }, { x: 2981, y: 1353, width: 3, height: 627 }, { x: 1465, y: 1943, width: 1520, height: 35 }, { x: -2, y: 1943, width: 1469, height: 35 }, { x: 0, y: 1225, width: 12, height: 720 }, { x: 4, y: 661, width: 8, height: 566 }, { x: 2, y: 604, width: 9, height: 59 }, { x: 1353, y: 1259, width: 200, height: 108 }, { x: 1159, y: 1035, width: 135, height: 123 }, { x: 1339, y: 1367, width: 67, height: 433 }, { x: 533, y: 1479, width: 115, height: 332 }, { x: 535, y: 1129, width: 143, height: 100 }, { x: 767, y: 826, width: 217, height: 236 }, { x: 1137, y: 692, width: 73, height: 55 }, { x: 501, y: 715, width: 58, height: 68 }, { x: 142, y: 1606, width: 405, height: 205 }, { x: 834, y: 1603, width: 40, height: 31 }, { x: 940, y: 1547, width: 260, height: 63 }, { x: 1115, y: 1662, width: 28, height: 76 }, { x: 943, y: 1706, width: 8, height: 31 }, { x: 875, y: 1767, width: 43, height: 29 }, { x: 898, y: 1656, width: 43, height: 15 }, { x: 1046, y: 1812, width: 40, height: 29 }, { x: 838, y: 1873, width: 33, height: 21 }, { x: 989, y: 1840, width: 94, height: 105 }, { x: 1190, y: 1783, width: 66, height: 36 }, { x: 1663, y: 732, width: 577, height: 232 }, { x: 1159, y: 972, width: 135, height: 139 }, { x: 768, y: 1058, width: 457, height: 221 }, { x: 955, y: 1348, width: 39, height: 224 }, { x: 1084, y: 616, width: 328, height: 250 }
         ];
-
-        // === ARRAY DE ZONAS ===
         const zones = [
-            { x: 52, y: 969, width: 180, height: 236, color: 'rgba(0, 150, 255, 0.5)', name: 'Spawn AT' },
-            { x: 2528, y: 976, width: 276, height: 243, color: 'rgba(255, 100, 0, 0.5)', name: 'Spawn T' },
-            { x: 545, y: 195, width: 130, height: 114, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio A' },
-            { x: 814, y: 1572, width: 396, height: 317, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio B' },
+            { x: 52, y: 969, width: 180, height: 236, color: 'rgba(0, 150, 255, 0.5)', name: 'Spawn AT' }, { x: 2528, y: 976, width: 276, height: 243, color: 'rgba(255, 100, 0, 0.5)', name: 'Spawn T' }, { x: 545, y: 195, width: 130, height: 114, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio A' }, { x: 814, y: 1572, width: 396, height: 317, color: 'rgba(255, 69, 0, 0.5)', name: 'Sitio B' }
         ];
-
-        // === OBJETO DE CAMINOS IA (T, CT y Rotación) ===
         const paths = {
-            path_T_A_1: [
-                { x: 2648, y: 1020 },
-                { x: 2395, y: 317 },
-                { x: 2074, y: 280 },
-                { x: 1905, y: 275 },
-                { x: 1858, y: 300 },
-                { x: 1829, y: 383 },
-                { x: 1832, y: 533 },
-                { x: 1820, y: 611 },
-                { x: 1799, y: 663 },
-                { x: 1751, y: 690 },
-                { x: 1678, y: 681 },
-                { x: 1634, y: 650 },
-                { x: 1622, y: 583 },
-                { x: 1590, y: 512 },
-                { x: 1563, y: 441 },
-                { x: 1539, y: 384 },
-                { x: 1522, y: 297 },
-                { x: 1513, y: 279 },
-                { x: 1495, y: 222 },
-                { x: 1492, y: 200 },
-                { x: 1460, y: 169 },
-                { x: 1403, y: 139 },
-                { x: 1347, y: 138 },
-                { x: 1295, y: 135 },
-                { x: 1223, y: 118 },
-                { x: 1190, y: 111 },
-                { x: 1147, y: 98 },
-                { x: 1098, y: 74 },
-                { x: 929, y: 70 },
-                { x: 887, y: 70 },
-                { x: 860, y: 78 },
-                { x: 842, y: 85 },
-                { x: 833, y: 92 },
-                { x: 823, y: 106 },
-                { x: 812, y: 133 },
-                { x: 808, y: 160 },
-                { x: 809, y: 168 },
-                { x: 808, y: 184 },
-                { x: 805, y: 243 },
-                { x: 807, y: 250 },
-                { x: 809, y: 289 },
-                { x: 809, y: 292 },
-                { x: 806, y: 301 },
-                { x: 798, y: 308 },
-                { x: 790, y: 315 },
-                { x: 788, y: 316 },
-                { x: 775, y: 318 },
-                { x: 762, y: 321 },
-                { x: 748, y: 319 },
-                { x: 736, y: 320 },
-                { x: 717, y: 313 },
-                { x: 708, y: 305 },
-                { x: 695, y: 292 },
-                { x: 691, y: 287 },
-                { x: 689, y: 283 },
-                { x: 681, y: 272 },
-                { x: 676, y: 265 },
-                { x: 667, y: 248 },
-                { x: 659, y: 245 },
-                { x: 658, y: 245 },
-            ],
-            path_T_A_2: [
-                { x: 2638, y: 1089 },
-                { x: 2572, y: 1120 },
-                { x: 2536, y: 1141 },
-                { x: 2486, y: 1167 },
-                { x: 2398, y: 1196 },
-                { x: 2296, y: 1226 },
-                { x: 2219, y: 1227 },
-                { x: 2142, y: 1224 },
-                { x: 2046, y: 1225 },
-                { x: 1984, y: 1225 },
-                { x: 1907, y: 1228 },
-                { x: 1814, y: 1234 },
-                { x: 1714, y: 1211 },
-                { x: 1683, y: 1207 },
-                { x: 1657, y: 1204 },
-                { x: 1624, y: 1187 },
-                { x: 1624, y: 1160 },
-                { x: 1608, y: 1124 },
-                { x: 1605, y: 1087 },
-                { x: 1605, y: 1062 },
-                { x: 1602, y: 1028 },
-                { x: 1603, y: 992 },
-                { x: 1604, y: 988 },
-                { x: 1625, y: 247 },
-                { x: 1539, y: 183 },
-                { x: 1481, y: 85 },
-                { x: 1175, y: 79 },
-                { x: 1101, y: 79 },
-                { x: 889, y: 67 },
-                { x: 858, y: 80 },
-                { x: 820, y: 77 },
-                { x: 791, y: 78 },
-                { x: 770, y: 81 },
-                { x: 739, y: 90 },
-                { x: 721, y: 94 },
-                { x: 709, y: 102 },
-                { x: 690, y: 114 },
-                { x: 680, y: 121 },
-                { x: 676, y: 124 },
-                { x: 666, y: 131 },
-                { x: 662, y: 142 },
-                { x: 656, y: 153 },
-                { x: 653, y: 162 },
-                { x: 651, y: 165 },
-                { x: 644, y: 171 },
-                { x: 638, y: 178 },
-                { x: 637, y: 181 },
-                { x: 632, y: 196 },
-                { x: 632, y: 198 },
-                { x: 630, y: 212 },
-                { x: 630, y: 221 },
-                { x: 632, y: 226 },
-            ],
-            path_T_B_1: [
-                { x: 2646, y: 1102 },
-                { x: 2592, y: 1121 },
-                { x: 2548, y: 1136 },
-                { x: 2492, y: 1145 },
-                { x: 2399, y: 1167 },
-                { x: 2334, y: 1179 },
-                { x: 2288, y: 1187 },
-                { x: 2190, y: 1193 },
-                { x: 2126, y: 1204 },
-                { x: 2002, y: 1221 },
-                { x: 1944, y: 1235 },
-                { x: 1889, y: 1241 },
-                { x: 1787, y: 1248 },
-                { x: 1770, y: 1253 },
-                { x: 1744, y: 1259 },
-                { x: 1730, y: 1265 },
-                { x: 1706, y: 1273 },
-                { x: 1679, y: 1279 },
-                { x: 1665, y: 1289 },
-                { x: 1647, y: 1322 },
-                { x: 1630, y: 1358 },
-                { x: 1618, y: 1401 },
-                { x: 1606, y: 1437 },
-                { x: 1584, y: 1631 },
-                { x: 1584, y: 1635 },
-                { x: 1574, y: 1675 },
-                { x: 1559, y: 1725 },
-                { x: 1538, y: 1804 },
-                { x: 1508, y: 1834 },
-                { x: 1474, y: 1854 },
-                { x: 1438, y: 1870 },
-                { x: 1386, y: 1880 },
-                { x: 1351, y: 1883 },
-                { x: 1309, y: 1886 },
-                { x: 1273, y: 1883 },
-                { x: 1230, y: 1879 },
-                { x: 1159, y: 1830 },
-                { x: 1159, y: 1832 },
-                { x: 1133, y: 1826 },
-                { x: 1118, y: 1813 },
-                { x: 1102, y: 1793 },
-                { x: 1076, y: 1769 },
-                { x: 1059, y: 1753 },
-                { x: 1049, y: 1747 },
-                { x: 1045, y: 1746 },
-                { x: 1034, y: 1739 },
-                { x: 1024, y: 1734 },
-            ],
-            path_T_B_2: [
-                { x: 2622, y: 1111 },
-                { x: 2603, y: 1116 },
-                { x: 2547, y: 1132 },
-                { x: 2500, y: 1144 },
-                { x: 2440, y: 1165 },
-                { x: 2382, y: 1184 },
-                { x: 2336, y: 1194 },
-                { x: 2241, y: 1210 },
-                { x: 2153, y: 1213 },
-                { x: 2040, y: 1213 },
-                { x: 1973, y: 1218 },
-                { x: 1907, y: 1220 },
-                { x: 1798, y: 1220 },
-                { x: 1590, y: 1228 },
-                { x: 1517, y: 1228 },
-                { x: 1496, y: 1230 },
-                { x: 1436, y: 1208 },
-                { x: 1420, y: 1210 },
-                { x: 1277, y: 1222 },
-                { x: 1284, y: 1247 },
-                { x: 1287, y: 1277 },
-                { x: 1279, y: 1294 },
-                { x: 1265, y: 1326 },
-                { x: 1254, y: 1366 },
-                { x: 1256, y: 1396 },
-                { x: 1257, y: 1415 },
-                { x: 1256, y: 1434 },
-                { x: 1254, y: 1491 },
-                { x: 1257, y: 1501 },
-                { x: 1262, y: 1580 },
-                { x: 1259, y: 1590 },
-                { x: 1234, y: 1640 },
-                { x: 1226, y: 1651 },
-                { x: 1197, y: 1639 },
-                { x: 1162, y: 1635 },
-                { x: 1133, y: 1639 },
-                { x: 1104, y: 1648 },
-                { x: 1075, y: 1654 },
-                { x: 1039, y: 1669 },
-                { x: 1028, y: 1693 },
-            ],
-            path_CT_A_1: [
-                { x: 196, y: 1000 },
-                { x: 321, y: 749 },
-                { x: 407, y: 658 },
-                { x: 408, y: 523 },
-                { x: 408, y: 200 },
-                { x: 426, y: 152 },
-                { x: 476, y: 126 },
-                { x: 517, y: 128 },
-                { x: 534, y: 152 },
-                { x: 543, y: 184 },
-                { x: 545, y: 228 },
-                { x: 573, y: 252 },
-            ],
-            path_CT_A_2: [
-            ],
-            path_CT_B_1: [
-                { x: 199, y: 1179 },
-                { x: 259, y: 1222 },
-                { x: 360, y: 1275 },
-                { x: 543, y: 1319 },
-                { x: 660, y: 1392 },
-                { x: 721, y: 1448 },
-                { x: 767, y: 1634 },
-                { x: 809, y: 1706 },
-                { x: 854, y: 1712 },
-                { x: 888, y: 1700 },
-                { x: 920, y: 1689 },
-                { x: 956, y: 1684 },
-                { x: 997, y: 1696 },
-            ],
-            path_CT_B_2: [
-                { x: 131, y: 1162 },
-                { x: 128, y: 1255 },
-                { x: 88, y: 1459 },
-                { x: 60, y: 1600 },
-                { x: 68, y: 1732 },
-                { x: 86, y: 1834 },
-                { x: 144, y: 1868 },
-                { x: 388, y: 1876 },
-                { x: 652, y: 1873 },
-                { x: 756, y: 1834 },
-                { x: 829, y: 1755 },
-                { x: 891, y: 1708 },
-                { x: 921, y: 1688 },
-                { x: 970, y: 1688 },
-                { x: 999, y: 1699 },
-            ],
-            path_CT_MID_1: [
-                { x: 161, y: 1086 },
-                { x: 261, y: 1076 },
-                { x: 467, y: 1054 },
-                { x: 746, y: 1068 },
-                { x: 948, y: 1138 },
-                { x: 1196, y: 1240 },
-                { x: 1387, y: 1164 },
-            ],
-            path_CT_Rotate_B_to_A: [
-                { x: 988, y: 1688 },
-                { x: 962, y: 1638 },
-                { x: 915, y: 1625 },
-                { x: 894, y: 1575 },
-                { x: 744, y: 1510 },
-                { x: 725, y: 1138 },
-                { x: 618, y: 860 },
-                { x: 448, y: 841 },
-                { x: 414, y: 420 },
-                { x: 434, y: 141 },
-                { x: 488, y: 125 },
-                { x: 539, y: 138 },
-                { x: 548, y: 180 },
-                { x: 549, y: 223 },
-                { x: 581, y: 252 },
-            ],
-            path_CT_Rotate_A_to_B: [
-                { x: 582, y: 253 },
-                { x: 547, y: 233 },
-                { x: 538, y: 144 },
-                { x: 435, y: 135 },
-                { x: 422, y: 473 },
-                { x: 443, y: 864 },
-                { x: 709, y: 1073 },
-                { x: 762, y: 1390 },
-                { x: 756, y: 1496 },
-                { x: 769, y: 1731 },
-                { x: 842, y: 1723 },
-                { x: 911, y: 1691 },
-                { x: 983, y: 1687 },
-            ],
+            path_T_A_1: [ { x: 2648, y: 1020 }, { x: 2395, y: 317 }, { x: 2074, y: 280 }, { x: 1905, y: 275 }, { x: 1858, y: 300 }, { x: 1829, y: 383 }, { x: 1832, y: 533 }, { x: 1820, y: 611 }, { x: 1799, y: 663 }, { x: 1751, y: 690 }, { x: 1678, y: 681 }, { x: 1634, y: 650 }, { x: 1622, y: 583 }, { x: 1590, y: 512 }, { x: 1563, y: 441 }, { x: 1539, y: 384 }, { x: 1522, y: 297 }, { x: 1513, y: 279 }, { x: 1495, y: 222 }, { x: 1492, y: 200 }, { x: 1460, y: 169 }, { x: 1403, y: 139 }, { x: 1347, y: 138 }, { x: 1295, y: 135 }, { x: 1223, y: 118 }, { x: 1190, y: 111 }, { x: 1147, y: 98 }, { x: 1098, y: 74 }, { x: 929, y: 70 }, { x: 887, y: 70 }, { x: 860, y: 78 }, { x: 842, y: 85 }, { x: 833, y: 92 }, { x: 823, y: 106 }, { x: 812, y: 133 }, { x: 808, y: 160 }, { x: 809, y: 168 }, { x: 808, y: 184 }, { x: 805, y: 243 }, { x: 807, y: 250 }, { x: 809, y: 289 }, { x: 809, y: 292 }, { x: 806, y: 301 }, { x: 798, y: 308 }, { x: 790, y: 315 }, { x: 788, y: 316 }, { x: 775, y: 318 }, { x: 762, y: 321 }, { x: 748, y: 319 }, { x: 736, y: 320 }, { x: 717, y: 313 }, { x: 708, y: 305 }, { x: 695, y: 292 }, { x: 691, y: 287 }, { x: 689, y: 283 }, { x: 681, y: 272 }, { x: 676, y: 265 }, { x: 667, y: 248 }, { x: 659, y: 245 }, { x: 658, y: 245 } ],
+            path_T_A_2: [ { x: 2638, y: 1089 }, { x: 2572, y: 1120 }, { x: 2536, y: 1141 }, { x: 2486, y: 1167 }, { x: 2398, y: 1196 }, { x: 2296, y: 1226 }, { x: 2219, y: 1227 }, { x: 2142, y: 1224 }, { x: 2046, y: 1225 }, { x: 1984, y: 1225 }, { x: 1907, y: 1228 }, { x: 1814, y: 1234 }, { x: 1714, y: 1211 }, { x: 1683, y: 1207 }, { x: 1657, y: 1204 }, { x: 1624, y: 1187 }, { x: 1624, y: 1160 }, { x: 1608, y: 1124 }, { x: 1605, y: 1087 }, { x: 1605, y: 1062 }, { x: 1602, y: 1028 }, { x: 1603, y: 992 }, { x: 1604, y: 988 }, { x: 1625, y: 247 }, { x: 1539, y: 183 }, { x: 1481, y: 85 }, { x: 1175, y: 79 }, { x: 1101, y: 79 }, { x: 889, y: 67 }, { x: 858, y: 80 }, { x: 820, y: 77 }, { x: 791, y: 78 }, { x: 770, y: 81 }, { x: 739, y: 90 }, { x: 721, y: 94 }, { x: 709, y: 102 }, { x: 690, y: 114 }, { x: 680, y: 121 }, { x: 676, y: 124 }, { x: 666, y: 131 }, { x: 662, y: 142 }, { x: 656, y: 153 }, { x: 653, y: 162 }, { x: 651, y: 165 }, { x: 644, y: 171 }, { x: 638, y: 178 }, { x: 637, y: 181 }, { x: 632, y: 196 }, { x: 632, y: 198 }, { x: 630, y: 212 }, { x: 630, y: 221 }, { x: 632, y: 226 } ],
+            path_T_B_1: [ { x: 2646, y: 1102 }, { x: 2592, y: 1121 }, { x: 2548, y: 1136 }, { x: 2492, y: 1145 }, { x: 2399, y: 1167 }, { x: 2334, y: 1179 }, { x: 2288, y: 1187 }, { x: 2190, y: 1193 }, { x: 2126, y: 1204 }, { x: 2002, y: 1221 }, { x: 1944, y: 1235 }, { x: 1889, y: 1241 }, { x: 1787, y: 1248 }, { x: 1770, y: 1253 }, { x: 1744, y: 1259 }, { x: 1730, y: 1265 }, { x: 1706, y: 1273 }, { x: 1679, y: 1279 }, { x: 1665, y: 1289 }, { x: 1647, y: 1322 }, { x: 1630, y: 1358 }, { x: 1618, y: 1401 }, { x: 1606, y: 1437 }, { x: 1584, y: 1631 }, { x: 1584, y: 1635 }, { x: 1574, y: 1675 }, { x: 1559, y: 1725 }, { x: 1538, y: 1804 }, { x: 1508, y: 1834 }, { x: 1474, y: 1854 }, { x: 1438, y: 1870 }, { x: 1386, y: 1880 }, { x: 1351, y: 1883 }, { x: 1309, y: 1886 }, { x: 1273, y: 1883 }, { x: 1230, y: 1879 }, { x: 1159, y: 1830 }, { x: 1159, y: 1832 }, { x: 1133, y: 1826 }, { x: 1118, y: 1813 }, { x: 1102, y: 1793 }, { x: 1076, y: 1769 }, { x: 1059, y: 1753 }, { x: 1049, y: 1747 }, { x: 1045, y: 1746 }, { x: 1034, y: 1739 }, { x: 1024, y: 1734 } ],
+            path_T_B_2: [ { x: 2622, y: 1111 }, { x: 2603, y: 1116 }, { x: 2547, y: 1132 }, { x: 2500, y: 1144 }, { x: 2440, y: 1165 }, { x: 2382, y: 1184 }, { x: 2336, y: 1194 }, { x: 2241, y: 1210 }, { x: 2153, y: 1213 }, { x: 2040, y: 1213 }, { x: 1973, y: 1218 }, { x: 1907, y: 1220 }, { x: 1798, y: 1220 }, { x: 1590, y: 1228 }, { x: 1517, y: 1228 }, { x: 1496, y: 1230 }, { x: 1436, y: 1208 }, { x: 1420, y: 1210 }, { x: 1277, y: 1222 }, { x: 1284, y: 1247 }, { x: 1287, y: 1277 }, { x: 1279, y: 1294 }, { x: 1265, y: 1326 }, { x: 1254, y: 1366 }, { x: 1256, y: 1396 }, { x: 1257, y: 1415 }, { x: 1256, y: 1434 }, { x: 1254, y: 1491 }, { x: 1257, y: 1501 }, { x: 1262, y: 1580 }, { x: 1259, y: 1590 }, { x: 1234, y: 1640 }, { x: 1226, y: 1651 }, { x: 1197, y: 1639 }, { x: 1162, y: 1635 }, { x: 1133, y: 1639 }, { x: 1104, y: 1648 }, { x: 1075, y: 1654 }, { x: 1039, y: 1669 }, { x: 1028, y: 1693 } ],
+            path_CT_A_1: [ { x: 196, y: 1000 }, { x: 321, y: 749 }, { x: 407, y: 658 }, { x: 408, y: 523 }, { x: 408, y: 200 }, { x: 426, y: 152 }, { x: 476, y: 126 }, { x: 517, y: 128 }, { x: 534, y: 152 }, { x: 543, y: 184 }, { x: 545, y: 228 }, { x: 573, y: 252 } ],
+            path_CT_A_2: [ ],
+            path_CT_B_1: [ { x: 199, y: 1179 }, { x: 259, y: 1222 }, { x: 360, y: 1275 }, { x: 543, y: 1319 }, { x: 660, y: 1392 }, { x: 721, y: 1448 }, { x: 767, y: 1634 }, { x: 809, y: 1706 }, { x: 854, y: 1712 }, { x: 888, y: 1700 }, { x: 920, y: 1689 }, { x: 956, y: 1684 }, { x: 997, y: 1696 } ],
+            path_CT_B_2: [ { x: 131, y: 1162 }, { x: 128, y: 1255 }, { x: 88, y: 1459 }, { x: 60, y: 1600 }, { x: 68, y: 1732 }, { x: 86, y: 1834 }, { x: 144, y: 1868 }, { x: 388, y: 1876 }, { x: 652, y: 1873 }, { x: 756, y: 1834 }, { x: 829, y: 1755 }, { x: 891, y: 1708 }, { x: 921, y: 1688 }, { x: 970, y: 1688 }, { x: 999, y: 1699 } ],
+            path_CT_MID_1: [ { x: 161, y: 1086 }, { x: 261, y: 1076 }, { x: 467, y: 1054 }, { x: 746, y: 1068 }, { x: 948, y: 1138 }, { x: 1196, y: 1240 }, { x: 1387, y: 1164 } ],
+            path_CT_Rotate_B_to_A: [ { x: 988, y: 1688 }, { x: 962, y: 1638 }, { x: 915, y: 1625 }, { x: 894, y: 1575 }, { x: 744, y: 1510 }, { x: 725, y: 1138 }, { x: 618, y: 860 }, { x: 448, y: 841 }, { x: 414, y: 420 }, { x: 434, y: 141 }, { x: 488, y: 125 }, { x: 539, y: 138 }, { x: 548, y: 180 }, { x: 549, y: 223 }, { x: 581, y: 252 } ],
+            path_CT_Rotate_A_to_B: [ { x: 582, y: 253 }, { x: 547, y: 233 }, { x: 538, y: 144 }, { x: 435, y: 135 }, { x: 422, y: 473 }, { x: 443, y: 864 }, { x: 709, y: 1073 }, { x: 762, y: 1390 }, { x: 756, y: 1496 }, { x: 769, y: 1731 }, { x: 842, y: 1723 }, { x: 911, y: 1691 }, { x: 983, y: 1687 } ]
         };
-        // (NUEVO) ¡Listas de rutas de rotación para un acceso fácil!
+        
         const rotationPaths = {
             'A': ['path_CT_Rotate_B_to_A'],
-            'B': ['path_CT_Rotate_A_to_B', 'path_CT_MID_1'] // Ejemplo: puedes darle varias opciones
+            'B': ['path_CT_Rotate_A_to_B']
         }
         
         const ctPathNames = [ 'path_CT_A_1', 'path_CT_A_2', 'path_CT_B_1', 'path_CT_B_2', 'path_CT_MID_1' ];
 
-        // --- 3. EL JUGADOR (CT) ---
         let player = {
             x: 142, y: 1087, size: mapData.playerSize, color: 'cyan', speed: 4, angle: 0, health: 100, armor: 0, money: 0, 
-            inventory: { 
-                primary: null, 
-                secondary: null,
-                melee: 'knife', 
-                kevlar: false, helmet: false,
-                grenades: { he: 0, flash: 0, smoke: 0, molotov: 0 } 
-            },
-            activeWeapon: 'secondary', 
-            hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false,
-            flashed: 0,
-            isReloading: false,
-            isAlive: true 
+            inventory: { primary: null, secondary: null, melee: 'knife', kevlar: false, helmet: false, grenades: { he: 0, flash: 0, smoke: 0, molotov: 0 } },
+            activeWeapon: 'secondary', hasBomb: false, lastShotTime: 0, recoil: 0.0, hasFiredSemi: false, flashed: 0, isReloading: false, isAlive: true 
         };
 
-        // --- 4. ALMACENES Y ESTADO ---
         let bullets = [];
         let keys = {};
         let mouse = { x: 0, y: 0, isDown: false }; 
@@ -532,7 +162,6 @@
         let firePatches = [];
         let smokeClouds = []; 
 
-        // --- 5. SEGUIMIENTO de EVENTOS ---
         window.addEventListener('mousemove', (e) => { 
             mouse.x = e.clientX + camera.x;
             mouse.y = e.clientY + camera.y;
@@ -548,6 +177,16 @@
             if (e.key === 'r' && !isShopOpen && !game.isBuyTime && !player.isReloading && player.isAlive) { 
                 reload();
             }
+            if (e.key === 'b' || e.key === 'B') {
+                if (game.isBuyTime) { 
+                    isShopOpen = !isShopOpen;
+                } else {
+                    let inSpawn = false;
+                    for (const zone of zones) { if (zone.name === 'Spawn AT' && checkZoneCollision(player, zone)) { inSpawn = true; break; } }
+                    if (inSpawn) isShopOpen = !isShopOpen;
+                    else isShopOpen = false;
+                }
+            }
         });
         window.addEventListener('keyup', (e) => {
             delete keys[e.key];
@@ -559,47 +198,16 @@
                 if (e.key === '1') { if (player.inventory.primary) { player.activeWeapon = 'primary'; player.recoil = 0; } }
                 else if (e.key === '2') { if (player.inventory.secondary) { player.activeWeapon = 'secondary'; player.recoil = 0; } }
                 else if (e.key === '3') { player.activeWeapon = 'melee'; player.recoil = 0; }
-                else if (e.key === '4') { 
-                    if (player.inventory.grenades.he > 0) {
-                        player.activeWeapon = 'he_grenade';
-                    }
-                }
-                else if (e.key === '5') {
-                    if (player.inventory.grenades.molotov > 0) {
-                        player.activeWeapon = 'molotov';
-                    }
-                }
-                else if (e.key === '6') { 
-                    if (player.inventory.grenades.flash > 0) {
-                        player.activeWeapon = 'flash';
-                    }
-                }
-                else if (e.key === '7') {
-                    if (player.inventory.grenades.smoke > 0) {
-                        player.activeWeapon = 'smoke';
-                    }
-                }
-            }
-            if (e.key === 'b' || e.key === 'B') {
-                if (game.isBuyTime) { 
-                    isShopOpen = !isShopOpen;
-                } else {
-                    let inSpawn = false;
-                    for (const zone of zones) { if (zone.name === 'Spawn AT' && checkZoneCollision(player, zone)) { inSpawn = true; break; } }
-                    if (inSpawn) {
-                        isShopOpen = !isShopOpen;
-                    } else {
-                        isShopOpen = false;
-                    }
-                }
+                else if (e.key === '4') { if (player.inventory.grenades.he > 0) player.activeWeapon = 'he_grenade'; }
+                else if (e.key === '5') { if (player.inventory.grenades.molotov > 0) player.activeWeapon = 'molotov'; }
+                else if (e.key === '6') { if (player.inventory.grenades.flash > 0) player.activeWeapon = 'flash'; }
+                else if (e.key === '7') { if (player.inventory.grenades.smoke > 0) player.activeWeapon = 'smoke'; }
             }
         });
         window.addEventListener('mousedown', (e) => {
             if (!player.isAlive && !isShopOpen) {
                 game.spectatorTargetIndex++;
-                if (game.spectatorTargetIndex >= alliedBots.length) {
-                    game.spectatorTargetIndex = 0;
-                }
+                if (game.spectatorTargetIndex >= alliedBots.length) game.spectatorTargetIndex = 0;
                 return;
             }
             if (isShopOpen || game.isDefusing || player.flashed > Date.now() || player.isReloading || !player.isAlive) return; 
@@ -607,27 +215,30 @@
             player.hasFiredSemi = false; 
         });
         window.addEventListener('mouseup', (e) => { mouse.isDown = false; });
-        shopButtons.forEach(button => { button.addEventListener('click', () => { const itemName = button.dataset.item; const cost = parseInt(button.dataset.cost); if (player.money >= cost) { player.money -= cost; buyItem(itemName); isShopOpen = false; } else { console.log("Dinero insuficiente"); } }); });
+        
+        shopButtons.forEach(button => { 
+            button.addEventListener('click', () => { 
+                const itemName = button.dataset.item; 
+                const cost = parseInt(button.dataset.cost); 
+                if (player.money >= cost) { 
+                    player.money -= cost; 
+                    buyItem(itemName); 
+                } else { 
+                    console.log("Dinero insuficiente"); 
+                } 
+            }); 
+        });
         
         function buyItem(itemName) {
-            console.log("Comprado: " + itemName);
             player.recoil = 0.0;
             const itemData = weaponData[itemName];
             if (itemData) { 
                 if (itemData.type === 'primary') { 
-                    player.inventory.primary = {
-                        name: itemName,
-                        ammoInClip: itemData.clipSize,
-                        ammoInReserve: itemData.reserveAmmo
-                    };
+                    player.inventory.primary = { name: itemName, ammoInClip: itemData.clipSize, ammoInReserve: itemData.reserveAmmo };
                     player.activeWeapon = 'primary'; 
                 }
                 else if (itemData.type === 'secondary') { 
-                    player.inventory.secondary = {
-                        name: itemName,
-                        ammoInClip: itemData.clipSize,
-                        ammoInReserve: itemData.reserveAmmo
-                    };
+                    player.inventory.secondary = { name: itemName, ammoInClip: itemData.clipSize, ammoInReserve: itemData.reserveAmmo };
                     player.activeWeapon = 'secondary';
                 }
                 else if (itemData.type === 'grenade') { 
@@ -638,988 +249,183 @@
                 }
             } else { 
                 switch (itemName) {
-                    case 'kevlar':
-                        player.armor = 100; 
-                        player.inventory.helmet = false; 
-                        break;
-                    case 'full_armor':
-                        player.armor = 100; 
-                        player.inventory.helmet = true; 
-                        break;
+                    case 'kevlar': player.armor = 100; player.inventory.helmet = false; break;
+                    case 'full_armor': player.armor = 100; player.inventory.helmet = true; break;
                 }
             }
         }
 
-        // --- 6. FUNCIONES DE COLISIÓN ---
+        // (CORREGIDO) RAYCASTING REAL
+        function lineIntersectsLine(x1, y1, x2, y2, x3, y3, x4, y4) {
+            const uA = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1));
+            const uB = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1));
+            return (uA >= 0 && uA <= 1 && uB >= 0 && uB <= 1);
+        }
+
+        function lineIntersectsRect(x1, y1, x2, y2, rect) {
+            const left = rect.x; const right = rect.x + rect.width; const top = rect.y; const bottom = rect.y + rect.height;
+            if (lineIntersectsLine(x1, y1, x2, y2, left, top, right, top)) return true; 
+            if (lineIntersectsLine(x1, y1, x2, y2, right, top, right, bottom)) return true; 
+            if (lineIntersectsLine(x1, y1, x2, y2, right, bottom, left, bottom)) return true; 
+            if (lineIntersectsLine(x1, y1, x2, y2, left, bottom, left, top)) return true; 
+            return false;
+        }
+
         function checkCollision(obj, wall) { const objLeft = obj.x - obj.size / 2; const objRight = obj.x + obj.size / 2; const objTop = obj.y - obj.size / 2; const objBottom = obj.y + obj.size / 2; const wallLeft = wall.x; const wallRight = wall.x + wall.width; const wallTop = wall.y; const wallBottom = wall.y + wall.height; return (objRight > wallLeft && objLeft < wallRight && objBottom > wallTop && objTop < wallBottom); }
         function checkZoneCollision(player, zone) { const playerLeft = player.x - player.size / 2; const playerRight = player.x + player.size / 2; const playerTop = player.y - player.size / 2; const playerBottom = player.y + player.size / 2; const zoneLeft = zone.x; const zoneRight = zone.x + zone.width; const zoneTop = zone.y; const zoneBottom = zone.y + zone.height; return (playerRight > zoneLeft && playerLeft < zoneRight && playerBottom > zoneTop && playerTop < zoneBottom); }
         function checkObjectCollision(obj1, obj2) { const obj1Left = obj1.x - obj1.size / 2; const obj1Right = obj1.x + obj1.size / 2; const obj1Top = obj1.y - obj1.size / 2; const obj1Bottom = obj1.y + obj1.size / 2; const obj2Left = obj2.x - obj2.size / 2; const obj2Right = obj2.x + obj2.size / 2; const obj2Top = obj2.y - obj2.size / 2; const obj2Bottom = obj2.y + obj2.size / 2; return (obj1Right > obj2Left && obj1Left < obj2Right && obj1Bottom > obj2Top && obj1Top < obj2Bottom); }
+        function lerpAngle(start, end, amount) { let difference = end - start; if (difference > Math.PI) difference -= 2 * Math.PI; if (difference < -Math.PI) difference += 2 * Math.PI; return start + difference * amount; }
+        function getBotSite(bot) { for (const zone of zones) { if (zone.name.startsWith('Sitio') && checkObjectCollision(bot, zone)) { return zone.name.includes('A') ? 'A' : 'B'; } } return null; }
+        function getSpawnZone(name) { for (const zone of zones) { if (zone.name === name) { return zone; } } return null; }
 
-        // (NUEVO) Función de interpolación de ángulo (para puntería "lenta")
-        function lerpAngle(start, end, amount) {
-            let difference = end - start;
-            if (difference > Math.PI) difference -= 2 * Math.PI;
-            if (difference < -Math.PI) difference += 2 * Math.PI;
-            return start + difference * amount;
-        }
-        
-        // (NUEVO) Función para saber en qué sitio está un bot
-        function getBotSite(bot) {
-            for (const zone of zones) {
-                if (zone.name.startsWith('Sitio') && checkObjectCollision(bot, zone)) {
-                    return zone.name.includes('A') ? 'A' : 'B';
-                }
-            }
-            return null; // No está en un sitio
-        }
+        function spawnBot(carriesBomb, spawnPoint, pathName, money) { bots.push({ x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'red', speed: 2.5, angle: 0, health: 100, lastShotTime: 0, hasBomb: carriesBomb, isPlanting: false, plantStartTime: 0, state: 'navigating', currentPath: paths[pathName] || [], currentWaypointIndex: 0, flashed: 0, money: money, weapon: 'pistol', armor: false, reactionTime: 200 + Math.random() * 150, lastSeenTime: 0, burstCount: 0 }); }
+        function spawnAlliedBot(spawnPoint, pathName, money) { alliedBots.push({ x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'cyan', speed: 2.5, angle: 0, health: 100, lastShotTime: 0, state: 'navigating', currentPath: paths[pathName] || [], currentWaypointIndex: 0, flashed: 0, money: money, weapon: 'pistol', armor: false, reactionTime: 200 + Math.random() * 150, lastSeenTime: 0, burstCount: 0 }); }
+        function botBuyLogic(bot, team) { bot.armor = false; bot.weapon = 'pistol'; if (bot.money >= 5750) { bot.weapon = 'awp'; bot.money -= (weaponData['awp'].cost + 1000); bot.armor = true; } else if (bot.money >= 4750) { bot.weapon = 'awp'; bot.money -= weaponData['awp'].cost; } else if (bot.money >= 4100 && team === 'ct') { bot.weapon = 'm4a1'; bot.money -= (weaponData['m4a1'].cost + 1000); bot.armor = true; } else if (bot.money >= 3700 && team === 't') { bot.weapon = 'ak47'; bot.money -= (weaponData['ak47'].cost + 1000); bot.armor = true; } else if (bot.money >= 3100 && team === 'ct') { bot.weapon = 'm4a1'; bot.money -= weaponData['m4a1'].cost; } else if (bot.money >= 2700 && team === 't') { bot.weapon = 'ak47'; bot.money -= weaponData['ak47'].cost; } }
 
-        // --- 7. LÓGICA DE IA (5v5) ---
-        function getSpawnZone(name) {
-            for (const zone of zones) {
-                if (zone.name === name) {
-                    return zone;
-                }
-            }
-            return null; 
-        }
-        function spawnBot(carriesBomb, spawnPoint, pathName, money) {
-            const bot = {
-                x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'red',
-                speed: 2.5, angle: 0, health: 100,
-                lastShotTime: 0, 
-                hasBomb: carriesBomb,
-                isPlanting: false,
-                plantStartTime: 0,
-                state: 'navigating', 
-                currentPath: paths[pathName] || [], 
-                currentWaypointIndex: 0,
-                flashed: 0,
-                money: money, 
-                weapon: 'pistol', 
-                armor: false,
-                reactionTime: 200 + Math.random() * 150, 
-                lastSeenTime: 0, 
-                burstCount: 0 
-            };
-            bots.push(bot);
-        }
-        function spawnAlliedBot(spawnPoint, pathName, money) {
-            const bot = {
-                x: spawnPoint.x, y: spawnPoint.y, size: mapData.botSize, color: 'cyan',
-                speed: 2.5, angle: 0, health: 100,
-                lastShotTime: 0, 
-                state: 'navigating',
-                currentPath: paths[pathName] || [], 
-                currentWaypointIndex: 0,
-                flashed: 0,
-                money: money, 
-                weapon: 'pistol', 
-                armor: false,
-                reactionTime: 200 + Math.random() * 150, 
-                lastSeenTime: 0, 
-                burstCount: 0 
-            };
-            alliedBots.push(bot);
-        }
-        
-        function botBuyLogic(bot, team) {
-            bot.armor = false;
-            bot.weapon = 'pistol'; // Default
-            
-            if (bot.money >= 5750) { 
-                bot.weapon = 'awp';
-                bot.money -= (weaponData['awp'].cost + 1000); 
-                bot.armor = true;
-            } else if (bot.money >= 4750) { 
-                bot.weapon = 'awp';
-                bot.money -= weaponData['awp'].cost;
-            } else if (bot.money >= 4100 && team === 'ct') { 
-                bot.weapon = 'm4a1';
-                bot.money -= (weaponData['m4a1'].cost + 1000);
-                bot.armor = true;
-            } else if (bot.money >= 3700 && team === 't') { 
-                bot.weapon = 'ak47';
-                bot.money -= (weaponData['ak47'].cost + 1000);
-                bot.armor = true;
-            } else if (bot.money >= 3100 && team === 'ct') { 
-                bot.weapon = 'm4a1';
-                bot.money -= weaponData['m4a1'].cost;
-            } else if (bot.money >= 2700 && team === 't') { 
-                bot.weapon = 'ak47';
-                bot.money -= weaponData['ak47'].cost;
-            }
-            console.log(`Bot ${team} compró ${bot.weapon}. Dinero restante: ${bot.money}`);
-        }
-
+        // (CORREGIDO) HAS LINE OF SIGHT USANDO RAYCASTING
         function hasLineOfSight(viewer, target) {
             if (!target) return false;
-            
+            // Comprueba colisión RAYO vs CAJA para cada pared
+            for (const wall of walls) {
+                if (lineIntersectsRect(viewer.x, viewer.y, target.x, target.y, wall)) {
+                    return false; // Hay una pared en medio
+                }
+            }
+            // Comprueba humo (aquí sí usamos puntos porque el humo es circular)
             for (let i = 0.1; i < 1; i += 0.1) {
                 const testPoint = { x: viewer.x + (target.x - viewer.x) * i, y: viewer.y + (target.y - viewer.y) * i, size: 2 };
-                for (const wall of walls) {
-                    if (checkCollision(testPoint, wall)) { return false; }
-                }
                 for (const smoke of smokeClouds) {
-                    if (checkObjectCollision(testPoint, smoke)) {
-                        return false; 
-                    }
+                    if (checkObjectCollision(testPoint, smoke)) return false;
                 }
             }
             return true; 
         }
         
-        function isTargetInFoV(viewer, target) {
-            if (!target) return false;
-            const angleToTarget = Math.atan2(target.y - viewer.y, target.x - viewer.x);
-            let deltaAngle = Math.abs(angleToTarget - viewer.angle);
-            if (deltaAngle > Math.PI) deltaAngle = 2 * Math.PI - deltaAngle; 
-            return (deltaAngle <= Math.PI / 2); 
-        }
+        function isTargetInFoV(viewer, target) { if (!target) return false; const angleToTarget = Math.atan2(target.y - viewer.y, target.x - viewer.x); let deltaAngle = Math.abs(angleToTarget - viewer.angle); if (deltaAngle > Math.PI) deltaAngle = 2 * Math.PI - deltaAngle; return (deltaAngle <= Math.PI / 2); }
 
-        // --- (NUEVO) IA TÁCTICA (T-BOTS) ---
         function updateBots() {
             for (let i = bots.length - 1; i >= 0; i--) {
                 const bot = bots[i];
-                if (bot.health <= 0) {
-                    player.money += ECONOMY.KILL_BONUS; 
-                    if (player.money > MAX_MONEY) player.money = MAX_MONEY;
-                    
-                    bots.splice(i, 1);
-                    console.log(`Bot T eliminado, +$${ECONOMY.KILL_BONUS}. Quedan ${bots.length} bots.`);
-                    if (bot.hasBomb && game.bomb.state === 'unplanted') { console.log("¡El portador de la bomba ha muerto!"); }
-                    if (bots.length === 0 && game.bomb.state === 'unplanted') {
-                        endRound("CTs Ganan", "CTs");
-                    }
-                    continue; 
-                }
+                if (bot.health <= 0) { player.money += ECONOMY.KILL_BONUS; if (player.money > MAX_MONEY) player.money = MAX_MONEY; bots.splice(i, 1); if (bots.length === 0 && game.bomb.state === 'unplanted') endRound("CTs Ganan", "CTs"); continue; }
+                if (bot.flashed > Date.now()) { bot.state = 'flashed'; bot.angle += 0.5; continue; }
+                if (bot.isPlanting) { if (Date.now() - bot.plantStartTime >= GAME_TIMES.PLANT) plantBomb(bot); continue; }
                 
-                if (bot.flashed > Date.now()) {
-                    bot.state = 'flashed';
-                    bot.angle += 0.5; 
-                    continue; 
-                }
-                
-                if (bot.isPlanting) {
-                    const plantProgress = Date.now() - bot.plantStartTime;
-                    if (plantProgress >= GAME_TIMES.PLANT) { plantBomb(bot); }
-                    continue; 
-                }
-                
-                // 1. Detección
-                const seesPlayer = hasLineOfSight(bot, player) && isTargetInFoV(bot, player);
-                let seesAlly = false;
-                let targetAlly = null;
-                for(const ally of alliedBots) {
-                    if (hasLineOfSight(bot, ally) && isTargetInFoV(bot, ally)) {
-                        seesAlly = true;
-                        targetAlly = ally;
-                        break;
-                    }
-                }
-                
+                const seesPlayer = hasLineOfSight(bot, player) && isTargetInFoV(bot, player) && player.isAlive;
+                let seesAlly = false; let targetAlly = null;
+                for(const ally of alliedBots) { if (hasLineOfSight(bot, ally) && isTargetInFoV(bot, ally)) { seesAlly = true; targetAlly = ally; break; } }
                 const weapon = weaponData[bot.weapon]; 
                 
-                // 2. Lógica de Combate (Parar y Disparar)
                 if (seesPlayer) {
-                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now(); 
-                    bot.state = 'attacking';
-                    
-                    const angleToEnemy = Math.atan2(player.y - bot.y, player.x - bot.x);
-                    bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); 
-                    
-                    if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { 
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: weapon.damage }; 
-                        botBullets.push(bullet);
-                        bot.lastShotTime = Date.now();
-                        
-                        bot.burstCount++;
-                        if (bot.burstCount >= 4) {
-                            bot.lastShotTime = Date.now() + 500; 
-                            bot.burstCount = 0;
-                        }
-                    }
+                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now(); bot.state = 'attacking';
+                    const angleToEnemy = Math.atan2(player.y - bot.y, player.x - bot.x); bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); 
+                    if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: weapon.damage }; botBullets.push(bullet); bot.lastShotTime = Date.now(); bot.burstCount++; if (bot.burstCount >= 4) { bot.lastShotTime = Date.now() + 500; bot.burstCount = 0; } }
                 } else if (seesAlly) {
-                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now();
-                    bot.state = 'attacking';
-                    
-                    const angleToEnemy = Math.atan2(targetAlly.y - bot.y, targetAlly.x - bot.x);
-                    bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); 
-                    
-                    if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { 
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: weapon.damage }; 
-                        botBullets.push(bullet);
-                        bot.lastShotTime = Date.now();
-                        
-                        bot.burstCount++;
-                        if (bot.burstCount >= 4) {
-                            bot.lastShotTime = Date.now() + 500;
-                            bot.burstCount = 0;
-                        }
-                    }
+                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now(); bot.state = 'attacking';
+                    const angleToEnemy = Math.atan2(targetAlly.y - bot.y, targetAlly.x - bot.x); bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); 
+                    if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { const bullet = { x: bot.x, y: bot.y, size: 5, color: 'orange', speed: 8, angle: bot.angle, damage: weapon.damage }; botBullets.push(bullet); bot.lastShotTime = Date.now(); bot.burstCount++; if (bot.burstCount >= 4) { bot.lastShotTime = Date.now() + 500; bot.burstCount = 0; } }
                 } else {
-                    // 3. Lógica de Movimiento (Si no hay combate)
-                    bot.burstCount = 0; 
-                    
-                    // (NUEVO) Lógica de movimiento corregida (no "wall-hack")
-                    let targetAngle = bot.angle;
-                    if (game.bomb.state === 'planted' && !bot.hasBomb) {
-                        bot.state = 'guarding';
-                        // Sin objetivo, solo mira adelante
-                        targetAngle = bot.angle; 
-                        moveBot(bot, targetAngle); // Se mueve sin rumbo
-                    } else {
-                        bot.state = 'navigating';
-                        const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
-                        if (targetWaypoint) {
-                            const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
-                            targetAngle = lerpAngle(bot.angle, angleToWaypoint, 0.1); 
-                            moveBot(bot, targetAngle);
-                            const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
-                            if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
-                        } else {
-                            if (bot.hasBomb && game.bomb.state === 'unplanted') {
-                                bot.state = 'planting';
-                                bot.isPlanting = true;
-                                bot.plantStartTime = Date.now();
-                            } else {
-                                bot.state = 'guarding'; 
-                            }
-                        }
-                    }
+                    bot.burstCount = 0; let targetAngle = bot.angle;
+                    if (game.bomb.state === 'planted' && !bot.hasBomb) { bot.state = 'guarding'; targetAngle = bot.angle; moveBot(bot, targetAngle); } 
+                    else { bot.state = 'navigating'; const targetWaypoint = bot.currentPath[bot.currentWaypointIndex]; if (targetWaypoint) { const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x); targetAngle = lerpAngle(bot.angle, angleToWaypoint, 0.1); moveBot(bot, targetAngle); if (Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y) < bot.speed * 2) bot.currentWaypointIndex++; } else { if (bot.hasBomb && game.bomb.state === 'unplanted') { bot.state = 'planting'; bot.isPlanting = true; bot.plantStartTime = Date.now(); } else { bot.state = 'guarding'; } } }
                     bot.angle = targetAngle;
                 }
             }
         }
         
-        // (NUEVO) IA Aliada (CT) con ROTACIÓN y Parar/Disparar
         function updateAlliedBots() {
             for (let i = alliedBots.length - 1; i >= 0; i--) {
                 const bot = alliedBots[i];
-                if (bot.health <= 0) {
-                    alliedBots.splice(i, 1);
-                    console.log(`Bot Aliado eliminado. Quedan ${alliedBots.length}.`);
-                    if (alliedBots.length === 0 && !player.isAlive) { 
-                        endRound("Ts Ganan", "Ts");
-                    }
-                    continue;
-                }
+                if (bot.health <= 0) { alliedBots.splice(i, 1); if (alliedBots.length === 0 && !player.isAlive) endRound("Ts Ganan", "Ts"); continue; }
+                if (bot.flashed > Date.now()) { bot.state = 'flashed'; bot.angle += 0.5; continue; }
                 
-                if (bot.flashed > Date.now()) {
-                    bot.state = 'flashed';
-                    bot.angle += 0.5; 
-                    continue; 
-                }
-                
-                // 1. Detección
-                let closestEnemy = null;
-                let minDistance = Infinity;
-                for (const enemy of bots) {
-                    const distance = Math.hypot(enemy.x - bot.x, enemy.y - bot.y);
-                    if (distance < minDistance) {
-                        minDistance = distance;
-                        closestEnemy = enemy;
-                    }
-                }
-                
+                let closestEnemy = null; let minDistance = Infinity;
+                for (const enemy of bots) { const distance = Math.hypot(enemy.x - bot.x, enemy.y - bot.y); if (distance < minDistance) { minDistance = distance; closestEnemy = enemy; } }
                 const seesEnemy = closestEnemy && hasLineOfSight(bot, closestEnemy) && isTargetInFoV(bot, closestEnemy);
                 const weapon = weaponData[bot.weapon]; 
                 
-                // 2. Lógica de Combate (Parar y Disparar)
                 if (seesEnemy) {
-                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now();
-                    bot.state = 'attacking';
-                    
-                    const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
-                    bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); // Puntería lenta
-                    
-                    if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { 
-                        const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: weapon.damage }; 
-                        alliedBotBullets.push(bullet);
-                        bot.lastShotTime = Date.now();
-                        
-                        bot.burstCount++;
-                        if (bot.burstCount >= 4) {
-                            bot.lastShotTime = Date.now() + 500;
-                            bot.burstCount = 0;
-                        }
-                    }
+                    if (bot.state !== 'attacking') bot.lastSeenTime = Date.now(); bot.state = 'attacking';
+                    const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x); bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.15); 
+                    if (Date.now() - bot.lastShotTime > weapon.fireRate && Date.now() - bot.lastSeenTime > bot.reactionTime) { const bullet = { x: bot.x, y: bot.y, size: 5, color: 'lime', speed: 8, angle: bot.angle, damage: weapon.damage }; alliedBotBullets.push(bullet); bot.lastShotTime = Date.now(); bot.burstCount++; if (bot.burstCount >= 4) { bot.lastShotTime = Date.now() + 500; bot.burstCount = 0; } }
                 } else {
-                    // 3. Lógica de Movimiento (Si no hay combate)
                     bot.burstCount = 0;
-                    
-                    // --- ¡¡NUEVA LÓGICA DE ROTACIÓN!! ---
                     if (game.bomb.state === 'planted') {
-                        // ¡ROTAR!
-                        if (bot.state !== 'rotating' && bot.state !== 'seeking') { // Solo asignar ruta una vez
+                        if (bot.state !== 'rotating' && bot.state !== 'seeking') { 
                             const botSite = getBotSite(bot);
-                            
-                            if (botSite === game.bomb.site) {
-                                bot.state = 'seeking'; // Ya está en el sitio, que cace
-                            } else {
-                                // Necesita rotar
-                                bot.state = 'rotating';
-                                let targetPathName = '';
-                                
-                                // Elige la ruta de rotación correcta
-                                if (game.bomb.site === 'A') {
-                                    targetPathName = 'path_CT_Rotate_B_to_A';
-                                } else { // Si la bomba está en B
-                                    targetPathName = 'path_CT_Rotate_A_to_B'; // Asumimos que viene de A
-                                    // Podríamos añadir una lógica más compleja si viene de MID,
-                                    // pero esto es lo más fiable
-                                }
-
-                                bot.currentPath = paths[targetPathName] || []; // Carga la ruta de rotación
-                                bot.currentWaypointIndex = 0;
-                                console.log(`Bot aliado rotando a ${game.bomb.site} usando ${targetPathName}`);
-                            }
+                            if (botSite === game.bomb.site) { bot.state = 'seeking'; } 
+                            else { bot.state = 'rotating'; const targetPathName = game.bomb.site === 'A' ? 'path_CT_Rotate_B_to_A' : 'path_CT_Rotate_A_to_B'; bot.currentPath = paths[targetPathName] || []; bot.currentWaypointIndex = 0; }
                         }
-
-                        // Moverse según el estado
-                        if (bot.state === 'rotating') {
-                             const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
-                             if (targetWaypoint) {
-                                const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
-                                bot.angle = lerpAngle(bot.angle, angleToWaypoint, 0.1);
-                                moveBot(bot, angleToWaypoint);
-                                const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
-                                if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
-                             } else {
-                                bot.state = 'seeking'; // Llegó al sitio
-                             }
-                        } else if (bot.state === 'seeking') {
-                             // Cazar al T más cercano (si no hay, va a la bomba)
-                             const target = closestEnemy || game.bomb;
-                             const angleToTarget = Math.atan2(target.y - bot.y, target.x - bot.x);
-                             bot.angle = lerpAngle(bot.angle, angleToTarget, 0.1);
-                             moveBot(bot, angleToTarget);
-                        }
-
+                        if (bot.state === 'rotating') { const targetWaypoint = bot.currentPath[bot.currentWaypointIndex]; if (targetWaypoint) { const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x); bot.angle = lerpAngle(bot.angle, angleToWaypoint, 0.1); moveBot(bot, angleToWaypoint); if (Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y) < bot.speed * 2) bot.currentWaypointIndex++; } else { bot.state = 'seeking'; } } 
+                        else if (bot.state === 'seeking') { const target = closestEnemy || game.bomb; const angleToTarget = Math.atan2(target.y - bot.y, target.x - bot.x); bot.angle = lerpAngle(bot.angle, angleToTarget, 0.1); moveBot(bot, angleToTarget); }
                     } else if (bot.state === 'navigating') {
-                        // Seguir ruta de defensa
-                        const targetWaypoint = bot.currentPath[bot.currentWaypointIndex];
-                        if (targetWaypoint) {
-                            const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x);
-                            bot.angle = lerpAngle(bot.angle, angleToWaypoint, 0.1);
-                            moveBot(bot, angleToWaypoint);
-                            const distance = Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y);
-                            if (distance < bot.speed * 2) { bot.currentWaypointIndex++; }
-                        } else {
-                            bot.state = 'seeking'; // Terminó la ruta
-                        }
-                    } 
-                    else {
-                        // Modo 'seeking' (cazar al enemigo más cercano)
-                        if (closestEnemy) {
-                            bot.state = 'seeking';
-                            const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x);
-                            bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.1);
-                            moveBot(bot, angleToEnemy);
-                        }
+                        const targetWaypoint = bot.currentPath[bot.currentWaypointIndex]; if (targetWaypoint) { const angleToWaypoint = Math.atan2(targetWaypoint.y - bot.y, targetWaypoint.x - bot.x); bot.angle = lerpAngle(bot.angle, angleToWaypoint, 0.1); moveBot(bot, angleToWaypoint); if (Math.hypot(targetWaypoint.x - bot.x, targetWaypoint.y - bot.y) < bot.speed * 2) bot.currentWaypointIndex++; } else { bot.state = 'seeking'; }
+                    } else {
+                        if (closestEnemy) { bot.state = 'seeking'; const angleToEnemy = Math.atan2(closestEnemy.y - bot.y, closestEnemy.x - bot.x); bot.angle = lerpAngle(bot.angle, angleToEnemy, 0.1); moveBot(bot, angleToEnemy); }
                     }
                 }
             }
         }
 
-        function moveBot(bot, angle) {
-            const oldX = bot.x;
-            const oldY = bot.y;
-            bot.x += Math.cos(angle) * bot.speed;
-            for (const wall of walls) { if (checkCollision(bot, wall)) { bot.x = oldX; break; } }
-            bot.y += Math.sin(angle) * bot.speed;
-            for (const wall of walls) { if (checkCollision(bot, wall)) { bot.y = oldY; break; } }
-        }
-
-        // --- 8. LÓGICA DE ARMAS (Con Granada) ---
-        function useWeapon() {
-            if (player.activeWeapon === 'he_grenade') {
-                throwGrenade('he');
-                return;
-            }
-            if (player.activeWeapon === 'molotov') { 
-                throwGrenade('molotov');
-                return;
-            }
-            if (player.activeWeapon === 'flash') { 
-                throwGrenade('flash');
-                return;
-            }
-            if (player.activeWeapon === 'smoke') {
-                throwGrenade('smoke');
-                return;
-            }
-            
-            const weaponSlot = player.inventory[player.activeWeapon];
-            if (!weaponSlot) return; 
-            const weapon = weaponData[weaponSlot.name];
-            
-            if (Date.now() - player.lastShotTime < weapon.fireRate) return; 
-            if (!weapon.automatic && player.hasFiredSemi) return; 
-            
-            if (weaponSlot.ammoInClip > 0) {
-                player.lastShotTime = Date.now(); 
-                player.hasFiredSemi = true; 
-                if (weapon.type === 'melee') { useMelee(weapon); } 
-                else { 
-                    shootBullet(weapon); 
-                    weaponSlot.ammoInClip--; 
-                }
-            } else {
-                console.log("¡Sin munición!");
-            }
-        }
+        function moveBot(bot, angle) { const oldX = bot.x; const oldY = bot.y; bot.x += Math.cos(angle) * bot.speed; for (const wall of walls) { if (checkCollision(bot, wall)) { bot.x = oldX; break; } } bot.y += Math.sin(angle) * bot.speed; for (const wall of walls) { if (checkCollision(bot, wall)) { bot.y = oldY; break; } } }
+        function useWeapon() { if (player.activeWeapon === 'he_grenade') { throwGrenade('he'); return; } if (player.activeWeapon === 'molotov') { throwGrenade('molotov'); return; } if (player.activeWeapon === 'flash') { throwGrenade('flash'); return; } if (player.activeWeapon === 'smoke') { throwGrenade('smoke'); return; } const weaponSlot = player.inventory[player.activeWeapon]; if (!weaponSlot) return; const weapon = weaponData[weaponSlot.name]; if (Date.now() - player.lastShotTime < weapon.fireRate) return; if (!weapon.automatic && player.hasFiredSemi) return; if (weaponSlot.ammoInClip > 0) { player.lastShotTime = Date.now(); player.hasFiredSemi = true; if (weapon.type === 'melee') { useMelee(weapon); } else { shootBullet(weapon); weaponSlot.ammoInClip--; } } }
         function useMelee(weapon) { const attackLine = { x: player.x + Math.cos(player.angle) * weapon.range / 2, y: player.y + Math.sin(player.angle) * weapon.range / 2, size: weapon.range }; for (const bot of bots) { if (checkObjectCollision(attackLine, bot)) { bot.health -= weapon.damage; console.log("¡Cuchillada!"); break; } } }
         function shootBullet(weapon) { const totalSpread = weapon.spread + player.recoil; const spread = (Math.random() - 0.5) * totalSpread; const bulletAngle = player.angle + spread; player.recoil += weapon.recoil; const bullet = { x: player.x, y: player.y, size: 5, color: 'yellow', speed: 15, angle: bulletAngle, damage: weapon.damage }; bullets.push(bullet); }
-        
-        function reload() {
-            if (player.activeWeapon === 'primary' || player.activeWeapon === 'secondary') {
-                const weaponSlot = player.inventory[player.activeWeapon];
-                if (!weaponSlot) return; 
-                const weapon = weaponData[weaponSlot.name];
-                
-                if (weaponSlot.ammoInClip === weapon.clipSize) return; 
-                if (weaponSlot.ammoInReserve === 0) return; 
-                
-                player.isReloading = true;
-                console.log("Recargando...");
-                
-                setTimeout(() => {
-                    const bulletsNeeded = weapon.clipSize - weaponSlot.ammoInClip;
-                    const bulletsToReload = Math.min(bulletsNeeded, weaponSlot.ammoInReserve);
-                    
-                    weaponSlot.ammoInClip += bulletsToReload;
-                    weaponSlot.ammoInReserve -= bulletsToReload;
-                    
-                    player.isReloading = false;
-                    console.log("¡Recarga completa!");
-                }, weapon.reloadTime);
-            }
-        }
-
-        function throwGrenade(type) {
-            let grenadeData = {};
-            if (type === 'he' && player.inventory.grenades.he > 0) {
-                player.inventory.grenades.he--;
-                grenadeData = { type: 'he', color: 'darkgreen', size: 10, timer: Date.now() + GAME_TIMES.GRENADE_FUSE };
-            } else if (type === 'molotov' && player.inventory.grenades.molotov > 0) {
-                player.inventory.grenades.molotov--;
-                grenadeData = { type: 'molotov', color: '#B27300', size: 10, timer: Date.now() + GAME_TIMES.MOLOTOV_FUSE };
-            } else if (type === 'flash' && player.inventory.grenades.flash > 0) {
-                player.inventory.grenades.flash--;
-                grenadeData = { type: 'flash', color: 'white', size: 10, timer: Date.now() + GAME_TIMES.FLASH_FUSE };
-            } else if (type === 'smoke' && player.inventory.grenades.smoke > 0) {
-                player.inventory.grenades.smoke--;
-                grenadeData = { type: 'smoke', color: '#BBBBBB', size: 10, timer: Date.now() + GAME_TIMES.SMOKE_FUSE };
-            } else {
-                return; 
-            }
-            
-            player.lastShotTime = Date.now(); 
-            const grenade = {
-                x: player.x,
-                y: player.y,
-                size: grenadeData.size,
-                color: grenadeData.color,
-                velX: Math.cos(player.angle) * 10, 
-                velY: Math.sin(player.angle) * 10,
-                timer: grenadeData.timer,
-                type: grenadeData.type
-            };
-            grenades.push(grenade);
-            player.activeWeapon = 'secondary';
-        }
-        
-        // --- 9. LÓGICA DE LA BOMBA Y DAÑO ---
-        function applyPlayerDamage(damage) {
-            if (!player.isAlive) return; 
-            
-            if (player.armor <= 0) {
-                player.health -= damage;
-            } else {
-                const absorptionRatio = player.inventory.helmet ? 0.70 : 0.50;
-                let damageToArmor = damage * absorptionRatio;
-                let damageToHealth = damage * (1 - absorptionRatio);
-                if (player.armor < damageToArmor) {
-                    const remainingDamage = damageToArmor - player.armor;
-                    player.armor = 0;
-                    player.inventory.helmet = false;
-                    player.health -= (damageToHealth + remainingDamage);
-                } else {
-                    player.armor -= damageToArmor;
-                    player.health -= damageToHealth;
-                }
-            }
-            if (player.health <= 0) {
-                player.health = 0; 
-                player.isAlive = false; 
-                console.log("¡HAS MUERTO!");
-                if (alliedBots.length === 0) { 
-                    endRound("Ts Ganan", "Ts");
-                }
-            }
-        }
-        function applyAlliedBotDamage(bot, damage) {
-            const damageToApply = bot.armor ? damage * 0.5 : damage;
-            bot.health -= damageToApply;
-            
-            if (bot.health <= 0) {
-                if (alliedBots.length <= 1 && !player.isAlive) { 
-                    endRound("Ts Ganan", "Ts");
-                }
-            }
-        }
-        function applyGrenadeDamage(target, damage) {
-            if (target === player) {
-                applyPlayerDamage(damage);
-            } else {
-                const damageToApply = target.armor ? damage * 0.5 : damage;
-                target.health -= damageToApply; 
-            }
-        }
+        function reload() { if (player.activeWeapon === 'primary' || player.activeWeapon === 'secondary') { const weaponSlot = player.inventory[player.activeWeapon]; if (!weaponSlot) return; const weapon = weaponData[weaponSlot.name]; if (weaponSlot.ammoInClip === weapon.clipSize) return; if (weaponSlot.ammoInReserve === 0) return; player.isReloading = true; setTimeout(() => { const bulletsNeeded = weapon.clipSize - weaponSlot.ammoInClip; const bulletsToReload = Math.min(bulletsNeeded, weaponSlot.ammoInReserve); weaponSlot.ammoInClip += bulletsToReload; weaponSlot.ammoInReserve -= bulletsToReload; player.isReloading = false; }, weapon.reloadTime); } }
+        function throwGrenade(type) { let grenadeData = {}; if (type === 'he' && player.inventory.grenades.he > 0) { player.inventory.grenades.he--; grenadeData = { type: 'he', color: 'darkgreen', size: 10, timer: Date.now() + GAME_TIMES.GRENADE_FUSE }; } else if (type === 'molotov' && player.inventory.grenades.molotov > 0) { player.inventory.grenades.molotov--; grenadeData = { type: 'molotov', color: '#B27300', size: 10, timer: Date.now() + GAME_TIMES.MOLOTOV_FUSE }; } else if (type === 'flash' && player.inventory.grenades.flash > 0) { player.inventory.grenades.flash--; grenadeData = { type: 'flash', color: 'white', size: 10, timer: Date.now() + GAME_TIMES.FLASH_FUSE }; } else if (type === 'smoke' && player.inventory.grenades.smoke > 0) { player.inventory.grenades.smoke--; grenadeData = { type: 'smoke', color: '#BBBBBB', size: 10, timer: Date.now() + GAME_TIMES.SMOKE_FUSE }; } else { return; } player.lastShotTime = Date.now(); const grenade = { x: player.x, y: player.y, size: grenadeData.size, color: grenadeData.color, velX: Math.cos(player.angle) * 10, velY: Math.sin(player.angle) * 10, timer: grenadeData.timer, type: grenadeData.type }; grenades.push(grenade); player.activeWeapon = 'secondary'; }
+        function applyPlayerDamage(damage) { if (!player.isAlive) return; if (player.armor <= 0) { player.health -= damage; } else { const absorptionRatio = player.inventory.helmet ? 0.70 : 0.50; let damageToArmor = damage * absorptionRatio; let damageToHealth = damage * (1 - absorptionRatio); if (player.armor < damageToArmor) { const remainingDamage = damageToArmor - player.armor; player.armor = 0; player.inventory.helmet = false; player.health -= (damageToHealth + remainingDamage); } else { player.armor -= damageToArmor; player.health -= damageToHealth; } } if (player.health <= 0) { player.health = 0; player.isAlive = false; if (alliedBots.length === 0) { endRound("Ts Ganan", "Ts"); } } }
+        function applyAlliedBotDamage(bot, damage) { const damageToApply = bot.armor ? damage * 0.5 : damage; bot.health -= damageToApply; if (bot.health <= 0) { if (alliedBots.length <= 1 && !player.isAlive) { endRound("Ts Ganan", "Ts"); } } }
+        function applyGrenadeDamage(target, damage) { if (target === player) { applyPlayerDamage(damage); } else { const damageToApply = target.armor ? damage * 0.5 : damage; target.health -= damageToApply; } }
         function checkNearBomb() { if (game.bomb.state !== 'planted') return false; const distance = Math.hypot(player.x - game.bomb.x, player.y - game.bomb.y); return distance < 75; }
-        function updateDefusing() {
-            if (!game.isDefusing) return;
-            if (!checkNearBomb()) { 
-                game.isDefusing = false;
-                hideProgress();
-                return;
-            }
-            const progress = Date.now() - game.defuseStartTime;
-            showProgress(progress, GAME_TIMES.DEFUSE);
-            if (progress >= GAME_TIMES.DEFUSE) {
-                defuseBomb();
-            }
-        }
-        function plantBomb(bot) {
-            if (game.bomb.state === 'planted') return; 
-            
-            // (NUEVO) Detectar en qué sitio se plantó
-            for (const zone of zones) {
-                if (zone.name.startsWith('Sitio') && checkObjectCollision(bot, zone)) {
-                    game.bomb.site = zone.name.includes('A') ? 'A' : 'B';
-                    break;
-                }
-            }
-            
-            console.log(`¡Bomba Plantada en Sitio ${game.bomb.site}!`);
-            bot.isPlanting = false;
-            bot.hasBomb = false;
-            game.bomb.state = 'planted';
-            game.bomb.x = bot.x;
-            game.bomb.y = bot.y;
-            game.bomb.plantTime = Date.now();
-            game.bomb.timerId = setTimeout(bombExplode, GAME_TIMES.BOMB_FUSE);
-            for (const otherBot of bots) {
-                if (otherBot !== bot) {
-                    otherBot.state = 'guarding'; 
-                }
-            }
-        }
-        function defuseBomb() {
-            console.log("¡Bomba Desactivada!");
-            player.money += ECONOMY.DEFUSE_BONUS; 
-            if (player.money > MAX_MONEY) player.money = MAX_MONEY;
-            
-            clearTimeout(game.bomb.timerId);
-            game.isDefusing = false;
-            hideProgress();
-            game.bomb.state = 'defused';
-            endRound("CTs Ganan", "CTs");
-        }
-        function bombExplode() {
-            console.log("¡BOOM!");
-            game.bomb.state = 'exploded';
-            endRound("Ts Ganan", "Ts");
-        }
-        
+        function updateDefusing() { if (!game.isDefusing) return; if (!checkNearBomb()) { game.isDefusing = false; hideProgress(); return; } const progress = Date.now() - game.defuseStartTime; showProgress(progress, GAME_TIMES.DEFUSE); if (progress >= GAME_TIMES.DEFUSE) { defuseBomb(); } }
+        function plantBomb(bot) { if (game.bomb.state === 'planted') return; for (const zone of zones) { if (zone.name.startsWith('Sitio') && checkObjectCollision(bot, zone)) { game.bomb.site = zone.name.includes('A') ? 'A' : 'B'; break; } } bot.isPlanting = false; bot.hasBomb = false; game.bomb.state = 'planted'; game.bomb.x = bot.x; game.bomb.y = bot.y; game.bomb.plantTime = Date.now(); game.bomb.timerId = setTimeout(bombExplode, GAME_TIMES.BOMB_FUSE); for (const otherBot of bots) { if (otherBot !== bot) { otherBot.state = 'guarding'; } } }
+        function defuseBomb() { player.money += ECONOMY.DEFUSE_BONUS; if (player.money > MAX_MONEY) player.money = MAX_MONEY; clearTimeout(game.bomb.timerId); game.isDefusing = false; hideProgress(); game.bomb.state = 'defused'; endRound("CTs Ganan", "CTs"); }
+        function bombExplode() { game.bomb.state = 'exploded'; endRound("Ts Ganan", "Ts"); }
         let isRoundEnding = false;
-        
-        function endRound(message, winner) {
-            if (isRoundEnding) return; 
-            isRoundEnding = true;
-            
-            if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
-            console.log("Fin de ronda: " + message);
-
-            if (winner === 'CTs') {
-                game.score.ct++;
-                player.money += ECONOMY.WIN_BONUS; 
-                alliedBots.forEach(b => b.money += ECONOMY.WIN_BONUS);
-                bots.forEach(b => b.money += ECONOMY.LOSS_BONUS);
-            } else if (winner === 'Ts') {
-                game.score.t++;
-                player.money += ECONOMY.LOSS_BONUS; 
-                alliedBots.forEach(b => b.money += ECONOMY.LOSS_BONUS);
-                bots.forEach(b => b.money += ECONOMY.WIN_BONUS);
-            }
-            if (player.money > MAX_MONEY) player.money = MAX_MONEY;
-            alliedBots.forEach(b => { if (b.money > MAX_MONEY) b.money = MAX_MONEY; });
-            bots.forEach(b => { if (b.money > MAX_MONEY) b.money = MAX_MONEY; });
-            
-            if (game.score.ct === 12) {
-                showMessage("¡¡CTs GANAN LA PARTIDA!!", 10000);
-                return; 
-            }
-            if (game.score.t === 12) {
-                showMessage("¡¡Ts GANAN LA PARTIDA!!", 10000);
-                return; 
-            }
-            
-            showMessage(message, 3000);
-            setTimeout(resetRound, 3000);
-        }
-
-        // (NUEVO) resetRound con economía de bot
-        function resetRound() {
-            game.roundNumber++; 
-            console.log(`--- Nueva Ronda ${game.roundNumber} (CT: ${game.score.ct} - T: ${game.score.t}) ---`);
-            isRoundEnding = false; 
-            game.bomb.state = 'unplanted';
-            game.bomb.site = null; 
-            if (game.bomb.timerId) clearTimeout(game.bomb.timerId);
-            game.bomb.timerId = null;
-            
-            // Guardar dinero persistente
-            const oldAlliedBots = [...alliedBots];
-            const oldEnemyBots = [...bots];
-
-            // Limpiar todo
-            bots = [];
-            alliedBots = [];
-            bullets = [];
-            botBullets = [];
-            alliedBotBullets = [];
-            grenades = []; 
-            explosions = [];
-            firePatches = []; 
-            smokeClouds = []; 
-            
-            // --- Resetear Jugador ---
-            player.isAlive = true; 
-            player.hasBomb = false;
-            player.health = 100;
-            player.armor = 0; 
-            player.inventory.helmet = false;
-            player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; 
-            
-            if (game.roundNumber === 1) {
-                player.money = ECONOMY.ROUND_1;
-            } 
-            
-            const pistol = weaponData['pistol'];
-            player.inventory.secondary = {
-                name: 'pistol',
-                ammoInClip: pistol.clipSize,
-                ammoInReserve: pistol.reserveAmmo
-            };
-            player.inventory.primary = null; 
-            player.activeWeapon = 'secondary';
-            
-            
-            const playerSpawnZone = getSpawnZone('Spawn AT');
-            if (playerSpawnZone) {
-                player.x = playerSpawnZone.x + Math.random() * playerSpawnZone.width;
-                player.y = playerSpawnZone.y + Math.random() * playerSpawnZone.height;
-            } else {
-                player.x = 142; player.y = 1087; 
-            }
-            
-            // === SPAWN EQUIPO T (Enemigo) ===
-            const botSpawnZone = getSpawnZone('Spawn T');
-            if (!botSpawnZone) { console.error("¡No se encontró la 'Spawn T' zone!"); return; }
-            const teamTargetSite = Math.random() < 0.5 ? 'A' : 'B';
-            console.log(`El equipo T ha decidido ir a: ${teamTargetSite}`);
-            const bombCarrierIndex = Math.floor(Math.random() * 5);
-            for (let i = 0; i < 5; i++) {
-                const spawnX = botSpawnZone.x + Math.random() * botSpawnZone.width;
-                const spawnY = botSpawnZone.y + Math.random() * botSpawnZone.height;
-                const targetRoute = Math.random() < 0.5 ? 1 : 2;
-                const pathName = `path_T_${teamTargetSite}_${targetRoute}`;
-                // Asignar dinero
-                const oldBot = oldEnemyBots[i];
-                const money = game.roundNumber === 1 ? ECONOMY.ROUND_1 : (oldBot ? oldBot.money : ECONOMY.LOSS_BONUS);
-                spawnBot(i === bombCarrierIndex, { x: spawnX, y: spawnY }, pathName, money);
-            }
-            
-            // === SPAWN EQUIPO CT (Aliado) ===
-            if (!playerSpawnZone) { console.error("¡No se encontró la 'Spawn AT' zone!"); return; }
-            let availableCTPaths = [...ctPathNames]; 
-            availableCTPaths = availableCTPaths.filter(pathName => paths[pathName] && paths[pathName].length > 0);
-            if (availableCTPaths.length === 0) {
-                console.error("No hay rutas CT definidas. Los bots aliados no se moverán.");
-            }
-            for (let i = 0; i < 4; i++) {
-                const spawnX = playerSpawnZone.x + Math.random() * playerSpawnZone.width;
-                const spawnY = playerSpawnZone.y + Math.random() * playerSpawnZone.height;
-                const pathName = availableCTPaths[i % availableCTPaths.length]; 
-                // Asignar dinero
-                const oldBot = oldAlliedBots[i];
-                const money = game.roundNumber === 1 ? ECONOMY.ROUND_1 : (oldBot ? oldBot.money : ECONOMY.LOSS_BONUS);
-                spawnAlliedBot({ x: spawnX, y: spawnY }, pathName, money);
-            }
-            
-            // (NUEVO) Iniciar tiempo de compra
-            game.isBuyTime = true;
-            isShopOpen = true; 
-            showMessage(`Ronda ${game.roundNumber} - Tiempo de Compra (10s)`, GAME_TIMES.BUY_TIME);
-            
-            // Lógica de compra de bots
-            for (const bot of bots) { botBuyLogic(bot, 't'); }
-            for (const bot of alliedBots) { botBuyLogic(bot, 'ct'); }
-
-            setTimeout(() => {
-                game.isBuyTime = false;
-                isShopOpen = false; 
-                showMessage("¡La ronda comienza!", 2000);
-            }, GAME_TIMES.BUY_TIME); 
-        }
+        function endRound(message, winner) { if (isRoundEnding) return; isRoundEnding = true; if (game.bomb.timerId) clearTimeout(game.bomb.timerId); if (winner === 'CTs') { game.score.ct++; player.money += ECONOMY.WIN_BONUS; alliedBots.forEach(b => b.money += ECONOMY.WIN_BONUS); bots.forEach(b => b.money += ECONOMY.LOSS_BONUS); } else if (winner === 'Ts') { game.score.t++; player.money += ECONOMY.LOSS_BONUS; alliedBots.forEach(b => b.money += ECONOMY.LOSS_BONUS); bots.forEach(b => b.money += ECONOMY.WIN_BONUS); } if (player.money > MAX_MONEY) player.money = MAX_MONEY; alliedBots.forEach(b => { if (b.money > MAX_MONEY) b.money = MAX_MONEY; }); bots.forEach(b => { if (b.money > MAX_MONEY) b.money = MAX_MONEY; }); if (game.score.ct === 12) { showMessage("¡¡CTs GANAN!!", 10000); return; } if (game.score.t === 12) { showMessage("¡¡Ts GANAN!!", 10000); return; } showMessage(message, 3000); setTimeout(resetRound, 3000); }
+        function resetRound() { game.roundNumber++; isRoundEnding = false; game.bomb.state = 'unplanted'; game.bomb.site = null; if (game.bomb.timerId) clearTimeout(game.bomb.timerId); game.bomb.timerId = null; const oldAlliedBots = [...alliedBots]; const oldEnemyBots = [...bots]; bots = []; alliedBots = []; bullets = []; botBullets = []; alliedBotBullets = []; grenades = []; explosions = []; firePatches = []; smokeClouds = []; player.isAlive = true; player.hasBomb = false; player.health = 100; player.armor = 0; player.inventory.helmet = false; player.inventory.grenades = { he: 0, molotov: 0, flash: 0, smoke: 0 }; if (game.roundNumber === 1) { player.money = ECONOMY.ROUND_1; } const pistol = weaponData['pistol']; player.inventory.secondary = { name: 'pistol', ammoInClip: pistol.clipSize, ammoInReserve: pistol.reserveAmmo }; player.inventory.primary = null; player.activeWeapon = 'secondary'; const playerSpawnZone = getSpawnZone('Spawn AT'); if (playerSpawnZone) { player.x = playerSpawnZone.x + Math.random() * playerSpawnZone.width; player.y = playerSpawnZone.y + Math.random() * playerSpawnZone.height; } else { player.x = 142; player.y = 1087; } const botSpawnZone = getSpawnZone('Spawn T'); if (!botSpawnZone) { return; } const teamTargetSite = Math.random() < 0.5 ? 'A' : 'B'; const bombCarrierIndex = Math.floor(Math.random() * 5); for (let i = 0; i < 5; i++) { const spawnX = botSpawnZone.x + Math.random() * botSpawnZone.width; const spawnY = botSpawnZone.y + Math.random() * botSpawnZone.height; const targetRoute = Math.random() < 0.5 ? 1 : 2; const pathName = `path_T_${teamTargetSite}_${targetRoute}`; const oldBot = oldEnemyBots[i]; const money = game.roundNumber === 1 ? ECONOMY.ROUND_1 : (oldBot ? oldBot.money : ECONOMY.LOSS_BONUS); spawnBot(i === bombCarrierIndex, { x: spawnX, y: spawnY }, pathName, money); } if (!playerSpawnZone) { return; } let availableCTPaths = [...ctPathNames]; availableCTPaths = availableCTPaths.filter(pathName => paths[pathName] && paths[pathName].length > 0); for (let i = 0; i < 4; i++) { const spawnX = playerSpawnZone.x + Math.random() * playerSpawnZone.width; const spawnY = playerSpawnZone.y + Math.random() * playerSpawnZone.height; const pathName = availableCTPaths[i % availableCTPaths.length]; const oldBot = oldAlliedBots[i]; const money = game.roundNumber === 1 ? ECONOMY.ROUND_1 : (oldBot ? oldBot.money : ECONOMY.LOSS_BONUS); spawnAlliedBot({ x: spawnX, y: spawnY }, pathName, money); } game.isBuyTime = true; isShopOpen = true; showMessage(`Ronda ${game.roundNumber} - Compra`, GAME_TIMES.BUY_TIME); for (const bot of bots) { botBuyLogic(bot, 't'); } for (const bot of alliedBots) { botBuyLogic(bot, 'ct'); } setTimeout(() => { game.isBuyTime = false; isShopOpen = false; showMessage("¡Go!", 1000); }, GAME_TIMES.BUY_TIME); }
         function showProgress(progress, max) { progressContainerEl.style.display = 'block'; const percentage = Math.min((progress / max) * 100, 100); progressBarEl.style.width = percentage + '%'; }
         function hideProgress() { progressContainerEl.style.display = 'none'; progressBarEl.style.width = '0%'; }
         function showMessage(text, duration) { gameMessageEl.textContent = text; gameMessageEl.style.display = 'block'; clearTimeout(game.messageTimerId); game.messageTimerId = setTimeout(() => { gameMessageEl.style.display = 'none'; }, duration); }
 
-        // --- 10. FUNCIÓN DE ACTUALIZACIÓN (Lógica) ---
         function update() {
             if (isRoundEnding) return;
-            if (game.isBuyTime) { 
-                camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2;
-                if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0;
-                if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width;
-                if (camera.y + canvas.height > world.height) camera.y = world.height - canvas.height;
-                return;
-            }
-            
-            if (mouse.isDown && !game.isDefusing && player.flashed <= Date.now() && !isShopOpen && player.isAlive) {
-                useWeapon();
-            } else {
-                if (player.recoil > 0) player.recoil -= 0.02;
-                if (player.recoil < 0) player.recoil = 0;
-            }
-            if (!game.isDefusing && player.flashed <= Date.now() && !isShopOpen && player.isAlive) { 
-                const oldX = player.x; const oldY = player.y;
-                if (keys['a'] || keys['A']) { player.x -= player.speed; }
-                if (keys['d'] || keys['D']) { player.x += player.speed; }
-                for (const wall of walls) { if (checkCollision(player, wall)) { player.x = oldX; break; } }
-                if (keys['w'] || keys['W']) { player.y -= player.speed; }
-                if (keys['s'] || keys['S']) { player.y += player.speed; }
-                for (const wall of walls) { if (checkCollision(player, wall)) { player.y = oldY; break; } }
-                player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-            } else if (player.flashed > Date.now() && player.isAlive) {
-                player.angle += 0.1; 
-            }
-            
-            updateDefusing();
-            updateBots();
-            updateAlliedBots(); 
-            
-            updateGrenades();
-            updateFire();
-            updateSmokes(); 
-            updateExplosions(); 
-            
-            // Balas del Jugador (daña T)
+            if (game.isBuyTime) { camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2; if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0; if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width; if (camera.y + canvas.height > world.height) camera.y = world.height - canvas.height; return; }
+            if (mouse.isDown && !game.isDefusing && player.flashed <= Date.now() && !isShopOpen && player.isAlive) { useWeapon(); } else { if (player.recoil > 0) player.recoil -= 0.02; if (player.recoil < 0) player.recoil = 0; }
+            if (!game.isDefusing && player.flashed <= Date.now() && !isShopOpen && player.isAlive) { const oldX = player.x; const oldY = player.y; if (keys['a'] || keys['A']) { player.x -= player.speed; } if (keys['d'] || keys['D']) { player.x += player.speed; } for (const wall of walls) { if (checkCollision(player, wall)) { player.x = oldX; break; } } if (keys['w'] || keys['W']) { player.y -= player.speed; } if (keys['s'] || keys['S']) { player.y += player.speed; } for (const wall of walls) { if (checkCollision(player, wall)) { player.y = oldY; break; } } player.angle = Math.atan2(mouse.y - player.y, mouse.x - player.x); } else if (player.flashed > Date.now() && player.isAlive) { player.angle += 0.1; }
+            updateDefusing(); updateBots(); updateAlliedBots(); updateGrenades(); updateFire(); updateSmokes(); updateExplosions();
             for (let i = bullets.length - 1; i >= 0; i--) { let bullet = bullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (let j = bots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, bots[j])) { bots[j].health -= bullet.damage; bullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { bullets.splice(i, 1); } }
-            // Balas de T (daña Player y CT)
-            for (let i = botBullets.length - 1; i >= 0; i--) { let bullet = botBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; 
-                if (checkObjectCollision(bullet, player)) { applyPlayerDamage(bullet.damage); botBullets.splice(i, 1); bulletHit = true; continue; }
-                for (let j = alliedBots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, alliedBots[j])) { applyAlliedBotDamage(alliedBots[j], bullet.damage); botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue;
-                if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } 
-            }
-            // Balas de CT (daña T)
+            for (let i = botBullets.length - 1; i >= 0; i--) { let bullet = botBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (checkObjectCollision(bullet, player)) { applyPlayerDamage(bullet.damage); botBullets.splice(i, 1); bulletHit = true; continue; } for (let j = alliedBots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, alliedBots[j])) { applyAlliedBotDamage(alliedBots[j], bullet.damage); botBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { botBullets.splice(i, 1); } }
             for (let i = alliedBotBullets.length - 1; i >= 0; i--) { let bullet = alliedBotBullets[i]; bullet.x += Math.cos(bullet.angle) * bullet.speed; bullet.y += Math.sin(bullet.angle) * bullet.speed; let bulletHit = false; for (const wall of walls) { if (checkCollision(bullet, wall)) { alliedBotBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; for (let j = bots.length - 1; j >= 0; j--) { if (checkObjectCollision(bullet, bots[j])) { bots[j].health -= bullet.damage; alliedBotBullets.splice(i, 1); bulletHit = true; break; } } if (bulletHit) continue; if (bullet.x < 0 || bullet.x > world.width || bullet.y < 0 || bullet.y > world.height) { alliedBotBullets.splice(i, 1); } }
-
-            // (NUEVO) Lógica de Cámara Espectador
-            if (player.isAlive) {
-                camera.x = player.x - canvas.width / 2;
-                camera.y = player.y - canvas.height / 2;
-            } else {
-                // Modo espectador: seguir aliados
-                if (alliedBots.length > 0) {
-                    if (game.spectatorTargetIndex >= alliedBots.length) {
-                        game.spectatorTargetIndex = 0; // Reinicia si el índice es inválido
-                    }
-                    const targetBot = alliedBots[game.spectatorTargetIndex];
-                    camera.x = targetBot.x - canvas.width / 2;
-                    camera.y = targetBot.y - canvas.height / 2;
-                } else {
-                    camera.x = player.x - canvas.width / 2;
-                    camera.y = player.y - canvas.height / 2;
-                }
-            }
-            
-            // Clamp camera
-            if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0;
-            if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width;
-            if (camera.y + canvas.height > world.height) camera.y = world.height - canvas.height;
+            if (player.isAlive) { camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2; } else { if (alliedBots.length > 0) { if (game.spectatorTargetIndex >= alliedBots.length) { game.spectatorTargetIndex = 0; } const targetBot = alliedBots[game.spectatorTargetIndex]; camera.x = targetBot.x - canvas.width / 2; camera.y = targetBot.y - canvas.height / 2; } else { camera.x = player.x - canvas.width / 2; camera.y = player.y - canvas.height / 2; } }
+            if (camera.x < 0) camera.x = 0; if (camera.y < 0) camera.y = 0; if (camera.x + canvas.width > world.width) camera.x = world.width - canvas.width; if (camera.y + canvas.height > world.height) camera.y = world.height - canvas.height;
         }
 
-        // --- Lógica de Explosión/Granada ---
-        function updateGrenades() {
-            for (let i = grenades.length - 1; i >= 0; i--) {
-                const g = grenades[i];
-                g.x += g.velX; g.y += g.velY;
-                g.velX *= 0.99; g.velY *= 0.99;
-                for (const wall of walls) {
-                    if (checkCollision(g, wall)) {
-                        if (Math.abs(g.velX) > Math.abs(g.velY)) {
-                            g.x -= g.velX; g.velX *= -0.5;
-                        } else { 
-                            g.y -= g.velY; g.velY *= -0.5;
-                        }
-                        break;
-                    }
-                }
-                if (Date.now() > g.timer) {
-                    if (g.type === 'he') { explodeHE(g); }
-                    if (g.type === 'molotov') { explodeMolotov(g); }
-                    if (g.type === 'flash') { explodeFlash(g); } 
-                    if (g.type === 'smoke') { explodeSmoke(g); } 
-                    grenades.splice(i, 1);
-                }
-            }
-        }
-        function updateFire() {
-            const fireDamage = weaponData.molotov.damage;
-            for (let i = firePatches.length - 1; i >= 0; i--) {
-                const patch = firePatches[i];
-                if (checkObjectCollision(player, patch)) { applyPlayerDamage(fireDamage); }
-                for(const bot of bots) { if (checkObjectCollision(bot, patch)) { bot.health -= fireDamage; } }
-                for(const bot of alliedBots) { if (checkObjectCollision(bot, patch)) { applyAlliedBotDamage(bot, fireDamage); } }
-                patch.life--;
-                if (patch.life <= 0) {
-                    firePatches.splice(i, 1);
-                }
-            }
-        }
-        function updateSmokes() {
-            for (let i = smokeClouds.length - 1; i >= 0; i--) {
-                smokeClouds[i].life--;
-                if (smokeClouds[i].life <= 0) {
-                    smokeClouds.splice(i, 1);
-                }
-            }
-        }
-        function updateExplosions() {
-             for (let i = explosions.length - 1; i >= 0; i--) {
-                explosions[i].life--;
-                if (explosions[i].life <= 0) {
-                    explosions.splice(i, 1);
-                }
-            }
-        }
-        
-        function explodeHE(grenade) {
-            const data = weaponData.he_grenade;
-            console.log("BOOM! Explosión de HE");
-            explosions.push({ x: grenade.x, y: grenade.y, radius: data.range, life: 10 });
-            let dist = Math.hypot(player.x - grenade.x, player.y - grenade.y);
-            if (dist < data.range) {
-                const damage = data.damage * (1 - (dist / data.range)); 
-                applyPlayerDamage(damage);
-            }
-            for (const bot of bots) {
-                dist = Math.hypot(bot.x - grenade.x, bot.y - grenade.y);
-                if (dist < data.range) {
-                    const damage = data.damage * (1 - (dist / data.range));
-                    applyGrenadeDamage(bot, damage); 
-                }
-            }
-            for (const bot of alliedBots) {
-                dist = Math.hypot(bot.x - grenade.x, bot.y - grenade.y);
-                if (dist < data.range) {
-                    const damage = data.damage * (1 - (dist / data.range));
-                    applyAlliedBotDamage(bot, damage);
-                }
-            }
-        }
-        function explodeMolotov(grenade) {
-            console.log("¡FUEGO! Molotov extendiéndose.");
-            const data = weaponData.molotov;
-            for (let i = 0; i < 5; i++) {
-                const firePatch = {
-                    x: grenade.x + (Math.random() - 0.5) * data.range, 
-                    y: grenade.y + (Math.random() - 0.5) * data.range,
-                    size: 30,
-                    life: GAME_TIMES.FIRE_DURATION / 60 
-                };
-                firePatches.push(firePatch);
-            }
-        }
-        function explodeFlash(grenade) {
-            console.log("¡FLASH!");
-            const data = weaponData.flash;
-            explosions.push({ x: grenade.x, y: grenade.y, radius: data.range / 4, life: 5 });
-            const entities = [player, ...bots, ...alliedBots];
-            for (const entity of entities) {
-                const dist = Math.hypot(entity.x - grenade.x, entity.y - grenade.y);
-                if (dist < data.range) {
-                    if (hasLineOfSight(entity, grenade)) { 
-                        if(isTargetInFoV(entity, {x: grenade.x, y: grenade.y})) { 
-                            console.log("¡Cegado!");
-                            entity.flashed = Date.now() + GAME_TIMES.FLASH_DURATION;
-                        }
-                    }
-                }
-            }
-        }
-        function explodeSmoke(grenade) {
-            console.log("¡HUMO!");
-            const data = weaponData.smoke;
-            smokeClouds.push({
-                x: grenade.x,
-                y: grenade.y,
-                size: data.range, // radio
-                life: GAME_TIMES.SMOKE_DURATION / 60 
-            });
-        }
+        function updateGrenades() { for (let i = grenades.length - 1; i >= 0; i--) { const g = grenades[i]; g.x += g.velX; g.y += g.velY; g.velX *= 0.99; g.velY *= 0.99; for (const wall of walls) { if (checkCollision(g, wall)) { if (Math.abs(g.velX) > Math.abs(g.velY)) { g.x -= g.velX; g.velX *= -0.5; } else { g.y -= g.velY; g.velY *= -0.5; } break; } } if (Date.now() > g.timer) { if (g.type === 'he') { explodeHE(g); } if (g.type === 'molotov') { explodeMolotov(g); } if (g.type === 'flash') { explodeFlash(g); } if (g.type === 'smoke') { explodeSmoke(g); } grenades.splice(i, 1); } } }
+        function updateFire() { const fireDamage = weaponData.molotov.damage; for (let i = firePatches.length - 1; i >= 0; i--) { const patch = firePatches[i]; if (checkObjectCollision(player, patch)) { applyPlayerDamage(fireDamage); } for(const bot of bots) { if (checkObjectCollision(bot, patch)) { bot.health -= fireDamage; } } for(const bot of alliedBots) { if (checkObjectCollision(bot, patch)) { applyAlliedBotDamage(bot, fireDamage); } } patch.life--; if (patch.life <= 0) { firePatches.splice(i, 1); } } }
+        function updateSmokes() { for (let i = smokeClouds.length - 1; i >= 0; i--) { smokeClouds[i].life--; if (smokeClouds[i].life <= 0) { smokeClouds.splice(i, 1); } } }
+        function updateExplosions() { for (let i = explosions.length - 1; i >= 0; i--) { explosions[i].life--; if (explosions[i].life <= 0) { explosions.splice(i, 1); } } }
+        function explodeHE(grenade) { const data = weaponData.he_grenade; explosions.push({ x: grenade.x, y: grenade.y, radius: data.range, life: 10 }); let dist = Math.hypot(player.x - grenade.x, player.y - grenade.y); if (dist < data.range) { const damage = data.damage * (1 - (dist / data.range)); applyPlayerDamage(damage); } for (const bot of bots) { dist = Math.hypot(bot.x - grenade.x, bot.y - grenade.y); if (dist < data.range) { const damage = data.damage * (1 - (dist / data.range)); applyGrenadeDamage(bot, damage); } } for (const bot of alliedBots) { dist = Math.hypot(bot.x - grenade.x, bot.y - grenade.y); if (dist < data.range) { const damage = data.damage * (1 - (dist / data.range)); applyAlliedBotDamage(bot, damage); } } }
+        function explodeMolotov(grenade) { const data = weaponData.molotov; for (let i = 0; i < 5; i++) { const firePatch = { x: grenade.x + (Math.random() - 0.5) * data.range, y: grenade.y + (Math.random() - 0.5) * data.range, size: 30, life: GAME_TIMES.FIRE_DURATION / 60 }; firePatches.push(firePatch); } }
+        function explodeFlash(grenade) { const data = weaponData.flash; explosions.push({ x: grenade.x, y: grenade.y, radius: data.range / 4, life: 5 }); const entities = [player, ...bots, ...alliedBots]; for (const entity of entities) { const dist = Math.hypot(entity.x - grenade.x, entity.y - grenade.y); if (dist < data.range) { if (hasLineOfSight(entity, grenade)) { if(isTargetInFoV(entity, {x: grenade.x, y: grenade.y})) { entity.flashed = Date.now() + GAME_TIMES.FLASH_DURATION; } } } } }
+        function explodeSmoke(grenade) { const data = weaponData.smoke; smokeClouds.push({ x: grenade.x, y: grenade.y, size: data.range, life: GAME_TIMES.SMOKE_DURATION / 60 }); }
 
-        // --- 11. FUNCIÓN DE DIBUJADO (Gráficos) ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.save();
-            ctx.translate(-camera.x, -camera.y);
+            ctx.save(); ctx.translate(-camera.x, -camera.y);
             
             ctx.fillStyle = '#333'; ctx.fillRect(0, 0, world.width, world.height);
             for (const zone of zones) { ctx.fillStyle = zone.color; ctx.fillRect(zone.x, zone.y, zone.width, zone.height); ctx.fillStyle = 'white'; ctx.font = '20px Arial'; ctx.textAlign = 'center'; ctx.fillText(zone.name, zone.x + zone.width / 2, zone.y + zone.height / 2); }
             ctx.fillStyle = '#999';
             for (const wall of walls) { ctx.fillRect(wall.x, wall.y, wall.width, wall.height); }
-            if (game.bomb.state === 'planted') {
-                const time = Date.now();
-                const flash = Math.abs(Math.sin(time / 100));
-                ctx.fillStyle = `rgb(255, ${flash * 100}, ${flash * 100})`;
-                ctx.fillRect(game.bomb.x - 10, game.bomb.y - 10, 20, 20);
-            }
+            if (game.bomb.state === 'planted') { const time = Date.now(); const flash = Math.abs(Math.sin(time / 100)); ctx.fillStyle = `rgb(255, ${flash * 100}, ${flash * 100})`; ctx.fillRect(game.bomb.x - 10, game.bomb.y - 10, 20, 20); }
             
-            ctx.fillStyle = 'yellow'; // Jugador
-            for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
-            ctx.fillStyle = 'orange'; // T
-            for (const bullet of botBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
-            ctx.fillStyle = 'lime'; // CT
-            for (const bullet of alliedBotBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
-
-            // Granadas
-            for (const g of grenades) {
-                ctx.fillStyle = g.color;
-                ctx.beginPath(); ctx.arc(g.x, g.y, g.size, 0, Math.PI * 2); ctx.fill();
-                ctx.strokeStyle = 'white'; 
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
-            // Explosiones
-            for (const e of explosions) {
-                ctx.fillStyle = `rgba(255, 100, 0, ${e.life / 10})`;
-                ctx.beginPath(); ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2); ctx.fill();
-            }
-            // Fuego
-            for (const patch of firePatches) {
-                ctx.fillStyle = `rgba(255, ${Math.random() * 100 + 50}, 0, 0.7)`;
-                ctx.beginPath();
-                ctx.arc(patch.x, patch.y, patch.size / 2, 0, Math.PI * 2);
-                ctx.fill();
-            }
+            ctx.fillStyle = 'yellow'; for (const bullet of bullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
+            ctx.fillStyle = 'orange'; for (const bullet of botBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
+            ctx.fillStyle = 'lime'; for (const bullet of alliedBotBullets) { ctx.beginPath(); ctx.arc(bullet.x, bullet.y, bullet.size, 0, Math.PI * 2); ctx.fill(); }
+            for (const g of grenades) { ctx.fillStyle = g.color; ctx.beginPath(); ctx.arc(g.x, g.y, g.size, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = 'white'; ctx.lineWidth = 2; ctx.stroke(); }
+            for (const e of explosions) { ctx.fillStyle = `rgba(255, 100, 0, ${e.life / 10})`; ctx.beginPath(); ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2); ctx.fill(); }
+            for (const patch of firePatches) { ctx.fillStyle = `rgba(255, ${Math.random() * 100 + 50}, 0, 0.7)`; ctx.beginPath(); ctx.arc(patch.x, patch.y, patch.size / 2, 0, Math.PI * 2); ctx.fill(); }
             
-            // --- Lógica de FoV y LOS para dibujar ---
-            
-            // Bots T (Enemigos)
             for (const bot of bots) {
                 if (!player.isAlive || (hasLineOfSight(player, bot) && isTargetInFoV(player, bot))) { 
                     ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
@@ -1628,13 +434,9 @@
                     ctx.restore();
                     ctx.fillStyle = 'red'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size, 5);
                     ctx.fillStyle = 'green'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size * (bot.health / 100), 5);
-                    if (bot.hasBomb) {
-                        ctx.fillStyle = 'orange'; ctx.font = 'bold 20px Arial'; ctx.fillText("B", bot.x, bot.y - 20);
-                    }
+                    if (bot.hasBomb) { ctx.fillStyle = 'orange'; ctx.font = 'bold 20px Arial'; ctx.fillText("B", bot.x, bot.y - 20); }
                 }
             }
-            
-            // Bots CT (Aliados)
             for (const bot of alliedBots) {
                 if (!player.isAlive || (hasLineOfSight(player, bot) && isTargetInFoV(player, bot))) { 
                     ctx.save(); ctx.translate(bot.x, bot.y); ctx.rotate(bot.angle);
@@ -1645,215 +447,47 @@
                     ctx.fillStyle = 'green'; ctx.fillRect(bot.x - bot.size / 2, bot.y - bot.size / 2 - 10, bot.size * (bot.health / 100), 5);
                 }
             }
-            
-            // Humo (se dibuja encima de los jugadores)
-            for (const smoke of smokeClouds) {
-                ctx.fillStyle = `rgba(150, 150, 150, 0.6)`;
-                ctx.beginPath();
-                ctx.arc(smoke.x, smoke.y, smoke.size, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            
-            if (player.isAlive) {
-                ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
-                ctx.fillStyle = player.color; ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size);
-                ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.size, 0); ctx.stroke();
-                ctx.restore(); 
-            }
+            for (const smoke of smokeClouds) { ctx.fillStyle = `rgba(150, 150, 150, 0.6)`; ctx.beginPath(); ctx.arc(smoke.x, smoke.y, smoke.size, 0, Math.PI * 2); ctx.fill(); }
+            if (player.isAlive) { ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle); ctx.fillStyle = player.color; ctx.fillRect(-player.size / 2, -player.size / 2, player.size, player.size); ctx.strokeStyle = 'white'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(player.size, 0); ctx.stroke(); ctx.restore(); }
             ctx.restore(); 
             
-            // --- HUD (Se dibuja encima de todo, sin cámara) ---
-            
             drawMinimap();
-            
-            // (NUEVO) HUD con colores
             ctx.font = 'bold 24px Arial';
-            ctx.fillStyle = 'white';
-            ctx.fillText(`Vida: ${Math.ceil(player.health)}`, 20, 190); 
-            ctx.fillStyle = '#66CCFF'; // Azul armadura
-            const armorIcon = player.inventory.helmet ? '🛡️' : '■';
-            ctx.fillText(`Armadura: ${Math.ceil(player.armor)} ${armorIcon}`, 20, 220); 
-            
-            const activeWeaponSlot = player.activeWeapon;
-            let weaponNameStr = "";
-            let ammoStr = ""; 
-            
-            if (activeWeaponSlot === 'primary' || activeWeaponSlot === 'secondary') {
-                const weapon = player.inventory[activeWeaponSlot];
-                if (weapon) {
-                    weaponNameStr = weaponData[weapon.name].name;
-                    ammoStr = `${weapon.ammoInClip} / ${weapon.ammoInReserve}`;
-                } else if (player.activeWeapon === 'secondary' && player.inventory.secondary === null) {
-                    weaponNameStr = "Manos";
-                }
-            } else if (activeWeaponSlot === 'melee') {
-                 weaponNameStr = weaponData['knife'].name;
-            } else if (activeWeaponSlot === 'he_grenade') {
-                weaponNameStr = `HE (${player.inventory.grenades.he})`;
-            } else if (activeWeaponSlot === 'molotov') { 
-                weaponNameStr = `Molotov (${player.inventory.grenades.molotov})`;
-            } else if (activeWeaponSlot === 'flash') { 
-                weaponNameStr = `Flash (${player.inventory.grenades.flash})`;
-            } else if (activeWeaponSlot === 'smoke') {
-                weaponNameStr = `Humo (${player.inventory.grenades.smoke})`;
-            }
+            ctx.fillStyle = 'white'; ctx.fillText(`Vida: ${Math.ceil(player.health)}`, 20, 190); 
+            ctx.fillStyle = '#66CCFF'; const armorIcon = player.inventory.helmet ? '🛡️' : '■'; ctx.fillText(`Armadura: ${Math.ceil(player.armor)} ${armorIcon}`, 20, 220); 
+            const activeWeaponSlot = player.activeWeapon; let weaponNameStr = ""; let ammoStr = ""; 
+            if (activeWeaponSlot === 'primary' || activeWeaponSlot === 'secondary') { const weapon = player.inventory[activeWeaponSlot]; if (weapon) { weaponNameStr = weaponData[weapon.name].name; ammoStr = `${weapon.ammoInClip} / ${weapon.ammoInReserve}`; } else if (player.activeWeapon === 'secondary') { weaponNameStr = "Manos"; } } else if (activeWeaponSlot === 'melee') { weaponNameStr = weaponData['knife'].name; } else if (activeWeaponSlot === 'he_grenade') { weaponNameStr = `HE (${player.inventory.grenades.he})`; } else if (activeWeaponSlot === 'molotov') { weaponNameStr = `Molotov (${player.inventory.grenades.molotov})`; } else if (activeWeaponSlot === 'flash') { weaponNameStr = `Flash (${player.inventory.grenades.flash})`; } else if (activeWeaponSlot === 'smoke') { weaponNameStr = `Humo (${player.inventory.grenades.smoke})`; }
 
-            if (!player.isAlive) {
-                ctx.fillStyle = 'red';
-                ctx.font = 'bold 30px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText("¡ESTÁS MUERTO!", window.innerWidth / 2, window.innerHeight / 2 - 50);
-                
-                let targetName = "Nadie";
-                if (alliedBots.length > 0) {
-                    if (game.spectatorTargetIndex >= alliedBots.length) game.spectatorTargetIndex = 0;
-                    targetName = `Aliado ${game.spectatorTargetIndex + 1} (${alliedBots[game.spectatorTargetIndex].weapon})`;
-                }
-                ctx.font = '24px Arial';
-                ctx.fillText(`Espectando: ${targetName}`, window.innerWidth / 2, window.innerHeight / 2);
-                ctx.fillText("(Clic para cambiar)", window.innerWidth / 2, window.innerHeight / 2 + 30);
-                ctx.textAlign = 'left';
-            }
+            if (!player.isAlive) { ctx.fillStyle = 'red'; ctx.font = 'bold 30px Arial'; ctx.textAlign = 'center'; ctx.fillText("¡ESTÁS MUERTO!", window.innerWidth / 2, window.innerHeight / 2 - 50); let targetName = "Nadie"; if (alliedBots.length > 0) { if (game.spectatorTargetIndex >= alliedBots.length) game.spectatorTargetIndex = 0; targetName = `Aliado ${game.spectatorTargetIndex + 1} (${alliedBots[game.spectatorTargetIndex].weapon})`; } ctx.font = '24px Arial'; ctx.fillText(`Espectando: ${targetName}`, window.innerWidth / 2, window.innerHeight / 2); ctx.fillText("(Clic para cambiar)", window.innerWidth / 2, window.innerHeight / 2 + 30); ctx.textAlign = 'left'; }
 
-            ctx.fillStyle = 'white'; ctx.font = 'bold 24px Arial';
-            ctx.fillText(`Arma: ${weaponNameStr}`, 20, 250); 
-            ctx.fillStyle = '#66FF66'; // Verde dinero
-            ctx.fillText(`Dinero: $${player.money}`, 20, 280); 
+            ctx.fillStyle = 'white'; ctx.font = 'bold 24px Arial'; ctx.fillText(`Arma: ${weaponNameStr}`, 20, 250); 
+            ctx.fillStyle = '#66FF66'; ctx.fillText(`Dinero: $${player.money}`, 20, 280); 
             if (player.hasBomb) { ctx.fillStyle = 'orange'; ctx.fillText("[BOMBA]", 20, 310); }
 
-            ctx.font = 'bold 36px Arial';
-            ctx.textAlign = 'right';
-            ctx.fillStyle = 'white';
-            ctx.fillText(ammoStr, window.innerWidth - 30, window.innerHeight - 30);
-            if (player.isReloading) {
-                ctx.fillStyle = 'orange';
-                ctx.fillText("RECARGANDO...", window.innerWidth - 30, window.innerHeight - 70);
-            }
+            ctx.font = 'bold 36px Arial'; ctx.textAlign = 'right'; ctx.fillStyle = 'white'; ctx.fillText(ammoStr, window.innerWidth - 30, window.innerHeight - 30);
+            if (player.isReloading) { ctx.fillStyle = 'orange'; ctx.fillText("RECARGANDO...", window.innerWidth - 30, window.innerHeight - 70); }
             ctx.textAlign = 'left'; 
             
-            // Contadores de equipo
-            ctx.font = 'bold 24px Arial';
-            ctx.fillStyle = 'red';
-            ctx.fillText(`Bots T: ${bots.length}`, window.innerWidth - 200, 30);
-            ctx.fillStyle = 'cyan';
-            ctx.fillText(`Aliados: ${alliedBots.length}`, window.innerWidth - 200, 60);
+            ctx.font = 'bold 24px Arial'; ctx.fillStyle = 'red'; ctx.fillText(`Bots T: ${bots.length}`, window.innerWidth - 200, 30); ctx.fillStyle = 'cyan'; ctx.fillText(`Aliados: ${alliedBots.length}`, window.innerWidth - 200, 60);
             
-            // Puntuación
-            ctx.fillStyle = 'white';
-            ctx.font = 'bold 36px Arial';
-            ctx.textAlign = 'center';
-            // (NUEVO) Puntuación con color
-            const scoreText = `[ ${game.score.ct} : ${game.score.t} ]`;
-            const scoreWidth = ctx.measureText(scoreText).width;
-            const ctScore = `[ ${game.score.ct} `;
-            const ctScoreWidth = ctx.measureText(ctScore).width;
-            const tScore = ` ${game.score.t} ]`;
-            const tScoreWidth = ctx.measureText(tScore).width;
-            const separator = ":";
-            const separatorWidth = ctx.measureText(separator).width;
+            ctx.fillStyle = 'white'; ctx.font = 'bold 36px Arial'; ctx.textAlign = 'center';
+            const ctScore = `[ ${game.score.ct} `; const tScore = ` ${game.score.t} ]`; const separator = ":";
+            const scoreWidth = ctx.measureText(ctScore + separator + tScore).width; const startX = (window.innerWidth / 2) - (scoreWidth / 2);
+            const ctScoreWidth = ctx.measureText(ctScore).width; const separatorWidth = ctx.measureText(separator).width;
             
-            const startX = (window.innerWidth / 2) - (scoreWidth / 2);
-            
-            ctx.fillStyle = 'cyan';
-            ctx.fillText(ctScore, startX + ctScoreWidth/2 - 20, 40); // Ajuste manual
-            ctx.fillStyle = 'white';
-            ctx.fillText(separator, startX + ctScoreWidth - 10, 40);
-            ctx.fillStyle = 'red';
-            ctx.fillText(tScore, startX + ctScoreWidth + separatorWidth + tScoreWidth/2 - 20, 40);
-            
+            ctx.fillStyle = 'cyan'; ctx.fillText(ctScore, startX + ctScoreWidth/2 - 20, 40); 
+            ctx.fillStyle = 'white'; ctx.fillText(separator, startX + ctScoreWidth - 10, 40);
+            ctx.fillStyle = 'red'; ctx.fillText(tScore, startX + ctScoreWidth + separatorWidth + ctx.measureText(tScore).width/2 - 20, 40);
             ctx.textAlign = 'left'; 
             
-            if (isShopOpen) { shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default'; }
-            else { shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair'; }
+            if (isShopOpen) { shopMenuElement.style.display = 'block'; canvas.style.cursor = 'default'; } else { shopMenuElement.style.display = 'none'; canvas.style.cursor = 'crosshair'; }
             
-            if (player.flashed > Date.now()) {
-                const timeLeft = player.flashed - Date.now();
-                let opacity = 0;
-                if (timeLeft > GAME_TIMES.FLASH_DURATION - 500) { 
-                    opacity = 1; 
-                } else {
-                    opacity = timeLeft / (GAME_TIMES.FLASH_DURATION - 500); 
-                }
-                flashOverlayEl.style.display = 'block';
-                flashOverlayEl.style.opacity = opacity;
-            } else {
-                flashOverlayEl.style.display = 'none';
-            }
+            if (player.flashed > Date.now()) { const timeLeft = player.flashed - Date.now(); let opacity = 0; if (timeLeft > GAME_TIMES.FLASH_DURATION - 500) { opacity = 1; } else { opacity = timeLeft / (GAME_TIMES.FLASH_DURATION - 500); } flashOverlayEl.style.display = 'block'; flashOverlayEl.style.opacity = opacity; } else { flashOverlayEl.style.display = 'none'; }
         }
         
-        function drawMinimap() {
-            const mmScale = 0.2; 
-            mmCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height);
-            mmCtx.fillStyle = "rgba(50, 50, 50, 0.7)";
-            mmCtx.fillRect(0, 0, world.width * mmScale, world.height * mmScale); 
+        function drawMinimap() { const mmScale = 0.2; mmCtx.clearRect(0, 0, minimapCanvas.width, minimapCanvas.height); mmCtx.fillStyle = "rgba(50, 50, 50, 0.7)"; mmCtx.fillRect(0, 0, world.width * mmScale, world.height * mmScale); for (const zone of zones) { mmCtx.fillStyle = zone.color; mmCtx.fillRect(zone.x * mmScale, zone.y * mmScale, zone.width * mmScale, zone.height * mmScale); } mmCtx.fillStyle = "#999"; for (const wall of walls) { mmCtx.fillRect(wall.x * mmScale, wall.y * mmScale, wall.width * mmScale, wall.height * mmScale); } mmCtx.fillStyle = 'blue'; for (const bot of alliedBots) { mmCtx.beginPath(); mmCtx.arc(bot.x * mmScale, bot.y * mmScale, 4, 0, Math.PI * 2); mmCtx.fill(); } mmCtx.fillStyle = 'red'; for (const bot of bots) { let isVisible = false; if (!player.isAlive) { isVisible = true; } else { if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) { isVisible = true; } if (!isVisible) { for (const ally of alliedBots) { if (hasLineOfSight(ally, bot) && isTargetInFoV(ally, bot)) { isVisible = true; break; } } } } if (isVisible) { mmCtx.beginPath(); mmCtx.arc(bot.x * mmScale, bot.y * mmScale, 4, 0, Math.PI * 2); mmCtx.fill(); } } mmCtx.fillStyle = 'rgba(255, 100, 0, 0.8)'; for (const patch of firePatches) { mmCtx.fillRect(patch.x * mmScale, patch.y * mmScale, 4, 4); } mmCtx.fillStyle = 'rgba(200, 200, 200, 0.8)'; for (const smoke of smokeClouds) { mmCtx.beginPath(); mmCtx.arc(smoke.x * mmScale, smoke.y * mmScale, smoke.size * mmScale, 0, Math.PI * 2); mmCtx.fill(); } if (player.isAlive) { mmCtx.fillStyle = 'white'; mmCtx.beginPath(); mmCtx.arc(player.x * mmScale, player.y * mmScale, 4, 0, Math.PI * 2); mmCtx.fill(); } }
 
-            for (const zone of zones) {
-                mmCtx.fillStyle = zone.color;
-                mmCtx.fillRect(zone.x * mmScale, zone.y * mmScale, zone.width * mmScale, zone.height * mmScale);
-            }
-            mmCtx.fillStyle = "#999";
-            for (const wall of walls) {
-                mmCtx.fillRect(wall.x * mmScale, wall.y * mmScale, wall.width * mmScale, wall.height * mmScale);
-            }
-            
-            mmCtx.fillStyle = 'blue';
-            for (const bot of alliedBots) {
-                mmCtx.beginPath();
-                mmCtx.arc(bot.x * mmScale, bot.y * mmScale, 4, 0, Math.PI * 2); 
-                mmCtx.fill();
-            }
-            
-            mmCtx.fillStyle = 'red';
-            for (const bot of bots) {
-                let isVisible = false;
-                if (!player.isAlive) { 
-                    isVisible = true;
-                } else {
-                    if (hasLineOfSight(player, bot) && isTargetInFoV(player, bot)) {
-                        isVisible = true;
-                    }
-                    if (!isVisible) {
-                        for (const ally of alliedBots) {
-                            if (hasLineOfSight(ally, bot) && isTargetInFoV(ally, bot)) {
-                                isVisible = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-                
-                if (isVisible) {
-                    mmCtx.beginPath();
-                    mmCtx.arc(bot.x * mmScale, bot.y * mmScale, 4, 0, Math.PI * 2);
-                    mmCtx.fill();
-                }
-            }
-            
-            mmCtx.fillStyle = 'rgba(255, 100, 0, 0.8)';
-            for (const patch of firePatches) {
-                 mmCtx.fillRect(patch.x * mmScale, patch.y * mmScale, 4, 4);
-            }
-            mmCtx.fillStyle = 'rgba(200, 200, 200, 0.8)';
-            for (const smoke of smokeClouds) {
-                mmCtx.beginPath();
-                mmCtx.arc(smoke.x * mmScale, smoke.y * mmScale, smoke.size * mmScale, 0, Math.PI * 2);
-                mmCtx.fill();
-            }
-            
-            if (player.isAlive) {
-                mmCtx.fillStyle = 'white';
-                mmCtx.beginPath();
-                mmCtx.arc(player.x * mmScale, player.y * mmScale, 4, 0, Math.PI * 2);
-                mmCtx.fill();
-            }
-        }
-
-        // --- 12. EL BUCLE DEL JUEGO ---
-        function gameLoop() {
-            update(); // Lógica
-            draw();   // Gráficos
-            requestAnimationFrame(gameLoop);
-        }
+        function gameLoop() { update(); draw(); requestAnimationFrame(gameLoop); }
         resetRound();
         gameLoop(); 
     </script>
