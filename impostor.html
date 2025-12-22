@@ -2,178 +2,248 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Juego Impostor - Diagnóstico</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <title>Impostor Game | Panel de Control</title>
     <style>
-        body { font-family: sans-serif; background: #2c3e50; color: white; text-align: center; padding: 20px; }
-        
-        /* ESTILOS DEL DEBUGGER VISUAL */
-        #debug-log {
-            background: #000;
-            color: #0f0;
-            font-family: monospace;
-            padding: 10px;
-            margin-bottom: 20px;
-            border: 2px solid #0f0;
-            text-align: left;
-            min-height: 100px;
-            font-size: 12px;
-            white-space: pre-wrap;
+        :root {
+            --primary: #6366f1;
+            --secondary: #10b981;
+            --dark: #0f172a;
+            --card: #1e293b;
+            --text: #f8fafc;
         }
 
-        button { padding: 15px; width: 100%; margin: 5px 0; font-size: 16px; cursor: pointer; }
-        input { padding: 10px; width: 90%; margin: 5px 0; }
-        .screen { display: none; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--dark);
+            color: var(--text);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background: var(--card);
+            padding: 2rem;
+            border-radius: 1rem;
+            width: 100%;
+            max-width: 450px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+            text-align: center;
+        }
+
+        .section { display: none; }
         .active { display: block; }
+
+        input, select {
+            width: 100%;
+            padding: 0.8rem;
+            margin: 0.5rem 0;
+            border-radius: 0.5rem;
+            border: 1px solid #334155;
+            background: #0f172a;
+            color: white;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 1rem;
+            margin-top: 0.8rem;
+            border: none;
+            border-radius: 0.5rem;
+            background: var(--primary);
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        #player-list {
+            text-align: left;
+            background: #0f172a;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin: 1rem 0;
+        }
+
+        .config-group {
+            text-align: left;
+            margin-bottom: 1rem;
+            padding: 1rem;
+            background: #2d3a4f;
+            border-radius: 0.5rem;
+        }
+
+        .room-badge {
+            background: #4f46e5;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 1.2rem;
+            letter-spacing: 2px;
+        }
     </style>
 </head>
 <body>
 
-    <h3>🔧 Consola de Diagnóstico</h3>
-    <div id="debug-log">Iniciando sistema...</div>
+    <div class="container">
+        <div id="screen-login" class="section active">
+            <h1>🕵️‍♂️ El Impostor</h1>
+            <input type="text" id="username" placeholder="Tu nombre">
+            <button onclick="goToConfig()">Crear Sala</button>
+            <p>o</p>
+            <input type="text" id="roomCodeInput" placeholder="Código de Sala">
+            <button style="background:transparent; border:1px solid var(--primary)" onclick="joinRoom()">Unirse</button>
+        </div>
 
-    <hr>
+        <div id="screen-config" class="section">
+            <h2>Configuración de Sala</h2>
+            <div class="config-group">
+                <label>Número de Impostores:</label>
+                <select id="cfg-impostores">
+                    <option value="1">1 Impostor</option>
+                    <option value="2">2 Impostores</option>
+                </select>
 
-    <div id="screen-login" class="screen active">
-        <h2>Entrar al Juego</h2>
-        <input type="text" id="username" placeholder="Nombre">
-        <input type="text" id="roomCode" placeholder="Código (solo para unirse)">
-        <button onclick="debugCreate()">Crear Sala</button>
-        <button onclick="debugJoin()">Unirse a Sala</button>
-    </div>
+                <label>Categoría de palabras:</label>
+                <select id="cfg-categoria">
+                    <option value="animales">🐾 Animales</option>
+                    <option value="objetos">🏠 Objetos de casa</option>
+                    <option value="comida">🍕 Comida</option>
+                </select>
+            </div>
+            <button onclick="createRoomFinal()" style="background: var(--secondary);">Confirmar y Abrir Sala</button>
+        </div>
 
-    <div id="screen-lobby" class="screen">
-        <h2>Sala: <span id="lobby-code"></span></h2>
-        <ul id="lobby-players"></ul>
-        <p>Esperando...</p>
-    </div>
-
-<script>
-    // --- FUNCIÓN PARA ESCRIBIR EN PANTALLA ---
-    function log(msg) {
-        const box = document.getElementById('debug-log');
-        const time = new Date().toLocaleTimeString();
-        box.innerHTML += `\n[${time}] ${msg}`;
-        // Scroll al fondo
-        box.scrollTop = box.scrollHeight;
-    }
-
-    // --- PROTECCIÓN DE ERRORES GLOBAL ---
-    window.onerror = function(msg, url, line) {
-        log(`❌ ERROR CRÍTICO (Línea ${line}): ${msg}`);
-        return false;
-    };
-
-    // --- 1. INTENTAR INICIAR SUPABASE ---
-    log("Cargando script...");
-    
-    // ==========================================
-    // PON TUS CLAVES AQUÍ ABAJO
-    // ==========================================
-    const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
-
-    let supabase;
-
-    try {
-        if (!window.supabase) {
-            log("❌ ERROR: La librería de Supabase no cargó.");
-        } else {
-            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-            log("✅ Supabase inicializado correctamente.");
-            log("Esperando acción del usuario...");
-        }
-    } catch (e) {
-        log("❌ Excepción al iniciar: " + e.message);
-    }
-
-    // --- FUNCIONES DE BOTONES ---
-
-    async function debugCreate() {
-        log("👉 Botón 'Crear' presionado.");
-        
-        const name = document.getElementById('username').value;
-        if (!name) return log("⚠️ Falta el nombre.");
-
-        const code = Math.random().toString(36).substring(2, 6).toUpperCase();
-        log(`Intentando crear sala ${code} en DB...`);
-
-        try {
-            // Test de conexión simple
-            const { error } = await supabase.from('rooms').insert({ code: code, status: 'waiting' });
+        <div id="screen-lobby" class="section">
+            <p>Código de sala:</p>
+            <h2 class="room-badge" id="display-room-code">----</h2>
             
-            if (error) {
-                log("❌ ERROR SQL: " + error.message);
-                log("¿Has ejecutado el script SQL en Supabase?");
-            } else {
-                log("✅ Sala creada en DB exitosamente.");
-                // Unirse
-                joinProcess(code, name);
-            }
-        } catch (err) {
-            log("❌ ERROR JS: " + err.message);
+            <div id="player-list"></div>
+
+            <div id="role-area" style="display:none; margin-top:2rem; padding:1rem; border:2px solid gold;">
+                <h3 id="role-title">ROL</h3>
+                <h1 id="role-word">---</h1>
+            </div>
+
+            <button id="btn-start-game" style="display:none; background: var(--secondary);" onclick="distributeRoles()">¡EMPEZAR JUEGO!</button>
+            <p id="wait-msg">Esperando a que el host inicie...</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-client@2"></script>
+    <script>
+        const supabase = supabase.createClient("https://jdvwlfogkzrzovepzjqa.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI");
+
+        let myUser = "";
+        let myRoom = "";
+        let isHost = false;
+
+        const categorias = {
+            animales: [
+                { word: "Elefante", hint: "Tiene trompa" },
+                { word: "Tiburón", hint: "Vive en el mar" }
+            ],
+            objetos: [
+                { word: "Microondas", hint: "Calienta comida" },
+                { word: "Espejo", hint: "Refleja tu cara" }
+            ],
+            comida: [
+                { word: "Hamburguesa", hint: "Lleva pan y carne" },
+                { word: "Sushi", hint: "Lleva arroz y pescado" }
+            ]
+        };
+
+        // Cambiar a pantalla de configuración
+        function goToConfig() {
+            myUser = document.getElementById('username').value;
+            if(!myUser) return alert("Dime tu nombre");
+            showScreen('screen-config');
         }
-    }
 
-    async function debugJoin() {
-        log("👉 Botón 'Unirse' presionado.");
-        const name = document.getElementById('username').value;
-        const code = document.getElementById('roomCode').value.toUpperCase();
-
-        if (!name || !code) return log("⚠️ Faltan datos (nombre o código).");
-
-        // Verificar si existe
-        const { data, error } = await supabase.from('rooms').select('*').eq('code', code).single();
-        
-        if (error) return log("❌ Error buscando sala: " + error.message);
-        if (!data) return log("❌ La sala no existe.");
-
-        log("✅ Sala encontrada. Uniéndose...");
-        joinProcess(code, name);
-    }
-
-    async function joinProcess(code, name) {
-        try {
-            const { data, error } = await supabase.from('players').insert({
-                room_code: code,
-                name: name,
-                is_impostor: false
-            }).select();
-
-            if (error) {
-                log("❌ Error al crear jugador: " + error.message);
-            } else {
-                log("✅ ¡Jugador unido! Cambiando pantalla...");
-                document.getElementById('screen-login').style.display = 'none';
-                document.getElementById('screen-lobby').style.display = 'block';
-                document.getElementById('lobby-code').innerText = code;
-                
-                // Suscribirse
-                log("Suscribiendo a cambios en tiempo real...");
-                supabase.channel('public:players')
-                    .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, payload => {
-                        log("🔔 Cambio detectado en jugadores");
-                        updateList(code);
-                    })
-                    .subscribe();
-                
-                updateList(code);
-            }
-        } catch (e) {
-            log("❌ Error fatal en joinProcess: " + e.message);
+        // Crear la sala definitivamente
+        async function createRoomFinal() {
+            isHost = true;
+            const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+            
+            // Guardamos la config en la tabla 'rooms' (necesitarás columnas extras si quieres guardarlas ahí)
+            await supabase.from('rooms').insert([{ id: code, status: 'waiting' }]);
+            
+            enterGame(code);
         }
-    }
 
-    async function updateList(code) {
-        const { data } = await supabase.from('players').select('name').eq('room_code', code);
-        const list = document.getElementById('lobby-players');
-        list.innerHTML = "";
-        data.forEach(p => {
-            list.innerHTML += `<li>${p.name}</li>`;
-        });
-    }
+        async function joinRoom() {
+            myUser = document.getElementById('username').value;
+            const code = document.getElementById('roomCodeInput').value.toUpperCase();
+            if(!myUser || !code) return alert("Faltan datos");
 
-</script>
+            const { data } = await supabase.from('rooms').select('*').eq('id', code).single();
+            if(!data) return alert("Sala no existe");
+
+            enterGame(code);
+        }
+
+        async function enterGame(code) {
+            myRoom = code;
+            await supabase.from('players').insert([{ room_id: code, name: myUser, is_host: isHost }]);
+
+            showScreen('screen-lobby');
+            document.getElementById('display-room-code').innerText = code;
+            
+            if(isHost) document.getElementById('btn-start-game').style.display = 'block';
+
+            listenPlayers();
+        }
+
+        function listenPlayers() {
+            supabase.channel('room-' + myRoom)
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${myRoom}` }, 
+                payload => {
+                    updatePlayerUI();
+                    if(payload.new.name === myUser && payload.new.role !== 'pendiente') {
+                        revealRole(payload.new.role, payload.new.secret_data);
+                    }
+                }).subscribe();
+            updatePlayerUI();
+        }
+
+        async function updatePlayerUI() {
+            const { data } = await supabase.from('players').select('*').eq('room_id', myRoom);
+            const list = document.getElementById('player-list');
+            list.innerHTML = "<strong>En la sala:</strong>";
+            data.forEach(p => list.innerHTML += `<div>👤 ${p.name} ${p.is_host ? '(Host)' : ''}</div>`);
+        }
+
+        async function distributeRoles() {
+            const cat = document.getElementById('cfg-categoria').value;
+            const items = categorias[cat];
+            const selected = items[Math.floor(Math.random() * items.length)];
+            const numImp = parseInt(document.getElementById('cfg-impostores').value);
+
+            const { data: players } = await supabase.from('players').select('*').eq('room_id', myRoom);
+            const shuffled = players.sort(() => 0.5 - Math.random());
+
+            for (let i = 0; i < shuffled.length; i++) {
+                const isImp = i < numImp;
+                await supabase.from('players').update({
+                    role: isImp ? 'impostor' : 'civil',
+                    secret_data: isImp ? selected.hint : selected.word
+                }).eq('id', shuffled[i].id);
+            }
+        }
+
+        function revealRole(role, data) {
+            document.getElementById('role-area').style.display = 'block';
+            document.getElementById('role-title').innerText = role === 'impostor' ? "ERES IMPOSTOR" : "ERES CIVIL";
+            document.getElementById('role-word').innerText = data;
+            document.getElementById('wait-msg').style.display = 'none';
+        }
+
+        function showScreen(id) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+        }
+    </script>
 </body>
 </html>
