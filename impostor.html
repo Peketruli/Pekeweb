@@ -5,13 +5,13 @@
     <title>Juego Impostor</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
+        /* Estilos básicos para que se vea bien en móvil */
         body { font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #2c3e50; color: white; text-align: center; }
         .screen { display: none; background: #34495e; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
         .active { display: block; }
-        button { padding: 12px 24px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 5px; margin: 5px; font-size: 16px; font-weight: bold;}
+        button { padding: 15px 24px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 5px; margin: 5px; font-size: 16px; font-weight: bold; width: 100%; max-width: 300px; }
         button:hover { background: #2ecc71; }
-        button.danger { background: #c0392b; }
-        input, select { padding: 12px; width: 80%; margin-bottom: 15px; border-radius: 5px; border: none; }
+        input, select { padding: 12px; width: 80%; margin-bottom: 15px; border-radius: 5px; border: none; font-size: 16px; }
         .role-card { font-size: 1.5em; padding: 20px; border: 2px dashed #ecf0f1; margin: 20px 0; background: #2c3e50; }
         .player-list { list-style: none; padding: 0; text-align: left;}
         .player-list li { padding: 10px; background: rgba(0,0,0,0.2); margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
@@ -30,7 +30,6 @@
         <br>
         <button onclick="createRoom()">Crear Nueva Sala</button>
         <button onclick="joinRoom()" style="background:#2980b9">Unirse a Sala</button>
-        <p style="font-size: 0.8em; color: #aaa;">Abre la consola (F12) si tienes errores.</p>
     </div>
 
     <div id="screen-lobby" class="screen">
@@ -66,29 +65,47 @@
 
 <script>
     // ==========================================
-    // 1. PON TUS CLAVES DE SUPABASE AQUÍ
+    // 0. CAZADOR DE ERRORES (Global)
     // ==========================================
-    const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+    window.onerror = function(message, source, lineno, colno, error) {
+        alert("❌ ERROR DETECTADO:\n" + message + "\nLínea: " + lineno);
+        return false; 
+    };
+
+    window.onunhandledrejection = function(event) {
+        alert("❌ ERROR DE RED/SUPABASE:\n" + event.reason);
+    };
+
+    // ==========================================
+    // 1. CONFIGURACIÓN DE SUPABASE
+    // ==========================================
+    // ¡¡¡ PON TUS CLAVES AQUÍ ABAJO !!!
+    const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'; 
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
     
-    // Inicializar cliente
     let supabase;
-    try {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        console.log("Supabase inicializado correctamente.");
-    } catch (e) {
-        alert("Error iniciando Supabase. Revisa las claves en el código.");
-        console.error(e);
+
+    // Verificar si Supabase cargó
+    if (typeof window.supabase === 'undefined') {
+        alert("CRÍTICO: No se pudo cargar la librería de Supabase. Revisa tu conexión a internet.");
+    } else {
+        try {
+            supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        } catch (e) {
+            alert("Error iniciando Supabase: " + e.message);
+        }
     }
 
-    // Variables globales
+    // ==========================================
+    // 2. LÓGICA DEL JUEGO
+    // ==========================================
+
     let myId = null;
     let myName = "";
     let currentRoom = "";
     let isHost = false;
     let myRoleData = null; 
 
-    // Palabras
     const WORDS = {
         animales: [['Perro', 'Lobo'], ['Gato', 'León'], ['Caballo', 'Burro'], ['Delfín', 'Tiburón']],
         comida: [['Pizza', 'Pasta'], ['Hamburguesa', 'Sandwich'], ['Taco', 'Fajita'], ['Manzana', 'Pera']],
@@ -102,116 +119,126 @@
 
     // --- CREAR SALA ---
     async function createRoom() {
-        myName = document.getElementById('username').value;
-        if (!myName) return alert("¡Escribe tu nombre!");
+        try {
+            myName = document.getElementById('username').value;
+            if (!myName) return alert("¡Por favor, escribe tu nombre!");
 
-        const code = Math.random().toString(36).substring(2, 6).toUpperCase();
-        console.log("Intentando crear sala:", code);
+            // Verificar si supabase existe antes de llamar
+            if(!supabase) return alert("Supabase no está configurado.");
 
-        // Crear la sala
-        const { error } = await supabase.from('rooms').insert({ 
-            code: code, 
-            status: 'waiting' 
-        });
+            const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+            
+            // Insertar sala
+            const { error } = await supabase.from('rooms').insert({ 
+                code: code, 
+                status: 'waiting' 
+            });
 
-        if (error) {
-            console.error("Error creando sala:", error);
-            return alert("Error al crear sala: " + error.message);
+            if (error) throw error; // Esto enviará el error al 'catch'
+
+            // Si funciona, nos unimos
+            joinRoomProcess(code, true);
+
+        } catch (err) {
+            alert("Error al Crear Sala:\n" + err.message + "\n\n¿Ejecutaste el código SQL en Supabase?");
         }
-
-        // Si funciona, nos unimos como Host
-        joinRoomProcess(code, true);
     }
 
     // --- UNIRSE A SALA ---
     async function joinRoom() {
-        myName = document.getElementById('username').value;
-        const code = document.getElementById('roomCode').value.toUpperCase();
-        if (!myName || !code) return alert("Faltan datos");
+        try {
+            myName = document.getElementById('username').value;
+            const code = document.getElementById('roomCode').value.toUpperCase();
+            
+            if (!myName) return alert("¡Escribe tu nombre!");
+            if (!code) return alert("¡Escribe el código de la sala!");
 
-        // Verificar si la sala existe
-        const { data, error } = await supabase.from('rooms').select('*').eq('code', code).single();
-        if (error || !data) return alert("La sala no existe.");
+            const { data, error } = await supabase.from('rooms').select('*').eq('code', code).single();
+            
+            if (error) throw error;
+            if (!data) return alert("Esa sala no existe.");
 
-        joinRoomProcess(code, false);
+            joinRoomProcess(code, false);
+        } catch (err) {
+            alert("Error al Unirse:\n" + err.message);
+        }
     }
 
-    // --- PROCESO COMÚN DE UNIÓN ---
+    // --- PROCESO INTERNO DE UNIÓN ---
     async function joinRoomProcess(code, hostStatus) {
-        currentRoom = code;
-        isHost = hostStatus;
+        try {
+            currentRoom = code;
+            isHost = hostStatus;
 
-        console.log("Uniendo jugador...");
-        const { data, error } = await supabase.from('players').insert({
-            room_code: code,
-            name: myName,
-            is_impostor: false,
-            votes: 0
-        }).select().single();
+            const { data, error } = await supabase.from('players').insert({
+                room_code: code,
+                name: myName,
+                is_impostor: false,
+                votes: 0
+            }).select().single();
 
-        if (error) {
-            console.error(error);
-            return alert("Error al unirse a la DB.");
+            if (error) throw error;
+            
+            myId = data.id;
+
+            if (isHost) {
+                const { error: hostErr } = await supabase.from('rooms').update({ host_id: myId }).eq('code', code);
+                if (hostErr) throw hostErr;
+                
+                document.getElementById('host-controls').classList.remove('hidden');
+                document.getElementById('waiting-msg').classList.add('hidden');
+            }
+
+            document.getElementById('lobby-code').innerText = code;
+            showScreen('screen-lobby');
+            subscribeToRoom();
+
+        } catch (err) {
+            alert("Error en el proceso de unión:\n" + err.message);
         }
-        
-        myId = data.id;
-        console.log("Jugador creado con ID:", myId);
-
-        // Si soy host, me guardo como dueño de la sala
-        if (isHost) {
-            await supabase.from('rooms').update({ host_id: myId }).eq('code', code);
-            document.getElementById('host-controls').classList.remove('hidden');
-            document.getElementById('waiting-msg').classList.add('hidden');
-        }
-
-        document.getElementById('lobby-code').innerText = code;
-        showScreen('screen-lobby');
-        
-        // Iniciar escucha en tiempo real
-        subscribeToRoom();
     }
 
-    // --- REALTIME ---
+    // --- SISTEMA EN TIEMPO REAL ---
     function subscribeToRoom() {
-        console.log("Suscribiendo a cambios...");
-        const channel = supabase.channel('game_channel')
-            // Escuchar cambios en la SALA
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${currentRoom}` }, 
-            (payload) => {
-                const room = payload.new;
-                if (room.status === 'playing') enterGame(room);
-                if (room.status === 'finished') { alert("Juego terminado"); location.reload(); }
-            })
-            // Escuchar cambios en JUGADORES
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_code=eq.${currentRoom}` }, 
-            () => refreshPlayerList())
-            .subscribe((status) => {
-                console.log("Estado suscripción:", status);
-            });
+        try {
+            supabase.channel('game_channel')
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${currentRoom}` }, 
+                (payload) => {
+                    const room = payload.new;
+                    if (room.status === 'playing') enterGame(room);
+                    if (room.status === 'finished') { alert("🏁 Juego terminado"); location.reload(); }
+                })
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_code=eq.${currentRoom}` }, 
+                () => refreshPlayerList())
+                .subscribe((status, err) => {
+                    if (status === 'CHANNEL_ERROR') alert("Error de conexión en tiempo real: " + err.message);
+                });
 
-        // Cargar lista inicial
-        refreshPlayerList();
+            refreshPlayerList();
+        } catch (err) {
+            alert("Error suscribiendo a la sala: " + err.message);
+        }
     }
 
     async function refreshPlayerList() {
-        const { data: players } = await supabase.from('players').select('*').eq('room_code', currentRoom).order('name');
-        
+        const { data: players, error } = await supabase.from('players').select('*').eq('room_code', currentRoom).order('name');
+        if (error) return console.error(error); // Aquí usamos console para no saturar de alerts
+
         // Lobby HTML
         document.getElementById('lobby-players').innerHTML = players.map(p => `<li>${p.name}</li>`).join('');
 
-        // Juego HTML (Votaciones)
+        // Juego HTML
         document.getElementById('game-players').innerHTML = players.map(p => {
             if (!p.is_alive) return `<li style="opacity:0.5">💀 ${p.name} (Eliminado)</li>`;
             
-            // Botón de votar (si no soy yo)
             const voteBtn = (p.id !== myId && p.is_alive) 
-                ? `<button style="padding:5px; font-size:12px;" onclick="votePlayer('${p.id}', ${p.votes})">Votar (${p.votes})</button>` 
+                ? `<button style="padding:5px; width:auto; font-size:12px;" onclick="votePlayer('${p.id}', ${p.votes})">Votar (${p.votes})</button>` 
                 : `<span>Votos: ${p.votes}</span>`;
                 
             return `<li>${p.name} ${voteBtn}</li>`;
         }).join('');
 
-        // Verificar eliminación automática (si > 50% votos)
+        // Lógica de eliminación (simple)
         const alivePlayers = players.filter(p => p.is_alive).length;
         if (isHost && alivePlayers > 0) {
             players.forEach(p => {
@@ -222,62 +249,72 @@
         }
     }
 
-    // --- LÓGICA DE JUEGO ---
+    // --- EMPEZAR PARTIDA ---
     async function startGame() {
-        const category = document.getElementById('category-select').value;
-        const pair = WORDS[category][Math.floor(Math.random() * WORDS[category].length)];
-        
-        // Asignar Impostor
-        const { data: players } = await supabase.from('players').select('id').eq('room_code', currentRoom);
-        if(players.length < 2) return alert("Se necesitan al menos 2 jugadores");
+        try {
+            const category = document.getElementById('category-select').value;
+            const pair = WORDS[category][Math.floor(Math.random() * WORDS[category].length)];
+            
+            const { data: players } = await supabase.from('players').select('id').eq('room_code', currentRoom);
+            if(players.length < 2) return alert("¡Necesitas al menos 2 jugadores para empezar!");
 
-        const impostorId = players[Math.floor(Math.random() * players.length)].id;
+            const impostorId = players[Math.floor(Math.random() * players.length)].id;
 
-        // Resetear jugadores
-        await supabase.from('players').update({ is_impostor: false, votes: 0, is_alive: true }).eq('room_code', currentRoom);
-        await supabase.from('players').update({ is_impostor: true }).eq('id', impostorId);
+            // Reset y asignar impostor
+            await supabase.from('players').update({ is_impostor: false, votes: 0, is_alive: true }).eq('room_code', currentRoom);
+            await supabase.from('players').update({ is_impostor: true }).eq('id', impostorId);
 
-        // Iniciar sala
-        await supabase.from('rooms').update({
-            category: category,
-            word_civilian: pair[0],
-            word_impostor: pair[1],
-            status: 'playing'
-        }).eq('code', currentRoom);
+            // Iniciar en sala
+            await supabase.from('rooms').update({
+                category: category,
+                word_civilian: pair[0],
+                word_impostor: pair[1],
+                status: 'playing'
+            }).eq('code', currentRoom);
+
+        } catch (err) {
+            alert("Error al iniciar juego: " + err.message);
+        }
     }
 
     async function enterGame(roomData) {
-        const { data: me } = await supabase.from('players').select('*').eq('id', myId).single();
-        
-        const myWord = me.is_impostor ? roomData.word_impostor : roomData.word_civilian;
-        const roleText = me.is_impostor ? "Eres el IMPOSTOR 😈" : "Eres CIUDADANO 😇";
-        const color = me.is_impostor ? "#c0392b" : "#27ae60";
+        try {
+            const { data: me, error } = await supabase.from('players').select('*').eq('id', myId).single();
+            if (error) throw error;
+            
+            const myWord = me.is_impostor ? roomData.word_impostor : roomData.word_civilian;
+            const roleText = me.is_impostor ? "Eres el IMPOSTOR 😈" : "Eres CIUDADANO 😇";
+            const color = me.is_impostor ? "#c0392b" : "#27ae60";
 
-        document.getElementById('my-word-display').innerHTML = `
-            <h3 style="color:${color}">${roleText}</h3>
-            <p>Tu palabra es:</p>
-            <h1 style="font-size:3em; margin:10px 0;">${myWord}</h1>
-            <small>Categoría: ${roomData.category}</small>
-        `;
+            document.getElementById('my-word-display').innerHTML = `
+                <h3 style="color:${color}">${roleText}</h3>
+                <p>Tu palabra es:</p>
+                <h1 style="font-size:3em; margin:10px 0;">${myWord}</h1>
+                <small>Categoría: ${roomData.category}</small>
+            `;
 
-        if (me.is_impostor) {
-            document.getElementById('impostor-actions').classList.remove('hidden');
-            myRoleData = { target: roomData.word_civilian };
-        } else {
-            document.getElementById('impostor-actions').classList.add('hidden');
+            if (me.is_impostor) {
+                document.getElementById('impostor-actions').classList.remove('hidden');
+                myRoleData = { target: roomData.word_civilian };
+            } else {
+                document.getElementById('impostor-actions').classList.add('hidden');
+            }
+
+            showScreen('screen-game');
+        } catch (err) {
+            alert("Error cargando pantalla de juego: " + err.message);
         }
-
-        showScreen('screen-game');
     }
 
     async function votePlayer(targetId, currentVotes) {
-        await supabase.from('players').update({ votes: currentVotes + 1 }).eq('id', targetId);
+        const { error } = await supabase.from('players').update({ votes: currentVotes + 1 }).eq('id', targetId);
+        if (error) alert("Error al votar: " + error.message);
     }
 
     async function eliminatePlayer(player) {
         await supabase.from('players').update({ is_alive: false }).eq('id', player.id);
         if (player.is_impostor) {
-            alert("¡Cazaron al impostor! Ganan los Ciudadanos.");
+            alert("¡IMPOSTOR CAZADO! 🎉");
             await supabase.from('rooms').update({ status: 'finished' }).eq('code', currentRoom);
         }
     }
@@ -285,10 +322,10 @@
     async function attemptWin() {
         const guess = document.getElementById('guess-input').value.trim().toLowerCase();
         if (guess === myRoleData.target.toLowerCase()) {
-            alert("¡El Impostor adivinó! Gana el Impostor.");
+            alert("¡IMPOSTOR GANA! Adivinó la palabra.");
             await supabase.from('rooms').update({ status: 'finished' }).eq('code', currentRoom);
         } else {
-            alert("Fallaste. Te descubriste.");
+            alert("¡FALLASTE! Te has delatado.");
         }
     }
 </script>
