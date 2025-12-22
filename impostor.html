@@ -1,249 +1,178 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Impostor Game | Panel de Control</title>
-    <style>
-        :root {
-            --primary: #6366f1;
-            --secondary: #10b981;
-            --dark: #0f172a;
-            --card: #1e293b;
-            --text: #f8fafc;
-        }
+<meta charset="UTF-8">
+<title>Impostor Online</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: var(--dark);
-            color: var(--text);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-
-        .container {
-            background: var(--card);
-            padding: 2rem;
-            border-radius: 1rem;
-            width: 100%;
-            max-width: 450px;
-            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
-            text-align: center;
-        }
-
-        .section { display: none; }
-        .active { display: block; }
-
-        input, select {
-            width: 100%;
-            padding: 0.8rem;
-            margin: 0.5rem 0;
-            border-radius: 0.5rem;
-            border: 1px solid #334155;
-            background: #0f172a;
-            color: white;
-            box-sizing: border-box;
-        }
-
-        button {
-            width: 100%;
-            padding: 1rem;
-            margin-top: 0.8rem;
-            border: none;
-            border-radius: 0.5rem;
-            background: var(--primary);
-            color: white;
-            font-weight: bold;
-            cursor: pointer;
-        }
-
-        #player-list {
-            text-align: left;
-            background: #0f172a;
-            padding: 1rem;
-            border-radius: 0.5rem;
-            margin: 1rem 0;
-        }
-
-        .config-group {
-            text-align: left;
-            margin-bottom: 1rem;
-            padding: 1rem;
-            background: #2d3a4f;
-            border-radius: 0.5rem;
-        }
-
-        .room-badge {
-            background: #4f46e5;
-            padding: 0.5rem 1rem;
-            border-radius: 0.5rem;
-            font-size: 1.2rem;
-            letter-spacing: 2px;
-        }
-    </style>
+<style>
+body{
+  background:#0b0f1a;
+  color:#fff;
+  font-family:system-ui;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  min-height:100vh;
+}
+.card{
+  background:#141a2e;
+  padding:20px;
+  border-radius:14px;
+  width:360px;
+}
+button,input,select{
+  width:100%;
+  padding:10px;
+  margin:6px 0;
+  border-radius:8px;
+  border:none;
+}
+button{background:#ff4757;color:white}
+.hidden{display:none}
+.code{font-size:22px;text-align:center;background:#000;padding:10px}
+.big{text-align:center;font-size:20px;margin:20px 0}
+</style>
 </head>
 <body>
 
-    <div class="container">
-        <div id="screen-login" class="section active">
-            <h1>🕵️‍♂️ El Impostor</h1>
-            <input type="text" id="username" placeholder="Tu nombre">
-            <button onclick="goToConfig()">Crear Sala</button>
-            <p>o</p>
-            <input type="text" id="roomCodeInput" placeholder="Código de Sala">
-            <button style="background:transparent; border:1px solid var(--primary)" onclick="joinRoom()">Unirse</button>
-        </div>
+<div class="card" id="menu">
+  <h2>🕵️ Impostor Online</h2>
+  <input id="name" placeholder="Tu nombre">
+  <button onclick="crearSala()">Crear sala</button>
+  <input id="roomCode" placeholder="Código de sala">
+  <button onclick="unirse()">Unirse</button>
+</div>
 
-        <div id="screen-config" class="section">
-            <h2>Configuración de Sala</h2>
-            <div class="config-group">
-                <label>Número de Impostores:</label>
-                <select id="cfg-impostores">
-                    <option value="1">1 Impostor</option>
-                    <option value="2">2 Impostores</option>
-                </select>
+<div class="card hidden" id="host">
+  <h3>Ajustes</h3>
+  <select id="genre">
+    <option value="general">General</option>
+    <option value="lugares">Lugares</option>
+  </select>
+  <input id="impostors" type="number" value="1" min="1">
+  <button onclick="startGame()">Iniciar juego</button>
+  <div class="code" id="code"></div>
+</div>
 
-                <label>Categoría de palabras:</label>
-                <select id="cfg-categoria">
-                    <option value="animales">🐾 Animales</option>
-                    <option value="objetos">🏠 Objetos de casa</option>
-                    <option value="comida">🍕 Comida</option>
-                </select>
-            </div>
-            <button onclick="createRoomFinal()" style="background: var(--secondary);">Confirmar y Abrir Sala</button>
-        </div>
+<div class="card hidden" id="game">
+  <h2>Tu rol</h2>
+  <div class="big" id="roleText"></div>
+</div>
 
-        <div id="screen-lobby" class="section">
-            <p>Código de sala:</p>
-            <h2 class="room-badge" id="display-room-code">----</h2>
-            
-            <div id="player-list"></div>
+<script>
+const SUPABASE_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
 
-            <div id="role-area" style="display:none; margin-top:2rem; padding:1rem; border:2px solid gold;">
-                <h3 id="role-title">ROL</h3>
-                <h1 id="role-word">---</h1>
-            </div>
+const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-            <button id="btn-start-game" style="display:none; background: var(--secondary);" onclick="distributeRoles()">¡EMPEZAR JUEGO!</button>
-            <p id="wait-msg">Esperando a que el host inicie...</p>
-        </div>
-    </div>
+let roomId = "";
+let playerName = "";
 
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-client@2"></script>
-    <script>
-        const supabase = supabase.createClient("https://jdvwlfogkzrzovepzjqa.supabase.co", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI");
+const words = {
+  general:[
+    ["Playa","Vacaciones"],
+    ["Hospital","Médicos"]
+  ],
+  lugares:[
+    ["Cine","Películas"],
+    ["Escuela","Clases"]
+  ]
+};
 
-        let myUser = "";
-        let myRoom = "";
-        let isHost = false;
+async function crearSala(){
+  playerName = name.value;
+  roomId = Math.random().toString(36).substring(2,7).toUpperCase();
 
-        const categorias = {
-            animales: [
-                { word: "Elefante", hint: "Tiene trompa" },
-                { word: "Tiburón", hint: "Vive en el mar" }
-            ],
-            objetos: [
-                { word: "Microondas", hint: "Calienta comida" },
-                { word: "Espejo", hint: "Refleja tu cara" }
-            ],
-            comida: [
-                { word: "Hamburguesa", hint: "Lleva pan y carne" },
-                { word: "Sushi", hint: "Lleva arroz y pescado" }
-            ]
-        };
+  await supabase.from("rooms").insert({
+    id:roomId,
+    settings:{genre:"general",impostors:1}
+  });
 
-        // Cambiar a pantalla de configuración
-        function goToConfig() {
-            myUser = document.getElementById('username').value;
-            if(!myUser) return alert("Dime tu nombre");
-            showScreen('screen-config');
-        }
+  await supabase.from("players").insert({
+    room_id:roomId,
+    name:playerName
+  });
 
-        // Crear la sala definitivamente
-        async function createRoomFinal() {
-            isHost = true;
-            const code = Math.random().toString(36).substring(2, 6).toUpperCase();
-            
-            // Guardamos la config en la tabla 'rooms' (necesitarás columnas extras si quieres guardarlas ahí)
-            await supabase.from('rooms').insert([{ id: code, status: 'waiting' }]);
-            
-            enterGame(code);
-        }
+  menu.classList.add("hidden");
+  host.classList.remove("hidden");
+  code.innerText = roomId;
+}
 
-        async function joinRoom() {
-            myUser = document.getElementById('username').value;
-            const code = document.getElementById('roomCodeInput').value.toUpperCase();
-            if(!myUser || !code) return alert("Faltan datos");
+async function unirse(){
+  playerName = name.value;
+  roomId = roomCode.value.toUpperCase();
 
-            const { data } = await supabase.from('rooms').select('*').eq('id', code).single();
-            if(!data) return alert("Sala no existe");
+  await supabase.from("players").insert({
+    room_id:roomId,
+    name:playerName
+  });
 
-            enterGame(code);
-        }
+  menu.classList.add("hidden");
+  esperarInicio();
+}
 
-        async function enterGame(code) {
-            myRoom = code;
-            await supabase.from('players').insert([{ room_id: code, name: myUser, is_host: isHost }]);
+async function startGame(){
+  const genre = document.getElementById("genre").value;
+  const imp = +document.getElementById("impostors").value;
 
-            showScreen('screen-lobby');
-            document.getElementById('display-room-code').innerText = code;
-            
-            if(isHost) document.getElementById('btn-start-game').style.display = 'block';
+  const list = words[genre];
+  const chosen = list[Math.floor(Math.random()*list.length)];
 
-            listenPlayers();
-        }
+  const { data:players } = await supabase
+    .from("players")
+    .select("*")
+    .eq("room_id",roomId);
 
-        function listenPlayers() {
-            supabase.channel('room-' + myRoom)
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${myRoom}` }, 
-                payload => {
-                    updatePlayerUI();
-                    if(payload.new.name === myUser && payload.new.role !== 'pendiente') {
-                        revealRole(payload.new.role, payload.new.secret_data);
-                    }
-                }).subscribe();
-            updatePlayerUI();
-        }
+  let roles = Array(players.length).fill("civil");
+  for(let i=0;i<imp;i++) roles[i]="impostor";
+  roles.sort(()=>Math.random()-0.5);
 
-        async function updatePlayerUI() {
-            const { data } = await supabase.from('players').select('*').eq('room_id', myRoom);
-            const list = document.getElementById('player-list');
-            list.innerHTML = "<strong>En la sala:</strong>";
-            data.forEach(p => list.innerHTML += `<div>👤 ${p.name} ${p.is_host ? '(Host)' : ''}</div>`);
-        }
+  for(let i=0;i<players.length;i++){
+    await supabase.from("players")
+      .update({role:roles[i]})
+      .eq("id",players[i].id);
+  }
 
-        async function distributeRoles() {
-            const cat = document.getElementById('cfg-categoria').value;
-            const items = categorias[cat];
-            const selected = items[Math.floor(Math.random() * items.length)];
-            const numImp = parseInt(document.getElementById('cfg-impostores').value);
+  await supabase.from("rooms")
+    .update({started:true,word:chosen[0],hint:chosen[1]})
+    .eq("id",roomId);
+}
 
-            const { data: players } = await supabase.from('players').select('*').eq('room_id', myRoom);
-            const shuffled = players.sort(() => 0.5 - Math.random());
+function esperarInicio(){
+  supabase.channel("room")
+    .on("postgres_changes",{event:"UPDATE",schema:"public",table:"rooms"},
+    payload=>{
+      if(payload.new.started){
+        mostrarRol();
+      }
+    }).subscribe();
+}
 
-            for (let i = 0; i < shuffled.length; i++) {
-                const isImp = i < numImp;
-                await supabase.from('players').update({
-                    role: isImp ? 'impostor' : 'civil',
-                    secret_data: isImp ? selected.hint : selected.word
-                }).eq('id', shuffled[i].id);
-            }
-        }
+async function mostrarRol(){
+  const { data:player } = await supabase
+    .from("players")
+    .select("*")
+    .eq("room_id",roomId)
+    .eq("name",playerName)
+    .single();
 
-        function revealRole(role, data) {
-            document.getElementById('role-area').style.display = 'block';
-            document.getElementById('role-title').innerText = role === 'impostor' ? "ERES IMPOSTOR" : "ERES CIVIL";
-            document.getElementById('role-word').innerText = data;
-            document.getElementById('wait-msg').style.display = 'none';
-        }
+  const { data:room } = await supabase
+    .from("rooms")
+    .select("*")
+    .eq("id",roomId)
+    .single();
 
-        function showScreen(id) {
-            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-            document.getElementById(id).classList.add('active');
-        }
-    </script>
+  menu.classList.add("hidden");
+  host.classList.add("hidden");
+  game.classList.remove("hidden");
+
+  roleText.innerText =
+    player.role==="impostor"
+    ? "IMPOSTOR\nPista: "+room.hint
+    : room.word;
+}
+</script>
+
 </body>
 </html>
