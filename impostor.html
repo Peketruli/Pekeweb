@@ -2,332 +2,178 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Juego Impostor</title>
+    <title>Juego Impostor - Diagnóstico</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <style>
-        /* Estilos básicos para que se vea bien en móvil */
-        body { font-family: 'Segoe UI', sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #2c3e50; color: white; text-align: center; }
-        .screen { display: none; background: #34495e; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
-        .active { display: block; }
-        button { padding: 15px 24px; cursor: pointer; background: #27ae60; color: white; border: none; border-radius: 5px; margin: 5px; font-size: 16px; font-weight: bold; width: 100%; max-width: 300px; }
-        button:hover { background: #2ecc71; }
-        input, select { padding: 12px; width: 80%; margin-bottom: 15px; border-radius: 5px; border: none; font-size: 16px; }
-        .role-card { font-size: 1.5em; padding: 20px; border: 2px dashed #ecf0f1; margin: 20px 0; background: #2c3e50; }
-        .player-list { list-style: none; padding: 0; text-align: left;}
-        .player-list li { padding: 10px; background: rgba(0,0,0,0.2); margin-bottom: 5px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
-        .hidden { display: none; }
-    </style>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: sans-serif; background: #2c3e50; color: white; text-align: center; padding: 20px; }
+        
+        /* ESTILOS DEL DEBUGGER VISUAL */
+        #debug-log {
+            background: #000;
+            color: #0f0;
+            font-family: monospace;
+            padding: 10px;
+            margin-bottom: 20px;
+            border: 2px solid #0f0;
+            text-align: left;
+            min-height: 100px;
+            font-size: 12px;
+            white-space: pre-wrap;
+        }
+
+        button { padding: 15px; width: 100%; margin: 5px 0; font-size: 16px; cursor: pointer; }
+        input { padding: 10px; width: 90%; margin: 5px 0; }
+        .screen { display: none; }
+        .active { display: block; }
+    </style>
 </head>
 <body>
 
-    <h1>🕵️‍♂️ ¿Quién es el Impostor?</h1>
+    <h3>🔧 Consola de Diagnóstico</h3>
+    <div id="debug-log">Iniciando sistema...</div>
+
+    <hr>
 
     <div id="screen-login" class="screen active">
-        <h3>Entrar o Crear Sala</h3>
-        <input type="text" id="username" placeholder="Tu nombre (ej: Alex)" required>
-        <input type="text" id="roomCode" placeholder="Código de Sala (solo para unirse)">
-        <br>
-        <button onclick="createRoom()">Crear Nueva Sala</button>
-        <button onclick="joinRoom()" style="background:#2980b9">Unirse a Sala</button>
+        <h2>Entrar al Juego</h2>
+        <input type="text" id="username" placeholder="Nombre">
+        <input type="text" id="roomCode" placeholder="Código (solo para unirse)">
+        <button onclick="debugCreate()">Crear Sala</button>
+        <button onclick="debugJoin()">Unirse a Sala</button>
     </div>
 
     <div id="screen-lobby" class="screen">
-        <h3>Sala: <span id="lobby-code" style="color:#f1c40f"></span></h3>
-        <p>Jugadores conectados:</p>
-        <ul id="lobby-players" class="player-list"></ul>
-        
-        <div id="host-controls" class="hidden" style="border-top: 1px solid #7f8c8d; padding-top:10px;">
-            <h4>👑 Eres el Admin</h4>
-            <label>Categoría:</label>
-            <select id="category-select">
-                <option value="animales">Animales</option>
-                <option value="comida">Comida</option>
-                <option value="lugares">Lugares</option>
-            </select>
-            <button onclick="startGame()">¡Empezar Partida!</button>
-        </div>
-        <p id="waiting-msg">Esperando a que el líder inicie...</p>
-    </div>
-
-    <div id="screen-game" class="screen">
-        <div class="role-card" id="my-word-display">Cargando...</div>
-        
-        <div id="impostor-actions" class="hidden" style="background: #c0392b; padding:10px; border-radius:5px;">
-            <p>⚠️ <strong>IMPOSTOR:</strong> Adivina la palabra para ganar.</p>
-            <input type="text" id="guess-input" placeholder="Escribe la palabra secreta">
-            <button onclick="attemptWin()" style="background: white; color: #c0392b;">¡Sé la palabra!</button>
-        </div>
-
-        <h4>Votación en curso:</h4>
-        <ul id="game-players" class="player-list"></ul>
+        <h2>Sala: <span id="lobby-code"></span></h2>
+        <ul id="lobby-players"></ul>
+        <p>Esperando...</p>
     </div>
 
 <script>
-    // ==========================================
-    // 0. CAZADOR DE ERRORES (Global)
-    // ==========================================
-    window.onerror = function(message, source, lineno, colno, error) {
-        alert("❌ ERROR DETECTADO:\n" + message + "\nLínea: " + lineno);
-        return false; 
+    // --- FUNCIÓN PARA ESCRIBIR EN PANTALLA ---
+    function log(msg) {
+        const box = document.getElementById('debug-log');
+        const time = new Date().toLocaleTimeString();
+        box.innerHTML += `\n[${time}] ${msg}`;
+        // Scroll al fondo
+        box.scrollTop = box.scrollHeight;
+    }
+
+    // --- PROTECCIÓN DE ERRORES GLOBAL ---
+    window.onerror = function(msg, url, line) {
+        log(`❌ ERROR CRÍTICO (Línea ${line}): ${msg}`);
+        return false;
     };
 
-    window.onunhandledrejection = function(event) {
-        alert("❌ ERROR DE RED/SUPABASE:\n" + event.reason);
-    };
-
-    // ==========================================
-    // 1. CONFIGURACIÓN DE SUPABASE
-    // ==========================================
-    // ¡¡¡ PON TUS CLAVES AQUÍ ABAJO !!!
-    const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co'; 
-    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+    // --- 1. INTENTAR INICIAR SUPABASE ---
+    log("Cargando script...");
     
+    // ==========================================
+    // PON TUS CLAVES AQUÍ ABAJO
+    // ==========================================
+    const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+
     let supabase;
 
-    // Verificar si Supabase cargó
-    if (typeof window.supabase === 'undefined') {
-        alert("CRÍTICO: No se pudo cargar la librería de Supabase. Revisa tu conexión a internet.");
-    } else {
-        try {
+    try {
+        if (!window.supabase) {
+            log("❌ ERROR: La librería de Supabase no cargó.");
+        } else {
             supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-        } catch (e) {
-            alert("Error iniciando Supabase: " + e.message);
+            log("✅ Supabase inicializado correctamente.");
+            log("Esperando acción del usuario...");
         }
+    } catch (e) {
+        log("❌ Excepción al iniciar: " + e.message);
     }
 
-    // ==========================================
-    // 2. LÓGICA DEL JUEGO
-    // ==========================================
+    // --- FUNCIONES DE BOTONES ---
 
-    let myId = null;
-    let myName = "";
-    let currentRoom = "";
-    let isHost = false;
-    let myRoleData = null; 
+    async function debugCreate() {
+        log("👉 Botón 'Crear' presionado.");
+        
+        const name = document.getElementById('username').value;
+        if (!name) return log("⚠️ Falta el nombre.");
 
-    const WORDS = {
-        animales: [['Perro', 'Lobo'], ['Gato', 'León'], ['Caballo', 'Burro'], ['Delfín', 'Tiburón']],
-        comida: [['Pizza', 'Pasta'], ['Hamburguesa', 'Sandwich'], ['Taco', 'Fajita'], ['Manzana', 'Pera']],
-        lugares: [['Playa', 'Piscina'], ['Cine', 'Teatro'], ['Hotel', 'Hospital'], ['Bar', 'Restaurante']]
-    };
+        const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+        log(`Intentando crear sala ${code} en DB...`);
 
-    function showScreen(id) {
-        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-        document.getElementById(id).classList.add('active');
-    }
-
-    // --- CREAR SALA ---
-    async function createRoom() {
         try {
-            myName = document.getElementById('username').value;
-            if (!myName) return alert("¡Por favor, escribe tu nombre!");
-
-            // Verificar si supabase existe antes de llamar
-            if(!supabase) return alert("Supabase no está configurado.");
-
-            const code = Math.random().toString(36).substring(2, 6).toUpperCase();
+            // Test de conexión simple
+            const { error } = await supabase.from('rooms').insert({ code: code, status: 'waiting' });
             
-            // Insertar sala
-            const { error } = await supabase.from('rooms').insert({ 
-                code: code, 
-                status: 'waiting' 
-            });
-
-            if (error) throw error; // Esto enviará el error al 'catch'
-
-            // Si funciona, nos unimos
-            joinRoomProcess(code, true);
-
+            if (error) {
+                log("❌ ERROR SQL: " + error.message);
+                log("¿Has ejecutado el script SQL en Supabase?");
+            } else {
+                log("✅ Sala creada en DB exitosamente.");
+                // Unirse
+                joinProcess(code, name);
+            }
         } catch (err) {
-            alert("Error al Crear Sala:\n" + err.message + "\n\n¿Ejecutaste el código SQL en Supabase?");
+            log("❌ ERROR JS: " + err.message);
         }
     }
 
-    // --- UNIRSE A SALA ---
-    async function joinRoom() {
-        try {
-            myName = document.getElementById('username').value;
-            const code = document.getElementById('roomCode').value.toUpperCase();
-            
-            if (!myName) return alert("¡Escribe tu nombre!");
-            if (!code) return alert("¡Escribe el código de la sala!");
+    async function debugJoin() {
+        log("👉 Botón 'Unirse' presionado.");
+        const name = document.getElementById('username').value;
+        const code = document.getElementById('roomCode').value.toUpperCase();
 
-            const { data, error } = await supabase.from('rooms').select('*').eq('code', code).single();
-            
-            if (error) throw error;
-            if (!data) return alert("Esa sala no existe.");
+        if (!name || !code) return log("⚠️ Faltan datos (nombre o código).");
 
-            joinRoomProcess(code, false);
-        } catch (err) {
-            alert("Error al Unirse:\n" + err.message);
-        }
+        // Verificar si existe
+        const { data, error } = await supabase.from('rooms').select('*').eq('code', code).single();
+        
+        if (error) return log("❌ Error buscando sala: " + error.message);
+        if (!data) return log("❌ La sala no existe.");
+
+        log("✅ Sala encontrada. Uniéndose...");
+        joinProcess(code, name);
     }
 
-    // --- PROCESO INTERNO DE UNIÓN ---
-    async function joinRoomProcess(code, hostStatus) {
+    async function joinProcess(code, name) {
         try {
-            currentRoom = code;
-            isHost = hostStatus;
-
             const { data, error } = await supabase.from('players').insert({
                 room_code: code,
-                name: myName,
-                is_impostor: false,
-                votes: 0
-            }).select().single();
+                name: name,
+                is_impostor: false
+            }).select();
 
-            if (error) throw error;
-            
-            myId = data.id;
-
-            if (isHost) {
-                const { error: hostErr } = await supabase.from('rooms').update({ host_id: myId }).eq('code', code);
-                if (hostErr) throw hostErr;
-                
-                document.getElementById('host-controls').classList.remove('hidden');
-                document.getElementById('waiting-msg').classList.add('hidden');
-            }
-
-            document.getElementById('lobby-code').innerText = code;
-            showScreen('screen-lobby');
-            subscribeToRoom();
-
-        } catch (err) {
-            alert("Error en el proceso de unión:\n" + err.message);
-        }
-    }
-
-    // --- SISTEMA EN TIEMPO REAL ---
-    function subscribeToRoom() {
-        try {
-            supabase.channel('game_channel')
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${currentRoom}` }, 
-                (payload) => {
-                    const room = payload.new;
-                    if (room.status === 'playing') enterGame(room);
-                    if (room.status === 'finished') { alert("🏁 Juego terminado"); location.reload(); }
-                })
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_code=eq.${currentRoom}` }, 
-                () => refreshPlayerList())
-                .subscribe((status, err) => {
-                    if (status === 'CHANNEL_ERROR') alert("Error de conexión en tiempo real: " + err.message);
-                });
-
-            refreshPlayerList();
-        } catch (err) {
-            alert("Error suscribiendo a la sala: " + err.message);
-        }
-    }
-
-    async function refreshPlayerList() {
-        const { data: players, error } = await supabase.from('players').select('*').eq('room_code', currentRoom).order('name');
-        if (error) return console.error(error); // Aquí usamos console para no saturar de alerts
-
-        // Lobby HTML
-        document.getElementById('lobby-players').innerHTML = players.map(p => `<li>${p.name}</li>`).join('');
-
-        // Juego HTML
-        document.getElementById('game-players').innerHTML = players.map(p => {
-            if (!p.is_alive) return `<li style="opacity:0.5">💀 ${p.name} (Eliminado)</li>`;
-            
-            const voteBtn = (p.id !== myId && p.is_alive) 
-                ? `<button style="padding:5px; width:auto; font-size:12px;" onclick="votePlayer('${p.id}', ${p.votes})">Votar (${p.votes})</button>` 
-                : `<span>Votos: ${p.votes}</span>`;
-                
-            return `<li>${p.name} ${voteBtn}</li>`;
-        }).join('');
-
-        // Lógica de eliminación (simple)
-        const alivePlayers = players.filter(p => p.is_alive).length;
-        if (isHost && alivePlayers > 0) {
-            players.forEach(p => {
-                if (p.votes > alivePlayers / 2 && p.is_alive) {
-                    eliminatePlayer(p);
-                }
-            });
-        }
-    }
-
-    // --- EMPEZAR PARTIDA ---
-    async function startGame() {
-        try {
-            const category = document.getElementById('category-select').value;
-            const pair = WORDS[category][Math.floor(Math.random() * WORDS[category].length)];
-            
-            const { data: players } = await supabase.from('players').select('id').eq('room_code', currentRoom);
-            if(players.length < 2) return alert("¡Necesitas al menos 2 jugadores para empezar!");
-
-            const impostorId = players[Math.floor(Math.random() * players.length)].id;
-
-            // Reset y asignar impostor
-            await supabase.from('players').update({ is_impostor: false, votes: 0, is_alive: true }).eq('room_code', currentRoom);
-            await supabase.from('players').update({ is_impostor: true }).eq('id', impostorId);
-
-            // Iniciar en sala
-            await supabase.from('rooms').update({
-                category: category,
-                word_civilian: pair[0],
-                word_impostor: pair[1],
-                status: 'playing'
-            }).eq('code', currentRoom);
-
-        } catch (err) {
-            alert("Error al iniciar juego: " + err.message);
-        }
-    }
-
-    async function enterGame(roomData) {
-        try {
-            const { data: me, error } = await supabase.from('players').select('*').eq('id', myId).single();
-            if (error) throw error;
-            
-            const myWord = me.is_impostor ? roomData.word_impostor : roomData.word_civilian;
-            const roleText = me.is_impostor ? "Eres el IMPOSTOR 😈" : "Eres CIUDADANO 😇";
-            const color = me.is_impostor ? "#c0392b" : "#27ae60";
-
-            document.getElementById('my-word-display').innerHTML = `
-                <h3 style="color:${color}">${roleText}</h3>
-                <p>Tu palabra es:</p>
-                <h1 style="font-size:3em; margin:10px 0;">${myWord}</h1>
-                <small>Categoría: ${roomData.category}</small>
-            `;
-
-            if (me.is_impostor) {
-                document.getElementById('impostor-actions').classList.remove('hidden');
-                myRoleData = { target: roomData.word_civilian };
+            if (error) {
+                log("❌ Error al crear jugador: " + error.message);
             } else {
-                document.getElementById('impostor-actions').classList.add('hidden');
+                log("✅ ¡Jugador unido! Cambiando pantalla...");
+                document.getElementById('screen-login').style.display = 'none';
+                document.getElementById('screen-lobby').style.display = 'block';
+                document.getElementById('lobby-code').innerText = code;
+                
+                // Suscribirse
+                log("Suscribiendo a cambios en tiempo real...");
+                supabase.channel('public:players')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'players' }, payload => {
+                        log("🔔 Cambio detectado en jugadores");
+                        updateList(code);
+                    })
+                    .subscribe();
+                
+                updateList(code);
             }
-
-            showScreen('screen-game');
-        } catch (err) {
-            alert("Error cargando pantalla de juego: " + err.message);
+        } catch (e) {
+            log("❌ Error fatal en joinProcess: " + e.message);
         }
     }
 
-    async function votePlayer(targetId, currentVotes) {
-        const { error } = await supabase.from('players').update({ votes: currentVotes + 1 }).eq('id', targetId);
-        if (error) alert("Error al votar: " + error.message);
+    async function updateList(code) {
+        const { data } = await supabase.from('players').select('name').eq('room_code', code);
+        const list = document.getElementById('lobby-players');
+        list.innerHTML = "";
+        data.forEach(p => {
+            list.innerHTML += `<li>${p.name}</li>`;
+        });
     }
 
-    async function eliminatePlayer(player) {
-        await supabase.from('players').update({ is_alive: false }).eq('id', player.id);
-        if (player.is_impostor) {
-            alert("¡IMPOSTOR CAZADO! 🎉");
-            await supabase.from('rooms').update({ status: 'finished' }).eq('code', currentRoom);
-        }
-    }
-
-    async function attemptWin() {
-        const guess = document.getElementById('guess-input').value.trim().toLowerCase();
-        if (guess === myRoleData.target.toLowerCase()) {
-            alert("¡IMPOSTOR GANA! Adivinó la palabra.");
-            await supabase.from('rooms').update({ status: 'finished' }).eq('code', currentRoom);
-        } else {
-            alert("¡FALLASTE! Te has delatado.");
-        }
-    }
 </script>
 </body>
 </html>
