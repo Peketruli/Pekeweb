@@ -3,194 +3,262 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Impostor Online v2</title>
+    <title>Impostor Pro - Turnos & Chat</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        :root { --p: #6366f1; --bg: #0f172a; --card: #1e293b; --txt: #f8fafc; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); color: var(--txt); margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        :root { --p: #6366f1; --bg: #0f172a; --card: #1e293b; --accent: #f59e0b; --active: #22c55e; --txt: #f8fafc; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--txt); margin: 0; display: flex; height: 100vh; overflow: hidden; }
         
         .hidden { display: none !important; }
-        .screen { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
-        .panel { background: var(--card); padding: 20px; border-radius: 15px; width: 100%; max-width: 400px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
+        
+        /* Layout Principal */
+        .main-game { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+        .chat-sidebar { flex: 1; background: #0b0f1a; display: flex; flex-direction: column; padding: 15px; border-left: 1px solid #334155; }
 
-        /* Lobby & Chat Layout */
-        #game-layout { display: flex; flex: 1; height: 100vh; }
-        .main-game { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 20px; }
-        .chat-sidebar { flex: 1; background: #111827; display: flex; flex-direction: column; padding: 15px; border-left: 1px solid #334155; }
+        .panel { background: var(--card); padding: 20px; border-radius: 12px; border: 1px solid #334155; }
+        
+        /* Jugadores y Turnos */
+        .player-tag { 
+            display: inline-block; padding: 10px 18px; border-radius: 12px; margin: 5px; 
+            background: #334155; border: 2px solid transparent; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .is-active-turn { 
+            border-color: var(--active); 
+            box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
+            transform: translateY(-3px);
+            background: #2d3748;
+        }
 
-        input, button, select { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: none; box-sizing: border-box; }
-        input { background: #334155; color: white; }
-        button { background: var(--p); color: white; font-weight: bold; cursor: pointer; }
-        button:hover { opacity: 0.9; }
+        /* Chat */
+        #chat-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; padding-right: 5px; }
+        .msg { padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; background: #1e293b; font-size: 0.95rem; border: 1px solid #334155; }
+        .msg-turn { border-left: 4px solid var(--active); background: rgba(34, 197, 94, 0.1); }
+        .msg b { font-size: 0.85rem; display: block; margin-bottom: 2px; }
 
-        #chat-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; font-size: 0.9rem; }
-        .msg { background: #1e293b; padding: 8px; border-radius: 5px; margin-bottom: 5px; }
-        .msg b { color: var(--p); }
+        /* Votación */
+        .vote-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px; }
+        .vote-btn { background: #334155; border: 1px solid var(--p); color: white; padding: 10px; cursor: pointer; border-radius: 8px; font-weight: bold; }
+        .vote-btn:hover { background: var(--p); }
 
-        .player-tag { display: inline-block; background: #475569; padding: 5px 12px; border-radius: 20px; margin: 5px; font-size: 0.8rem; }
+        input, button { width: 100%; padding: 12px; border-radius: 8px; border: none; margin-top: 5px; box-sizing: border-box; font-size: 1rem; }
+        input { background: #1e293b; color: white; border: 1px solid #334155; outline: none; }
+        input:focus { border-color: var(--p); }
+        button { background: var(--p); color: white; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:active { transform: scale(0.98); }
+
+        #turn-indicator { font-weight: bold; padding: 10px; border-radius: 8px; background: #161e2e; text-align: center; margin-bottom: 10px; border: 1px solid #334155; }
     </style>
 </head>
 <body>
 
-    <div id="screen-login" class="screen">
-        <div class="panel">
-            <h1>🕵️ El Impostor</h1>
-            <input type="text" id="in-user" placeholder="Tu Nombre">
-            <input type="text" id="in-room" placeholder="Código de Sala">
-            <button onclick="entrarAlJuego()">ENTRAR A LA SALA</button>
-            <p id="status-text" style="font-size: 0.8rem; color: #94a3b8; text-align: center;"></p>
+    <div id="screen-login" style="position:fixed; width:100%; height:100%; background:var(--bg); z-index:1000; display:flex; align-items:center; justify-content:center;">
+        <div class="panel" style="width: 100%; max-width:350px">
+            <h1 style="text-align:center; margin-top:0;">🕵️ El Impostor</h1>
+            <label>Tu nombre:</label>
+            <input type="text" id="in-user" placeholder="Ej: Juan">
+            <label>Código de sala:</label>
+            <input type="text" id="in-room" placeholder="Ej: 777">
+            <button onclick="entrarAlJuego()" style="margin-top:20px;">ENTRAR A LA SALA</button>
         </div>
     </div>
 
-    <div id="screen-game" class="hidden" style="display: flex; flex: 1;">
+    <div id="game-layout" style="display: flex; width: 100%;">
         <div class="main-game">
             <div class="panel">
-                <h2 id="display-room-name">Sala: ---</h2>
+                <h3 id="room-info" style="margin-top:0;">Sala: ---</h3>
                 <div id="player-list"></div>
             </div>
 
+            <div id="role-info" class="panel hidden" style="border: 2px solid var(--accent); text-align: center;">
+                <p style="margin:0; font-size: 0.8rem; text-transform: uppercase; color: var(--accent);">Tu información secreta:</p>
+                <h2 id="display-word" style="margin:10px 0; font-size: 2rem;">---</h2>
+                <p id="display-hint" style="margin:0; opacity: 0.8;"></p>
+            </div>
+
+            <div id="vote-panel" class="panel hidden">
+                <h3 style="margin-top:0;">🗳️ Fase de Votación</h3>
+                <p>Haz clic en el sospechoso:</p>
+                <div id="vote-options" class="vote-grid"></div>
+            </div>
+
             <div id="host-panel" class="panel hidden">
-                <h3>Ajustes de Anfitrión</h3>
-                <label>Categoría:</label>
-                <select id="sel-cat">
-                    <option value="Comida">Comida 🍔</option>
-                    <option value="Lugares">Lugares 🗼</option>
-                </select>
-                <button onclick="iniciarPartida()" style="background: #10b981;">EMPEZAR JUEGO</button>
-            </div>
-
-            <div id="role-panel" class="panel hidden" style="border: 2px solid gold; text-align: center;">
-                <h1 id="display-word">---</h1>
-                <p id="display-hint"></p>
-            </div>
-
-            <div id="waiting-msg" class="panel" style="text-align: center;">
-                Esperando al anfitrión...
+                <p style="margin-top:0; font-size: 0.9rem;">Eres el anfitrión. Espera a que todos entren.</p>
+                <button onclick="iniciarPartida()" style="background: var(--active);">INICIAR PARTIDA</button>
             </div>
         </div>
 
         <div class="chat-sidebar">
-            <h3>Chat</h3>
+            <div id="turn-indicator">Esperando inicio...</div>
             <div id="chat-messages"></div>
-            <div style="display: flex; gap: 5px;">
-                <input type="text" id="chat-input" placeholder="Escribe..." style="margin: 0;">
-                <button onclick="enviarMensaje()" style="width: 60px; margin: 0;">✈️</button>
+            <div style="padding-top:10px;">
+                <input type="text" id="chat-input" placeholder="Escribe y pulsa Enter..." autocomplete="off">
+                <button onclick="enviarMensaje()" style="margin-top:8px; background: #334155;">Enviar Mensaje</button>
             </div>
         </div>
     </div>
 
     <script>
+        // 1. CONFIGURACIÓN (REEMPLAZA CON TUS DATOS)
         const SB_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
         const sb = supabase.createClient(SB_URL, SB_KEY);
 
-        let myUser = "", myRoom = "", isHost = false;
+        let myU = "", myR = "", isH = false, playersList = [], currentTurnIdx = 0, gameState = "waiting";
+
+        // Evento para tecla Enter
+        document.getElementById('chat-input').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') enviarMensaje();
+        });
 
         async function entrarAlJuego() {
-            const status = document.getElementById('status-text');
-            myUser = document.getElementById('in-user').value.trim();
-            myRoom = document.getElementById('in-room').value.trim();
+            myU = document.getElementById('in-user').value.trim();
+            myR = document.getElementById('in-room').value.trim();
+            if(!myU || !myR) return alert("Completa los datos");
 
-            if (!myUser || !myRoom) return alert("Rellena los datos");
-
-            status.innerText = "Conectando...";
-
-            try {
-                // 1. Ver si la sala existe
-                let { data: room } = await sb.from('rooms').select('*').eq('code', myRoom).maybeSingle();
-                
-                if (!room) {
-                    isHost = true;
-                    await sb.from('rooms').insert([{ code: myRoom, status: 'waiting' }]);
-                }
-
-                // 2. Unirse como jugador
-                await sb.from('players').insert([{ room_id: myRoom, username: myUser, is_host: isHost }]);
-
-                // 3. Cambiar de pantalla
-                document.getElementById('screen-login').classList.add('hidden');
-                document.getElementById('screen-game').classList.remove('hidden');
-                document.getElementById('display-room-name').innerText = "Sala: " + myRoom;
-                
-                if(isHost) {
-                    document.getElementById('host-panel').classList.remove('hidden');
-                    document.getElementById('waiting-msg').classList.add('hidden');
-                }
-
-                conectarRealtime();
-                cargarMensajes();
-                actualizarJugadores();
-
-            } catch (err) {
-                status.innerText = "Error: " + err.message;
+            // Buscar sala
+            let { data: r } = await sb.from('rooms').select('*').eq('code', myR).maybeSingle();
+            
+            if(!r) {
+                isH = true;
+                await sb.from('rooms').insert([{ code: myR, status: 'waiting', turn_index: 0 }]);
             }
+
+            // Registrar jugador
+            await sb.from('players').insert([{ room_id: myR, username: myU, is_host: isH }]);
+
+            document.getElementById('screen-login').classList.add('hidden');
+            if(isH) document.getElementById('host-panel').classList.remove('hidden');
+            document.getElementById('room-info').innerText = "Sala: " + myR;
+
+            inicializarRealtime();
+            actualizarListaJugadores();
+            cargarHistorialChat();
         }
 
-        function conectarRealtime() {
-            // Escuchar Mensajes
-            sb.channel('chat').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${myRoom}` }, 
+        function inicializarRealtime() {
+            // Cambios en Sala
+            sb.channel('room_channel').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${myR}` }, 
+                p => sincronizarEstadoSala(p.new)).subscribe();
+
+            // Cambios en Jugadores
+            sb.channel('players_channel').on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${myR}` }, 
+                () => actualizarListaJugadores()).subscribe();
+
+            // Mensajes de Chat
+            sb.channel('chat_channel').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${myR}` }, 
                 p => dibujarMensaje(p.new)).subscribe();
-
-            // Escuchar Jugadores
-            sb.channel('players').on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${myRoom}` }, 
-                () => actualizarJugadores()).subscribe();
-
-            // Escuchar Sala (Inicio de juego)
-            sb.channel('room').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${myRoom}` }, 
-                p => renderizarRonda(p.new)).subscribe();
         }
 
         async function enviarMensaje() {
             const input = document.getElementById('chat-input');
-            if(!input.value) return;
-            await sb.from('messages').insert([{ room_id: myRoom, username: myUser, content: input.value }]);
-            input.value = "";
+            const texto = input.value.trim();
+            if(!texto) return;
+
+            // Determinar si es pista oficial por turno
+            const esMiTurno = (playersList[currentTurnIdx]?.username === myU && gameState === 'playing');
+
+            const { error } = await sb.from('messages').insert([{ 
+                room_id: myR, 
+                username: myU, 
+                content: texto, 
+                is_clue: esMiTurno 
+            }]);
+
+            if (error) {
+                alert("Error al enviar chat: " + error.message);
+            } else {
+                input.value = "";
+                // Si envié mi pista, paso el turno
+                if(esMiTurno) {
+                    const nextIdx = currentTurnIdx + 1;
+                    if(nextIdx >= playersList.length) {
+                        await sb.from('rooms').update({ status: 'voting' }).eq('code', myR);
+                    } else {
+                        await sb.from('rooms').update({ turn_index: nextIdx }).eq('code', myR);
+                    }
+                }
+            }
         }
 
         function dibujarMensaje(m) {
-            const container = document.getElementById('chat-messages');
-            container.innerHTML += `<div class="msg"><b>${m.username}:</b> ${m.content}</div>`;
-            container.scrollTop = container.scrollHeight;
+            const chatBox = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = `msg ${m.is_clue ? 'msg-turn' : ''}`;
+            
+            const color = m.is_clue ? 'var(--active)' : 'var(--p)';
+            div.innerHTML = `<b style="color:${color}">${m.username}</b> <span>${m.content}</span>`;
+            
+            chatBox.appendChild(div);
+            chatBox.scrollTop = chatBox.scrollHeight;
         }
 
-        async function cargarMensajes() {
-            const { data } = await sb.from('messages').select('*').eq('room_id', myRoom).order('created_at', {ascending: true});
-            data?.forEach(m => dibujarMensaje(m));
+        async function cargarHistorialChat() {
+            const { data } = await sb.from('messages').select('*').eq('room_id', myR).order('created_at', {ascending: true});
+            if(data) data.forEach(m => dibujarMensaje(m));
         }
 
-        async function actualizarJugadores() {
-            const { data } = await sb.from('players').select('*').eq('room_id', myRoom);
-            if(data) {
-                document.getElementById('player-list').innerHTML = data.map(p => 
-                    `<span class="player-tag">${p.is_host ? '👑':'👤'} ${p.username}</span>`).join('');
+        async function actualizarListaJugadores() {
+            const { data } = await sb.from('players').select('*').eq('room_id', myR).order('created_at', {ascending: true});
+            playersList = data || [];
+            
+            const listContainer = document.getElementById('player-list');
+            listContainer.innerHTML = playersList.map((p, idx) => `
+                <span class="player-tag ${idx === currentTurnIdx && gameState === 'playing' ? 'is-active-turn' : ''}">
+                    ${p.is_host ? '👑 ' : ''}${p.username}
+                </span>
+            `).join('');
+
+            // Actualizar indicador de texto
+            const pActivo = playersList[currentTurnIdx];
+            if(gameState === 'playing' && pActivo) {
+                const indicador = document.getElementById('turn-indicator');
+                indicador.innerText = "🎤 Turno de: " + pActivo.username;
+                indicador.style.borderColor = (pActivo.username === myU) ? "var(--active)" : "#334155";
             }
         }
 
         async function iniciarPartida() {
-            const { data: ps } = await sb.from('players').select('username').eq('room_id', myRoom);
-            const imp = ps[Math.floor(Math.random() * ps.length)].username;
-            const cat = document.getElementById('sel-cat').value;
-            const word = cat === "Comida" ? "Pizza" : "París";
-            const hint = cat === "Comida" ? "Es redonda e italiana" : "Ciudad de la torre Eiffel";
-
-            await sb.from('rooms').update({
-                status: 'playing',
-                word: word,
-                hint: hint,
-                impostor_id: imp
-            }).eq('code', myRoom);
+            if(playersList.length < 2) return alert("Mínimo 2 personas");
+            const imp = playersList[Math.floor(Math.random() * playersList.length)].username;
+            
+            await sb.from('rooms').update({ 
+                status: 'playing', 
+                word: 'Teléfono', 
+                hint: 'Sirve para comunicarse', 
+                impostor_id: imp, 
+                turn_index: 0 
+            }).eq('code', myR);
         }
 
-        function renderizarRonda(sala) {
-            if (sala.status === 'playing') {
-                document.getElementById('host-panel').classList.add('hidden');
-                document.getElementById('waiting-msg').classList.add('hidden');
-                document.getElementById('role-panel').classList.remove('hidden');
+        function sincronizarEstadoSala(sala) {
+            gameState = sala.status;
+            currentTurnIdx = sala.turn_index;
+            actualizarListaJugadores();
 
-                const esImpostor = sala.impostor_id === myUser;
-                document.getElementById('display-word').innerText = esImpostor ? "¡ERES EL IMPOSTOR!" : sala.word;
-                document.getElementById('display-hint').innerText = esImpostor ? "Pista: " + sala.hint : "Encuentra al impostor.";
+            if(sala.status === 'playing') {
+                document.getElementById('role-info').classList.remove('hidden');
+                document.getElementById('host-panel').classList.add('hidden');
+                
+                const soyI = sala.impostor_id === myU;
+                document.getElementById('display-word').innerText = soyI ? "🕵️ IMPOSTOR" : "📦 " + sala.word;
+                document.getElementById('display-hint').innerText = "Tu pista: " + sala.hint;
             }
+
+            if(sala.status === 'voting') {
+                document.getElementById('turn-indicator').innerText = "🗳️ FASE DE VOTACIÓN";
+                document.getElementById('turn-indicator').style.color = "var(--accent)";
+                document.getElementById('vote-panel').classList.remove('hidden');
+                
+                const vOpts = document.getElementById('vote-options');
+                vOpts.innerHTML = playersList.map(p => `
+                    <button class="vote-btn" onclick="votar('${p.username}')">${p.username}</button>
+                `).join('');
+            }
+        }
+
+        async function votar(nombre) {
+            alert("Has votado a: " + nombre);
+            document.getElementById('vote-panel').innerHTML = "<h3>Voto enviado. Esperando al resto...</h3>";
         }
     </script>
 </body>
