@@ -3,106 +3,186 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Impostor Online - Supabase</title>
+    <title>El Impostor Online</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
-        :root { --primary: #6366f1; --bg: #0f172a; --card: #1e293b; --text: #f8fafc; }
-        body { font-family: sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .container { background: var(--card); padding: 2rem; border-radius: 1rem; width: 90%; max-width: 400px; text-align: center; }
+        :root { --primary: #6366f1; --dark: #1e1e2e; --success: #22c55e; --light: #f8fafc; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: var(--dark); color: var(--light); display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: #2d2d44; padding: 2rem; border-radius: 1rem; width: 90%; max-width: 450px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        input, select { width: 100%; padding: 12px; margin-bottom: 1rem; border-radius: 8px; border: none; background: #3f3f5f; color: white; box-sizing: border-box; }
+        button { width: 100%; padding: 12px; background: var(--primary); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; margin-bottom: 10px; transition: 0.3s; }
+        .card { background: #3f3f5f; padding: 20px; border-radius: 10px; margin-top: 20px; border: 2px solid var(--primary); }
+        .player-list { text-align: left; background: #1e1e2e; padding: 10px; border-radius: 8px; margin: 15px 0; min-height: 40px; }
+        .player-tag { display: inline-block; background: #4b5563; padding: 4px 10px; border-radius: 20px; margin: 4px; font-size: 0.8rem; }
+        .settings-box { background: #373754; padding: 15px; border-radius: 8px; margin-bottom: 15px; text-align: left; }
         .hidden { display: none; }
-        input, select { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #334155; background: #0f172a; color: white; }
-        button { width: 100%; padding: 12px; background: var(--primary); border: none; color: white; border-radius: 5px; cursor: pointer; font-weight: bold; }
-        .player-list { text-align: left; margin: 15px 0; padding: 10px; background: #0f172a; border-radius: 5px; }
-        .role-card { background: #334155; padding: 20px; border-radius: 10px; border: 2px solid var(--primary); margin-top: 20px; }
+        label { font-size: 0.8rem; color: #9ca3af; display: block; margin-bottom: 5px; }
     </style>
 </head>
 <body>
 
     <div class="container">
-        <div id="screen-auth">
-            <h1>🕵️ Impostor Online</h1>
-            <input type="text" id="username" placeholder="Tu apodo">
-            <input type="text" id="room-id" placeholder="Código de sala (ej: 1234)">
-            <button onclick="joinRoom()">Entrar / Crear Sala</button>
+        <h1>🕵️ El Impostor</h1>
+
+        <div id="setup-screen">
+            <input type="text" id="username" placeholder="Tu nombre">
+            <input type="text" id="room-code" placeholder="Código de Sala">
+            <button id="btn-join" onclick="joinGame()">Entrar a la Sala</button>
         </div>
 
-        <div id="screen-lobby" class="hidden">
-            <h2>Sala: <span id="display-room"></span></h2>
-            <div class="player-list" id="player-list">Jugadores: </div>
+        <div id="game-screen" class="hidden">
+            <h3>Sala: <span id="display-room" style="color: var(--primary);"></span></h3>
             
-            <div id="host-panel" class="hidden">
-                <label>Categoría:</label>
-                <select id="category">
-                    <option value="animales">Animales 🦁</option>
-                    <option value="comida">Comida 🍕</option>
-                </select>
-                <button onclick="sendStartGame()" style="background: #22c55e;">EMPEZAR PARA TODOS</button>
-            </div>
-            <p id="wait-msg">Esperando al líder...</p>
-        </div>
+            <div class="player-list" id="player-list"></div>
 
-        <div id="screen-game" class="hidden">
-            <div id="role-display" class="role-card"></div>
-            <button onclick="location.reload()" style="margin-top:20px; background:#ef4444;">Salir</button>
+            <div id="config-panel" class="hidden">
+                <div class="settings-box">
+                    <label>Categoría:</label>
+                    <select id="setting-category">
+                        <option value="todos">Cualquiera</option>
+                        <option value="comida">🍔 Comida</option>
+                        <option value="lugares">🌍 Lugares</option>
+                    </select>
+
+                    <label>Impostores:</label>
+                    <select id="setting-impostors">
+                        <option value="1">1 Impostor</option>
+                        <option value="2">2 Impostores</option>
+                        <option value="0">🎲 Aleatorio</option>
+                    </select>
+                </div>
+                <button onclick="startGame()" style="background: var(--success);">¡EMPEZAR JUEGO!</button>
+            </div>
+
+            <div id="waiting-msg">Esperando al anfitrión...</div>
+            
+            <div id="role-card" class="card hidden">
+                <div id="word-display"></div>
+                <p id="role-hint"></p>
+                <button onclick="location.reload()" style="background:#4b5563;">Salir</button>
+            </div>
         </div>
     </div>
 
     <script>
-        // Asegúrate de que las constantes tengan las comillas:
-const SB_URL = "https://jdvwlfogkzrzovepzjqa.supabase.co";
-const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI";
+        // --- REEMPLAZA ESTO ---
+        const SUPABASE_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
+        const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
+        
+        // Inicialización corregida
+        const _supabase = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// La forma correcta de inicializar es:
-const supabaseClient = supabase.createClient(SB_URL, SB_KEY);
+        let myUsername = "";
+        let myRoomCode = "";
+        let amIHost = false;
 
-let channel;
-let myName = "";
-let roomId = "";
-let players = [];
+        const dictionary = {
+            comida: [{ w: "Pizza", h: "Comida redonda italiana" }, { w: "Sushi", h: "Comida con pescado crudo" }],
+            lugares: [{ w: "París", h: "Ciudad del amor" }, { w: "Londres", h: "Ciudad del Big Ben" }]
+        };
 
-async function joinRoom() {
-    myName = document.getElementById('username').value;
-    roomId = document.getElementById('room-id').value;
-    
-    if (!myName || !roomId) {
-        alert("Escribe nombre y código de sala");
-        return;
-    }
+        async function joinGame() {
+            const btn = document.getElementById('btn-join');
+            btn.innerText = "Cargando...";
+            btn.disabled = true;
 
-    // El canal necesita permisos de "presence" y "broadcast"
-    channel = supabaseClient.channel(`room_${roomId}`, {
-        config: {
-            presence: { key: myName },
-            broadcast: { self: true } // Esto permite que tú también recibas tus mensajes si quieres
-        }
-    });
+            myUsername = document.getElementById('username').value.trim();
+            myRoomCode = document.getElementById('room-code').value.trim();
 
-    // Suscripción con manejo de errores para saber qué falla
-    channel
-        .on('presence', { event: 'sync' }, () => {
-            const state = channel.presenceState();
-            // Convertimos el objeto de presencia en una lista de nombres limpia
-            players = Object.keys(state);
-            updatePlayerList();
-            checkIfHost();
-        })
-        .on('broadcast', { event: 'start' }, ({ payload }) => {
-            receiveRoles(payload);
-        })
-        .subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-                console.log("Conectado con éxito a la sala:", roomId);
-                await channel.track({ online_at: new Date().toISOString() });
-                
-                document.getElementById('screen-auth').classList.add('hidden');
-                document.getElementById('screen-lobby').classList.remove('hidden');
-                document.getElementById('display-room').innerText = roomId;
-            } else if (status === 'CHANNEL_ERROR') {
-                console.error("Error conectando a Supabase. Revisa tus claves.");
-                alert("Error de conexión. Revisa la consola (F12).");
+            if (!myUsername || !myRoomCode) {
+                alert("Rellena todo");
+                btn.innerText = "Entrar a la Sala";
+                btn.disabled = false;
+                return;
             }
-        });
-}
-</script>
+
+            try {
+                // Verificar si la sala existe
+                let { data: room, error: roomError } = await _supabase.from('rooms').select('*').eq('code', myRoomCode).maybeSingle();
+
+                if (!room) {
+                    amIHost = true;
+                    await _supabase.from('rooms').insert([{ code: myRoomCode, status: 'waiting' }]);
+                }
+
+                // Insertar jugador
+                await _supabase.from('players').insert([{ room_id: myRoomCode, username: myUsername, is_host: amIHost }]);
+
+                // Suscripciones
+                setupRealtime();
+
+                // Interfaz
+                document.getElementById('setup-screen').classList.add('hidden');
+                document.getElementById('game-screen').classList.remove('hidden');
+                document.getElementById('display-room').innerText = myRoomCode;
+                
+                if (amIHost) {
+                    document.getElementById('config-panel').classList.remove('hidden');
+                    document.getElementById('waiting-msg').classList.add('hidden');
+                }
+
+                updatePlayerList();
+
+            } catch (err) {
+                console.error("Error al entrar:", err);
+                alert("Error de conexión. Revisa la consola.");
+            }
+        }
+
+        function setupRealtime() {
+            // Cambios en la sala (inicio de juego)
+            _supabase.channel('room_channel')
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${myRoomCode}` }, 
+                payload => renderGame(payload.new))
+                .subscribe();
+
+            // Cambios en jugadores (lista)
+            _supabase.channel('players_channel')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${myRoomCode}` }, 
+                () => updatePlayerList())
+                .subscribe();
+        }
+
+        async function updatePlayerList() {
+            const { data: players } = await _supabase.from('players').select('*').eq('room_id', myRoomCode);
+            if (players) {
+                document.getElementById('player-list').innerHTML = players.map(p => 
+                    `<span class="player-tag">${p.is_host ? '👑' : '👤'} ${p.username}</span>`
+                ).join('');
+            }
+        }
+
+        async function startGame() {
+            const { data: players } = await _supabase.from('players').select('username').eq('room_id', myRoomCode);
+            if (players.length < 2) return alert("Faltan jugadores");
+
+            const cat = document.getElementById('setting-category').value;
+            const pool = cat === 'todos' ? [...dictionary.comida, ...dictionary.lugares] : dictionary[cat];
+            const pick = pool[Math.floor(Math.random() * pool.length)];
+            
+            const impostor = players[Math.floor(Math.random() * players.length)].username;
+
+            await _supabase.from('rooms').update({ 
+                status: 'playing', word: pick.w, hint: pick.h, impostor_id: impostor 
+            }).eq('code', myRoomCode);
+        }
+
+        function renderGame(roomData) {
+            if (roomData.status === 'playing') {
+                document.getElementById('config-panel').classList.add('hidden');
+                document.getElementById('waiting-msg').classList.add('hidden');
+                document.getElementById('role-card').classList.remove('hidden');
+
+                if (myUsername === roomData.impostor_id) {
+                    document.getElementById('word-display').innerText = "¡ERES EL IMPOSTOR!";
+                    document.getElementById('word-display').style.color = "#ef4444";
+                    document.getElementById('role-hint').innerText = "Pista: " + roomData.hint;
+                } else {
+                    document.getElementById('word-display').innerText = roomData.word;
+                    document.getElementById('role-hint').innerText = "Eres Ciudadano. ¡Pilla al impostor!";
+                }
+            }
+        }
+    </script>
 </body>
 </html>
