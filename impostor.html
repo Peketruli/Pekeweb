@@ -3,263 +3,315 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Impostor Pro - Turnos & Chat</title>
+    <title>Impostor</title>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;700;900&display=swap" rel="stylesheet">
     <style>
-        :root { --p: #6366f1; --bg: #0f172a; --card: #1e293b; --accent: #f59e0b; --active: #22c55e; --txt: #f8fafc; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); color: var(--txt); margin: 0; display: flex; height: 100vh; overflow: hidden; }
-        
+        :root { 
+            --p: #6366f1; --bg: #030712; --card: #111827; --accent: #f59e0b; 
+            --active: #10b981; --danger: #ef4444; --txt: #f8fafc; --border: rgba(255,255,255,0.1);
+        }
+
+        * { box-sizing: border-box; transition: all 0.2s ease; }
+        body { 
+            font-family: 'Outfit', sans-serif; background: var(--bg); color: var(--txt); margin: 0; 
+            display: flex; height: 100vh; overflow: hidden;
+            background-image: radial-gradient(circle at 50% 50%, #1e1b4b 0%, #030712 100%);
+        }
+
         .hidden { display: none !important; }
-        
-        /* Layout Principal */
-        .main-game { flex: 2; padding: 20px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
-        .chat-sidebar { flex: 1; background: #0b0f1a; display: flex; flex-direction: column; padding: 15px; border-left: 1px solid #334155; }
 
-        .panel { background: var(--card); padding: 20px; border-radius: 12px; border: 1px solid #334155; }
-        
-        /* Jugadores y Turnos */
-        .player-tag { 
-            display: inline-block; padding: 10px 18px; border-radius: 12px; margin: 5px; 
-            background: #334155; border: 2px solid transparent; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        /* --- PANTALLA INICIO MEJORADA --- */
+        #screen-login { position:fixed; inset:0; background:var(--bg); z-index:5000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:20px; }
+        .login-container { display: flex; gap: 20px; width: 90%; max-width: 900px; height: 500px; }
+        .lobby-box { flex: 1; background: rgba(17, 24, 39, 0.8); backdrop-filter: blur(10px); border-radius: 24px; padding: 30px; border: 1px solid var(--border); overflow-y: auto; }
+        .room-card { 
+            background: #1f2937; padding: 15px; border-radius: 12px; margin-bottom: 10px; 
+            display: flex; justify-content: space-between; align-items: center; cursor: pointer; border: 1px solid transparent;
         }
-        .is-active-turn { 
-            border-color: var(--active); 
-            box-shadow: 0 0 15px rgba(34, 197, 94, 0.4);
-            transform: translateY(-3px);
-            background: #2d3748;
-        }
+        .room-card:hover { border-color: var(--p); transform: translateX(5px); }
 
-        /* Chat */
-        #chat-messages { flex: 1; overflow-y: auto; margin-bottom: 10px; padding-right: 5px; }
-        .msg { padding: 8px 12px; border-radius: 8px; margin-bottom: 6px; background: #1e293b; font-size: 0.95rem; border: 1px solid #334155; }
-        .msg-turn { border-left: 4px solid var(--active); background: rgba(34, 197, 94, 0.1); }
-        .msg b { font-size: 0.85rem; display: block; margin-bottom: 2px; }
+        /* --- GAME UI --- */
+        .main-game { flex: 2; padding: 25px; display: flex; flex-direction: column; gap: 15px; overflow-y: auto; }
+        .sidebar { flex: 0.8; background: rgba(0,0,0,0.3); backdrop-filter: blur(20px); display: flex; flex-direction: column; padding: 20px; border-left: 1px solid var(--border); }
+        .panel { background: var(--card); padding: 20px; border-radius: 20px; border: 1px solid var(--border); }
 
-        /* Votación */
-        .vote-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 15px; }
-        .vote-btn { background: #334155; border: 1px solid var(--p); color: white; padding: 10px; cursor: pointer; border-radius: 8px; font-weight: bold; }
-        .vote-btn:hover { background: var(--p); }
+        /* --- ESTADOS --- */
+        #player-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+        .player-tag { padding: 12px; border-radius: 14px; background: #1f2937; text-align: center; font-weight: 700; border: 2px solid transparent; }
+        .is-active-turn { border-color: var(--active); background: #064e3b; animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(16,185,129,0.4); } 70% { box-shadow: 0 0 0 10px rgba(16,185,129,0); } 100% { box-shadow: 0 0 0 0 rgba(16,185,129,0); } }
+        .dead { opacity: 0.3; filter: grayscale(1); }
 
-        input, button { width: 100%; padding: 12px; border-radius: 8px; border: none; margin-top: 5px; box-sizing: border-box; font-size: 1rem; }
-        input { background: #1e293b; color: white; border: 1px solid #334155; outline: none; }
-        input:focus { border-color: var(--p); }
-        button { background: var(--p); color: white; font-weight: bold; cursor: pointer; transition: 0.2s; }
-        button:active { transform: scale(0.98); }
+        /* --- BOTONES --- */
+        input, select, button { padding: 12px; border-radius: 12px; border: 1px solid var(--border); background: #0f172a; color: white; outline: none; }
+        button { background: var(--p); cursor: pointer; border: none; font-weight: 800; }
+        .btn-start { background: var(--active); width: 100%; margin-top: 10px; }
+        .btn-exit { background: var(--danger); font-size: 0.8rem; padding: 8px 15px; }
 
-        #turn-indicator { font-weight: bold; padding: 10px; border-radius: 8px; background: #161e2e; text-align: center; margin-bottom: 10px; border: 1px solid #334155; }
+        /* --- END SCREEN --- */
+        #end-screen { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(15px); }
     </style>
 </head>
 <body>
 
-    <div id="screen-login" style="position:fixed; width:100%; height:100%; background:var(--bg); z-index:1000; display:flex; align-items:center; justify-content:center;">
-        <div class="panel" style="width: 100%; max-width:350px">
-            <h1 style="text-align:center; margin-top:0;">🕵️ El Impostor</h1>
-            <label>Tu nombre:</label>
-            <input type="text" id="in-user" placeholder="Ej: Juan">
-            <label>Código de sala:</label>
-            <input type="text" id="in-room" placeholder="Ej: 777">
-            <button onclick="entrarAlJuego()" style="margin-top:20px;">ENTRAR A LA SALA</button>
+    <div id="screen-login">
+        <h1 style="font-size: 3rem; margin: 0;">🕵️ IMPOSTOR</h1>
+        <div class="login-container">
+            <div class="lobby-box">
+                <h3 style="margin-top:0; color:var(--active);">🌐 SALAS PÚBLICAS</h3>
+                <div id="public-rooms-list">Cargando salas...</div>
+            </div>
+            <div class="lobby-box" style="max-width: 350px; display:flex; flex-direction:column; gap:12px;">
+                <h3>UNIRSE / CREAR</h3>
+                <input type="text" id="in-user" placeholder="Tu Apodo">
+                <input type="text" id="in-room" placeholder="Código de Sala">
+                <button onclick="entrarAlJuego()" style="height: 55px;">ENTRAR AHORA</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="end-screen" class="hidden">
+        <h1 id="end-title" style="font-size: 5rem;">---</h1>
+        <p id="end-subtitle" style="font-size: 1.5rem; color: gray;"></p>
+        <div id="host-controls" class="hidden" style="margin-top: 30px;">
+            <button onclick="reiniciarSala()" class="btn-start" style="padding: 15px 40px;">🔄 VOLVER AL LOBBY</button>
         </div>
     </div>
 
     <div id="game-layout" style="display: flex; width: 100%;">
         <div class="main-game">
-            <div class="panel">
-                <h3 id="room-info" style="margin-top:0;">Sala: ---</h3>
-                <div id="player-list"></div>
-            </div>
-
-            <div id="role-info" class="panel hidden" style="border: 2px solid var(--accent); text-align: center;">
-                <p style="margin:0; font-size: 0.8rem; text-transform: uppercase; color: var(--accent);">Tu información secreta:</p>
-                <h2 id="display-word" style="margin:10px 0; font-size: 2rem;">---</h2>
-                <p id="display-hint" style="margin:0; opacity: 0.8;"></p>
-            </div>
-
-            <div id="vote-panel" class="panel hidden">
-                <h3 style="margin-top:0;">🗳️ Fase de Votación</h3>
-                <p>Haz clic en el sospechoso:</p>
-                <div id="vote-options" class="vote-grid"></div>
+            <div class="panel" style="display:flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2 id="room-display" style="margin:0; color:var(--p);">SALA: ---</h2>
+                    <div id="imp-status" class="hidden" style="color:var(--danger); font-weight:bold; font-size:0.9rem; margin-top:5px;">
+                        ⚠️ IMPOSTORES VIVOS: <span id="imp-count-val">0</span>
+                    </div>
+                </div>
+                <button onclick="salirDelJuego()" class="btn-exit">SALIR DEL JUEGO</button>
             </div>
 
             <div id="host-panel" class="panel hidden">
-                <p style="margin-top:0; font-size: 0.9rem;">Eres el anfitrión. Espera a que todos entren.</p>
-                <button onclick="iniciarPartida()" style="background: var(--active);">INICIAR PARTIDA</button>
+                <h4 style="margin:0 0 10px 0;">🔧 AJUSTES DEL ANFITRIÓN</h4>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <select id="set-imps"><option value="1">1 Impostor</option><option value="2">2 Impostores</option></select>
+                    <select id="set-cat"><option value="all">Todo Mezclado</option><option value="animals">Animales</option><option value="food">Comida</option></select>
+                </div>
+                <button onclick="iniciarPartida()" class="btn-start">🚀 EMPEZAR PARTIDA</button>
+            </div>
+
+            <div class="panel"><div id="player-list"></div></div>
+
+            <div id="role-box" class="panel hidden" style="text-align:center; border: 2px solid var(--p);">
+                <div id="role-label" class="badge">TU PALABRA</div>
+                <h2 id="word-display" style="font-size: 2.5rem; margin:10px 0;">---</h2>
+                <p id="hint-display" style="color:var(--accent); font-weight:bold;"></p>
+            </div>
+
+            <div id="vote-box" class="panel hidden">
+                <h3 style="color:var(--danger); margin:0 0 15px 0;">🗳️ VOTACIÓN: ¿QUIÉN ES?</h3>
+                <div id="vote-options" style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;"></div>
             </div>
         </div>
 
-        <div class="chat-sidebar">
-            <div id="turn-indicator">Esperando inicio...</div>
+        <div class="sidebar">
+            <div id="turn-label" style="text-align:center; font-weight: 800; margin-bottom: 15px; color:var(--active);">ESPERANDO...</div>
             <div id="chat-messages"></div>
-            <div style="padding-top:10px;">
-                <input type="text" id="chat-input" placeholder="Escribe y pulsa Enter..." autocomplete="off">
-                <button onclick="enviarMensaje()" style="margin-top:8px; background: #334155;">Enviar Mensaje</button>
+            <div style="display:flex; gap:5px; margin-top:10px;">
+                <input type="text" id="chat-input" placeholder="Escribe..." style="flex:1;">
+                <button onclick="enviarMensaje()">➤</button>
             </div>
         </div>
     </div>
 
     <script>
-        // 1. CONFIGURACIÓN (REEMPLAZA CON TUS DATOS)
         const SB_URL = 'https://jdvwlfogkzrzovepzjqa.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpkdndsZm9na3pyem92ZXB6anFhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgwMzY1MjEsImV4cCI6MjA3MzYxMjUyMX0.IwVFrvuluY0tfgE82XnqYSsRjFPsDYnlfyirHjKu1TI';
         const sb = supabase.createClient(SB_URL, SB_KEY);
 
-        let myU = "", myR = "", isH = false, playersList = [], currentTurnIdx = 0, gameState = "waiting";
+        let myU = "", myR = "", isH = false, pList = [], gState = "waiting", tIdx = 0;
+        const DATA = {
+            all: [{w:"PIZZA", h:"Comida"}, {w:"TIGRE", h:"Animal"}, {w:"AVIÓN", h:"Transporte"}, {w:"TELÉFONO", h:"Objeto"}],
+            animals: [{w:"GATO", h:"Animal"}, {w:"ELEFANTE", h:"Animal"}],
+            food: [{w:"SUSHI", h:"Comida"}]
+        };
 
-        // Evento para tecla Enter
-        document.getElementById('chat-input').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') enviarMensaje();
-        });
+        // --- LÓGICA INICIAL ---
+        async function loadPublicRooms() {
+            const { data } = await sb.from('rooms').select('code').eq('status', 'waiting').limit(10);
+            const list = document.getElementById('public-rooms-list');
+            if(!data || data.length === 0) { list.innerHTML = "<p style='color:gray;'>No hay salas activas...</p>"; return; }
+            list.innerHTML = data.map(r => `
+                <div class="room-card" onclick="document.getElementById('in-room').value='${r.code}'">
+                    <span>🏠 SALA: <b>${r.code}</b></span>
+                    <small style="color:var(--p);">UNIRSE →</small>
+                </div>
+            `).join('');
+        }
+        setInterval(loadPublicRooms, 10000); loadPublicRooms();
 
         async function entrarAlJuego() {
             myU = document.getElementById('in-user').value.trim();
-            myR = document.getElementById('in-room').value.trim();
-            if(!myU || !myR) return alert("Completa los datos");
+            myR = document.getElementById('in-room').value.trim().toUpperCase();
+            if(!myU || !myR) return alert("Rellena los campos");
 
-            // Buscar sala
-            let { data: r } = await sb.from('rooms').select('*').eq('code', myR).maybeSingle();
-            
-            if(!r) {
+            let { data: room } = await sb.from('rooms').select('*').eq('code', myR).maybeSingle();
+            if(!room) {
                 isH = true;
-                await sb.from('rooms').insert([{ code: myR, status: 'waiting', turn_index: 0 }]);
-            }
+                await sb.from('rooms').insert([{ code: myR, status: 'waiting' }]);
+            } else if(room.status !== 'waiting') return alert("Sala en juego");
 
-            // Registrar jugador
             await sb.from('players').insert([{ room_id: myR, username: myU, is_host: isH }]);
-
             document.getElementById('screen-login').classList.add('hidden');
-            if(isH) document.getElementById('host-panel').classList.remove('hidden');
-            document.getElementById('room-info').innerText = "Sala: " + myR;
-
-            inicializarRealtime();
-            actualizarListaJugadores();
-            cargarHistorialChat();
+            document.getElementById('room-display').innerText = "SALA: " + myR;
+            setupRealtime();
+            actualizarUI();
+            setInterval(actualizarUI, 4000);
         }
 
-        function inicializarRealtime() {
-            // Cambios en Sala
-            sb.channel('room_channel').on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'rooms', filter: `code=eq.${myR}` }, 
-                p => sincronizarEstadoSala(p.new)).subscribe();
+        async function salirDelJuego() {
+            await sb.from('players').delete().eq('username', myU).eq('room_id', myR);
+            location.reload();
+        }
 
-            // Cambios en Jugadores
-            sb.channel('players_channel').on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${myR}` }, 
-                () => actualizarListaJugadores()).subscribe();
+        function setupRealtime() {
+            sb.channel('r').on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `code=eq.${myR}` }, () => actualizarUI()).subscribe();
+            sb.channel('p').on('postgres_changes', { event: '*', schema: 'public', table: 'players', filter: `room_id=eq.${myR}` }, () => actualizarUI()).subscribe();
+            sb.channel('c').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${myR}` }, p => {
+                const b = document.getElementById('chat-messages');
+                const d = document.createElement('div');
+                d.className = 'msg' + (p.new.is_clue ? ' msg-clue' : '');
+                d.innerHTML = `<b>${p.new.username}:</b> ${p.new.content}`;
+                b.appendChild(d); b.scrollTop = b.scrollHeight;
+            }).subscribe();
+        }
 
-            // Mensajes de Chat
-            sb.channel('chat_channel').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages', filter: `room_id=eq.${myR}` }, 
-                p => dibujarMensaje(p.new)).subscribe();
+        async function actualizarUI() {
+            const { data: ps } = await sb.from('players').select('*').eq('room_id', myR).order('created_at');
+            const { data: sa } = await sb.from('rooms').select('*').eq('code', myR).single();
+            if(!ps || !sa) return;
+
+            pList = ps; gState = sa.status; tIdx = sa.turn_index;
+            const me = ps.find(p => p.username === myU);
+            if(!me) return location.reload(); // Expulsado o salió
+
+            // Fin de Juego
+            if(sa.winner_side) {
+                document.getElementById('end-screen').classList.remove('hidden');
+                document.getElementById('end-title').innerText = "GANAN LOS " + sa.winner_side.toUpperCase();
+                document.getElementById('end-title').style.color = sa.winner_side === 'impostores' ? 'var(--danger)' : 'var(--active)';
+                document.getElementById('end-subtitle').innerText = "Los impostores eran: " + sa.impostor_id;
+                if(me.is_host) document.getElementById('host-controls').classList.remove('hidden');
+            } else {
+                document.getElementById('end-screen').classList.add('hidden');
+            }
+
+            // Panel Host e Impostores
+            if(me.is_host && gState === 'waiting') document.getElementById('host-panel').classList.remove('hidden');
+            else document.getElementById('host-panel').classList.add('hidden');
+
+            if(gState !== 'waiting' && !sa.winner_side) {
+                document.getElementById('imp-status').classList.remove('hidden');
+                document.getElementById('imp-count-val').innerText = sa.impostores_vivos;
+            } else document.getElementById('imp-status').classList.add('hidden');
+
+            // Jugadores
+            document.getElementById('player-list').innerHTML = ps.map((p, i) => `
+                <div class="player-tag ${i===tIdx && gState==='playing'?'is-active-turn':''} ${!p.is_alive?'dead':''}">
+                    ${p.is_host?'👑 ':''}${p.username} ${p.has_voted?'✅':''}
+                </div>`).join('');
+
+            // Role Box
+            if(gState === 'playing') {
+                document.getElementById('role-box').classList.remove('hidden');
+                const imps = sa.impostor_id.split(',');
+                const soyImp = imps.includes(myU);
+                document.getElementById('role-label').innerText = soyImp ? "TU OBJETIVO" : "TU PALABRA";
+                document.getElementById('word-display').innerText = soyImp ? "🕵️ IMPOSTOR" : sa.word;
+                document.getElementById('hint-display').innerText = soyImp ? "¡No dejes que te descubran!" : "PISTA: " + sa.hint;
+                document.getElementById('turn-label').innerText = "🗣️ TURNO DE: " + (ps[tIdx]?.username || "");
+            } else {
+                document.getElementById('role-box').classList.add('hidden');
+                document.getElementById('turn-label').innerText = gState === 'voting' ? "🗳️ VOTANDO..." : "ESPERANDO...";
+            }
+
+            // Votos
+            if(gState === 'voting' && me.is_alive && !me.has_voted) {
+                document.getElementById('vote-box').classList.remove('hidden');
+                document.getElementById('vote-options').innerHTML = ps.filter(p=>p.is_alive).map(p => `
+                    <button onclick="votar('${p.username}')">${p.username}</button>
+                `).join('') + `<button onclick="votar('skip')" style="background:#374151; grid-column:span 2;">⏭️ SALTAR</button>`;
+            } else document.getElementById('vote-box').classList.add('hidden');
+
+            if(me.is_host) procesarVotos(sa);
+        }
+
+        async function iniciarPartida() {
+            if(pList.length < 3) return alert("Mínimo 3 jugadores");
+            const cat = document.getElementById('set-cat').value;
+            const item = DATA[cat][Math.floor(Math.random()*DATA[cat].length)];
+            
+            // Lógica corregida para múltiples impostores
+            let numI = parseInt(document.getElementById('set-imps').value);
+            let imps = [...pList].sort(() => 0.5 - Math.random()).slice(0, numI).map(p => p.username);
+
+            await sb.from('messages').delete().eq('room_id', myR);
+            await sb.from('players').update({ is_alive:true, has_voted:false, voted_for:null }).eq('room_id', myR);
+            await sb.from('rooms').update({ 
+                status:'playing', word:item.w, hint:item.h, impostor_id:imps.join(','), 
+                turn_index:0, winner_side:null, impostores_vivos:imps.length 
+            }).eq('code', myR);
+        }
+
+        async function reiniciarSala() {
+            await sb.from('rooms').update({ status:'waiting', winner_side:null, word:null, impostor_id:null }).eq('code', myR);
+            await sb.from('players').update({ is_alive:true, has_voted:false, voted_for:null }).eq('room_id', myR);
         }
 
         async function enviarMensaje() {
             const input = document.getElementById('chat-input');
-            const texto = input.value.trim();
-            if(!texto) return;
+            const val = input.value.trim();
+            if(!val) return;
+            const esT = (pList[tIdx]?.username === myU && gState === 'playing');
+            await sb.from('messages').insert([{ room_id: myR, username: myU, content: val, is_clue: esT }]);
+            input.value = "";
+            if(esT) {
+                let n = tIdx + 1;
+                while(pList[n] && !pList[n].is_alive) n++;
+                if(n >= pList.length) await sb.from('rooms').update({ status:'voting' }).eq('code', myR);
+                else await sb.from('rooms').update({ turn_index:n }).eq('code', myR);
+            }
+        }
 
-            // Determinar si es pista oficial por turno
-            const esMiTurno = (playersList[currentTurnIdx]?.username === myU && gameState === 'playing');
+        async function votar(dest) { await sb.from('players').update({ has_voted: true, voted_for: dest }).eq('username', myU).eq('room_id', myR); }
 
-            const { error } = await sb.from('messages').insert([{ 
-                room_id: myR, 
-                username: myU, 
-                content: texto, 
-                is_clue: esMiTurno 
-            }]);
-
-            if (error) {
-                alert("Error al enviar chat: " + error.message);
-            } else {
-                input.value = "";
-                // Si envié mi pista, paso el turno
-                if(esMiTurno) {
-                    const nextIdx = currentTurnIdx + 1;
-                    if(nextIdx >= playersList.length) {
-                        await sb.from('rooms').update({ status: 'voting' }).eq('code', myR);
-                    } else {
-                        await sb.from('rooms').update({ turn_index: nextIdx }).eq('code', myR);
+        async function procesarVotos(sala) {
+            const vivos = pList.filter(p => p.is_alive);
+            const votos = pList.filter(p => p.is_alive && p.has_voted);
+            if(votos.length === vivos.length && vivos.length > 0) {
+                let c = {}; votos.forEach(v => c[v.voted_for] = (c[v.voted_for] || 0) + 1);
+                let expulsado = Object.keys(c).reduce((a, b) => c[a] > c[b] ? a : b);
+                
+                if(expulsado !== 'skip') {
+                    await sb.from('players').update({ is_alive: false }).eq('username', expulsado).eq('room_id', myR);
+                    if(sala.impostor_id.split(',').includes(expulsado)) {
+                        let rest = sala.impostores_vivos - 1;
+                        if(rest <= 0) return await sb.from('rooms').update({ winner_side: 'tripulación', impostores_vivos: 0 }).eq('code', myR);
+                        await sb.from('rooms').update({ impostores_vivos: rest }).eq('code', myR);
                     }
+                }
+                
+                const nuevosVivos = pList.filter(p => p.is_alive && p.username !== expulsado);
+                const impsRest = nuevosVivos.filter(p => sala.impostor_id.split(',').includes(p.username)).length;
+                if(impsRest >= (nuevosVivos.length - impsRest)) {
+                    await sb.from('rooms').update({ winner_side: 'impostores' }).eq('code', myR);
+                } else {
+                    await sb.from('players').update({ has_voted: false, voted_for: null }).eq('room_id', myR);
+                    await sb.from('rooms').update({ status: 'playing', turn_index: 0 }).eq('code', myR);
                 }
             }
         }
-
-        function dibujarMensaje(m) {
-            const chatBox = document.getElementById('chat-messages');
-            const div = document.createElement('div');
-            div.className = `msg ${m.is_clue ? 'msg-turn' : ''}`;
-            
-            const color = m.is_clue ? 'var(--active)' : 'var(--p)';
-            div.innerHTML = `<b style="color:${color}">${m.username}</b> <span>${m.content}</span>`;
-            
-            chatBox.appendChild(div);
-            chatBox.scrollTop = chatBox.scrollHeight;
-        }
-
-        async function cargarHistorialChat() {
-            const { data } = await sb.from('messages').select('*').eq('room_id', myR).order('created_at', {ascending: true});
-            if(data) data.forEach(m => dibujarMensaje(m));
-        }
-
-        async function actualizarListaJugadores() {
-            const { data } = await sb.from('players').select('*').eq('room_id', myR).order('created_at', {ascending: true});
-            playersList = data || [];
-            
-            const listContainer = document.getElementById('player-list');
-            listContainer.innerHTML = playersList.map((p, idx) => `
-                <span class="player-tag ${idx === currentTurnIdx && gameState === 'playing' ? 'is-active-turn' : ''}">
-                    ${p.is_host ? '👑 ' : ''}${p.username}
-                </span>
-            `).join('');
-
-            // Actualizar indicador de texto
-            const pActivo = playersList[currentTurnIdx];
-            if(gameState === 'playing' && pActivo) {
-                const indicador = document.getElementById('turn-indicator');
-                indicador.innerText = "🎤 Turno de: " + pActivo.username;
-                indicador.style.borderColor = (pActivo.username === myU) ? "var(--active)" : "#334155";
-            }
-        }
-
-        async function iniciarPartida() {
-            if(playersList.length < 2) return alert("Mínimo 2 personas");
-            const imp = playersList[Math.floor(Math.random() * playersList.length)].username;
-            
-            await sb.from('rooms').update({ 
-                status: 'playing', 
-                word: 'Teléfono', 
-                hint: 'Sirve para comunicarse', 
-                impostor_id: imp, 
-                turn_index: 0 
-            }).eq('code', myR);
-        }
-
-        function sincronizarEstadoSala(sala) {
-            gameState = sala.status;
-            currentTurnIdx = sala.turn_index;
-            actualizarListaJugadores();
-
-            if(sala.status === 'playing') {
-                document.getElementById('role-info').classList.remove('hidden');
-                document.getElementById('host-panel').classList.add('hidden');
-                
-                const soyI = sala.impostor_id === myU;
-                document.getElementById('display-word').innerText = soyI ? "🕵️ IMPOSTOR" : "📦 " + sala.word;
-                document.getElementById('display-hint').innerText = "Tu pista: " + sala.hint;
-            }
-
-            if(sala.status === 'voting') {
-                document.getElementById('turn-indicator').innerText = "🗳️ FASE DE VOTACIÓN";
-                document.getElementById('turn-indicator').style.color = "var(--accent)";
-                document.getElementById('vote-panel').classList.remove('hidden');
-                
-                const vOpts = document.getElementById('vote-options');
-                vOpts.innerHTML = playersList.map(p => `
-                    <button class="vote-btn" onclick="votar('${p.username}')">${p.username}</button>
-                `).join('');
-            }
-        }
-
-        async function votar(nombre) {
-            alert("Has votado a: " + nombre);
-            document.getElementById('vote-panel').innerHTML = "<h3>Voto enviado. Esperando al resto...</h3>";
-        }
+        document.getElementById('chat-input').onkeypress = (e) => { if(e.key === 'Enter') enviarMensaje(); };
     </script>
 </body>
 </html>
